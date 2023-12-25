@@ -3,10 +3,12 @@ use std::{
     ops::{self, AddAssign},
 };
 
+use crate::heap::Heap;
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum Term {
     Constant(Box<str>),
-    QUVar(usize),    //Query Variable
+    REF(usize),      //Query Variable
     EQVar(Box<str>), //Existentialy Quantified Variable
     AQVar(Box<str>), //Universally Quantified Variable
 }
@@ -16,7 +18,7 @@ impl Term {
         match self {
             Term::Constant(symbol) => symbol.to_string(),
             Term::EQVar(symbol) => symbol.to_string(),
-            Term::QUVar(id) => "_".to_string() + &id.to_string(),
+            Term::REF(id) => "_".to_string() + &id.to_string(),
             Term::AQVar(symbol) => "∀'".to_string() + &symbol.to_string(),
         }
     }
@@ -30,7 +32,7 @@ impl Term {
         }
         let order1 = match self {
             Term::Constant(_) => 3,
-            Term::QUVar(_) => 2,
+            Term::REF(_) => 2,
             Term::EQVar(_) => 1,
             Term::AQVar(_) => 0,
         };
@@ -42,7 +44,7 @@ impl Term {
                     3
                 }
             }
-            Term::QUVar(_) => 2,
+            Term::REF(_) => 2,
             Term::EQVar(_) => 1,
             Term::AQVar(_) => 0,
         };
@@ -52,10 +54,10 @@ impl Term {
         }
     }
 
-    pub fn enum_type(&self) -> &str{
+    pub fn enum_type(&self) -> &str {
         match self {
             Term::Constant(_) => "Constant",
-            Term::QUVar(_) => "QUVar",
+            Term::REF(_) => "Ref",
             Term::EQVar(_) => "EQVar",
             Term::AQVar(_) => "AQVar",
         }
@@ -64,7 +66,7 @@ impl Term {
 
 #[derive(Clone, Debug)]
 pub struct Substitution {
-    pub subs: HashMap<Term, Term>,
+    pub subs: HashMap<usize, usize>,
 }
 
 impl Substitution {
@@ -74,9 +76,11 @@ impl Substitution {
         }
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn to_string(&self, heap: &Heap) -> String {
         let mut buf = String::from("{");
         for (k, v) in self.subs.iter() {
+            let k = heap.get_term(*k);
+            let v = heap.get_term(*v);
             buf += &k.to_string();
             buf += "/";
             buf += &v.to_string();
@@ -87,74 +91,68 @@ impl Substitution {
         return buf;
     }
 
-    pub fn get(&self, key: &Term) -> Option<&Term> {
-        self.subs.get(key)
-    }
-
-    pub fn insert(&mut self, k: Term, v: Term) {
-        self.subs.insert(k, v);
-    }
-
-    pub fn compound_sub(&self, k: &Term) -> Term {
-        match self.subs.get(k) {
-            Some(v) => self.compound_sub(v),
+    pub fn compound_sub(&self, k: usize) -> usize {
+        match self.subs.get(&k) {
+            Some(v) => self.compound_sub(*v),
             None => k.clone(),
         }
     }
 
     pub fn simplify(&mut self) {
-        let mut new_subs: HashMap<Term, Term> = HashMap::new();
+        let mut new_subs: HashMap<usize, usize> = HashMap::new();
         //For all values update with compound_sub
         for k in self.subs.keys() {
-            new_subs.insert(k.clone(), self.compound_sub(k));
+            new_subs.insert(k.clone(), self.compound_sub(*k));
         }
         self.subs = new_subs;
     }
 
-    pub fn universal_quantification(&self) -> Substitution {
+    pub fn universal_quantification(&self, heap: &mut Heap) -> Substitution {
         let mut ho_sub = Substitution::new();
-        for (t1, t2) in &self.subs {
+        for (i1, i2) in &self.subs {
+            let t1 = heap.get_term(*i1);
             match t1 {
-                Term::AQVar(symbol) => ho_sub.insert(t1.clone(), Term::EQVar(symbol.clone())),
-                _ => ho_sub.insert(t1.clone(), t2.clone()),
-            }
+                Term::AQVar(symbol) => {
+                    let i3 = heap.new_term(Some(Term::EQVar(symbol.clone())));
+                    ho_sub.subs.insert(*i1, i3);
+                },
+                _ => {
+                    ho_sub.subs.insert(*i1, *i2);
+                },
+            };
         }
         return ho_sub;
     }
 
-    pub fn unmapped_to_qu(&mut self, terms: Vec<&Term>, mut i: usize) ->Vec<usize>{
-        let mut ids: Vec<usize> = vec![];
-        for term in terms {
-            self.subs.insert(term.clone(), Term::QUVar(i));
-            ids.push(i);
-            i += 1;
-        }
-        return ids;
-    }
-
-    pub fn unify(&mut self, other: Substitution) -> Option<Substitution>{
+    pub fn unify(&mut self, other: Substitution, heap: &Heap) -> Option<Substitution> {
         let mut new_sub = self.clone();
-        for (k,v1) in other.subs {
+        for (k, v1) in other.subs {
             match self.subs.get(&k) {
-                Some(v2) => {match v1.unify(v2){
-                    Some((t1,t2)) => new_sub.insert(k, t2.clone()),
-                    None => return None,
-                };},
-                None => {new_sub.insert(k, v1);},
+                Some(v2) => {
+                    match heap.unify(v1,*v2) {
+                        Some((t1, t2)) => new_sub.subs.insert(k, t2),
+                        None => return None,
+                    };
+                }
+                None => {
+                    new_sub.subs.insert(k, v1);
+                }
             };
         }
         return Some(new_sub);
     }
 
-    pub fn filter(&mut self){
+    pub fn filter(&mut self, heap: &Heap) {
         let mut key_to_remove = vec![];
-        for key in self.subs.keys(){
-            match key {
-                Term::QUVar(_) => (),
-                _ => {key_to_remove.push(key.clone());}
+        for key in self.subs.keys() {
+            match heap[*key] {
+                Term::REF(_) => (),
+                _ => {
+                    key_to_remove.push(key.clone());
+                }
             }
         }
-        for key in key_to_remove{
+        for key in key_to_remove {
             self.subs.remove(&key);
         }
     }
@@ -166,10 +164,10 @@ impl ops::Add<Substitution> for Substitution {
     fn add(self, rhs: Substitution) -> Substitution {
         let mut res = Substitution::new();
         for (k, v) in self.subs.iter() {
-            res.insert(k.clone(), v.clone())
+            res.subs.insert(*k, *v);
         }
         for (k, v) in rhs.subs.iter() {
-            res.insert(k.clone(), v.clone())
+            res.subs.insert(*k, *v);
         }
         res.simplify();
         return res;
@@ -178,7 +176,7 @@ impl ops::Add<Substitution> for Substitution {
 
 impl AddAssign<Substitution> for Substitution {
     fn add_assign(&mut self, rhs: Substitution) {
-        for (k,v) in rhs.subs{
+        for (k, v) in rhs.subs {
             self.subs.insert(k, v);
         }
     }

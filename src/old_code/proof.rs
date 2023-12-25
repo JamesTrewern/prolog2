@@ -349,4 +349,8 @@ impl Hypothesis {
             }
         }
     }
+
+    pub fn match_head_to_goal(&self, goal: Atom){
+        
+    }
 }

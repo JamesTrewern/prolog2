@@ -1,6 +1,8 @@
+use std::collections::HashSet;
 use std::fs;
 use std::ops::AddAssign;
 
+use crate::heap::{self, Heap};
 use crate::terms::{Substitution, Term};
 use crate::{atoms::Atom, clause::Clause};
 
@@ -11,6 +13,38 @@ pub struct Choice {
     pub goals: Vec<Atom>,
     pub subs: Substitution,
     pub new_clause: Option<Clause>,
+}
+
+impl Choice {
+    pub fn choose(&mut self, heap: &mut Heap){
+        self.eq_to_heap(heap);
+        self.aq_to_eq(heap);
+    }
+
+    fn eq_to_heap(&mut self, heap: &mut Heap) {
+        let mut terms: HashSet<usize> = HashSet::new();
+        for goal in self.goals.iter() {
+            for term in goal.terms.iter() {
+                if heap.get_term(*term).enum_type() == "EQVar" {
+                    terms.insert(*term);
+                }
+            }
+        }
+        let mut subs = Substitution::new();
+        for term in terms {
+            subs.subs.insert(term, heap.new_term(None));
+        }
+        for i in 0..self.goals.len(){
+            self.goals[i] = self.goals[i].apply_subs(&subs)
+        }
+    }
+
+    fn aq_to_eq(&mut self, heap: &mut Heap){
+        //To Do. some AQ needs to go in Ref in goals
+        if let Some(clause ) = &mut self.new_clause{
+            clause.aq_to_eq(heap);
+        }
+    }
 }
 pub struct Program {
     pub clauses: Vec<Clause>,
@@ -28,27 +62,30 @@ impl Program {
     pub fn match_head_to_goal(
         &self,
         goal: &Atom,
-        heap: &mut Vec<Term>,
+        heap: &mut Heap,
         contraints: bool,
     ) -> Vec<Choice> {
         let mut choices = vec![];
         for clause in &self.clauses {
-            match clause.atoms[0].unify(goal) {
-                Some(mut subs) => {
-                    //unmapped EQ to new QU
-                    let ids = subs.unmapped_to_qu(clause.unmapped_vars(&subs), heap.len()-1);
-                    for id in ids{
-                        heap.insert(id, Term::QUVar(id));
-                    }
-
-                    let mut goals_clause = clause.body().apply_sub(&subs);
+            match clause.atoms[0].unify(goal, heap) {
+                Some(subs) => {
+                    println!(
+                        "Matched: {}\nSubs:   {}",
+                        clause.to_string(heap),
+                        subs.to_string(heap)
+                    );
+                    let goals_clause = clause.body().apply_sub(&subs);
 
                     let mut new_clause = None;
-                    if clause.higher_order(){
-                        let ho_subs = subs.universal_quantification();
+                    if clause.higher_order(heap) {
+                        let ho_subs = subs.universal_quantification(heap);
                         new_clause = Some(clause.apply_sub(&ho_subs));
                     }
-                    choices.push(Choice { goals: goals_clause.atoms, subs, new_clause })
+                    choices.push(Choice {
+                        goals: goals_clause.atoms,
+                        subs,
+                        new_clause,
+                    })
                 }
                 None => (),
             }
@@ -56,24 +93,26 @@ impl Program {
         return choices;
     }
 
-    pub fn parse_file(&mut self, path: &str) {
-        let file = fs::read_to_string(path).expect("Unable to read file");
+    pub fn parse_file(&mut self, path: &str, heap: &mut Heap) {
+        let file = fs::read_to_string(path)
+            .expect("Unable to read file")
+            .trim()
+            .to_string();
         for clause in file.split('.') {
             if clause == "" {
                 continue;
             };
             if clause.contains(CONSTRAINT_CLAUSE) {
-                self.constraints
-                    .push(Clause::parse_clause(clause.to_owned()))
+                self.constraints.push(Clause::parse_clause(clause, heap))
             } else {
-                self.clauses.push(Clause::parse_clause(clause.to_owned()))
+                self.clauses.push(Clause::parse_clause(clause, heap))
             }
         }
     }
 
-    pub fn write_prog(&self) {
+    pub fn write_prog(&self, heap: &Heap) {
         for clause in self.clauses.iter() {
-            println!("{}", clause.to_string());
+            println!("{}", clause.to_string(heap));
         }
     }
 }
