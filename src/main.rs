@@ -17,6 +17,7 @@ mod heap;
 
 //TO DO only add vars to heap if choice is chosen
 //Remove terms from heap when no longer needed
+//New Clause rules: constraints, head can't be existing predicate
 fn main() {
     let mut heap = Heap::new();
     let mut prog = Program::new();

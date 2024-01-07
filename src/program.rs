@@ -16,12 +16,12 @@ pub struct Choice {
 }
 
 impl Choice {
-    pub fn choose(&mut self, heap: &mut Heap){
-        self.eq_to_heap(heap);
+    pub fn choose(&mut self, heap: &mut Heap) {
+        self.var_to_heap(heap);
         self.aq_to_eq(heap);
     }
 
-    fn eq_to_heap(&mut self, heap: &mut Heap) {
+    fn var_to_heap(&mut self, heap: &mut Heap) {
         let mut terms: HashSet<usize> = HashSet::new();
         for goal in self.goals.iter() {
             for term in goal.terms.iter() {
@@ -30,18 +30,36 @@ impl Choice {
                 }
             }
         }
+
         let mut subs = Substitution::new();
         for term in terms {
             subs.subs.insert(term, heap.new_term(None));
         }
-        for i in 0..self.goals.len(){
-            self.goals[i] = self.goals[i].apply_subs(&subs)
+        for i in 0..self.goals.len() {
+            self.goals[i] = self.goals[i].apply_subs(&subs);
+        }
+        if let Some(clause) = &mut self.new_clause {
+            *clause = clause.apply_sub(&subs);
+        }
+        let mut terms: HashSet<usize> = HashSet::new();
+        for goal in self.goals.iter() {
+            for term in goal.terms.iter() {
+                if heap.get_term(*term).enum_type() == "AQVar" {
+                    terms.insert(*term);
+                }
+            }
+        }
+        for term in terms {
+            subs.subs.insert(term, heap.new_term(None));
+        }
+        for i in 0..self.goals.len() {
+            self.goals[i] = self.goals[i].apply_subs(&subs);
         }
     }
 
-    fn aq_to_eq(&mut self, heap: &mut Heap){
+    fn aq_to_eq(&mut self, heap: &mut Heap) {
         //To Do. some AQ needs to go in Ref in goals
-        if let Some(clause ) = &mut self.new_clause{
+        if let Some(clause) = &mut self.new_clause {
             clause.aq_to_eq(heap);
         }
     }

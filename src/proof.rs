@@ -30,7 +30,7 @@ pub struct Proof<'a> {
     prog: &'a Program,
     node_id_counter: usize,
     nodes: HashMap<usize, Node>,
-    choice_points: HashMap<usize, Vec<Choice>>,
+    choice_points: Vec<(usize, Choice)>,
     hypothesis: Hypothesis,
 }
 
@@ -49,7 +49,7 @@ impl<'a> Proof<'a> {
             prog,
             node_id_counter,
             nodes,
-            choice_points: HashMap::new(),
+            choice_points: vec![],
             hypothesis: Hypothesis::new(prog.constraints.clone()),
         }
     }
@@ -80,7 +80,7 @@ impl<'a> Proof<'a> {
         }
         let node = self.nodes.remove(&n_id).unwrap();
         self.heap.undo_sub(node.substitution);
-        self.choice_points.remove(&n_id);
+        self.choice_points.retain(|(c_id, _)| *c_id != n_id);
         self.hypothesis.remove_clause(n_id);
     }
 
@@ -110,35 +110,39 @@ impl<'a> Proof<'a> {
                 break;
             }
         }
-        if !proven{
+        if !proven {
             proven = self.retry_from(0, 0);
         }
         if proven {
-            println!("TRUE");
+            println!("\n\nTRUE\n");
         } else {
-            println!("FALSE");
+            println!("\n\nFALSE\n");
         }
         self.hypothesis.write_prog(self.heap);
-        println!("{:?}", self.heap);
+        //println!("{:?}", self.heap);
     }
 
     fn prove(&mut self, n_id: usize, depth: u8) -> bool {
-        if depth == 5{return false;}
+        if depth == 5 {
+            return false;
+        }
         let goal = &self.nodes[&n_id].goal;
         println!("\n[{}]: Goal: {}", depth, goal.to_string(&self.heap));
 
         let mut choices = self.hypothesis.match_head_to_goal(goal, self.heap);
-        if self.heap.get_term(goal.terms[0]).enum_type() == "Ref"{
+        if self.heap.get_term(goal.terms[0]).enum_type() == "Ref" {
             let mut prog_match = self.prog.match_head_to_goal(&goal, &mut self.heap, false);
             prog_match.retain(|choice| self.hypothesis.valid_sub(&choice.subs, self.heap));
             choices.append(&mut prog_match);
-        }else {
+        } else {
             choices.append(&mut self.prog.match_head_to_goal(&goal, &mut self.heap, false));
         }
         for _ in 0..choices.len() {
             let choice = choices.remove(0);
             if self.prove_choice(n_id, choice, depth) {
-                self.choice_points.insert(n_id, choices);
+                choices
+                    .into_iter()
+                    .map(|choice| self.choice_points.push((n_id, choice)));
                 return true;
             } else {
                 self.reset_node(n_id);
@@ -155,8 +159,8 @@ impl<'a> Proof<'a> {
                 return false;
             }
         }
-        if !self.hypothesis.valid_sub(&choice.subs, self.heap){
-            println!("{}",choice.subs.to_string(self.heap));
+        if !self.hypothesis.valid_sub(&choice.subs, self.heap) {
+            println!("{}", choice.subs.to_string(self.heap));
             return false;
         }
         choice.subs.filter(self.heap);
@@ -181,18 +185,40 @@ impl<'a> Proof<'a> {
         return proven;
     }
 
-    fn retry_from(&mut self, n_id: usize, depth: u8) -> bool{
-        let mut children = self.children(n_id);
-        while let Some(child_id) = children.pop() {
-            if self.choice_points.contains_key(&child_id) {
-                let path = self.path(&n_id, &child_id).unwrap();
-                //TO DO maybe save remaining choice points for future
-                for choice in self.choice_points.remove(&child_id).unwrap() {
-                    if self.retry(path.clone(), choice, depth) {
-                        return true;
-                    }
+    // fn retry_from(&mut self, n_id: usize, depth: u8) -> bool{
+    //     let mut children = self.children(n_id);
+    //     while let Some(child_id) = children.pop() {
+    //         if self.choice_points.contains_key(&child_id) {
+    //             let path = self.path(&n_id, &child_id).unwrap();
+    //             //TO DO maybe save remaining choice points for future
+    //             for choice in self.choice_points.remove(&child_id).unwrap() {
+    //                 if self.retry(path.clone(), choice, depth) {
+    //                     return true;
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     return false;
+    // }
+
+    fn retry_from(&mut self, n_id: usize, depth: u8) -> bool {
+        if self.choice_points.is_empty() {
+            return false;
+        }
+        let mut i = self.choice_points.len() - 1;
+        loop {
+            let choice = &self.choice_points[i];
+
+            if let Some(path) = self.path(&n_id, &choice.0) {
+                let (_, choice) = self.choice_points.remove(i);
+                if self.retry(path, choice, depth) {
+                    return true;
                 }
+            };
+            if i == 0 {
+                break;
             }
+            i -= 1;
         }
         return false;
     }
@@ -210,7 +236,7 @@ impl<'a> Proof<'a> {
         for child_id in &children[i..] {
             self.reset_node(*child_id);
         }
-        return self.retry(path, choice, depth+1);
+        return self.retry(path, choice, depth + 1);
     }
 
     fn reset_node(&mut self, n_id: usize) {
@@ -264,13 +290,17 @@ impl Hypothesis {
         for (_, clause) in &self.clauses {
             match clause.atoms[0].unify(&goal, heap) {
                 Some(mut subs) => {
-                    println!("Matched: {}\nSubs:   {}",clause.to_string(heap),subs.to_string(heap));
+                    println!(
+                        "Matched: {}\nSubs:   {}",
+                        clause.to_string(heap),
+                        subs.to_string(heap)
+                    );
                     let goals_clause = clause.body().apply_sub(&subs);
 
                     let subbed_clause = clause.apply_sub(&subs);
                     //println!("Subbed C: {}", subbed_clause.to_string());
                     if self.constraints.iter().any(|c| {
-                        if c.can_unfiy(&subbed_clause,heap) {
+                        if c.can_unfiy(&subbed_clause, heap) {
                             println!("Denied: {}", subbed_clause.to_string(heap));
                             println!("Contraint: {}", c.to_string(heap));
                             true
@@ -293,20 +323,20 @@ impl Hypothesis {
         return choices;
     }
 
-    pub fn valid_sub(&self, sub: &Substitution, heap: &mut Heap) -> bool{
-        for (_,clause) in self.clauses.iter(){
-            if !clause.terms().iter().any(|t| sub.subs.contains_key(t)){
+    pub fn valid_sub(&self, sub: &Substitution, heap: &mut Heap) -> bool {
+        for (_, clause) in self.clauses.iter() {
+            if !clause.terms().iter().any(|t| sub.subs.contains_key(t)) {
                 continue;
             }
             let subbed_clause = clause.apply_sub(sub);
             if self.constraints.iter().any(|c| {
-                if c.can_unfiy(&subbed_clause,heap) {
+                if c.can_unfiy(&subbed_clause, heap) {
                     true
                 } else {
                     false
                 }
-            }){
-                println!("{}",subbed_clause.to_string(heap));
+            }) {
+                println!("{}", subbed_clause.to_string(heap));
                 return false;
             }
         }
