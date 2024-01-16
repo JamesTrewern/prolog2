@@ -67,6 +67,7 @@ impl Choice {
 pub struct Program {
     pub clauses: Vec<Clause>,
     pub constraints: Vec<Clause>,
+    pub predicate_symbols: HashSet<usize>
 }
 
 impl Program {
@@ -74,6 +75,7 @@ impl Program {
         Program {
             clauses: vec![],
             constraints: vec![],
+            predicate_symbols: HashSet::new(),
         }
     }
 
@@ -87,11 +89,11 @@ impl Program {
         for clause in &self.clauses {
             match clause.atoms[0].unify(goal, heap) {
                 Some(subs) => {
-                    println!(
-                        "Matched: {}\nSubs:   {}",
-                        clause.to_string(heap),
-                        subs.to_string(heap)
-                    );
+                    // println!(
+                    //     "Matched: {}\nSubs:   {}",
+                    //     clause.to_string(heap),
+                    //     subs.to_string(heap)
+                    // );
                     let goals_clause = clause.body().apply_sub(&subs);
 
                     let mut new_clause = None;
@@ -126,12 +128,22 @@ impl Program {
                 self.clauses.push(Clause::parse_clause(clause, heap))
             }
         }
+        self.predicate_symbols = self.predicate_symbols();
     }
 
     pub fn write_prog(&self, heap: &Heap) {
         for clause in self.clauses.iter() {
             println!("{}", clause.to_string(heap));
         }
+    }
+
+    //TO DO store these values 
+    pub fn predicate_symbols(&self) -> HashSet<usize>{
+        let mut symbols = HashSet::new();
+        for clause in &self.clauses{
+            symbols.insert(clause.atoms[0].terms[0]);
+        }
+        return symbols;
     }
 }
 

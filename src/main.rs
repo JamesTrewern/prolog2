@@ -3,21 +3,25 @@ use std::io;
 use atoms::Atom;
 use heap::Heap;
 use program::Program;
-use proof::Proof;
+// use proof::Proof;
 use regex::Regex;
+use solver::prove;
 
 mod terms;
 mod atoms;
 mod clause;
 mod program;
-mod proof;
+// mod proof;
 mod heap;
+mod solver;
 
 
 
-//TO DO only add vars to heap if choice is chosen
-//Remove terms from heap when no longer needed
-//New Clause rules: constraints, head can't be existing predicate
+/*
+TO DO only add vars to heap if choice is chosen
+Remove terms from heap when no longer needed
+New Clause rules: constraints, head can't be existing predicate
+*/
 fn main() {
     let mut heap = Heap::new();
     let mut prog = Program::new();
@@ -35,7 +39,6 @@ fn parse_goals(input: &mut String, heap: &mut Heap) -> Vec<Atom>{
         match char {
             ',' => {
                 if in_brackets == 0 {
-                    println!("{}",&buf);
                     goals.push(Atom::parse(&buf,heap,None));
                     buf = String::new();
                     continue;
@@ -44,7 +47,6 @@ fn parse_goals(input: &mut String, heap: &mut Heap) -> Vec<Atom>{
             ')' => in_brackets -= 1,
             '(' => in_brackets += 1,
             '.' => {
-                println!("{}",&buf);
                 goals.push(Atom::parse(&buf,heap,None));
                 break;
             }
@@ -64,11 +66,12 @@ fn main_loop(mut heap:Heap, mut prog: Program){
         buf = buf.trim().to_string();
         if let Some(caps) = re.captures(&buf){
             let path = caps["file"].to_string() + ".pl";
-            prog.parse_file(&path, &mut heap)
+            prog.parse_file(&path, &mut heap);
+            println!("TRUE");
         }else{
             let goals = parse_goals(&mut buf, &mut heap);
-            let mut proof = Proof::new(goals, &prog, &mut heap);
-            proof.start_proof();
+            prove(&prog, goals, &mut heap);
         }
     }
 }
+

@@ -28,6 +28,9 @@ impl Heap {
             }
         }
     }
+    pub fn get_i(&self, term: &Term) -> usize{
+        self.heap.iter().position(|term2| *term == *term2).unwrap()
+    }
     pub fn new_term(&mut self, term: Option<Term>) -> usize {
         match term {
             Some(t) => {
@@ -44,10 +47,6 @@ impl Heap {
             }
         }
     }
-    pub fn get_atom(&self, ids: Vec<usize>){
-
-    }
-
     pub fn unify(&self, i1: usize, i2:usize) ->Option<(usize, usize)>{
         let t1 = self.get_term(i1);
         let t2 = self.get_term(i2);
@@ -61,15 +60,14 @@ impl Heap {
             None
         }
     }
-
-    pub fn apply_sub(&mut self, subs: Substitution) {
-        for (i1, i2) in subs.subs {
-            if let Term::REF(_) = self.heap[i1] {
-                self.heap[i1] = Term::REF(i2);
+    pub fn apply_sub(&mut self, subs: &Substitution) {
+        for (i1, i2) in &subs.subs {
+            if let Term::REF(_) = self.heap[*i1] {
+                self.heap[*i1] = Term::REF(*i2);
             }
         }
     }
-    pub fn undo_sub(&mut self, subs: Substitution) {
+    pub fn undo_sub(&mut self, subs: &Substitution) {
         for i in subs.subs.keys() {
             if let Term::REF(_) = self.heap[*i] {
                 self.heap[*i] = Term::REF(*i);
