@@ -1,26 +1,43 @@
 use std::collections::HashSet;
 
-use crate::atoms::Atom;
-use crate::heap::Heap;
-use crate::terms::{Substitution, Term};
-
+use crate::atoms::{Atom, AtomHandler};
+use crate::heap::{Heap, HeapHandler};
+use crate::terms::{Substitution, SubstitutionHandler, Term};
 const CLAUSE: &str = ":-";
-
-#[derive(Clone, Debug)]
-pub struct Clause {
-    pub atoms: Vec<Atom>,
+#[derive(Debug)]
+pub struct Choice {
+    pub goals: Clause,
+    pub bindings: Substitution,
+    pub new_clause: Option<Clause>,
 }
 
-impl Clause {
-    pub fn to_string(&self, heap: &Heap) -> String {
+pub type Clause = Vec<Atom>;
+
+pub trait ClauseHandler {
+    fn eq_to_ref(&mut self, heap: &mut Heap);
+    fn subsumes(&self, other: &Clause, heap: &mut Heap) -> bool;
+    fn arity(&self) -> usize;
+    fn pred_symbol(&self) -> usize;
+    fn aq_to_eq(&mut self, heap: &mut Heap);
+    fn higher_order(&self, heap: &Heap) -> bool;
+    fn body(&self) -> Clause;
+    fn parse_clause(string: &str, heap: &mut Heap) -> Clause;
+    fn match_goal(&self, goal: &Atom, heap: &mut Heap) -> Option<Choice>;
+    fn apply_sub(&self, subs: &Substitution) -> Clause;
+    fn terms(&self) -> HashSet<usize>;
+    fn to_string(&self, heap: &Heap) -> String;
+}
+
+impl ClauseHandler for Clause {
+    fn to_string(&self, heap: &Heap) -> String {
         let mut buf = String::new();
-        if self.atoms.len() == 1 {
-            buf += &(self.atoms[0].to_string(heap));
+        if self.len() == 1 {
+            buf += &(self[0].to_string(heap));
             buf += ".";
         } else {
-            buf += &(self.atoms[0].to_string(heap));
+            buf += &(self[0].to_string(heap));
             buf += " <-- ";
-            for atom in &self.atoms[1..] {
+            for atom in &self[1..] {
                 buf += &atom.to_string(heap);
                 buf += ", "
             }
@@ -28,29 +45,52 @@ impl Clause {
         return buf;
     }
 
-    pub fn new(atoms: Vec<Atom>) -> Clause {
-        return Clause { atoms };
-    }
-
-    pub fn terms(&self) -> HashSet<usize> {
+    fn terms(&self) -> HashSet<usize> {
         let mut terms: HashSet<usize> = HashSet::new();
-        for atom in &self.atoms {
-            for term in &atom.terms {
+        for atom in self {
+            for term in atom {
                 terms.insert(*term);
             }
         }
         return terms;
     }
 
-    pub fn apply_sub(&self, subs: &Substitution) -> Clause {
+    fn apply_sub(&self, subs: &Substitution) -> Clause {
         let mut new_atoms: Vec<Atom> = vec![];
-        for atom in &self.atoms {
+        for atom in self {
             new_atoms.push(atom.apply_subs(&subs));
         }
-        return Clause::new(new_atoms);
+        return new_atoms;
     }
 
-    pub fn parse_clause(string: &str, heap: &mut Heap) -> Clause {
+    fn match_goal(&self, goal: &Atom, heap: &mut Heap) -> Option<Choice> {
+        let head = &self[0];
+        let bindings: Substitution;
+        // Get subs to create goal clause
+        if head.len() != goal.len() {
+            return None;
+        }
+        if let Some(mut subs) = head.unify(goal, heap) {
+            //Get bindings
+            bindings = subs.bindings(heap);
+            //Produce Goals with subs
+            let goals = self.body().apply_sub(&subs);
+            //If new clause, produce new clause by only subbing EQs + new_clause.aq_to_eq
+            let mut new_clause = None;
+            if self.higher_order(heap) {
+                new_clause = Some(self.apply_sub(&subs.meta(heap)));
+            }
+            Some(Choice {
+                goals,
+                bindings,
+                new_clause,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn parse_clause(string: &str, heap: &mut Heap) -> Clause {
         let mut clause_string = string.to_string();
         clause_string.retain(|c| !c.is_whitespace());
         let mut aqvars: Vec<&str> = vec![];
@@ -69,7 +109,7 @@ impl Clause {
         let mut atoms: Vec<Atom> = vec![];
         if !clause_string.contains(CLAUSE) {
             atoms.push(Atom::parse(&clause_string, heap, Some(&aqvars)));
-            return Clause::new(atoms);
+            return atoms;
         }
 
         let i1 = clause_string.find(CLAUSE).unwrap();
@@ -94,33 +134,35 @@ impl Clause {
             buf.push(char);
         }
         atoms.push(Atom::parse(&buf, heap, Some(&aqvars)));
-        return Clause::new(atoms);
+        return atoms;
     }
 
-    pub fn body(&self) -> Clause {
-        let atoms: Vec<Atom> = self.atoms[1..].to_vec();
-        return Clause { atoms };
+    fn body(&self) -> Clause {
+        let atoms: Vec<Atom> = self[1..].to_vec();
+        return atoms;
     }
 
-    pub fn higher_order(&self, heap: &Heap) -> bool {
-        self.atoms.iter().any(|a| match heap.get_term(a.terms[0]) {
+    fn higher_order(&self, heap: &Heap) -> bool {
+        self.iter().any(|a| match heap.get_term(a[0]) {
             Term::EQVar(_) => true,
             Term::AQVar(_) => true,
             _ => false,
         })
     }
 
-    pub fn can_unfiy(&self, other: &Clause, heap: &mut Heap) -> bool {
-        if self.atoms.len() != other.atoms.len() {
+    fn subsumes(&self, other: &Clause, heap: &mut Heap) -> bool {
+        // if let Some(mut subs) = self[0].unify(&other[0], heap){
+        //     //Does subs applied to self result in subset of body of other
+        //     let subbed = self.apply_sub(&subs);
+        //     //For each I in body does self[i] = other[i] 
+        // }
+        if self.len() != other.len() {
             return false;
         }
         let mut cumalitve_subs = Substitution::new();
-        for i in 0..self.atoms.len() {
-            let subs = match self
-                .atoms
-                .get(i)
-                .unwrap()
-                .unify(other.atoms.get(i).unwrap(), heap)
+        for i in 0..self.len() {
+            let subs = match self[i]
+                .unify(other.get(i).unwrap(), heap)
             {
                 Some(s) => s,
                 None => return false,
@@ -137,30 +179,44 @@ impl Clause {
         return true;
     }
 
-    pub fn aq_to_eq(&mut self, heap: &mut Heap) {
-        for i in 0..self.atoms.len() {
-            for j in 0..self.atoms[i].terms.len() {
-                match heap.get_term(self.atoms[i].terms[j]) {
-                    Term::AQVar(symbol) => {
-                        self.atoms[i].terms[j] = heap.new_term(Some(Term::EQVar(symbol.clone())));
-                    }
-                    _ => (),
+    fn aq_to_eq(&mut self, heap: &mut Heap) {
+        let mut terms = self.terms();
+        terms.retain(|a| heap[*a].enum_type() == "AQVar");
+        let mut subs: Substitution = terms
+            .iter()
+            .map(|a| {
+                if let Term::AQVar(value) = heap.get_term(*a) {
+                    let term = Term::EQVar(value.clone());
+                    (*a, heap.new_term(Some(term)))
+                } else {
+                    panic!("Retain didn't work")
                 }
-            }
-        }
-    }
-}
+            })
+            .collect();
+        *self = self.apply_sub(&subs);
+        // println!("{}", self.to_string(heap));
 
-impl PartialEq for Clause {
-    fn eq(&self, other: &Self) -> bool {
-        if self.atoms.len() != other.atoms.len() {
-            return false;
-        }
-        for i in 0..self.atoms.len() {
-            if self.atoms.get(i).unwrap() != other.atoms.get(i).unwrap() {
-                return false;
-            }
-        }
-        return true;
+    }
+
+    fn eq_to_ref(&mut self, heap: &mut Heap) {
+        println!("{}", self.to_string(heap));
+        let mut terms = self.terms();
+        terms.retain(|a| heap[*a].enum_type() == "EQVar");
+        let mut subs: Substitution = terms
+            .iter()
+            .map(|a| {
+                (*a, heap.new_term(None))
+            })
+            .collect();
+        *self = self.apply_sub(&subs);
+        // println!("{}", self.to_string(heap));
+    }
+
+    fn pred_symbol(&self) -> usize {
+        self[0][0]
+    }
+
+    fn arity(&self) -> usize {
+        self[0].len() - 1
     }
 }

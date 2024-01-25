@@ -48,7 +48,7 @@ impl Program {
                             continue;
                         }
                     }
-                    println!("Matched:  {}", clause.to_string());
+                    println!("Choiceed:  {}", clause.to_string());
                     let new_clause = match subs.1 {
                         Some(ho_sub) => Some(clause.apply_sub(&ho_sub)),
                         None => None,
