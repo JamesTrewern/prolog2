@@ -1,16 +1,15 @@
-mod atoms;
-mod clause;
-mod heap;
 mod pred_module;
 mod program;
 mod solver;
 mod terms;
 
 use std::{fs, io, process::ExitCode};
-use atoms::{Atom, AtomHandler};
-use heap::Heap;
+use terms::{
+    heap::Heap,
+    atoms::{Atom, AtomHandler},
+    clause::{Clause, ClauseHandler}
+};
 use program::Program;
-use clause::{Clause, ClauseHandler};
 use pred_module::config_mod;
 use solver::start_proof;
 
@@ -133,7 +132,7 @@ impl State {
     }
 
     fn parse_goals(&mut self, input: &str) -> Vec<Atom> {
-        let mut goals: Vec<Atom> = vec![];
+        let mut goals: Clause = vec![];
         let mut buf = String::new();
 
         let mut brackets = 0;

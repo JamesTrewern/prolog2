@@ -1,9 +1,9 @@
-use std::usize;
-
-use crate::atoms::AtomHandler;
-use crate::heap::{Heap, HeapHandler};
-use crate::terms::SubstitutionHandler;
-use crate::{terms::Term, Program};
+use crate::{
+    program::Program,
+    terms::{
+        atoms::AtomHandler, heap::{Heap,HeapHandler}, substitution::SubstitutionHandler, terms::Term
+    },
+};
 
 pub fn config_mod(heap: &mut Heap, prog: &mut Program) {
     prog.add_pred(
@@ -11,7 +11,7 @@ pub fn config_mod(heap: &mut Heap, prog: &mut Program) {
         1,
         heap,
         Box::new({
-            |config, heap, body_preds, bindings, atom| {
+            |config, heap, _body_preds, _bindings, atom| {
                 if let Term::Constant(str) = heap.get_term(atom[1]) {
                     match &**str {
                         "true" => {
@@ -36,7 +36,7 @@ pub fn config_mod(heap: &mut Heap, prog: &mut Program) {
         1,
         heap,
         Box::new({
-            |config, heap, body_preds, bindings, atom| {
+            |config, heap, _body_preds, _bindings, atom| {
                 if let Term::Number(value) = heap.get_term(atom[1]) {
                     config.max_clause = *value as usize;
                     true
@@ -52,7 +52,7 @@ pub fn config_mod(heap: &mut Heap, prog: &mut Program) {
         1,
         heap,
         Box::new({
-            |config, heap, body_preds, bindings, atom| {
+            |config, heap, _body_preds, _bindings, atom| {
                 if let Term::Number(value) = heap.get_term(atom[1]) {
                     config.max_invented = *value as usize;
                     true
@@ -68,7 +68,7 @@ pub fn config_mod(heap: &mut Heap, prog: &mut Program) {
         2,
         heap,
         Box::new({
-            |config, heap, body_preds, bindings, atom| {
+            |_config, heap, body_preds, _bindings, atom| {
                 if let Term::Number(arity) = heap.get_term(atom[2]) {
                     let arity = *arity as usize;
                     body_preds.push((atom[1], arity));
@@ -85,12 +85,12 @@ pub fn config_mod(heap: &mut Heap, prog: &mut Program) {
         2,
         heap,
         Box::new({
-            |config, heap, body_preds, bindings, atom| {
+            |_config, heap, _body_preds, bindings, atom| {
                 println!("SDG  {}", atom.to_string(heap));
                 if let Term::Number(addr) = heap.get_term(atom[1]) {
                     let addr1 = *addr as usize;
                     println!("addr1: {addr1}");
-                    println!(": {}",heap.get_term(atom[2]).to_string());
+                    println!(": {}", heap.get_term(atom[2]).to_string());
                     if let Term::REF(addr2) = heap.get_term(atom[2]) {
                         println!("addr2: {addr2}");
                         bindings.insert_sub(*addr2, addr1);
@@ -110,10 +110,10 @@ pub fn config_mod(heap: &mut Heap, prog: &mut Program) {
         1,
         heap,
         Box::new({
-            |config, heap, body_preds, bindings, atom| {
+            |_config, heap, _body_preds, _bindings, atom| {
                 if let Term::Number(addr) = heap.get_term(atom[1]) {
                     let addr = *addr as usize;
-                    println!("HEAP[{addr}]: {}",heap[addr].to_string());
+                    println!("HEAP[{addr}]: {}", heap[addr].to_string());
                     true
                 } else {
                     false

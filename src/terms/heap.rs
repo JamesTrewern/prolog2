@@ -1,10 +1,6 @@
-use std::ops::Sub;
-
-use crate::terms::{Term, SubstitutionHandler, Substitution};
+use super::{substitution::Substitution, terms::Term};
 
 const MAX_HEAP_SIZE: usize = 1000;
-
-pub type Binding = (usize,usize);
 pub type Heap = Vec<Term>;
 pub trait HeapHandler {
     fn new() -> Self;

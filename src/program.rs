@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 
-use crate::atoms::{Atom, AtomHandler};
-use crate::clause::{Choice, Clause, ClauseHandler};
-use crate::heap::{Heap, HeapHandler};
-use crate::terms::{Substitution, Term};
+use crate::terms::{
+    heap::{Heap, HeapHandler},
+    substitution::Substitution,
+    atoms::Atom,
+    terms::Term,
+    clause::{Choice, Clause, ClauseHandler}
+};
+
 use crate::Config;
 pub type PredicateFN =
     Box<dyn Fn(&mut Config, &mut Heap, &mut Vec<(usize, usize)>, &mut Substitution, &Atom) -> bool>;
@@ -73,31 +77,11 @@ impl Program {
     fn call_clauses(&self, clause_ids: &Vec<usize>, goal: &Atom, heap: &mut Heap) -> Vec<Choice> {
         let mut choices: Vec<Choice> = vec![];
         for i in clause_ids {
-            let clause = &self.clauses[*i];
             if let Some(choice) = self.clauses[*i].match_goal(goal, heap) {
                 choices.push(choice);
             }
         }
         return choices;
-    }
-
-    fn call_pred_f(
-        &mut self,
-        config: &mut Config,
-        heap: &mut Heap,
-        goal: &Atom,
-        f: &PredicateFN,
-    ) -> Vec<Choice> {
-        let mut bindings: Substitution = vec![];
-        if f(config, heap, &mut self.body_predicates, &mut bindings, goal) {
-            return vec![Choice {
-                goals: vec![],
-                bindings: vec![],
-                new_clause: None,
-            }];
-        } else {
-            return vec![];
-        }
     }
 
     fn call_unkown_pred(&self, goal: &Atom, heap: &mut Heap, config: &Config) -> Vec<Choice> {

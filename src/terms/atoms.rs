@@ -1,6 +1,7 @@
-use crate::{
+use super::{
     heap::{Heap, HeapHandler},
-    terms::{Substitution, SubstitutionHandler, Term},
+    substitution::{Substitution,SubstitutionHandler},
+    terms::Term,
 };
 
 pub type Atom = Vec<usize>;
