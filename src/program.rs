@@ -1,14 +1,10 @@
 use std::collections::HashMap;
 
-use crate::terms::{
-    heap::{Heap, HeapHandler},
-    substitution::Substitution,
-    atoms::Atom,
-    terms::Term,
-    clause::{Choice, Clause, ClauseHandler}
-};
+use crate::{Config, terms::{
+    atoms::Atom, clause::{Choice, Clause, ClauseHandler}, heap::Heap, substitution::Substitution, terms::Term
+}};
 
-use crate::Config;
+
 pub type PredicateFN =
     Box<dyn Fn(&mut Config, &mut Heap, &mut Vec<(usize, usize)>, &mut Substitution, &Atom) -> bool>;
 
@@ -25,6 +21,10 @@ pub struct Program {
     predicates: HashMap<(usize, usize), Predicate>, // Map Symbol and arity to list of clause indicies
     body_predicates: Vec<(usize, usize)>,
     invented_predicates: usize,
+}
+
+pub trait  PredModule{
+    fn build(&self, heap: &mut Heap, prog: &mut Program);
 }
 
 impl Program {
@@ -54,7 +54,7 @@ impl Program {
                 } else {
                     panic!(
                         "Can not redifine {}/{}",
-                        heap.get_term(clause.pred_symbol()).to_string(),
+                        heap.term_string(clause.pred_symbol()),
                         clause.arity()
                     );
                 }
@@ -69,7 +69,7 @@ impl Program {
     }
 
     pub fn add_pred(&mut self, symbol: &str, arity: usize, heap: &mut Heap, f: PredicateFN) {
-        let symbol = heap.new_term(Some(Term::Constant(symbol.into())));
+        let symbol = heap.parse_term(symbol,&vec![]);
         self.predicates
             .insert((symbol, arity), Predicate::FUNCTION(f));
     }
@@ -235,7 +235,7 @@ impl Program {
         }
         print!("Body_Preds:[");
         for (symbol, arity) in &self.body_predicates {
-            print!("{}/{arity},", heap.get_term(*symbol).to_string());
+            print!("{}/{arity},", heap.term_string(*symbol));
         }
         println!("]");
     }
@@ -245,4 +245,9 @@ impl Program {
             println!("{}", clause.to_string(heap));
         }
     }
+
+    pub fn add_module(&mut self, pred_module: &dyn PredModule, heap: &mut Heap){
+        pred_module.build(heap, self);
+    }
+
 }

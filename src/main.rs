@@ -1,4 +1,4 @@
-mod pred_module;
+mod config_module;
 mod program;
 mod solver;
 mod terms;
@@ -10,11 +10,11 @@ use terms::{
     clause::{Clause, ClauseHandler}
 };
 use program::Program;
-use pred_module::config_mod;
+use config_module::ConfigMod;
 use solver::start_proof;
 
 
-const MAX_H_SIZE: usize = 3; //Max number of clauses in H
+const MAX_H_SIZE: usize = 4; //Max number of clauses in H
 const MAX_INVENTED: usize = 1; //Max invented predicate symbols
 const SHARE_PREDS: bool = false; //Can program and H share pred symbols
 const DEBUG: bool = true;
@@ -53,7 +53,7 @@ impl State {
             heap: Heap::new(),
             constraints: vec![],
         };
-        config_mod(&mut state.heap, &mut state.prog);
+        state.prog.add_module(&ConfigMod, &mut state.heap);
         return state;
     }
 
@@ -62,8 +62,9 @@ impl State {
         let mut speech: bool = false;
         let mut quote: bool = false;
         let mut buf = String::new();
+        let mut comment = false;
         for char in file.chars() {
-            if !speech && !quote && char == '.' {
+            if !speech && !quote && !comment && char == '.' {
                 if buf.trim().find(":-") == Some(0) {
                     self.handle_directive(&buf.trim()[2..]);
                 } else {
@@ -87,6 +88,8 @@ impl State {
                             quote = !quote
                         }
                     }
+                    '%' => {comment = true}
+                    '\n' => {comment = false}
                     _ => (),
                 }
                 buf.push(char);
@@ -141,7 +144,7 @@ impl State {
             match char {
                 ',' => {
                     if brackets == 0 && sqr_brackets == 0 {
-                        goals.push(Atom::parse(&buf, &mut self.heap, None));
+                        goals.push(Atom::parse(&buf, &mut self.heap, &vec![]));
                         buf = String::new();
                         continue;
                     }
@@ -154,7 +157,7 @@ impl State {
             }
             buf.push(char);
         }
-        goals.push(Atom::parse(&buf, &mut self.heap, None));
+        goals.push(Atom::parse(&buf, &mut self.heap, &vec![]));
         goals.eq_to_ref(&mut self.heap);
         return goals;
     }

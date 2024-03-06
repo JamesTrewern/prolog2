@@ -1,6 +1,6 @@
 use crossterm::event::{self, read, KeyCode};
 use crate::{program::Program, terms::{
-    heap::{Heap, HeapHandler},
+    heap::Heap,
     substitution::{Substitution,SubstitutionHandler},
     atoms::{Atom, AtomHandler},
     clause::{Choice, ClauseHandler}

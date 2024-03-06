@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use super::{
-    heap::{Heap, HeapHandler},
+    heap::Heap,
     substitution::{Substitution,SubstitutionHandler},
     atoms::{Atom, AtomHandler},
     terms::Term,
@@ -110,21 +110,21 @@ impl ClauseHandler for Clause {
         // clause_string.retain(|c| !c.is_whitespace());
         let mut atoms: Vec<Atom> = vec![];
         if !clause_string.contains(CLAUSE) {
-            atoms.push(Atom::parse(&clause_string, heap, Some(&aqvars)));
+            atoms.push(Atom::parse(&clause_string, heap, &aqvars));
             return atoms;
         }
 
         let i1 = clause_string.find(CLAUSE).unwrap();
         let i2 = i1 + CLAUSE.len();
 
-        atoms.push(Atom::parse(&clause_string[..i1], heap, Some(&aqvars)));
+        atoms.push(Atom::parse(&clause_string[..i1], heap, &aqvars));
         let mut buf: String = String::new();
         let mut in_brackets = 0;
         for char in clause_string[i2..].chars() {
             match char {
                 ',' => {
                     if in_brackets == 0 {
-                        atoms.push(Atom::parse(&buf, heap, Some(&aqvars)));
+                        atoms.push(Atom::parse(&buf, heap, &aqvars));
                         buf = String::new();
                         continue;
                     }
@@ -135,7 +135,7 @@ impl ClauseHandler for Clause {
             }
             buf.push(char);
         }
-        atoms.push(Atom::parse(&buf, heap, Some(&aqvars)));
+        atoms.push(Atom::parse(&buf, heap, &aqvars));
         return atoms;
     }
 

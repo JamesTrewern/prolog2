@@ -2,25 +2,20 @@
 // aq to eq function
 // Term string value to be pointers to heap attribute of all strings
 
+use super::heap::{self, Heap};
+
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum Term {
     Number(f64),
-    Constant(Box<str>),
+    Constant(usize),
+    EmptyList,
+    List((usize,usize)), //ref to head and tail. Head should be term
     REF(usize),      //Query Variable
-    EQVar(Box<str>), //Existentialy Quantified Variable
-    AQVar(Box<str>), //Universally Quantified Variable
+    EQVar(usize), //Existentialy Quantified Variable
+    AQVar(usize), //Universally Quantified Variable
 }
 
 impl Term {
-    pub fn to_string(&self) -> String {
-        match self {
-            Term::Constant(symbol) => symbol.to_string(),
-            Term::EQVar(symbol) => symbol.to_string(),
-            Term::REF(id) => "_".to_string() + &id.to_string(),
-            Term::AQVar(symbol) => "∀'".to_string() + &symbol.to_string(),
-            Term::Number(value) => value.to_string(),
-        }
-    }
     pub fn unify<'a>(&'a self, other: &'a Term) -> Option<(&'a Term, &'a Term)> {
         if self == other{ return Some((self, other));}
         if let &Term::Constant(value1) = &self {
@@ -48,13 +43,17 @@ impl Term {
             Term::EQVar(_) => "EQVar",
             Term::AQVar(_) => "AQVar",
             Term::Number(_) => "Num",
+            Term::List(_) => "List",
+            Term::EmptyList => "Empty_List",
         }
     }
 
     pub fn order(&self) -> usize{
         match self {
+            Term::List(_) => 0,
             Term::Number(_) => 0,
             Term::Constant(_) => 0,
+            Term::EmptyList => 0,
             Term::REF(_) => 1,
             Term::EQVar(_) => 2,
             Term::AQVar(_) => 3,

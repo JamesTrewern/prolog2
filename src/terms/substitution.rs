@@ -1,4 +1,4 @@
-use super::heap::{Heap, HeapHandler};
+use super::heap::Heap;
 
 pub type Substitution = Vec<(usize, usize)>;
 
@@ -18,11 +18,9 @@ impl SubstitutionHandler for Substitution {
     fn to_string(&self, heap: &Heap) -> String {
         let mut buf = String::from("{");
         for (k, v) in self.iter() {
-            let k = heap.get_term(*k);
-            let v = heap.get_term(*v);
-            buf += &k.to_string();
+            buf += &heap.term_string(*k);
             buf += "/";
-            buf += &v.to_string();
+            buf += &heap.term_string(*v);
             buf += ", ";
         }
         buf.pop();

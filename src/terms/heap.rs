@@ -1,28 +1,38 @@
 use super::{substitution::Substitution, terms::Term};
 
 const MAX_HEAP_SIZE: usize = 1000;
-pub type Heap = Vec<Term>;
-pub trait HeapHandler {
-    fn new() -> Self;
-    fn get_term(&self, i: usize) -> &Term ;
-    fn deref(&self, i: usize) -> usize;
-    fn new_term(&mut self, term: Option<Term>) -> usize;
-    fn unify(&self, i1: usize, i2: usize) -> Option<(usize, usize)>;
-    fn print_heap(&self);
-    fn bind(&mut self, binding: &Substitution);
-    fn unbind(&mut self, binding: &Substitution);
+// pub type Heap = Vec<Term>;
+// pub trait HeapHandler {
+//     fn new() -> Self;
+//     fn get_term(&self, i: usize) -> &Term ;
+//     fn deref(&self, i: usize) -> usize;
+//     fn new_term(&mut self, term: Option<Term>) -> usize;
+//     fn unify(&self, i1: usize, i2: usize) -> Option<(usize, usize)>;
+//     fn print_heap(&self);
+//     fn bind(&mut self, binding: &Substitution);
+//     fn unbind(&mut self, binding: &Substitution);
+//     fn term_string(&self, addr: usize) -> String;
+//     fn parse_term(&mut self, term: &str, aqvars: &Vec<&str>) -> usize;
+// }
+
+pub struct Heap{
+    heap: Vec<Term>,
+    strings: Vec<String>
 }
 
-impl HeapHandler for Heap {
-    fn new() -> Heap {
-        Vec::with_capacity(MAX_HEAP_SIZE)
+impl Heap {
+    pub fn new() -> Heap {
+        Heap{    
+            heap: Vec::with_capacity(MAX_HEAP_SIZE),
+            strings: vec![],
+        }
     }
 
-    fn get_term(&self, i: usize) -> &Term {
+    pub fn get_term(&self, i: usize) -> &Term {
         &self[self.deref(i)]
     }
     
-    fn deref(&self, addr1: usize) -> usize{
+    pub fn deref(&self, addr1: usize) -> usize{
         if let Term::REF(addr2) = self[addr1]{
             if addr1 == addr2 {
                 addr1
@@ -34,24 +44,24 @@ impl HeapHandler for Heap {
         }
     }
     
-    fn new_term(&mut self, term: Option<Term>) -> usize {
+    pub fn new_term(&mut self, term: Option<Term>) -> usize {
         match term {
             Some(t) => {
-                if let Some(i) = self.iter().position(|t2| t == *t2) {
+                if let Some(i) = self.heap.iter().position(|t2| t == *t2) {
                     return i;
                 }
-                self.push(t);
-                self.len() - 1
+                self.heap.push(t);
+                self.heap.len() - 1
             }
             None => {
-                let i = self.len();
-                self.push(Term::REF(i));
+                let i = self.heap.len();
+                self.heap.push(Term::REF(i));
                 i
             }
         }
     }
     
-    fn unify(&self, i1: usize, i2: usize) -> Option<(usize, usize)> {
+    pub fn unify(&self, i1: usize, i2: usize) -> Option<(usize, usize)> {
         let t1 = self.get_term(i1);
         let t2 = self.get_term(i2);
         if let Some((s1, _s2)) = t1.unify(t2) {
@@ -81,27 +91,89 @@ impl HeapHandler for Heap {
     //     }
     // }
 
-    fn print_heap(&self){
+    pub fn print_heap(&self){
         println!("|---|---------------|");
-        for i in 0..self.len(){
-            println!("|{:03}|{:width$}|",i,self[i].to_string(), width = 15);
+        for i in 0..self.heap.len(){
+            println!("|{:03}|{:width$}|",i,self.term_string(i), width = 15);
             println!("|---|---------------|");
         }
     }
 
-    fn bind(&mut self, binding: &Substitution){
+    pub fn bind(&mut self, binding: &Substitution){
         for (k,v) in binding{
             let a1 = self.deref(*k);
             let a2 = self.deref(*v);
             // println!("a1:{a1},a2:{a2}");
-            self[a1] = Term::REF(a2);
+            self.heap[a1] = Term::REF(a2);
         }
     }
 
-    fn unbind(&mut self, binding: &Substitution) {
+    pub fn unbind(&mut self, binding: &Substitution) {
         for (k,_) in binding{
-            self[*k] = Term::REF(*k)
+            self.heap[*k] = Term::REF(*k)
+        }
+    }
+
+    pub fn term_string(&self, addr: usize) -> String {
+        match self.get_term(addr) {
+            Term::Constant(symbol) => self.get_string(*symbol).to_string(),
+            Term::EQVar(symbol) => self.get_string(*symbol).to_owned(),
+            Term::REF(addr) => format!("_{addr}"),
+            Term::AQVar(symbol) => format!("∀'{}",self.get_string(*symbol)),
+            Term::Number(value) => value.to_string(),
+            Term::List(_) => todo!(),
+            Term::EmptyList => "[]".to_string(),
+        }
+    }
+
+    fn add_string(&mut self, string: &str) -> usize{
+         match self.strings.iter().position(|string2| string == string2){
+            Some(i) => i,
+            None => {self.strings.push(string.to_string());self.strings.len()-1},
+        }
+        
+    }
+
+    pub fn get_string(&self, i: usize) -> &str{
+        &self.strings[i]
+    }
+
+    pub fn parse_term(&mut self, mut term_str: &str, aqvars: &Vec<&str>) -> usize {
+        term_str = term_str.trim();
+        if term_str.starts_with('[') && term_str.ends_with(']'){
+            //TO DO easy empty list 
+            let mut tail: usize = self.new_term(Some(Term::EmptyList));
+            for term in term_str[1..term_str.len()].split(',').rev(){
+                let h = self.parse_term(term, aqvars);
+                tail = self.new_term(Some(Term::List((h,tail))));
+            }
+            tail
+        }else{
+            if let Ok(value) = term_str.parse::<f64>(){
+                return self.new_term(Some(Term::Number(value)));
+            }
+            let str_i = self.add_string(term_str);
+            if term_str.chars().next().unwrap().is_uppercase(){
+                if aqvars.contains(&term_str){
+                    self.new_term(Some(Term::AQVar(str_i)))
+                }else{
+                    self.new_term(Some(Term::EQVar(str_i)))
+                }
+            }else{
+                self.new_term(Some(Term::Constant(str_i)))
+            }
         }
     }
 }
 
+use std::ops::Index;
+
+impl Index<usize> for Heap {
+    type Output = Term;
+
+    fn index(&self, index: usize) -> &Term {
+        &self.heap[index]
+    }
+
+    
+}
