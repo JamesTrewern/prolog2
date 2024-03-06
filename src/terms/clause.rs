@@ -1,8 +1,10 @@
 use std::collections::HashSet;
-
-use crate::atoms::{Atom, AtomHandler};
-use crate::heap::{Heap, HeapHandler};
-use crate::terms::{Substitution, SubstitutionHandler, Term};
+use super::{
+    heap::Heap,
+    substitution::{Substitution,SubstitutionHandler},
+    atoms::{Atom, AtomHandler},
+    terms::Term,
+};
 const CLAUSE: &str = ":-";
 #[derive(Debug)]
 pub struct Choice {
@@ -70,7 +72,7 @@ impl ClauseHandler for Clause {
         if head.len() != goal.len() {
             return None;
         }
-        if let Some(mut subs) = head.unify(goal, heap) {
+        if let Some(subs) = head.unify(goal, heap) {
             //Get bindings
             bindings = subs.bindings(heap);
             //Produce Goals with subs
@@ -108,21 +110,21 @@ impl ClauseHandler for Clause {
         // clause_string.retain(|c| !c.is_whitespace());
         let mut atoms: Vec<Atom> = vec![];
         if !clause_string.contains(CLAUSE) {
-            atoms.push(Atom::parse(&clause_string, heap, Some(&aqvars)));
+            atoms.push(Atom::parse(&clause_string, heap, &aqvars));
             return atoms;
         }
 
         let i1 = clause_string.find(CLAUSE).unwrap();
         let i2 = i1 + CLAUSE.len();
 
-        atoms.push(Atom::parse(&clause_string[..i1], heap, Some(&aqvars)));
+        atoms.push(Atom::parse(&clause_string[..i1], heap, &aqvars));
         let mut buf: String = String::new();
         let mut in_brackets = 0;
         for char in clause_string[i2..].chars() {
             match char {
                 ',' => {
                     if in_brackets == 0 {
-                        atoms.push(Atom::parse(&buf, heap, Some(&aqvars)));
+                        atoms.push(Atom::parse(&buf, heap, &aqvars));
                         buf = String::new();
                         continue;
                     }
@@ -133,7 +135,7 @@ impl ClauseHandler for Clause {
             }
             buf.push(char);
         }
-        atoms.push(Atom::parse(&buf, heap, Some(&aqvars)));
+        atoms.push(Atom::parse(&buf, heap, &aqvars));
         return atoms;
     }
 
@@ -154,16 +156,14 @@ impl ClauseHandler for Clause {
         // if let Some(mut subs) = self[0].unify(&other[0], heap){
         //     //Does subs applied to self result in subset of body of other
         //     let subbed = self.apply_sub(&subs);
-        //     //For each I in body does self[i] = other[i] 
+        //     //For each I in body does self[i] = other[i]
         // }
         if self.len() != other.len() {
             return false;
         }
         let mut cumalitve_subs = Substitution::new();
         for i in 0..self.len() {
-            let subs = match self[i]
-                .unify(other.get(i).unwrap(), heap)
-            {
+            let subs = match self[i].unify(other.get(i).unwrap(), heap) {
                 Some(s) => s,
                 None => return false,
             };
@@ -182,7 +182,7 @@ impl ClauseHandler for Clause {
     fn aq_to_eq(&mut self, heap: &mut Heap) {
         let mut terms = self.terms();
         terms.retain(|a| heap[*a].enum_type() == "AQVar");
-        let mut subs: Substitution = terms
+        let subs: Substitution = terms
             .iter()
             .map(|a| {
                 if let Term::AQVar(value) = heap.get_term(*a) {
@@ -195,19 +195,13 @@ impl ClauseHandler for Clause {
             .collect();
         *self = self.apply_sub(&subs);
         // println!("{}", self.to_string(heap));
-
     }
 
     fn eq_to_ref(&mut self, heap: &mut Heap) {
         println!("{}", self.to_string(heap));
         let mut terms = self.terms();
         terms.retain(|a| heap[*a].enum_type() == "EQVar");
-        let mut subs: Substitution = terms
-            .iter()
-            .map(|a| {
-                (*a, heap.new_term(None))
-            })
-            .collect();
+        let subs: Substitution = terms.iter().map(|a| (*a, heap.new_term(None))).collect();
         *self = self.apply_sub(&subs);
         // println!("{}", self.to_string(heap));
     }

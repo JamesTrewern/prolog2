@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use crate::atoms::{Atom, AtomHandler};
-use crate::clause::{Choice, Clause, ClauseHandler};
-use crate::heap::{Heap, HeapHandler};
-use crate::terms::{Substitution, Term};
-use crate::Config;
+use crate::{Config, terms::{
+    atoms::Atom, clause::{Choice, Clause, ClauseHandler}, heap::Heap, substitution::Substitution, terms::Term
+}};
+
+
 pub type PredicateFN =
     Box<dyn Fn(&mut Config, &mut Heap, &mut Vec<(usize, usize)>, &mut Substitution, &Atom) -> bool>;
 
@@ -21,6 +21,10 @@ pub struct Program {
     predicates: HashMap<(usize, usize), Predicate>, // Map Symbol and arity to list of clause indicies
     body_predicates: Vec<(usize, usize)>,
     invented_predicates: usize,
+}
+
+pub trait  PredModule{
+    fn build(&self, heap: &mut Heap, prog: &mut Program);
 }
 
 impl Program {
@@ -50,7 +54,7 @@ impl Program {
                 } else {
                     panic!(
                         "Can not redifine {}/{}",
-                        heap.get_term(clause.pred_symbol()).to_string(),
+                        heap.term_string(clause.pred_symbol()),
                         clause.arity()
                     );
                 }
@@ -65,7 +69,7 @@ impl Program {
     }
 
     pub fn add_pred(&mut self, symbol: &str, arity: usize, heap: &mut Heap, f: PredicateFN) {
-        let symbol = heap.new_term(Some(Term::Constant(symbol.into())));
+        let symbol = heap.parse_term(symbol,&vec![]);
         self.predicates
             .insert((symbol, arity), Predicate::FUNCTION(f));
     }
@@ -73,31 +77,11 @@ impl Program {
     fn call_clauses(&self, clause_ids: &Vec<usize>, goal: &Atom, heap: &mut Heap) -> Vec<Choice> {
         let mut choices: Vec<Choice> = vec![];
         for i in clause_ids {
-            let clause = &self.clauses[*i];
             if let Some(choice) = self.clauses[*i].match_goal(goal, heap) {
                 choices.push(choice);
             }
         }
         return choices;
-    }
-
-    fn call_pred_f(
-        &mut self,
-        config: &mut Config,
-        heap: &mut Heap,
-        goal: &Atom,
-        f: &PredicateFN,
-    ) -> Vec<Choice> {
-        let mut bindings: Substitution = vec![];
-        if f(config, heap, &mut self.body_predicates, &mut bindings, goal) {
-            return vec![Choice {
-                goals: vec![],
-                bindings: vec![],
-                new_clause: None,
-            }];
-        } else {
-            return vec![];
-        }
     }
 
     fn call_unkown_pred(&self, goal: &Atom, heap: &mut Heap, config: &Config) -> Vec<Choice> {
@@ -251,7 +235,7 @@ impl Program {
         }
         print!("Body_Preds:[");
         for (symbol, arity) in &self.body_predicates {
-            print!("{}/{arity},", heap.get_term(*symbol).to_string());
+            print!("{}/{arity},", heap.term_string(*symbol));
         }
         println!("]");
     }
@@ -261,4 +245,9 @@ impl Program {
             println!("{}", clause.to_string(heap));
         }
     }
+
+    pub fn add_module(&mut self, pred_module: &dyn PredModule, heap: &mut Heap){
+        pred_module.build(heap, self);
+    }
+
 }

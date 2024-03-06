@@ -1,13 +1,10 @@
 use crossterm::event::{self, read, KeyCode};
-
-use crate::{
+use crate::{program::Program, terms::{
+    heap::Heap,
+    substitution::{Substitution,SubstitutionHandler},
     atoms::{Atom, AtomHandler},
-    clause::{Choice, ClauseHandler},
-    heap::{Heap, HeapHandler},
-    program::Program,
-    terms::{Substitution, SubstitutionHandler},
-    Config,
-};
+    clause::{Choice, ClauseHandler}
+}, Config};
 
 struct Env {
     goal: Atom,
