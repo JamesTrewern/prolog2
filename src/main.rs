@@ -1,174 +1,100 @@
-mod config_module;
+mod heap;
 mod program;
 mod solver;
-mod terms;
+mod unification;
+mod state;
+mod binding;
 
-use std::{fs, io, process::ExitCode};
-use terms::{
-    heap::Heap,
-    atoms::{Atom, AtomHandler},
-    clause::{Clause, ClauseHandler}
-};
+use std::{collections::HashMap, io, process::{Child, ExitCode}, vec};
+
+use binding::BindingTraits;
+use heap::Heap;
 use program::Program;
-use config_module::ConfigMod;
-use solver::start_proof;
+
+// use solver::start_proof;
+use state::State;
+use unification::unify;
 
 
-const MAX_H_SIZE: usize = 4; //Max number of clauses in H
-const MAX_INVENTED: usize = 1; //Max invented predicate symbols
-const SHARE_PREDS: bool = false; //Can program and H share pred symbols
-const DEBUG: bool = true;
-const CONSTRAINT: &str = "<c>";
 
-pub struct Config {
-    pub share_preds: bool,
-    pub max_clause: usize,
-    pub max_invented: usize,
-    pub debug: bool,
-}
+// pub fn main_loop() {
+//     let mut state = State::new();
+//     let mut buf = String::new();
+//     loop {
+//         // buf.clear();
+//         io::stdin()
+//             .read_line(&mut buf)
+//             .expect("Error reading from console");
 
-impl Config {
-    pub fn new() -> Config {
-        Config {
-            share_preds: SHARE_PREDS,
-            max_clause: MAX_H_SIZE,
-            max_invented: MAX_INVENTED,
-            debug: DEBUG,
-        }
-    }
-}
+//         if buf.contains('.') {
+//             let mut directive = buf.split('.').next().unwrap();
+//             let goals = parse_goals(directive, &mut state.heap);
+//             start_proof(goals, &mut state);
+//             buf.clear();
+//         }
+//     }
+// }
 
-pub struct State {
-    pub config: Config,
-    pub prog: Program,
-    pub constraints: Vec<Clause>,
-    pub heap: Heap,
-}
+// fn parse_goals(input: &str, heap: &mut Heap) -> Vec<usize> {
+//         let mut last_i: usize = 0;
+//         let mut in_brackets = (0, 0);
+//         let mut goals: Vec<usize> = vec![];
+//         let mut symbols_map: HashMap<String, usize> = HashMap::new();
+//         for (i, c) in input.chars().enumerate() {
+//             match c {
+//                 '(' => {
+//                     in_brackets.0 += 1;
+//                 }
+//                 ')' => {
+//                     if in_brackets.0 == 0 {
+//                         break;
+//                     }
+//                     in_brackets.0 -= 1;
+//                 }
+//                 '[' => {
+//                     in_brackets.1 += 1;
+//                 }
+//                 ']' => {
+//                     if in_brackets.1 == 0 {
+//                         break;
+//                     }
+//                     in_brackets.1 -= 1;
+//                 }
+//                 ',' => {
+//                     if in_brackets == (0, 0) {
+//                         goals.push(heap.build_literal(&input[last_i..i], &mut symbols_map, &vec![]));
+//                         last_i = i + 1
+//                     }
+//                 }
+//                 _ => (),
+//             }
+//         }
+//         return goals;
+// }
 
-impl State {
-    pub fn new() -> State {
-        let mut state = State {
-            config: Config::new(),
-            prog: Program::new(),
-            heap: Heap::new(),
-            constraints: vec![],
-        };
-        state.prog.add_module(&ConfigMod, &mut state.heap);
-        return state;
-    }
-
-    pub fn parse_file(&mut self, path: &str) {
-        let file = fs::read_to_string(path.to_string() + ".pl").expect("Unable to read file");
-        let mut speech: bool = false;
-        let mut quote: bool = false;
-        let mut buf = String::new();
-        let mut comment = false;
-        for char in file.chars() {
-            if !speech && !quote && !comment && char == '.' {
-                if buf.trim().find(":-") == Some(0) {
-                    self.handle_directive(&buf.trim()[2..]);
-                } else {
-                    let clause = Clause::parse_clause(&buf, &mut self.heap);
-                    if buf.contains(CONSTRAINT){
-                        self.prog.add_constraint(clause);
-                    }else{
-                        self.prog.add_clause(clause, &self.heap);
-                    }
-                }
-                buf.clear();
-            } else {
-                match char {
-                    '"' => {
-                        if !quote {
-                            speech = !speech
-                        }
-                    }
-                    '\'' => {
-                        if !speech {
-                            quote = !quote
-                        }
-                    }
-                    '%' => {comment = true}
-                    '\n' => {comment = false}
-                    _ => (),
-                }
-                buf.push(char);
-            }
-        }
-    }
-
-    pub fn main_loop(&mut self) {
-        let mut buf = String::new();
-        loop {
-            // buf.clear();
-            io::stdin()
-                .read_line(&mut buf)
-                .expect("Error reading from console");
-
-            if buf.contains('.') {
-                let mut it = buf.split('.').peekable();
-                let new_buf: String;
-                loop {
-                    let directive = it.next().unwrap();
-                    if it.peek().is_none() {
-                        new_buf = directive.to_owned();
-                        break;
-                    }
-                    self.handle_directive(directive);
-                }
-                buf = new_buf;
-            }
-        }
-    }
-
-    fn handle_directive(&mut self, directive: &str) {
-        let directive = directive.trim();
-        let file_regex = regex::Regex::new(r"\[(?<file_path>[\w]+)\]").unwrap();
-        if let Some(caps) = file_regex.captures(directive) {
-            self.parse_file(&caps["file_path"]);
-            self.prog.write_prog(&self.heap);
-        } else {
-            let goals = self.parse_goals(directive);
-            println!("Start Proof");
-            start_proof(goals, &mut self.prog, &mut self.config, &mut self.heap);
-        }
-    }
-
-    fn parse_goals(&mut self, input: &str) -> Vec<Atom> {
-        let mut goals: Clause = vec![];
-        let mut buf = String::new();
-
-        let mut brackets = 0;
-        let mut sqr_brackets = 0;
-        for char in input.chars() {
-            match char {
-                ',' => {
-                    if brackets == 0 && sqr_brackets == 0 {
-                        goals.push(Atom::parse(&buf, &mut self.heap, &vec![]));
-                        buf = String::new();
-                        continue;
-                    }
-                }
-                ')' => brackets -= 1,
-                '(' => brackets += 1,
-                ']' => sqr_brackets -= 1,
-                '[' => sqr_brackets += 1,
-                _ => (),
-            }
-            buf.push(char);
-        }
-        goals.push(Atom::parse(&buf, &mut self.heap, &vec![]));
-        goals.eq_to_ref(&mut self.heap);
-        return goals;
-    }
-}
 /*
-TO DO only add vars to heap if choice is chosen
 Remove terms from heap when no longer needed
+Store Heap index at query start
 New Clause rules: constraints, head can't be existing predicate
+
 */
 fn main() -> ExitCode {
     let mut state = State::new();
-    state.main_loop();
+
+    state.prog.load_file("test", &mut state.heap);
+
+    let goal = state.heap.build_literal("p(a)", &mut HashMap::new(), &vec![]);
+
+    let mut choices = state.prog.call(goal, &mut state.heap);
+
+    let choice = choices.iter_mut().next().unwrap();
+    let new_goals = choice.choose(&mut state);
+
+    state.heap.print_heap();
+    for goal in new_goals{
+        print!("goal: {goal};");
+        println!("{}", state.heap.term_string(goal));
+
+    }
     ExitCode::SUCCESS
 }

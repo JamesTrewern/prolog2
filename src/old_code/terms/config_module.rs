@@ -17,7 +17,7 @@ impl PredModule for ConfigMod {
             Box::new({
                 |config, heap, _body_preds, _bindings, atom| {
                     if let Term::Constant(str) = heap.get_term(atom[1]) {
-                        match heap.get_string(*str) {
+                        match heap.get_string(str) {
                             "true" => {
                                 config.share_preds = true;
                                 true
@@ -42,7 +42,7 @@ impl PredModule for ConfigMod {
             Box::new({
                 |config, heap, _body_preds, _bindings, atom| {
                     if let Term::Number(value) = heap.get_term(atom[1]) {
-                        config.max_clause = *value as usize;
+                        config.max_clause = value as usize;
                         true
                     } else {
                         false
@@ -58,7 +58,7 @@ impl PredModule for ConfigMod {
             Box::new({
                 |config, heap, _body_preds, _bindings, atom| {
                     if let Term::Number(value) = heap.get_term(atom[1]) {
-                        config.max_invented = *value as usize;
+                        config.max_invented = value as usize;
                         true
                     } else {
                         false
@@ -74,7 +74,7 @@ impl PredModule for ConfigMod {
             Box::new({
                 |_config, heap, body_preds, _bindings, atom| {
                     if let Term::Number(arity) = heap.get_term(atom[2]) {
-                        let arity = *arity as usize;
+                        let arity = arity as usize;
                         body_preds.push((atom[1], arity));
                         true
                     } else {
@@ -92,12 +92,12 @@ impl PredModule for ConfigMod {
                 |_config, heap, _body_preds, bindings, atom| {
                     println!("SDG  {}", atom.to_string(heap));
                     if let Term::Number(addr) = heap.get_term(atom[1]) {
-                        let addr1 = *addr as usize;
+                        let addr1 = addr as usize;
                         println!("addr1: {addr1}");
                         println!(": {}", heap.term_string(atom[2]));
                         if let Term::REF(addr2) = heap.get_term(atom[2]) {
                             println!("addr2: {addr2}");
-                            bindings.insert_sub(*addr2, addr1);
+                            bindings.insert_sub(addr2, addr1);
                             true
                         } else {
                             false
@@ -116,7 +116,7 @@ impl PredModule for ConfigMod {
             Box::new({
                 |_config, heap, _body_preds, _bindings, atom| {
                     if let Term::Number(addr) = heap.get_term(atom[1]) {
-                        let addr = *addr as usize;
+                        let addr = addr as usize;
                         println!("HEAP[{addr}]: {:?}", heap[addr]);
                         true
                     } else {

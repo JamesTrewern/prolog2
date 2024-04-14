@@ -1,9 +1,14 @@
-use crate::{binding::{Binding, BindingTraits}, heap::Heap, program::{program::Choice, Clause, ClauseTraits}, State};
-
+use crossterm::event::{self, read, KeyCode};
+use crate::{program::Program, terms::{
+    heap::Heap,
+    substitution::{Substitution,SubstitutionHandler},
+    atoms::{Atom, AtomHandler},
+    clause::{Choice, ClauseHandler}
+}, Config};
 
 struct Env {
-    goal: usize, // Pointer to heap literal
-    bindings: Binding,
+    goal: Atom,
+    bindings: Substitution,
     choices: Vec<Choice>,
     new_clause: bool,
     invent_pred: bool,
@@ -12,7 +17,7 @@ struct Env {
 }
 
 impl Env {
-    pub fn new(goal: usize, depth: usize) -> Env {
+    pub fn new(goal: Atom, depth: usize) -> Env {
         Env {
             goal,
             bindings: vec![],
@@ -26,47 +31,46 @@ impl Env {
 }
 
 fn prove_again() -> bool {
-    todo!()
-    // loop{
-    //     match read().unwrap() {
-    //         event::Event::Key(key) => {
-    //             if key.code == KeyCode::Enter || key.code == KeyCode::Char('.'){
-    //                 return false;
-    //             } else if key.code == KeyCode::Char(';') || key.code == KeyCode::Char(' '){
-    //                 return true;
-    //             }
-    //         },
-    //         _ => ()
-    //     }
-    // }
+    loop{
+        match read().unwrap() {
+            event::Event::Key(key) => {
+                if key.code == KeyCode::Enter || key.code == KeyCode::Char('.'){
+                    return false;
+                } else if key.code == KeyCode::Char(';') || key.code == KeyCode::Char(' '){
+                    return true;
+                }
+            },
+            _ => ()
+        }
+    }
 }
 
-pub fn start_proof(goals: Vec<usize>, state: &mut State) {
+pub fn start_proof(goals: Vec<Atom>, prog: &mut Program, config: &mut Config, heap: &mut Heap) {
     let mut proof_stack: Vec<Env> = vec![];
     loop {
-        if prove(goals.clone(), &mut proof_stack, state) {
+        if prove(goals.clone(), prog, config, heap, &mut proof_stack) {
             println!("TRUE");
-            for goal in goals {
-                print!("{},",state.heap.term_string(goal))
-            }
-            state.prog.write_h(&state.heap);
+            println!("{}", goals.to_string(heap));
+            prog.write_h(heap);
             if !prove_again(){
                 break;
             }
         } else {
             println!("FALSE");
-            print_stack(&mut proof_stack, &mut state.heap);
+            print_stack(&mut proof_stack, heap);
             break;
             // heap.print_heap();
         }
-        // prog.reset_h();
+        prog.reset_h();
     }
 }
 
 fn prove(
-    goals: Vec<usize>,
+    goals: Vec<Atom>,
+    prog: &mut Program,
+    config: &mut Config,
+    heap: &mut Heap,
     proof_stack: &mut Vec<Env>,
-    state: &mut State,
 ) -> bool {
     for goal in &goals {
         proof_stack.push(Env::new(goal.clone(), 0));
@@ -84,20 +88,20 @@ fn prove(
         if env.depth == 10 {
             return false;
         }
-        println!("[{}]Try: {}", env.depth, state.heap.term_string(env.goal));
-        let mut choices = state.prog.call(env.goal, &mut state.heap);
+        println!("[{}]Try: {}", env.depth, env.goal.to_string(heap));
+        let mut choices = prog.call(&env.goal, heap, config);
         if choices.is_empty() {
-            if state.config.debug {
-                println!("[{}]FAILED: {}", env.depth, state.heap.term_string(env.goal));
+            if config.debug {
+                println!("[{}]FAILED: {}", env.depth, env.goal.to_string(heap));
             }
-            match retry(proof_stack, pointer, state) {
+            match retry(proof_stack, pointer, prog, heap, config) {
                 Some(p) => pointer = p,
                 None => return false,
             }
         } else {
             let choice = choices.pop().unwrap();
             env.choices = choices;
-            apply_choice(proof_stack, pointer, choice, state);
+            apply_choice(proof_stack, pointer, prog, heap, choice);
             pointer += 1;
         }
     }
@@ -106,7 +110,9 @@ fn prove(
 fn retry(
     proof_stack: &mut Vec<Env>,
     pointer: usize,
-    state: &mut State
+    prog: &mut Program,
+    heap: &mut Heap,
+    config: &Config,
 ) -> Option<usize> {
     let children = proof_stack.get(pointer).unwrap().children;
     for _ in 0..children {
@@ -116,8 +122,8 @@ fn retry(
     //Undo Enviroment
     println!(
         "[{pointer}]UNDO: {},{}",
-        state.heap.term_string(env.goal),
-        env.bindings.to_string(&state.heap)
+        env.goal.to_string(heap),
+        env.bindings.to_string(heap)
     );
 
     heap.unbind(&env.bindings);
@@ -148,20 +154,29 @@ fn retry(
 fn apply_choice(
     proof_stack: &mut Vec<Env>,
     pointer: usize,
+    prog: &mut Program,
+    heap: &mut Heap,
     mut choice: Choice,
-    state: &mut State
-){
+) -> bool {
     let env = proof_stack.get_mut(pointer).unwrap();
-    let goals = choice.choose(state);
-    env.children = goals.len();
+    env.children = choice.goals.len();
+    //in goal clause eqs and aqs should be set to unbound ref
+    //in new clause only eqs to be set to the same unbonf ref
+    let mut eqs = choice.goals.terms();
+    eqs.retain(|a| heap[*a].enum_type().contains("Var"));
+    let mut subs: Substitution = vec![];
+    for a in eqs {
+        subs.insert_sub(a, heap.new_term(None))
+    }
+    choice.goals = choice.goals.apply_sub(&subs);
 
-    if choice.new_clause {
-        let new_clause:Clause = choice.build_clause(state); //Use binding to make new clause
-        //Add new clause to program
-        //If var symbol invent pred
+    if let Some(mut clause) = choice.new_clause {
+        clause = clause.apply_sub(&subs.meta(heap));
+        clause.aq_to_eq(heap);
+        env.new_clause = true;
         //Invented pred?
-        let pred_symbol = new_clause.pred_symbol(&state.heap);
-        if prog.add_h_clause(clause, heap) {
+        let pred_symbol = clause.pred_symbol();
+        if let Some(v) = prog.add_h_clause(clause, heap) {
             env.invent_pred = true;
             choice.bindings.insert_sub(pred_symbol, v);
         }
@@ -173,6 +188,7 @@ fn apply_choice(
     for goal in choice.goals.into_iter().rev() {
         proof_stack.insert(pointer + 1, Env::new(goal, depth));
     }
+    true
 }
 
 fn print_stack(proof_stack: &mut Vec<Env>, heap: &mut Heap) {
