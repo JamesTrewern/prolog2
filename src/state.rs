@@ -5,11 +5,13 @@ const MAX_INVENTED: usize = 1; //Max invented predicate symbols
 const SHARE_PREDS: bool = false; //Can program and H share pred symbols
 const DEBUG: bool = true;
 const HEAP_SIZE: usize = 2056;
+const MAX_DEPTH: usize = 10;
 pub struct Config {
     pub share_preds: bool,
     pub max_clause: usize,
     pub max_invented: usize,
     pub debug: bool,
+    pub max_depth: usize,
 }
 
 pub struct State {
@@ -25,6 +27,7 @@ impl Config {
             max_clause: MAX_H_SIZE,
             max_invented: MAX_INVENTED,
             debug: DEBUG,
+            max_depth: MAX_DEPTH,
         }
     }
 }

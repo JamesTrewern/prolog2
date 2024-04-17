@@ -1,11 +1,16 @@
-use crate::heap::{self, Heap};
+use crate::{
+    heap::{self, Heap},
+    unification::{unify, unify_rec},
+};
 
 pub type Clause = Box<[usize]>;
 
 pub trait ClauseTraits {
+    fn subsumes(&self, other: &Clause, heap: &Heap) -> bool;
     fn pred_symbol(&self, heap: &Heap) -> usize;
     fn higher_order(&self, heap: &Heap) -> bool;
     fn write_clause(&self, heap: &Heap);
+    fn to_string(&self, heap: &Heap) -> String;
 }
 
 impl ClauseTraits for Clause {
@@ -35,8 +40,49 @@ impl ClauseTraits for Clause {
         }
     }
 
-    fn pred_symbol(&self, heap: &Heap) -> usize{
+    fn to_string(&self, heap: &Heap) -> String {
+        if self.len() == 1 {
+            let clause_str = heap.term_string(self[0]);
+            clause_str
+        } else {
+            let mut buffer: String = String::new();
+            buffer += &heap.term_string(self[0]);
+            buffer += ":-";
+            let mut i = 1;
+            loop {
+                buffer += &heap.term_string(self[i]);
+                i += 1;
+                if i == self.len() {
+                    break;
+                } else {
+                    buffer += ","
+                }
+            }
+            buffer
+        }
+    }
+
+    fn pred_symbol(&self, heap: &Heap) -> usize {
         heap[self[0]].0
+    }
+
+    fn subsumes(&self, other: &Clause, heap: &Heap) -> bool {
+        //TO DO
+        //Implement proper Subsumtption
+        if self.len() == other.len() {
+            let mut binding = match unify(self[0], other[0], heap) {
+                Some(b) => b,
+                None => return false,
+            };
+            for i in 1..self.len() {
+                if !unify_rec(self[i], other[i], heap, &mut binding) {
+                    return false;
+                }
+            }
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -71,18 +117,11 @@ fn ho_list(addr: usize, heap: &Heap) -> bool {
 
 fn ho_term(addr: usize, heap: &Heap) -> bool {
     match heap[addr] {
-        (Heap::REFA, _) => return true,
-        (Heap::STR, ptr) => {
-            if ho_struct(ptr, heap) {
-                return true;
-            }
-        }
-        (Heap::LIS, ptr) => {
-            if ptr != Heap::CON && ho_list(ptr, heap) {
-                return true;
-            }
-        }
-        _ => (),
+        (Heap::REFA, _) => true,
+        (Heap::STR, ptr) => ho_struct(ptr, heap),
+
+        (Heap::LIS, ptr) => ptr != Heap::CON && ho_list(ptr, heap),
+        (Heap::CON | Heap::INT, _) => false,
+        _ => ho_struct(addr, heap),
     }
-    false
 }

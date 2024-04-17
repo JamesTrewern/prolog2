@@ -7,13 +7,12 @@ use super::{
 use crate::heap::Heap;
 use std::{collections::HashMap, fs};
 
-static CONSTRAINT: &'static str = "<c>:-";
+static CONSTRAINT: &'static str = ":<c>-";
 static IMPLICATION: &'static str = ":-";
 
 impl Program {
     pub fn load_file(&mut self, path: &str, heap: &mut Heap) {
         let mut file = fs::read_to_string(format!("{path}.pl")).expect("Unable to read file");
-        println!("file: {file}");
         remove_comments(&mut file);
         let mut speech: bool = false;
         let mut quote: bool = false;
@@ -26,7 +25,7 @@ impl Program {
                 } else {
                     let clause = parse_clause(segment, heap);
                     if segment.contains(CONSTRAINT) {
-                        self.add_constraint(clause, heap);
+                        self.add_constraint(clause);
                     } else {
                         self.add_clause(clause, heap);
                     }

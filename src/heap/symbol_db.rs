@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-pub(super) struct SymbolDB{
+pub struct SymbolDB{
     const_symbols: Vec<Box<str>>,
     var_symbols: Vec<Box<str>>,
     var_symbol_map: HashMap<usize, usize>, //Key: Variable Ref addr, Value: index to var symbols vec
@@ -41,7 +41,11 @@ impl SymbolDB {
     }
 
     pub fn get_var(&self, addr: usize) -> &str{
-        &self.var_symbols[self.var_symbol_map[&addr]]
+        if let Some(i) = self.var_symbol_map.get(&addr){
+            &self.var_symbols[*i]
+        }else{
+            ""
+        }
     }
 
     pub fn get_symbol(&self, id: usize) ->&str{

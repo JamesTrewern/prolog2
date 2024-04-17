@@ -1,12 +1,14 @@
 use crate::{
     binding::{Binding, BindingTraits},
     heap::Heap,
-    state::State,
+    state::{Config, State},
     unification::unify,
 };
 use std::{collections::HashMap, ops::Index, usize, vec};
 
-use super::clause::{Clause, ClauseTraits};
+const PRED_NAME: &'static str = "James";
+
+use super::clause::{self, Clause, ClauseTraits};
 pub type PredicateFN = fn(Box<[usize]>, &mut Heap) -> bool;
 pub type PredModule = &'static [(&'static str, usize, PredicateFN)];
 pub enum Predicate {
@@ -21,9 +23,38 @@ pub struct Choice {
 }
 
 impl Choice {
-    pub fn choose(&mut self, state: &mut State) -> Vec<usize> {
+    pub fn choose(&mut self, state: &mut State) -> Option<(Vec<usize>, bool)> {
         self.binding.undangle_const(&mut state.heap);
-        self.build_goals(state)
+        let goals = self.build_goals(state);
+
+        let invented_pred = if self.new_clause {
+            let new_clause: Clause = self.build_clause(state); //Use binding to make new clause
+            println!("New Clause: {} \n H size: {}", new_clause.to_string(&state.heap), state.prog.h_clauses);
+            let pred_symbol = new_clause.pred_symbol(&state.heap);
+            match state
+                .prog
+                .add_h_clause(new_clause, &mut state.heap, &state.config)
+            {
+                Some(Some(invented_pred)) => {
+                    self.binding.push((pred_symbol, invented_pred));
+                    true
+                }
+                None => return None,
+                _ => false,
+            }
+        } else {
+            false
+        };
+
+        state.heap.bind(&self.binding);
+        println!("Bindings: {}", self.binding.to_string(&state.heap));
+
+        if !state.prog.check_constraints(self.clause, &state.heap){
+            state.heap.unbind(&self.binding);
+            None
+        }else{
+            Some((goals,invented_pred))
+        }
     }
     pub fn build_goals(&mut self, state: &mut State) -> Vec<usize> {
         let mut goals: Vec<usize> = vec![];
@@ -37,12 +68,13 @@ impl Choice {
         }
         goals
     }
-    pub fn build_clause(&mut self, state: &mut State) ->Clause {
-        self.binding.build_clause(&mut state.heap, &state.prog[self.clause])
+    pub fn build_clause(&mut self, state: &mut State) -> Clause {
+        self.binding
+            .build_clause(&mut state.heap, &state.prog[self.clause])
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq,Debug)]
 enum ClauseType {
     CLAUSE,
     META,
@@ -51,6 +83,9 @@ enum ClauseType {
 pub struct Program {
     predicates: HashMap<(usize, usize), Predicate>, //(id, arity): Predicate
     clauses: Vec<(ClauseType, Clause)>,
+    invented_preds: usize,
+    h_clauses: usize,
+    constraints: Vec<Clause>,
 }
 
 impl Program {
@@ -58,6 +93,9 @@ impl Program {
         Program {
             predicates: HashMap::new(),
             clauses: vec![],
+            invented_preds: 0,
+            h_clauses: 0,
+            constraints: vec![],
         }
     }
     pub fn add_module(&mut self, pred_module: PredModule, heap: &mut Heap) {
@@ -173,21 +211,70 @@ impl Program {
     }
 
     //Add clause, If invented predicate symbol return true
-    pub fn add_h_clause(&mut self, clause: Clause, heap: &Heap) -> bool{
-        let symbol = 
+    pub fn add_h_clause(
+        &mut self,
+        clause: Clause,
+        heap: &mut Heap,
+        config: &Config,
+    ) -> Option<Option<usize>> {
+        if self.h_clauses == config.max_clause {
+            return None;
+        }
+        let symbol = clause.pred_symbol(heap);
+
+        self.clauses.push((ClauseType::HYPOTHESIS, clause));
+        self.h_clauses += 1;
+
+        if symbol < isize::MAX as usize {
+            if self.invented_preds == config.max_invented {
+                return None;
+            }
+            let symbol_id = heap.add_const_symbol(&format!("{PRED_NAME}_{}", self.invented_preds));
+            let addr = heap.set_const(symbol_id);
+            Some(Some(addr))
+        } else {
+            //New Clause, No invented predicate symbol
+            Some(None)
+        }
     }
 
-    pub fn add_constraint(&mut self, clause: Clause, heap: &Heap) {}
+    pub fn remove_h_clause(&mut self, invented: bool) -> Clause {
+        if invented {
+            self.invented_preds -= 1;
+        }
+        self.clauses.pop().unwrap().1
+    }
+
+    pub fn add_constraint(&mut self, clause: Clause) {
+        self.constraints.push(clause)
+    }
+
+    pub fn check_constraints(&self, clause_i: usize, heap: &Heap) -> bool {
+        if let Some((ClauseType::HYPOTHESIS, clause)) = self.clauses.get(clause_i) {
+            !self
+                .constraints
+                .iter()
+                .any(|constraint| constraint.subsumes(clause, heap))
+        } else {
+            true
+        }
+    }
 
     pub fn write_prog(&self, heap: &Heap) {
-        self.clauses
+        let text = self
+            .clauses
             .iter()
             .filter(|(ct, _)| *ct != ClauseType::HYPOTHESIS)
-            .map(|(_, c)| c.write_clause(heap));
+            .map(|(c_type, c)| format!("{c_type:?}, {}", c.to_string(heap)));
+
+        for line in text{
+            println!("{line}");
+        }
     }
 
     pub fn write_h(&self, heap: &Heap) {
-        self.clauses
+        let _ = self
+            .clauses
             .iter()
             .filter(|(ct, _)| *ct == ClauseType::HYPOTHESIS)
             .map(|(_, c)| c.write_clause(heap));

@@ -1,3 +1,5 @@
+use crate::binding::{self, Binding};
+
 use super::symbol_db::SymbolDB;
 use std::{
     alloc::{alloc, Layout},
@@ -12,7 +14,7 @@ pub struct Heap {
     cap: usize,
     len: usize,
     query_space:usize,
-    symbols: SymbolDB,
+    pub symbols: SymbolDB,
 }
 #[derive(Debug, Clone)]
 pub enum SubTerm {
@@ -127,6 +129,23 @@ impl Heap {
 
     pub fn set_query_space(&mut self){
 
+    }
+
+    pub fn bind(&mut self, binding: &Binding){
+        for (src,target) in binding{
+            if *src >= self.query_space{
+                if self[*src].1 != *src {panic!("Tried to reset bound ref")}
+                self[*src].1 = *target;
+            }
+        }
+    }
+
+    pub fn unbind(&mut self, binding: &Binding){
+        for (src,_) in binding{
+            if *src >= self.query_space{
+                self[*src].1 = *src;
+            }
+        }
     }
 
     //-----------------------------------------------------------------------------------------------
@@ -358,11 +377,11 @@ impl Heap {
                 }
                 Heap::REF => {
                     println!(
-                        "[{:3}]|{:w$}|{:w$}|:()",
+                        "[{:3}]|{:w$}|{:w$}|:({})",
                         i,
                         "REF",
                         cell.1,
-                        // self.symbols.get_symbol(self.deref(cell.1))
+                        self.symbols.get_symbol(self.deref(cell.1))
                     )
                 }
                 Heap::REFA => {

@@ -95,7 +95,7 @@ fn unify_list(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) ->
     true
 }
 
-fn unify_rec(mut addr1: usize, mut addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
+pub fn unify_rec(mut addr1: usize, mut addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
     //addr 1 goal
     //addr 2 clause
     addr1 = heap.deref(addr1);

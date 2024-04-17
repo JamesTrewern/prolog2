@@ -5,12 +5,13 @@ mod unification;
 mod state;
 mod binding;
 
-use std::{collections::HashMap, io, process::{Child, ExitCode}, vec};
+use std::{collections::HashMap, io, os::macos::raw::stat, process::{Child, ExitCode}, vec};
 
 use binding::BindingTraits;
 use heap::Heap;
 use program::Program;
 
+use solver::start_proof;
 // use solver::start_proof;
 use state::State;
 use unification::unify;
@@ -82,19 +83,10 @@ fn main() -> ExitCode {
     let mut state = State::new();
 
     state.prog.load_file("test", &mut state.heap);
+    state.prog.write_prog(&state.heap);
 
-    let goal = state.heap.build_literal("p(a)", &mut HashMap::new(), &vec![]);
+    let goal = state.heap.build_literal("parent(adam,james)", &mut HashMap::new(), &vec![]);
 
-    let mut choices = state.prog.call(goal, &mut state.heap);
-
-    let choice = choices.iter_mut().next().unwrap();
-    let new_goals = choice.choose(&mut state);
-
-    state.heap.print_heap();
-    for goal in new_goals{
-        print!("goal: {goal};");
-        println!("{}", state.heap.term_string(goal));
-
-    }
+    start_proof(vec![goal], &mut state);
     ExitCode::SUCCESS
 }
