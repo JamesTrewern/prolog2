@@ -1,7 +1,7 @@
 use crate::{
     binding::{Binding, BindingTraits},
     heap::Heap,
-    program::{program::Choice, Clause, ClauseTraits},
+    program::{Choice, Clause, ClauseTraits},
     State,
 };
 
@@ -51,7 +51,7 @@ pub fn start_proof(goals: Vec<usize>, state: &mut State) {
         if prove(goals.clone(), &mut proof_stack, state) {
             println!("TRUE");
             for goal in goals {
-                print!("{},", state.heap.term_string(goal))
+                println!("{},", state.heap.term_string(goal))
             }
             state.prog.write_h(&state.heap);
             // if !prove_again() {
@@ -93,10 +93,13 @@ fn prove(goals: Vec<usize>, proof_stack: &mut Vec<Env>, state: &mut State) -> bo
         println!("[{}]Try: {}", depth, state.heap.term_string(goal));
         let mut choices = state.prog.call(goal, &mut state.heap);
 
+        println!("choices: {choices:?}");
+
         loop {
             if let Some(choice) = choices.pop() {
                 if apply_choice(proof_stack, pointer, choice, state) {
-                    // env.choices = choices;
+                    let env  = proof_stack.get_mut(pointer).unwrap();
+                    env.choices = choices;
                     pointer += 1;
                     break;
                 }
@@ -132,8 +135,7 @@ fn retry(proof_stack: &mut Vec<Env>, pointer: usize, state: &mut State) -> Optio
     state.heap.unbind(&env.bindings);
 
     if env.new_clause == true {
-        let c = state.prog.remove_h_clause(env.invent_pred);
-        println!("Remove Clause: {}", c.to_string(&state.heap));
+        state.prog.remove_h_clause(env.invent_pred);
         env.new_clause = false;
     }
 

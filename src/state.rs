@@ -1,11 +1,11 @@
 use crate::{heap::Heap, program::Program};
 
-const MAX_H_SIZE: usize = 4; //Max number of clauses in H
-const MAX_INVENTED: usize = 1; //Max invented predicate symbols
+const MAX_H_SIZE: usize = 2; //Max number of clauses in H
+const MAX_INVENTED: usize = 0; //Max invented predicate symbols
 const SHARE_PREDS: bool = false; //Can program and H share pred symbols
 const DEBUG: bool = true;
 const HEAP_SIZE: usize = 2056;
-const MAX_DEPTH: usize = 10;
+const MAX_DEPTH: usize = 4;
 pub struct Config {
     pub share_preds: bool,
     pub max_clause: usize,

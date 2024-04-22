@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use super::heap::Heap;
 
-pub struct SymbolDB{
+pub struct SymbolDB {
     const_symbols: Vec<Box<str>>,
     var_symbols: Vec<Box<str>>,
     var_symbol_map: HashMap<usize, usize>, //Key: Variable Ref addr, Value: index to var symbols vec
@@ -16,10 +17,10 @@ impl SymbolDB {
     }
     pub fn set_const(&mut self, symbol: &str) -> usize {
         match self.const_symbols.iter().position(|e| *e == symbol.into()) {
-            Some(i) => i + isize::MAX as usize,
+            Some(i) => i + Heap::CON_PTR,
             None => {
                 self.const_symbols.push(symbol.into());
-                self.const_symbols.len() - 1 + isize::MAX as usize
+                self.const_symbols.len() - 1 + Heap::CON_PTR
             }
         }
     }
@@ -30,29 +31,34 @@ impl SymbolDB {
             }
             None => {
                 self.var_symbols.push(symbol.into());
-                self.var_symbol_map
-                    .insert(addr, self.var_symbols.len() - 1);
+                self.var_symbol_map.insert(addr, self.var_symbols.len() - 1);
             }
         }
     }
 
-    pub fn get_const(&self, id: usize) -> &str{
-        &self.const_symbols[id-isize::MAX as usize]
+    pub fn get_const(&self, id: usize) -> &str {
+        &self.const_symbols[id - Heap::CON_PTR]
     }
 
-    pub fn get_var(&self, addr: usize) -> &str{
-        if let Some(i) = self.var_symbol_map.get(&addr){
-            &self.var_symbols[*i]
-        }else{
-            ""
+    pub fn get_var(&self, addr: usize) -> Option<&str> {
+        if let Some(i) = self.var_symbol_map.get(&addr) {
+            Some(&self.var_symbols[*i])
+        } else {
+            None
         }
     }
 
-    pub fn get_symbol(&self, id: usize) ->&str{
-        if id >= (isize::MAX as usize){
-            self.get_const(id)
-        }else{
-            self.get_var(id)
+    pub fn get_symbol(&self, id: usize) -> String {
+        if id >= (Heap::CON_PTR) {
+            match self.const_symbols.get(id - Heap::CON_PTR) {
+                Some(symbol) => symbol.to_string(),
+                None => panic!("Unkown const id"),
+            }
+        } else {
+            match self.get_var(id) {
+                Some(symbol) => symbol.to_string(),
+                None => format!("_{id}"),
+            }
         }
     }
 }

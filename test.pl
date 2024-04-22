@@ -1,5 +1,11 @@
+dad(ken,adam).
 dad(adam,james).
-P(X,Y):-Q(X,Y).
-P(X,Y):<c>-P(X,Y).
+mum(tami,james). 
+
+P(X,Y):-Q(X,Y)\X,Y.
+
+P(A,B):<c>-P(A,B).
+
+
 
 

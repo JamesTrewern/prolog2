@@ -1,17 +1,18 @@
 use crossterm::terminal::Clear;
 
 use super::{
-    clause::{self, Clause},
+    clause::{self, Clause, ClauseOwned},
     Program,
 };
 use crate::heap::Heap;
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, rc::Rc};
 
 static CONSTRAINT: &'static str = ":<c>-";
 static IMPLICATION: &'static str = ":-";
 
 impl Program {
     pub fn load_file(&mut self, path: &str, heap: &mut Heap) {
+        heap.query_space = false;
         let mut file = fs::read_to_string(format!("{path}.pl")).expect("Unable to read file");
         remove_comments(&mut file);
         let mut speech: bool = false;
@@ -47,7 +48,9 @@ impl Program {
                 }
             }
         }
-        heap.set_query_space();
+        heap.query_space = true;
+        self.clauses.find_flags();
+        self.predicates = self.clauses.predicate_map(heap);
     }
 }
 
@@ -67,7 +70,7 @@ fn get_uni_vars<'a>(clause: &'a str) -> (usize, Vec<&'a str>) {
     }
 }
 
-fn parse_clause(clause: &str, heap: &mut Heap) -> Clause {
+fn parse_clause(clause: &str, heap: &mut Heap) -> ClauseOwned {
     let (i3, uni_vars) = get_uni_vars(clause);
     let (mut i1, i2) = match clause.find(CONSTRAINT) {
         Some(i) => (i, i + CONSTRAINT.len()),

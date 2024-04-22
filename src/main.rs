@@ -5,7 +5,7 @@ mod unification;
 mod state;
 mod binding;
 
-use std::{collections::HashMap, io, os::macos::raw::stat, process::{Child, ExitCode}, vec};
+use std::{collections::HashMap, process::ExitCode, vec};
 
 use binding::BindingTraits;
 use heap::Heap;
@@ -14,7 +14,7 @@ use program::Program;
 use solver::start_proof;
 // use solver::start_proof;
 use state::State;
-use unification::unify;
+
 
 
 
@@ -83,10 +83,21 @@ fn main() -> ExitCode {
     let mut state = State::new();
 
     state.prog.load_file("test", &mut state.heap);
+
     state.prog.write_prog(&state.heap);
 
-    let goal = state.heap.build_literal("parent(adam,james)", &mut HashMap::new(), &vec![]);
+    let goal1 = state.heap.build_literal("parent(adam,james)", &mut HashMap::new(), &vec![]);
+    let goal2 = state.heap.build_literal("parent(tami,james)", &mut HashMap::new(), &vec![]);
 
-    start_proof(vec![goal], &mut state);
+
+    start_proof(vec![goal1], &mut state);
+
+    // state.heap.print_heap();
+    
+    start_proof(vec![goal2], &mut state);
+
+    state.heap.print_heap();
+
+
     ExitCode::SUCCESS
 }

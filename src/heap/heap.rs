@@ -13,7 +13,7 @@ pub struct Heap {
     ptr: *mut Cell,
     cap: usize,
     len: usize,
-    query_space:usize,
+    pub query_space: bool,
     pub symbols: SymbolDB,
 }
 #[derive(Debug, Clone)]
@@ -24,12 +24,14 @@ pub enum SubTerm {
 
 impl Heap {
     pub const REF: usize = usize::MAX;
-    pub const REFA: usize = usize::MAX - 1;
-    pub const STR: usize = usize::MAX - 2;
+    pub const REFC: usize = usize::MAX - 1;
+    pub const REFA: usize = usize::MAX - 2;
+    pub const STR: usize = usize::MAX - 3;
     pub const LIS: usize = usize::MAX - 4;
-    pub const CON: usize = usize::MAX - 3;
-    pub const INT: usize = usize::MAX - 5;
-    pub const MIN_TAG: usize = Heap::INT;
+    pub const CON: usize = usize::MAX - 5;
+    pub const INT: usize = usize::MAX - 6;
+    pub const FLT: usize = usize::MAX - 7;
+    pub const CON_PTR: usize = isize::MAX as usize;
 
     pub fn new(size: usize) -> Heap {
         let layout = Layout::array::<Cell>(size).unwrap();
@@ -39,7 +41,7 @@ impl Heap {
             ptr,
             cap: size,
             len: 0,
-            query_space: usize::MAX,
+            query_space: true,
             symbols: SymbolDB::new(),
         }
     }
@@ -55,7 +57,16 @@ impl Heap {
         unsafe {
             ptr::write(
                 self.ptr.add(self.len),
-                (if universal { Heap::REFA } else { Heap::REF }, addr),
+                (
+                    if universal {
+                        Heap::REFA
+                    } else if !self.query_space {
+                        Heap::REFC
+                    } else {
+                        Heap::REF
+                    },
+                    addr,
+                ),
             );
         }
         self.len += 1;
@@ -97,8 +108,11 @@ impl Heap {
     }
 
     pub fn deref(&self, addr: usize) -> usize {
-        if Heap::REF == self[addr].0 || Heap::REFA == self[addr].0 {
-            if addr == self[addr].1 {
+        if addr >= Heap::CON_PTR {
+            return addr;
+        }
+        if let (Heap::REF | Heap::REFA | Heap::REFC, pointer) = self[addr] {
+            if addr == pointer {
                 addr
             } else {
                 self.deref(self[addr].1)
@@ -117,33 +131,49 @@ impl Heap {
     }
 
     pub fn duplicate(&mut self, start_i: usize, length: usize) -> usize {
-        let diff: usize = self.len() - start_i;
+        let new_start: usize = self.len();
         unsafe {
             let src = self.ptr.add(start_i);
             let dst = self.ptr.add(self.len);
             ptr::copy(src, dst, length);
             self.len += length;
         }
-        diff
+        new_start
     }
 
-    pub fn set_query_space(&mut self){
-
-    }
-
-    pub fn bind(&mut self, binding: &Binding){
-        for (src,target) in binding{
-            if *src >= self.query_space{
-                if self[*src].1 != *src {panic!("Tried to reset bound ref")}
-                self[*src].1 = *target;
+    pub fn bind(&mut self, binding: &Binding) {
+        for (src, target) in binding {
+            if let (tag @ Heap::REF, pointer) = &mut self[*src] {
+                if *pointer != *src {
+                    self.print_heap();
+                    panic!("Tried to reset bound ref: {} \n Binding: {binding:?}", src)
+                }
+                if *target >= Heap::CON_PTR {
+                    *tag = Heap::CON;
+                }
+                println!("{pointer} -> {target}");
+                *pointer = *target;
             }
         }
     }
 
-    pub fn unbind(&mut self, binding: &Binding){
-        for (src,_) in binding{
-            if *src >= self.query_space{
-                self[*src].1 = *src;
+    pub fn unbind(&mut self, binding: &Binding) {
+        for (src, _target) in binding {
+            if let (tag @ (Heap::REF | Heap::CON), pointer) = &mut self[*src] {
+                print!("[{src}],({}, {pointer}) -> ", match *tag {
+                    Heap::REF => "REF",
+                    Heap::CON => "CON",
+                    _ => "",
+                });
+                if *tag == Heap::CON {
+                    *tag = Heap::REF
+                }
+                *pointer = *src;
+                println!("({}, {pointer})", match *tag {
+                    Heap::REF => "REF",
+                    Heap::CON => "CON",
+                    _ => "",
+                });
             }
         }
     }
@@ -375,22 +405,18 @@ impl Heap {
                         println!("[{:3}]|{:w$}|{:w$}|", i, "LIS", cell.1)
                     }
                 }
-                Heap::REF => {
+                Heap::REF | Heap::REFA | Heap::REFC => {
                     println!(
-                        "[{:3}]|{:w$}|{:w$}|:({})",
+                        "[{:3}]|{:w$?}|{:w$}|:({})",
                         i,
-                        "REF",
+                        match cell.0 {
+                            Heap::REF => "REF",
+                            Heap::REFA => "REFA",
+                            Heap::REFC => "REFC",
+                            _ => "",
+                        },
                         cell.1,
-                        self.symbols.get_symbol(self.deref(cell.1))
-                    )
-                }
-                Heap::REFA => {
-                    println!(
-                        "[{:3}]|{:w$}|{:w$}|:({})",
-                        i,
-                        "REFA",
-                        cell.1,
-                        self.symbols.get_symbol(self.deref(cell.1))
+                        self.symbols.get_symbol(self.deref(i))
                     )
                 }
                 id => {
@@ -429,7 +455,8 @@ impl Heap {
     }
 
     pub fn structure_string(&self, addr: usize) -> String {
-        let mut buf = self.symbols.get_symbol(self[addr].0).to_owned();
+
+        let mut buf = self.symbols.get_symbol(self.deref(self[addr].0));
         buf += "(";
         for i in addr + 1..addr + self[addr].1 + 1 {
             buf += &self.term_string(i);
@@ -446,10 +473,16 @@ impl Heap {
             Heap::CON => self.symbols.get_const(self[addr].1).to_owned(),
             Heap::STR => self.structure_string(self[addr].1),
             Heap::LIS => self.list_string(addr),
-            Heap::REF => self.symbols.get_var(addr).to_owned(),
+            Heap::REF | Heap::REFC => match self.symbols.get_var(addr).to_owned() {
+                Some(symbol) => symbol.to_owned(),
+                None => format!("_{addr}"),
+            },
             Heap::REFA => {
-                let buf = "∀'".to_owned();
-                buf + self.symbols.get_var(self.deref(addr))
+                if let Some(symbol) = self.symbols.get_var(self.deref(addr)) {
+                    format!("∀'{symbol}")
+                } else {
+                    format!("∀'_{addr}")
+                }
             }
             _ => self.structure_string(addr),
         }
