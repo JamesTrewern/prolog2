@@ -93,8 +93,6 @@ fn prove(goals: Vec<usize>, proof_stack: &mut Vec<Env>, state: &mut State) -> bo
         println!("[{}]Try: {}", depth, state.heap.term_string(goal));
         let mut choices = state.prog.call(goal, &mut state.heap);
 
-        println!("choices: {choices:?}");
-
         loop {
             if let Some(choice) = choices.pop() {
                 if apply_choice(proof_stack, pointer, choice, state) {

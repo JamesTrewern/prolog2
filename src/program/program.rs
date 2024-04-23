@@ -16,7 +16,7 @@ pub type PredicateFN = fn(Box<[usize]>, &mut Heap) -> bool;
 pub type PredModule = &'static [(&'static str, usize, PredicateFN)];
 
 pub struct Program {
-    predicate_functions: HashMap<(usize,usize), PredicateFN>,
+    predicate_functions: HashMap<(usize, usize), PredicateFN>,
     pub predicates: HashMap<(usize, usize), Vec<usize>>, //(id, arity): Predicate
     pub clauses: ClauseTable,
     invented_preds: usize,
@@ -53,7 +53,6 @@ impl Program {
                 check_contraint: clause_type == ClauseType::HYPOTHESIS,
             })
         } else {
-            println!("Failed to match {}", clause.to_string(heap));
             None
         }
     }
@@ -74,12 +73,12 @@ impl Program {
             }
         } else {
             let iterator = if symbol < Heap::CON_PTR {
-                self.clauses.iter([false,false,true,true,true])
+                self.clauses.iter([false, false, true, true, true])
             } else {
-                self.clauses.iter([false,false,false,true,true])
+                self.clauses.iter([false, false, false, true, true])
             };
             //TO DO use clause returned by iterator
-            for (i,_) in iterator {
+            for (i, _) in iterator {
                 if let Some(choice) = self.match_clause(i, goal_addr, heap) {
                     choices.push(choice);
                 }
@@ -131,6 +130,7 @@ impl Program {
     }
 
     pub fn remove_h_clause(&mut self, invented: bool) {
+        self.h_clauses -= 1;
         if invented {
             self.invented_preds -= 1;
         }
@@ -144,18 +144,21 @@ impl Program {
     pub fn check_constraints(&self, clause: usize, heap: &Heap) -> bool {
         !self
             .clauses
-            .iter([true,false,false,false,false])
-            .any(|(i,(_, constraint))| {println!("constraint: {}",constraint.to_string(heap)); constraint.subsumes(&self.clauses.get(clause).1, heap)})
+            .iter([true, false, false, false, false])
+            .any(|(i, (_, constraint))| {
+                // println!("constraint: {}", constraint.to_string(heap));
+                constraint.subsumes(&self.clauses.get(clause).1, heap)
+            })
     }
 
     pub fn write_prog(&self, heap: &Heap) {
-        for (i,(c_type, clause)) in self.clauses.iter([true,true,true,true,false]){
+        for (i, (c_type, clause)) in self.clauses.iter([true, true, true, true, false]) {
             println!("{c_type:?}, {}", clause.to_string(heap))
         }
     }
 
     pub fn write_h(&self, heap: &Heap) {
-        for (i,(c_type, clause)) in self.clauses.iter([false,false,false,false,true]){
+        for (i, (c_type, clause)) in self.clauses.iter([false, false, false, false, true]) {
             println!("{c_type:?}, {}", clause.to_string(heap))
         }
     }

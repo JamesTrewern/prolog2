@@ -49,6 +49,7 @@ impl Program {
             }
         }
         heap.query_space = true;
+        self.clauses.sort_clauses();
         self.clauses.find_flags();
         self.predicates = self.clauses.predicate_map(heap);
     }

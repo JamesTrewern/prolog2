@@ -1,5 +1,12 @@
 use std::{
-    alloc::{self, Layout}, cmp::Ordering, collections::HashMap, iter::Map, ops::{Deref, Index}, ptr, rc::Rc, thread, time
+    alloc::{self, Layout},
+    cmp::Ordering,
+    collections::HashMap,
+    iter::Map,
+    ops::{Deref, Index},
+    ptr,
+    rc::Rc,
+    thread, time,
 };
 
 use crate::{
@@ -24,9 +31,8 @@ pub type ClauseOwned = Box<[usize]>;
 // }
 
 // impl Clause {
-    
-// }
 
+// }
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub enum ClauseType {
@@ -251,73 +257,53 @@ fn ho_term(addr: usize, heap: &Heap) -> bool {
 #[derive(Debug)]
 pub struct ClauseTable {
     pub clauses: Vec<(ClauseType, usize, usize)>,
-    ptr: *mut usize,
-    cap: usize,
-    pub len: usize,
-    type_flags: [usize;5],
+    literal_addrs: Vec<usize>,
+    type_flags: [usize; 5],
 }
 
 impl<'a> ClauseTable {
     const DEFAULT_CAPACITY: usize = 1000;
 
     pub fn new() -> ClauseTable {
-        let layout = Layout::array::<usize>(Self::DEFAULT_CAPACITY).unwrap();
-        assert!(layout.size() <= isize::MAX as usize, "Allocation too large");
-        let ptr = unsafe { alloc::alloc(layout) } as *mut usize;
         ClauseTable {
             clauses: vec![],
-            ptr,
-            cap: Self::DEFAULT_CAPACITY,
-            len: 0,
-            type_flags: [0;5]
+            literal_addrs: Vec::with_capacity(Self::DEFAULT_CAPACITY),
+            type_flags: [0; 5],
         }
     }
 
-    fn grow(&mut self) {
-        let new_cap = 2 * self.cap;
-        let new_layout = Layout::array::<usize>(new_cap).unwrap();
-        assert!(
-            new_layout.size() <= isize::MAX as usize,
-            "Clause Memory Allocation too large"
-        );
-        let old_layout = Layout::array::<usize>(self.cap).unwrap();
-        let old_ptr = self.ptr as *mut u8;
-        let new_ptr = unsafe { alloc::realloc(old_ptr, old_layout, new_layout.size()) };
-        self.ptr = unsafe { alloc::alloc(new_layout) } as *mut usize;
-        self.cap = new_cap;
+    pub fn add_clause(&mut self, clause: ClauseOwned, clause_type: ClauseType) {
+        self.clauses
+            .push((clause_type, self.literal_addrs.len(), clause.len()));
+        self.literal_addrs.extend_from_slice(&clause);
     }
 
-    pub fn add_clause(&mut self, clause: ClauseOwned, clause_type: ClauseType){
-        if self.len + clause.len() >= self.cap {
-            self.grow();
-        }
-        let clause_addr = self.len;
-        unsafe { ptr::copy(clause.as_ptr(), self.ptr.add(self.len), clause.len()) }
-        self.len += clause.len();
-        self.clauses.push((clause_type, clause_addr, clause.len()));
+    pub fn sort_clauses(&mut self) {
         self.clauses.sort_by(|c1, c2| order_clauses(c1, c2));
     }
 
     pub fn remove_clause(&mut self, i: usize) {
-        let (_, clause_addr, clause_len) = self.clauses.remove(i);
+        let (_, literals_ptr, clause_literals_len) = self.clauses.remove(i);
         assert!(
-            self.len == clause_addr + clause_len,
+            self.literal_addrs.len() == literals_ptr + clause_literals_len,
             "Clause Not removed from top"
         );
-        self.len -= clause_len;
+        self.literal_addrs
+            .truncate(self.literal_addrs.len() - clause_literals_len)
     }
 
-    pub fn predicate_map(&self, heap: &Heap) -> HashMap::<(usize,usize),Vec<usize>>{
-        let mut predicate_map = HashMap::<(usize,usize),Vec<usize>>::new();
+    pub fn predicate_map(&self, heap: &Heap) -> HashMap<(usize, usize), Vec<usize>> {
+        let mut predicate_map = HashMap::<(usize, usize), Vec<usize>>::new();
 
-        for (ci,(_,clause)) in self.iter([false,true,true,false,false]){
+        for (ci, (_, clause)) in self.iter([false, true, true, false, false]) {
             let cell = heap[clause[0]];
-            if cell.0 >= isize::MAX as usize{
-                match predicate_map.get_mut(&cell){
+            if cell.0 >= isize::MAX as usize {
+                match predicate_map.get_mut(&cell) {
                     Some(clauses) => clauses.push(ci),
-                    None => {predicate_map.insert(cell, vec![ci]);},
+                    None => {
+                        predicate_map.insert(cell, vec![ci]);
+                    }
                 }
-                
             }
         }
 
@@ -325,48 +311,42 @@ impl<'a> ClauseTable {
     }
 
     pub fn find_flags(&mut self) {
-
-        self.type_flags = [self.clauses.len();5];
+        self.type_flags = [self.clauses.len(); 5];
 
         for (i, (ct, _, _)) in self.clauses.iter().enumerate().rev() {
             if *ct == ClauseType::CONSTRAINT {
                 self.type_flags[0] = i;
             }
-            if *ct == ClauseType::CLAUSE  {
+            if *ct == ClauseType::CLAUSE {
                 self.type_flags[1] = i;
             }
-            if *ct == ClauseType::BODY  {
+            if *ct == ClauseType::BODY {
                 self.type_flags[2] = i;
             }
-            if *ct == ClauseType::META  {
+            if *ct == ClauseType::META {
                 self.type_flags[3] = i;
             }
-            if *ct == ClauseType::HYPOTHESIS  {
+            if *ct == ClauseType::HYPOTHESIS {
                 self.type_flags[4] = i;
             }
         }
 
-        for type_i in (0..4).rev(){
-            if self.type_flags[type_i] > self.type_flags[type_i+1]{
-                self.type_flags[type_i] = self.type_flags[type_i+1]
+        for type_i in (0..4).rev() {
+            if self.type_flags[type_i] > self.type_flags[type_i + 1] {
+                self.type_flags[type_i] = self.type_flags[type_i + 1]
             }
         }
         println!("{:?}", self.type_flags);
     }
 
-    pub fn iter(&self, types: [bool;5]) -> ClauseIterator {
+    pub fn iter(&self, types: [bool; 5]) -> ClauseIterator {
         ClauseIterator::new(self, types)
     }
 
     pub fn get(&self, index: usize) -> (ClauseType, Clause) {
         // if index >= self.clauses.len(){ return None;}
-        let (ctype, clause_addr, clause_len) = self.clauses[index];
-        let clause = unsafe {
-            std::slice::from_raw_parts(
-                self.ptr.add(clause_addr),
-                clause_len,
-            )
-        };
+        let (ctype, literals_ptr, clause_literals_len) = self.clauses[index];
+        let clause = &self.literal_addrs[literals_ptr .. literals_ptr + clause_literals_len];
         (ctype, clause)
     }
 }
@@ -374,67 +354,68 @@ impl<'a> ClauseTable {
 impl Deref for ClauseTable {
     type Target = [usize];
     fn deref(&self) -> &[usize] {
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+        &self.literal_addrs
     }
 }
 #[derive(Debug)]
 pub struct ClauseIterator<'a> {
     clause_table: &'a ClauseTable,
     i: usize,
-    current_type_i: usize,
-    types: [bool;5]
+    skip_points: Vec<(usize, usize)>
 }
 
 impl<'a> ClauseIterator<'a> {
-    fn new(clause_table: &ClauseTable, types: [bool;5]) -> ClauseIterator{
-        let mut i = clause_table.clauses.len();
-        let mut current_type_i = 0;
-        for type_i in 0..5{
-            if types[type_i] == true{
-                i = clause_table.type_flags[type_i];
-                current_type_i = type_i;
-                break;   
-            }
-        }
-        ClauseIterator{ clause_table, i, types, current_type_i }
-    }
-    fn increment_i(&mut self){
-        self.i += 1;
+    fn new(clause_table: &ClauseTable, types: [bool; 5]) -> ClauseIterator {
+        let mut skip_points: Vec<(usize, usize)> = Vec::with_capacity(5);
 
-        for type_i in (0..5).rev(){
-            if self.clause_table.type_flags[type_i] <= self.i{
-                self.current_type_i = type_i;
-                break;
+        if !types[4] {
+            skip_points.push((clause_table.type_flags[4], clause_table.clauses.len()))
+        }
+
+        for type_i in (0..4).rev() {
+            if !types[type_i] {
+                skip_points.push((
+                    clause_table.type_flags[type_i],
+                    clause_table.type_flags[type_i + 1],
+                ));
             }
         }
+
+        //TO DO Merge skip points if possible
+
+        ClauseIterator {
+            clause_table,
+            i: 0,
+            skip_points
+        }
+    }
+    fn skip_if_required(&mut self) {
         loop{
-            if self.i >= self.clause_table.type_flags[self.current_type_i]{
-                if self.types[self.current_type_i]{
-                    break;
-                }else if self.current_type_i == 4 {
-                    self.i = self.clause_table.clauses.len();
-                    break;
+            if let Some((i1 ,i2)) =  self.skip_points.last().copied(){
+                if self.i == i1{
+                    self.i = i2;
+                    self.skip_points.pop();
                 }else{
-                    self.current_type_i += 1;
-                    self.i = self.clause_table.type_flags[self.current_type_i];
+                    break;
                 }
             }else{
-                self.current_type_i += 1;
+                break;
             }
         }
     }
 }
 
 impl<'a> Iterator for ClauseIterator<'a> {
-    type Item = (usize,( ClauseType, Clause<'a>));
+    type Item = (usize, (ClauseType, Clause<'a>));
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.i == self.clause_table.clauses.len(){
+        self.skip_if_required();
+
+        if self.i == self.clause_table.clauses.len() {
             return None;
         }
-        println!("{}",self.i);
         let result = Some((self.i, self.clause_table.get(self.i)));
-        self.increment_i();
+        self.i += 1;
         result
     }
 }
