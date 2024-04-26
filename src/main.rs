@@ -79,6 +79,8 @@ Store Heap index at query start
 New Clause rules: constraints, head can't be existing predicate
 
 */
+
+//TO DO P is bound twice resolve this;
 fn main() -> ExitCode {
     let mut state = State::new();
 
@@ -86,17 +88,13 @@ fn main() -> ExitCode {
 
     state.prog.write_prog(&state.heap);
 
-    let goal1 = state.heap.build_literal("parent(adam,james)", &mut HashMap::new(), &vec![]);
-    let goal2 = state.heap.build_literal("parent(tami,james)", &mut HashMap::new(), &vec![]);
+    let goal1 = state.heap.build_literal("ancestor(ken,james)", &mut HashMap::new(), &vec![]);
 
+    // state.heap.print_heap();
 
     start_proof(vec![goal1], &mut state);
 
-    // state.heap.print_heap();
     
-    start_proof(vec![goal2], &mut state);
-
-    state.heap.print_heap();
 
 
     ExitCode::SUCCESS

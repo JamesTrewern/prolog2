@@ -21,6 +21,8 @@ fn unify_ref(ref_addr: usize, non_ref_addr: usize, heap: &Heap, binding: &mut Bi
             if addr1 >= Heap::CON_PTR {
                 if addr1 == non_ref_addr {
                     true
+                }else if non_ref_addr >= Heap::CON_PTR{
+                    false
                 } else if heap[non_ref_addr] == (Heap::CON, addr1) {
                     binding.update_dangling_const(addr1, non_ref_addr);
                     true
@@ -39,26 +41,28 @@ fn unify_ref(ref_addr: usize, non_ref_addr: usize, heap: &Heap, binding: &mut Bi
 }
 
 fn unify_struct(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
-    //Symbol, Arity 
-    let (s1,a1) = heap[addr1]; 
-    let (s2,a2) = heap[addr2];
+    //Symbol, Arity
+    let (s1, a1) = heap.deref_str_head(addr1);
+    let (s2, a2) = heap.deref_str_head(addr2);
 
     //Fail if arity doesn't match
     if a1 != a2 {
         return false;
     }
 
-    // Is either symbol a pointer to heap 
-    if s1 < Heap::CON_PTR && s2 < Heap::CON_PTR{
-        if !unify_rec(s1, s2, heap, binding){
+
+    // Is either symbol a pointer to heap
+    // println!("s1 {s1}, s2 {s2}");
+    if s1 < Heap::CON_PTR && s2 < Heap::CON_PTR {
+        if !unify_rec(s1, s2, heap, binding) {
             return false;
         }
-    }else if s1 < Heap::CON_PTR { 
-        if !unify_ref(heap.deref(s1), s2, heap, binding){
+    } else if s1 < Heap::CON_PTR {
+        if !unify_ref(heap.deref(s1), s2, heap, binding) {
             return false;
         }
-    }else if s2 < Heap::CON_PTR{
-        if !unify_ref(heap.deref(s2), s1, heap, binding){
+    } else if s2 < Heap::CON_PTR {
+        if !unify_ref(heap.deref(s2), s1, heap, binding) {
             return false;
         }
     }
@@ -84,17 +88,22 @@ fn unify_list(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) ->
 }
 
 pub fn unify_rec(mut addr1: usize, mut addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
+    // println!("addr1: {addr1}, addr2: {addr2}");
     //addr 1 from
     //addr 2 to
-    addr1 = heap.deref(addr1);
-    addr2 = heap.deref(addr2);
     // println!("addr1: {addr1}, addr2: {addr2}");
-    let cell1 = &heap[addr1];
-    let cell2 = &heap[addr2];
     // println!("{cell1:?},{cell2:?}");
+    let (cell1, cell2) = match (heap.deref_cell(addr1), heap.deref_cell(addr2)) {
+        (None, None) => return addr1 == addr2,
+        (Some(_), None) => return unify_ref(addr1, addr2, heap, binding),
+        (None, Some(_)) => return unify_ref(addr2, addr1, heap, binding),
+        (Some(c1), Some(c2)) => (c1, c2),
+    };
 
     match (cell1.0, cell2.0) {
-        (Heap::REF | Heap::REFC | Heap::REFA, Heap::REF | Heap::REFC | Heap::REFA) => unify_vars(addr1, addr2, heap, binding),
+        (Heap::REF | Heap::REFC | Heap::REFA, Heap::REF | Heap::REFC | Heap::REFA) => {
+            unify_vars(addr1, addr2, heap, binding)
+        }
         (Heap::REF | Heap::REFA | Heap::REFC, _) => unify_ref(addr1, addr2, heap, binding),
         (_, Heap::REF | Heap::REFA | Heap::REFC) => unify_ref(addr2, addr1, heap, binding),
         (Heap::STR, Heap::STR) => unify_struct(cell1.1, cell2.1, heap, binding),

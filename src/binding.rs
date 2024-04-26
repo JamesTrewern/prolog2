@@ -18,6 +18,7 @@ pub trait BindingTraits {
 
 impl BindingTraits for Binding {
     fn bound(&self, addr: usize) -> Option<usize> {
+        // println!("{addr}");
         match self.iter().find(|(a1, _)| *a1 == addr) {
             Some((_, a2)) => match self.bound(*a2) {
                 Some(a2) => Some(a2),
@@ -72,25 +73,45 @@ impl BindingTraits for Binding {
             }
         }
 
-        //Is structure symbol variable and not covered by binding?
-        let str_symbol = heap[str_addr].0;
-        
-        if str_symbol < Heap::CON_PTR && None == self.bound(str_symbol) {
-            if let (Heap::REF|Heap::REFA|Heap::REFC, ptr) = heap[heap.deref(str_symbol)]{
-                let new_var_symbol = heap.set_var(None, false);
-                self.push((ptr, new_var_symbol))
-            }
-            //Create new ref in query space for structure symbol
-            
-        } else if constant {
-            return None;
+        // //Is structure symbol variable and not covered by binding?
+        // let mut str_symbol = heap[str_addr].0;
+        // //TO DO simplify this bloody thing
+        // if str_symbol < Heap::CON_PTR {
+        //     str_symbol = heap.deref(str_symbol);
+        //     if None == self.bound(str_symbol) {
+        //         if let (Heap::REF | Heap::REFA | Heap::REFC, ptr) = heap[heap.deref(str_symbol)] {
+        //             let new_var_symbol = heap.set_var(None, false);
+        //             self.push((ptr, new_var_symbol))
+        //         }
+        //     } //Create new ref in query space for structure symbol
+        // } else if constant {
+        //     return None;
+        // }
+        // let str_addr = heap.duplicate(str_addr, arity + 1);
+        // if let Some(new_symbol) = self.bound(str_symbol){
+        //     heap[str_addr].1 = new_symbol;
+        // }
+
+        //get str symbol
+
+        // IS the predicate symbol a constant or variable
+        let (str_symbol,_) = heap.deref_str_head(str_addr);
+
+        //Introduce new ref
+        //TO DO skip if old ref has a binding
+        if str_symbol < Heap::CON_PTR {
+            let new_var_symbol = heap.set_var(None, false);
+            self.push((str_symbol, new_var_symbol));
         }
 
         let str_addr = heap.duplicate(str_addr, arity + 1);
 
-        let (symbol, _) = &mut heap[str_addr];
-        if let Some(new_symbol) = self.bound(*symbol) {
-            *symbol = new_symbol;
+        //After we copy the structure
+        //If the structure symbol is bound by self
+        //we update the symbol value
+
+        if let Some(new_symbol) = self.bound(str_symbol) {
+            heap[str_addr].0 = new_symbol;
         }
 
         for arg in str_addr + 1..str_addr + arity + 1 {
@@ -128,7 +149,7 @@ impl BindingTraits for Binding {
                         *tag = Heap::REF;
                         match self.bound(*addr) {
                             Some(new_ref) => *addr = new_ref,
-                            None => self.push((*addr, arg)),
+                            None => {self.push((*addr, arg)); *addr = arg},
                         }
                     }
                 }

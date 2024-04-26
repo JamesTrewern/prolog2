@@ -167,8 +167,12 @@ fn apply_choice(
         env.new_clause = choice.new_clause;
         env.invent_pred = invented_pred;
         let depth = env.depth + 1;
-        for goal in goals {
-            proof_stack.insert(pointer + 1, Env::new(goal, depth));
+        // state.heap.print_heap();
+
+        let mut i = 1;
+        for goal in goals{
+            proof_stack.insert(pointer + i, Env::new(goal, depth));
+            i+=1;
         }
         true
     } else {

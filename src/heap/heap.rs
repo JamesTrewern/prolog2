@@ -1,4 +1,4 @@
-use crate::binding::{self, Binding};
+use crate::binding::Binding;
 
 use super::symbol_db::SymbolDB;
 use std::{
@@ -9,6 +9,9 @@ use std::{
 };
 
 pub type Cell = (usize, usize);
+
+pub struct HeapDeallocationError;
+
 pub struct Heap {
     ptr: *mut Cell,
     cap: usize,
@@ -17,7 +20,7 @@ pub struct Heap {
     pub symbols: SymbolDB,
 }
 #[derive(Debug, Clone)]
-pub enum SubTerm {
+enum SubTerm {
     TEXT(String),
     CELL((usize, usize)),
 }
@@ -108,9 +111,6 @@ impl Heap {
     }
 
     pub fn deref(&self, addr: usize) -> usize {
-        if addr >= Heap::CON_PTR {
-            return addr;
-        }
         if let (Heap::REF | Heap::REFA | Heap::REFC, pointer) = self[addr] {
             if addr == pointer {
                 addr
@@ -122,8 +122,22 @@ impl Heap {
         }
     }
 
-    pub fn deref_cell(&self, addr: usize) -> &Cell {
-        &self[self.deref(addr)]
+    pub fn deref_str_head(&self, addr: usize) -> Cell{
+        let (mut symbol, arity) = self[addr];
+
+        if symbol < Heap::CON_PTR{
+            symbol = self[self.deref(symbol)].1;
+        }
+
+        (symbol,arity)
+    }
+
+    pub fn deref_cell(&self, addr: usize) -> Option<Cell> {
+        if addr < Heap::CON_PTR {
+            Some(self[self.deref(addr)])
+        }else{
+            None
+        }
     }
 
     pub fn add_const_symbol(&mut self, symbol: &str) -> usize {
@@ -151,7 +165,7 @@ impl Heap {
                 if *target >= Heap::CON_PTR {
                     *tag = Heap::CON;
                 }
-                println!("{pointer} -> {target}");
+                // println!("{pointer} -> {target}");
                 *pointer = *target;
             }
         }
@@ -160,22 +174,45 @@ impl Heap {
     pub fn unbind(&mut self, binding: &Binding) {
         for (src, _target) in binding {
             if let (tag @ (Heap::REF | Heap::CON), pointer) = &mut self[*src] {
-                print!("[{src}],({}, {pointer}) -> ", match *tag {
-                    Heap::REF => "REF",
-                    Heap::CON => "CON",
-                    _ => "",
-                });
+                // print!(
+                //     "[{src}],({}, {pointer}) -> ",
+                //     match *tag {
+                //         Heap::REF => "REF",
+                //         Heap::CON => "CON",
+                //         _ => "",
+                //     }
+                // );
                 if *tag == Heap::CON {
                     *tag = Heap::REF
                 }
                 *pointer = *src;
-                println!("({}, {pointer})", match *tag {
-                    Heap::REF => "REF",
-                    Heap::CON => "CON",
-                    _ => "",
-                });
+                // println!(
+                //     "({}, {pointer})",
+                //     match *tag {
+                //         Heap::REF => "REF",
+                //         Heap::CON => "CON",
+                //         _ => "",
+                //     }
+                // );
             }
         }
+    }
+
+    pub fn deallocate_str(&mut self, addr: usize){
+        let cell = self.deref_str_head(addr);
+
+        if addr + cell.1 + 1 != self.len{
+            self.print_heap();
+            panic!("Deallocation error, addr:{addr}");
+        }
+
+        println!("{},{addr}",cell.0);
+        if cell.0 < Heap::CON_PTR && cell.0 + 1 == addr{
+            self.len -= cell.1 + 2;
+        }else{
+            self.len -= cell.1 + 1;
+        }
+        //TO DO recursively delete structures pointed to within structure
     }
 
     //-----------------------------------------------------------------------------------------------
@@ -456,7 +493,12 @@ impl Heap {
 
     pub fn structure_string(&self, addr: usize) -> String {
 
-        let mut buf = self.symbols.get_symbol(self.deref(self[addr].0));
+        let mut symbol_id = self[addr].0;
+        if symbol_id < Heap::CON_PTR{
+            symbol_id = self[self.deref(symbol_id)].1
+        }
+
+        let mut buf = self.symbols.get_symbol(symbol_id);
         buf += "(";
         for i in addr + 1..addr + self[addr].1 + 1 {
             buf += &self.term_string(i);

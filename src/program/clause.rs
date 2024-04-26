@@ -67,6 +67,7 @@ pub trait ClauseTraits {
     fn higher_order(&self, heap: &Heap) -> bool;
     fn write_clause(&self, heap: &Heap);
     fn to_string(&self, heap: &Heap) -> String;
+    fn deallocate(&self, heap: &mut Heap);
 }
 
 impl<'a> ClauseTraits for Clause<'a> {
@@ -140,6 +141,12 @@ impl<'a> ClauseTraits for Clause<'a> {
             false
         }
     }
+    
+    fn deallocate(&self, heap: &mut Heap) {
+        for str_addr in self.iter().rev(){
+            heap.deallocate_str(*str_addr);
+        }
+    }
 }
 
 impl ClauseTraits for ClauseOwned {
@@ -211,6 +218,12 @@ impl ClauseTraits for ClauseOwned {
             true
         } else {
             false
+        }
+    }
+
+    fn deallocate(&self, heap: &mut Heap) {
+        for str_addr in self.iter().rev(){
+            heap.deallocate_str(*str_addr)
         }
     }
 }

@@ -66,6 +66,7 @@ impl Program {
         }
 
         if let Some(clauses) = self.predicates.get(&(symbol, arity)) {
+            println!("{clauses:?}");
             for i in clauses.iter() {
                 if let Some(choice) = self.match_clause(*i, goal_addr, heap) {
                     choices.push(choice)
@@ -105,6 +106,7 @@ impl Program {
     ) -> Option<Option<usize>> {
         if self.h_clauses == config.max_clause {
             println!("Max H size can't add clause");
+            clause.deallocate(heap);
             return None;
         }
         let symbol = clause.pred_symbol(heap);
@@ -112,6 +114,7 @@ impl Program {
         let id = if symbol < Heap::CON_PTR {
             if self.invented_preds == config.max_invented {
                 println!("Max invented predicates can't add clause");
+                clause.deallocate(heap);
                 return None;
             }
             self.invented_preds += 1;
