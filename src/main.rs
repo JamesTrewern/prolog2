@@ -93,7 +93,7 @@ fn main() -> ExitCode {
 
     state.heap.print_heap();
 
-    start_proof(vec![goal1], &mut state);
+    // start_proof(vec![goal1], &mut state);
 
     
 

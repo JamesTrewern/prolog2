@@ -89,10 +89,15 @@ impl Heap {
 
     pub fn put_structure(&mut self, symbol: usize, arity: usize) -> usize {
         unsafe {
-            ptr::write(self.ptr.add(self.len), (symbol, arity));
+            ptr::write(self.ptr.add(self.len), (Heap::STR, arity));
+            if symbol < Heap::CON_PTR {
+                ptr::write(self.ptr.add(self.len+1), (Heap::REFC, symbol));
+            }else{
+                ptr::write(self.ptr.add(self.len+1), (Heap::CON, symbol));
+            }
         }
-        self.len += 1;
-        self.len - 1
+        self.len += 2;
+        self.len - 2
     }
 
     pub fn put_list(&mut self, empty: bool) {

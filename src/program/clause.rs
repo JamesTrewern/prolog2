@@ -151,6 +151,7 @@ impl<'a> ClauseTraits for Clause<'a> {
 
 impl ClauseTraits for ClauseOwned {
     fn higher_order(&self, heap: &Heap) -> bool {
+        println!("{self:?}");
         self.iter().any(|literal| ho_term(*literal, heap))
     }
 
@@ -229,11 +230,16 @@ impl ClauseTraits for ClauseOwned {
 }
 
 fn ho_struct(addr: usize, heap: &Heap) -> bool {
-    let (p, n) = heap[addr];
-    if p < Heap::CON_PTR {
+    let arity = match heap[addr]{
+        (Heap::STR, arity) => arity,
+        _ => panic!("Literal ptr does not point to strucutre")
+    };
+
+    
+    if Heap::REFC < heap[addr+1].0 {
         return true;
     }
-    for i in 1..n + 1 {
+    for i in 2..arity + 2 {
         match heap[addr + i] {
             (Heap::REFA, _) => return true,
             (Heap::STR, ptr) => {
@@ -260,7 +266,7 @@ fn ho_list(addr: usize, heap: &Heap) -> bool {
 fn ho_term(addr: usize, heap: &Heap) -> bool {
     match heap[addr] {
         (Heap::REFA, _) => true,
-        (Heap::STR, ptr) => ho_struct(ptr, heap),
+        (Heap::STR, _) => ho_struct(addr, heap),
 
         (Heap::LIS, ptr) => ptr != Heap::CON && ho_list(ptr, heap),
         (Heap::CON | Heap::INT, _) => false,
