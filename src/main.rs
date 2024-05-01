@@ -4,6 +4,7 @@ mod solver;
 mod unification;
 mod state;
 mod binding;
+mod tests;
 
 use std::{collections::HashMap, process::ExitCode, vec};
 
@@ -84,13 +85,13 @@ New Clause rules: constraints, head can't be existing predicate
 fn main() -> ExitCode {
     let mut state = State::new();
 
-    state.prog.load_file("test", &mut state.heap);
+    // state.prog.load_file("test", &mut state.heap);
 
-    state.prog.write_prog(&state.heap);
+    // state.prog.write_prog(&state.heap);
 
-    let goal1 = state.heap.build_literal("ancestor(ken,james)", &mut HashMap::new(), &vec![]);
+    let goal1 = state.heap.build_literal("P([x,y])", &mut HashMap::new(), &vec![]);
 
-    // state.heap.print_heap();
+    state.heap.print_heap();
 
     start_proof(vec![goal1], &mut state);
 
