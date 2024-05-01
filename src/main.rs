@@ -86,13 +86,13 @@ fn main() -> ExitCode {
 
     state.prog.load_file("test", &mut state.heap);
 
-    state.prog.write_prog(&state.heap);
+    // state.prog.write_prog(&state.heap);
 
-    let goal1 = state.heap.build_literal("ancestor(ken,james)", &mut HashMap::new(), &vec![]);
+    // let goal1 = state.heap.build_literal("ancestor(ken,james)", &mut HashMap::new(), &vec![]);
 
-    // state.heap.print_heap();
+    state.heap.print_heap();
 
-    start_proof(vec![goal1], &mut state);
+    // start_proof(vec![goal1], &mut state);
 
     
 

@@ -126,6 +126,7 @@ fn parse_clause(clause: &str, heap: &mut Heap) -> ClauseOwned {
         .iter()
         .map(|text| heap.build_literal(text, &mut map, &uni_vars))
         .collect();
+
     [&[head], body.as_slice()].concat().into()
 }
 
