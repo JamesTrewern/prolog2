@@ -13,9 +13,7 @@ pub type Cell = (usize, usize);
 pub struct HeapDeallocationError;
 
 pub struct Heap {
-    ptr: *mut Cell,
-    cap: usize,
-    len: usize,
+    pub cells: Vec<Cell>,
     pub query_space: bool,
     pub symbols: SymbolDB,
 }
@@ -37,82 +35,34 @@ impl Heap {
     pub const CON_PTR: usize = isize::MAX as usize;
 
     pub fn new(size: usize) -> Heap {
-        let layout = Layout::array::<Cell>(size).unwrap();
-        assert!(layout.size() <= isize::MAX as usize, "Allocation too large");
-        let ptr = unsafe { alloc(layout) } as *mut Cell;
         Heap {
-            ptr,
-            cap: size,
-            len: 0,
+            cells: Vec::with_capacity(size),
             query_space: true,
             symbols: SymbolDB::new(),
         }
     }
 
     pub fn set_var(&mut self, ref_addr: Option<usize>, universal: bool) -> usize {
-        if self.len == self.cap {
-            panic!("Heap out of memory")
-        }
         let addr = match ref_addr {
             Some(a) => a,
-            None => self.len,
+            None => self.cells.len(),
         };
-        unsafe {
-            ptr::write(
-                self.ptr.add(self.len),
-                (
-                    if universal {
-                        Heap::REFA
-                    } else if !self.query_space {
-                        Heap::REFC
-                    } else {
-                        Heap::REF
-                    },
-                    addr,
-                ),
-            );
-        }
-        self.len += 1;
-        return self.len - 1;
+
+        let tag = if universal {
+            Heap::REFA
+        } else if !self.query_space {
+            Heap::REFC
+        } else {
+            Heap::REF
+        };
+
+        self.cells.push((tag,addr));
+        return self.cells.len() - 1;
     }
 
     pub fn set_const(&mut self, id: usize) -> usize {
-        if self.len == self.cap {
-            panic!("Heap out of memory")
-        }
-        unsafe {
-            ptr::write(self.ptr.add(self.len), (Heap::CON, id));
-        }
-        self.len += 1;
-        return self.len - 1;
-    }
-
-    pub fn put_structure(&mut self, symbol: usize, arity: usize) -> usize {
-        unsafe {
-            ptr::write(self.ptr.add(self.len), (Heap::STR, arity));
-            if symbol < Heap::CON_PTR {
-                ptr::write(self.ptr.add(self.len+1), (Heap::REFC, symbol));
-            }else{
-                ptr::write(self.ptr.add(self.len+1), (Heap::CON, symbol));
-            }
-        }
-        self.len += 2;
-        self.len - 2
-    }
-
-    pub fn put_list(&mut self, empty: bool) {
-        let pointer = if empty { Heap::CON } else { self.len + 1 };
-        unsafe {
-            ptr::write(self.ptr.add(self.len), (Heap::LIS, pointer));
-        }
-        self.len += 1;
-    }
-
-    pub fn put_cell(&mut self, cell: (usize, usize)) {
-        unsafe {
-            ptr::write(self.ptr.add(self.len), cell);
-        }
-        self.len += 1;
+        self.cells.push((Heap::CON, id));
+        return self.cells.len() - 1;
     }
 
     pub fn deref(&self, addr: usize) -> usize {
@@ -127,20 +77,10 @@ impl Heap {
         }
     }
 
-    pub fn deref_str_head(&self, addr: usize) -> Cell{
-        let (mut symbol, arity) = self[addr];
-
-        if symbol < Heap::CON_PTR{
-            symbol = self[self.deref(symbol)].1;
-        }
-
-        (symbol,arity)
-    }
-
     pub fn deref_cell(&self, addr: usize) -> Option<Cell> {
         if addr < Heap::CON_PTR {
             Some(self[self.deref(addr)])
-        }else{
+        } else {
             None
         }
     }
@@ -151,12 +91,7 @@ impl Heap {
 
     pub fn duplicate(&mut self, start_i: usize, length: usize) -> usize {
         let new_start: usize = self.len();
-        unsafe {
-            let src = self.ptr.add(start_i);
-            let dst = self.ptr.add(self.len);
-            ptr::copy(src, dst, length);
-            self.len += length;
-        }
+        self.cells.extend_from_within(start_i..start_i+length);
         new_start
     }
 
@@ -203,20 +138,13 @@ impl Heap {
         }
     }
 
-    pub fn deallocate_str(&mut self, addr: usize){
-        let cell = self.deref_str_head(addr);
-
-        if addr + cell.1 + 1 != self.len{
+    pub fn deallocate_str(&mut self, addr: usize) {
+        let length = self[addr].1 + 2;
+        if addr + length != self.cells.len() {
             self.print_heap();
             panic!("Deallocation error, addr:{addr}");
         }
-
-        println!("{},{addr}",cell.0);
-        if cell.0 < Heap::CON_PTR && cell.0 + 1 == addr{
-            self.len -= cell.1 + 2;
-        }else{
-            self.len -= cell.1 + 1;
-        }
+        self.cells.truncate(self.cells.len() - length)
         //TO DO recursively delete structures pointed to within structure
     }
 
@@ -315,22 +243,18 @@ impl Heap {
         let i1 = text.find('(').unwrap();
         let i2 = text.rfind(')').unwrap();
         let sub_terms = self.handle_sub_terms(&text[i1 + 1..i2], symbols_map, uni_vars);
-        //If var head pass to text var
-        let symbol = if text.chars().next().unwrap().is_uppercase() {
-            self.text_var(&text[..i1], symbols_map, uni_vars)
-        } else {
-            self.symbols.set_const(&text[..i1])
-        };
-        let i = self.put_structure(symbol, sub_terms.len());
+        let i = self.cells.len();
+        self.cells.push((Heap::STR, sub_terms.len()));
+        self.text_singlet(&text[..i1], symbols_map, uni_vars);
         for sub_term in sub_terms {
             match sub_term {
                 SubTerm::TEXT(text) => {
                     self.text_singlet(&text, symbols_map, uni_vars);
                 }
-                SubTerm::CELL(cell) => self.put_cell(cell),
+                SubTerm::CELL(cell) => self.cells.push(cell),
             }
         }
-        SubTerm::CELL((Heap::STR, i))
+        SubTerm::CELL((Heap::REF, i))
     }
 
     fn text_list(
@@ -362,28 +286,29 @@ impl Heap {
         } else {
             None
         };
-        let i = self.len + 1;
+        let i = self.cells.len();
         for sub_term in subterms {
-            self.put_list(false);
             match sub_term {
                 SubTerm::TEXT(text) => {
                     self.text_singlet(&text, symbols_map, uni_vars);
                 }
                 SubTerm::CELL(cell) => {
-                    self.put_cell(cell);
+                    self.cells.push(cell);
                 }
             }
+            self.cells.push((Heap::LIS,self.cells.len()+1))
         }
+        self.cells.pop(); //Remove last LIS tag cell
         match tail {
             Some(sub_term) => match sub_term {
                 SubTerm::TEXT(text) => {
                     self.text_singlet(&text, symbols_map, uni_vars);
                 }
                 SubTerm::CELL(cell) => {
-                    self.put_cell(cell);
+                    self.cells.push(cell);
                 }
             },
-            None => self.put_list(true),
+            None => self.cells.push((Heap::LIS,Heap::CON)),
         }
         SubTerm::CELL((Heap::LIS, i))
     }
@@ -420,7 +345,7 @@ impl Heap {
         uni_vars: &Vec<&str>,
     ) -> usize {
         match self.build_heap_term_rec(text, symbols_map, uni_vars) {
-            SubTerm::TEXT(_) => self.len - 1,
+            SubTerm::TEXT(_) => self.cells.len() - 1,
             SubTerm::CELL((_str, i)) => i,
         }
     }
@@ -477,6 +402,7 @@ impl Heap {
     pub fn list_string(&self, addr: usize) -> String {
         let mut buffer = "[".to_string();
         let mut pointer = self[addr].1;
+        // println!("{pointer}");
         loop {
             buffer += &self.term_string(pointer);
             if self[pointer + 1].0 != Heap::LIS {
@@ -497,16 +423,11 @@ impl Heap {
     }
 
     pub fn structure_string(&self, addr: usize) -> String {
-
-        let mut symbol_id = self[addr].0;
-        if symbol_id < Heap::CON_PTR{
-            symbol_id = self[self.deref(symbol_id)].1
-        }
-
-        let mut buf = self.symbols.get_symbol(symbol_id);
+        let (_, arity) = self[addr];
+        let mut buf = self.term_string(addr + 1);
         buf += "(";
-        for i in addr + 1..addr + self[addr].1 + 1 {
-            buf += &self.term_string(i);
+        for i in 1..=arity {
+            buf += &self.term_string(addr + 1 + i);
             buf += ","
         }
         buf.pop();
@@ -518,9 +439,9 @@ impl Heap {
         let addr = self.deref(addr);
         match self[addr].0 {
             Heap::CON => self.symbols.get_const(self[addr].1).to_owned(),
-            Heap::STR => self.structure_string(self[addr].1),
+            Heap::STR => self.structure_string(addr),
             Heap::LIS => self.list_string(addr),
-            Heap::REF | Heap::REFC => match self.symbols.get_var(addr).to_owned() {
+            Heap::REF | Heap::REFC => match self.symbols.get_var(self.deref(addr)).to_owned() {
                 Some(symbol) => symbol.to_owned(),
                 None => format!("_{addr}"),
             },
@@ -539,13 +460,13 @@ impl Heap {
 impl Deref for Heap {
     type Target = [Cell];
     fn deref(&self) -> &[Cell] {
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+        &self.cells
     }
 }
 
 impl DerefMut for Heap {
     fn deref_mut(&mut self) -> &mut [Cell] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+        &mut self.cells
     }
 }
 

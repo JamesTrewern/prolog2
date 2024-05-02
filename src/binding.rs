@@ -59,8 +59,8 @@ impl BindingTraits for Binding {
     ) -> Option<usize> {
         let mut constant: bool = true;
         let arity = heap[str_addr].1;
-        for arg in str_addr + 1..str_addr + 1 + arity {
-            match heap[arg] {
+        for i in 1..=arity{
+            match heap[str_addr+1+i] {
                 (Heap::REF | Heap::REFA | Heap::REFC, _) => constant = false,
                 (Heap::STR, addr) => {
                     if let Some(new_addr) = self.build_str(addr, heap, uqvar_binding) {
@@ -73,48 +73,8 @@ impl BindingTraits for Binding {
             }
         }
 
-        // //Is structure symbol variable and not covered by binding?
-        // let mut str_symbol = heap[str_addr].0;
-        // //TO DO simplify this bloody thing
-        // if str_symbol < Heap::CON_PTR {
-        //     str_symbol = heap.deref(str_symbol);
-        //     if None == self.bound(str_symbol) {
-        //         if let (Heap::REF | Heap::REFA | Heap::REFC, ptr) = heap[heap.deref(str_symbol)] {
-        //             let new_var_symbol = heap.set_var(None, false);
-        //             self.push((ptr, new_var_symbol))
-        //         }
-        //     } //Create new ref in query space for structure symbol
-        // } else if constant {
-        //     return None;
-        // }
-        // let str_addr = heap.duplicate(str_addr, arity + 1);
-        // if let Some(new_symbol) = self.bound(str_symbol){
-        //     heap[str_addr].1 = new_symbol;
-        // }
-
-        //get str symbol
-
-        // IS the predicate symbol a constant or variable
-        let (str_symbol,_) = heap.deref_str_head(str_addr);
-
-        //Introduce new ref
-        //TO DO skip if old ref has a binding
-        if str_symbol < Heap::CON_PTR {
-            let new_var_symbol = heap.set_var(None, false);
-            self.push((str_symbol, new_var_symbol));
-        }
-
-        let str_addr = heap.duplicate(str_addr, arity + 1);
-
-        //After we copy the structure
-        //If the structure symbol is bound by self
-        //we update the symbol value
-
-        if let Some(new_symbol) = self.bound(str_symbol) {
-            heap[str_addr].0 = new_symbol;
-        }
-
-        for arg in str_addr + 1..str_addr + arity + 1 {
+        for i in 1..=arity + 1 {
+            let arg = str_addr+i;
             let (tag, addr) = &mut heap[arg];
             // if *tag == Heap::REFA{ *tag = Heap::REF}
             match *tag {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{binding, heap::Heap, unification::unify};
-
+#[test]
 fn unify_test_1(){
     let mut heap = Heap::new(50);
     let str1 = heap.build_literal("P(X,Y)", &mut HashMap::new(), &vec![]);

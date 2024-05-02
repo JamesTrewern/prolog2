@@ -16,6 +16,8 @@ use solver::start_proof;
 // use solver::start_proof;
 use state::State;
 
+use crate::unification::unify;
+
 
 
 
@@ -85,13 +87,13 @@ New Clause rules: constraints, head can't be existing predicate
 fn main() -> ExitCode {
     let mut state = State::new();
 
-    // state.prog.load_file("test", &mut state.heap);
-
-    // state.prog.write_prog(&state.heap);
-
-    let goal1 = state.heap.build_literal("P([x,y])", &mut HashMap::new(), &vec![]);
+    let str1 = state.heap.build_literal("P(X,Y)", &mut HashMap::new(), &vec![]);
+    let str2 = state.heap.build_literal("p(x,y)", &mut HashMap::new(), &vec![]);
+    let binding = unify(str1, str2, &state.heap);
 
     state.heap.print_heap();
+
+    
 
     // start_proof(vec![goal1], &mut state);
 

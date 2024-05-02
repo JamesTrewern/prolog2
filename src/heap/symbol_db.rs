@@ -50,6 +50,8 @@ impl SymbolDB {
 
     pub fn get_symbol(&self, id: usize) -> String {
         if id >= (Heap::CON_PTR) {
+            println!("{:?}", self.const_symbols);
+            println!("{:?}", id - Heap::CON_PTR);
             match self.const_symbols.get(id - Heap::CON_PTR) {
                 Some(symbol) => symbol.to_string(),
                 None => panic!("Unkown const id"),

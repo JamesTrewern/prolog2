@@ -42,32 +42,15 @@ fn unify_ref(ref_addr: usize, non_ref_addr: usize, heap: &Heap, binding: &mut Bi
 
 fn unify_struct(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
     //Symbol, Arity
-    let (s1, a1) = heap.deref_str_head(addr1);
-    let (s2, a2) = heap.deref_str_head(addr2);
+    let a1 = heap[addr1].1;
+    let a2 = heap[addr2].1;
 
     //Fail if arity doesn't match
     if a1 != a2 {
         return false;
     }
 
-
-    // Is either symbol a pointer to heap
-    // println!("s1 {s1}, s2 {s2}");
-    if s1 < Heap::CON_PTR && s2 < Heap::CON_PTR {
-        if !unify_rec(s1, s2, heap, binding) {
-            return false;
-        }
-    } else if s1 < Heap::CON_PTR {
-        if !unify_ref(heap.deref(s1), s2, heap, binding) {
-            return false;
-        }
-    } else if s2 < Heap::CON_PTR {
-        if !unify_ref(heap.deref(s2), s1, heap, binding) {
-            return false;
-        }
-    }
-
-    for i in 1..heap[addr1].1 + 1 {
+    for i in 1..=a1 + 1 {
         if !unify_rec(addr1 + i, addr2 + i, heap, binding) {
             return false;
         }
