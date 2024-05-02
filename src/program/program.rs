@@ -1,17 +1,17 @@
 use crate::{
-    binding::{Binding, BindingTraits},
     heap::Heap,
-    state::{Config, State},
+    state::Config,
     unification::unify,
 };
-use std::{collections::HashMap, ops::Index, usize, vec};
+use super::{
+    choice::Choice,
+    clause::*,
+    clause_table::ClauseTable
+};
+use std::collections::HashMap;
 
 const PRED_NAME: &'static str = "James";
 
-use super::{
-    choice::Choice,
-    clause::{self, Clause, ClauseOwned, ClauseTable, ClauseTraits, ClauseType},
-};
 pub type PredicateFN = fn(Box<[usize]>, &mut Heap) -> bool;
 pub type PredModule = &'static [(&'static str, usize, PredicateFN)];
 
@@ -88,7 +88,7 @@ impl Program {
         choices
     }
 
-    pub fn add_clause(&mut self, clause: ClauseOwned, heap: &Heap) {
+    pub fn add_clause(&mut self, clause: Box<Clause>, heap: &Heap) {
         let clause_type = if clause.higher_order(heap) {
             ClauseType::META
         } else {
@@ -100,7 +100,7 @@ impl Program {
     //Add clause, If invented predicate symbol return true
     pub fn add_h_clause(
         &mut self,
-        clause: ClauseOwned,
+        clause: Box<Clause>,
         heap: &mut Heap,
         config: &Config,
     ) -> Option<Option<usize>> {
@@ -140,7 +140,7 @@ impl Program {
         self.clauses.remove_clause(self.clauses.clauses.len() - 1)
     }
 
-    pub fn add_constraint(&mut self, clause: ClauseOwned) {
+    pub fn add_constraint(&mut self, clause: Box<Clause>) {
         self.clauses.add_clause(clause, ClauseType::CONSTRAINT);
     }
 

@@ -1,4 +1,4 @@
-use super::super::heap::heap::Heap;
+use crate::Heap;
 use super::program::PredModule;
 
 fn equal(args: Box<[usize]>, heap: &mut Heap) -> bool{

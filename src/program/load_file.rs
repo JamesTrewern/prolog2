@@ -1,11 +1,9 @@
-use crossterm::terminal::Clear;
-
 use super::{
-    clause::{self, Clause, ClauseOwned},
+    clause::Clause,
     Program,
 };
 use crate::heap::Heap;
-use std::{collections::HashMap, fs, rc::Rc};
+use std::{collections::HashMap, fs};
 
 static CONSTRAINT: &'static str = ":<c>-";
 static IMPLICATION: &'static str = ":-";
@@ -71,7 +69,7 @@ fn get_uni_vars<'a>(clause: &'a str) -> (usize, Vec<&'a str>) {
     }
 }
 
-fn parse_clause(clause: &str, heap: &mut Heap) -> ClauseOwned {
+fn parse_clause(clause: &str, heap: &mut Heap) -> Box<Clause> {
     let (i3, uni_vars) = get_uni_vars(clause);
     let (mut i1, i2) = match clause.find(CONSTRAINT) {
         Some(i) => (i, i + CONSTRAINT.len()),

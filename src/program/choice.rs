@@ -1,8 +1,6 @@
-use crate::binding::{Binding, BindingTraits};
-use crate::program::{Clause, ClauseTraits};
+use crate::{clause::*,binding::*};
 use crate::State;
 
-use super::clause::ClauseOwned;
 
 #[derive(Debug)]
 pub struct Choice {
@@ -21,7 +19,7 @@ impl Choice {
             println!("Goals: {goals:?}");
         }
         let invented_pred = if self.new_clause {
-            let new_clause: ClauseOwned = self.build_clause(state); //Use binding to make new clause
+            let new_clause: Box<Clause> = self.build_clause(state); //Use binding to make new clause
             if state.config.debug{
                 println!("New Clause: {}, {new_clause:?}, H size: {}", new_clause.to_string(&state.heap), state.prog.h_clauses);
             }
@@ -66,13 +64,13 @@ impl Choice {
         }
         goals
     }
-    pub fn build_clause(&mut self, state: &mut State) -> ClauseOwned {
+    pub fn build_clause(&mut self, state: &mut State) -> Box<Clause> {
         let mut uqvar_binding: Option<Binding> = Some(vec![]);
         // let new_clause:Box<[usize]> = Box::new_uninit_slice(src_clause.len());
         // let mut new_clause: Vec<usize> = Vec::with_capacity(self.clause.len());
 
         let src_clause = state.prog.clauses.get(self.clause).1;
-        let mut new_clause: ClauseOwned = vec![0; src_clause.len()].into_boxed_slice();
+        let mut new_clause: Box<Clause> = vec![0; src_clause.len()].into_boxed_slice();
         for i in 0..src_clause.len() {
             new_clause[i] = match self.binding.build_str(src_clause[i],&mut state.heap, &mut uqvar_binding) {
                 Some(new_heap_i) => new_heap_i,

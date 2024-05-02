@@ -1,4 +1,5 @@
-pub mod heap;
-pub mod symbol_db;
+mod heap;
+mod symbol_db;
+mod parse;
 
 pub(crate) use heap::Heap;
