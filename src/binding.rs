@@ -130,9 +130,9 @@ impl BindingTraits for Binding {
     fn to_string(&self, heap: &Heap) -> String {
         let mut buffer = String::from("{");
         for binding in self.iter() {
-            buffer += &heap.symbols.get_symbol(binding.0);
+            buffer += &heap.term_string(binding.0);
             buffer += "/";
-            buffer += &heap.symbols.get_symbol(binding.1);
+            buffer += &heap.term_string(binding.1);
             buffer += ",";
         }
         buffer.pop();

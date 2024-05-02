@@ -1,7 +1,8 @@
 use crate::{
-    binding::{Binding, BindingTraits},
+    binding::*,
+    // clause::*,
     heap::Heap,
-    program::{Choice, Clause, ClauseTraits},
+    program::Choice,
     State,
 };
 

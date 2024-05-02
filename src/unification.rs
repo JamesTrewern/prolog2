@@ -45,12 +45,15 @@ fn unify_struct(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) 
     let a1 = heap[addr1].1;
     let a2 = heap[addr2].1;
 
+    println!("{addr1},{addr2}");
+
     //Fail if arity doesn't match
     if a1 != a2 {
         return false;
     }
 
     for i in 1..=a1 + 1 {
+
         if !unify_rec(addr1 + i, addr2 + i, heap, binding) {
             return false;
         }
@@ -60,22 +63,25 @@ fn unify_struct(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) 
 }
 
 fn unify_list(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
-    //var head
-    let p1 = heap[heap[addr1].1];
-    let p2 = heap[heap[addr2].1];
+    if addr1 == Heap::CON && addr2 == Heap::CON{
+        return true;
+    }else if addr1 == Heap::CON || addr2 == Heap::CON{
+        return false;
+    }
 
-    //const symbols don't match
-    if p1.0 >= Heap::CON_PTR && p2.0 >= Heap::CON_PTR && p1.0 != p2.0 {}
-    //recursively create binding
-    true
+    println!("li: {addr1},{addr2}");
+    unify_rec(addr1, addr2, heap, binding) && unify_rec(addr1+1, addr2+1, heap, binding)
 }
 
 pub fn unify_rec(mut addr1: usize, mut addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
     // println!("addr1: {addr1}, addr2: {addr2}");
     //addr 1 from
     //addr 2 to
-    // println!("addr1: {addr1}, addr2: {addr2}");
+    println!("addr1: {addr1}, addr2: {addr2}");
     // println!("{cell1:?},{cell2:?}");
+
+    (addr1,addr2) = (heap.deref(addr1),heap.deref(addr2));
+
     let (cell1, cell2) = match (heap.deref_cell(addr1), heap.deref_cell(addr2)) {
         (None, None) => return addr1 == addr2,
         (Some(_), None) => return unify_ref(addr1, addr2, heap, binding),
@@ -89,12 +95,12 @@ pub fn unify_rec(mut addr1: usize, mut addr2: usize, heap: &Heap, binding: &mut 
         }
         (Heap::REF | Heap::REFA | Heap::REFC, _) => unify_ref(addr1, addr2, heap, binding),
         (_, Heap::REF | Heap::REFA | Heap::REFC) => unify_ref(addr2, addr1, heap, binding),
-        (Heap::STR, Heap::STR) => unify_struct(cell1.1, cell2.1, heap, binding),
+        (Heap::STR, Heap::STR) => unify_struct(addr1, addr2, heap, binding),
         (Heap::LIS, Heap::LIS) => unify_list(cell1.1, cell2.1, heap, binding),
         (Heap::CON | Heap::INT | Heap::FLT, Heap::CON | Heap::INT | Heap::FLT) => cell1 == cell2,
         (Heap::CON | Heap::INT | Heap::FLT, _) => panic!("Undefined unifiction behaviour"),
         (_, Heap::CON | Heap::INT | Heap::FLT) => panic!("Undefined unifiction behaviour"),
-        _ => unify_struct(addr1, addr2, heap, binding),
+        _ => panic!("Undefined unifiction behaviour"),
     }
 }
 
