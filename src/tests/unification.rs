@@ -81,8 +81,8 @@ fn unify_struct_6(){
 #[test]
 fn unify_list_1(){
     let mut heap = Heap::new(50);
-    let str1 = heap.build_literal("l([X,X])", &mut HashMap::new(), &vec![]);
-    let str2 = heap.build_literal("l([x,y])", &mut HashMap::new(), &vec![]);
+    let str1 = heap.build_literal("[X,X]", &mut HashMap::new(), &vec![]);
+    let str2 = heap.build_literal("[x,y]", &mut HashMap::new(), &vec![]);
     let binding: Option<Vec<(usize, usize)>> = unify(str1, str2, &heap);
     assert_eq!(binding,None);
 }
@@ -90,14 +90,14 @@ fn unify_list_1(){
 #[test]
 fn unify_list_2(){
     let mut heap = Heap::new(50);
-    let str1 = heap.build_literal("l([q(X),Y])", &mut HashMap::new(), &vec![]);
-    let str2 = heap.build_literal("l([q(x),y])", &mut HashMap::new(), &vec![]);
+    let str1 = heap.build_literal("[q(X),Y]", &mut HashMap::new(), &vec![]);
+    let str2 = heap.build_literal("[q(x),y]", &mut HashMap::new(), &vec![]);
     let binding: Option<Vec<(usize, usize)>> = unify(str1, str2, &heap);
     assert_ne!(binding,None);
     if let Some(binding) = binding{
         assert_eq!(binding[..], [
-            (2,12),
-            (5,15),
+            (2,10),
+            (5,13),
         ])
     }
 }
@@ -105,15 +105,16 @@ fn unify_list_2(){
 #[test]
 fn unify_list_3(){
     let mut heap = Heap::new(50);
-    let str1 = heap.build_literal("l([X,y|T])", &mut HashMap::new(), &vec![]);
-    let str2 = heap.build_literal("l([x,Y|T])", &mut HashMap::new(), &vec![]);
+    let str1 = heap.build_literal("[X,y|T]", &mut HashMap::new(), &vec![]);
+    let str2 = heap.build_literal("[x,Y|T]", &mut HashMap::new(), &vec![]);
     let binding: Option<Vec<(usize, usize)>> = unify(str1, str2, &heap);
+    heap.print_heap();
     assert_ne!(binding,None);
     if let Some(binding) = binding{
         assert_eq!(binding[..], [
-            (0,7),
-            (9,2),
-            (3,10)
+            (0,5),
+            (7,2),
+            (3,8)
         ])
     }
 }
@@ -121,15 +122,15 @@ fn unify_list_3(){
 #[test]
 fn unify_list_4(){
     let mut heap = Heap::new(50);
-    let str1 = heap.build_literal("l([q(X),Y|T])", &mut HashMap::new(), &vec![]);
-    let str2 = heap.build_literal("l([q(x),y|T])", &mut HashMap::new(), &vec![]);
+    let str1 = heap.build_literal("[q(X),Y|T]", &mut HashMap::new(), &vec![]);
+    let str2 = heap.build_literal("[q(x),y|T]", &mut HashMap::new(), &vec![]);
     let binding: Option<Vec<(usize, usize)>> = unify(str1, str2, &heap);
     assert_ne!(binding,None);
     if let Some(binding) = binding{
         assert_eq!(binding[..], [
-            (2,12),
-            (5,15),
-            (6,16),
+            (2,10),
+            (5,13),
+            (6,14),
         ])
     }
 }

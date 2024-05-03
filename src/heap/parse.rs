@@ -208,7 +208,10 @@ impl Heap {
     ) -> usize {
         match self.build_heap_term_rec(text, symbols_map, uni_vars) {
             SubTerm::TEXT(_) => self.cells.len() - 1,
-            SubTerm::CELL((_str, i)) => i,
+            SubTerm::CELL((Heap::STR, i)) => i,
+            SubTerm::CELL((Heap::LIS, i)) => {self.cells.push((Heap::LIS, i)); self.cells.len()-1},
+            SubTerm::CELL((Heap::REF, i)) => {self.deref(i)},
+            SubTerm::CELL((tag,i)) => panic!("Unkown LIteral type: ({tag},{i}"),
         }
     }
 }

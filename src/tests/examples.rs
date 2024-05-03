@@ -1,6 +1,6 @@
 //Broad test on example files to prove working state of application
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fs};
 
 use crate::{solver::start_proof, State};
 
@@ -8,7 +8,7 @@ use crate::{solver::start_proof, State};
 fn ancestor_1(){
     let mut state = State::new();
 
-    state.prog.load_file("examples/ancestor.pl", &mut state.heap);
+    state.prog.load_file("./examples/family", &mut state.heap);
 
     let goal1 = state.heap.build_literal("ancestor(adam,james)", &mut HashMap::new(), &vec![]);
 
@@ -19,7 +19,7 @@ fn ancestor_1(){
 fn ancestor_2(){
     let mut state = State::new();
 
-    state.prog.load_file("examples/ancestor.pl", &mut state.heap);
+    state.prog.load_file("./examples/family", &mut state.heap);
 
     let goal1 = state.heap.build_literal("ancestor(adam,james)", &mut HashMap::new(), &vec![]);
     let goal2 = state.heap.build_literal("ancestor(mum,james)", &mut HashMap::new(), &vec![]);

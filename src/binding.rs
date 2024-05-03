@@ -76,7 +76,6 @@ impl BindingTraits for Binding {
         for i in 1..=arity + 1 {
             let arg = str_addr+i;
             let (tag, addr) = &mut heap[arg];
-            // if *tag == Heap::REFA{ *tag = Heap::REF}
             match *tag {
                 Heap::REFC => {
                     *tag = Heap::REF;
@@ -113,14 +112,14 @@ impl BindingTraits for Binding {
                         }
                     }
                 }
-                Heap::STR => {
+                Heap::REF => {
                     if let Some(new_addr) = self.bound(*addr) {
                         *addr = new_addr
                     }
                 }
                 Heap::LIS => todo!("Consider list"),
-                Heap::REF => (),
-                _ => panic!("undefined tag or improperly formated heap"),
+                Heap::CON => (),
+                _ => panic!("undefined tag or improperly formated heap {tag}"),
             }
         }
 
