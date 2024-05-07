@@ -1,8 +1,5 @@
 use std::collections::HashMap;
-
-use crate::{binding::{self, *}, unification::unify, Heap};
-
-use super::heap;
+use crate::{unification::*, Heap};
 
 #[test]
 fn should_update_ref(){
@@ -51,5 +48,5 @@ fn build_literal_1(){
     let mut binding = unify(str1, str2, &heap).unwrap();
     heap.print_heap();
 
-    let str4 = binding.build_str(str3, &mut heap, &mut None).unwrap();
+    let str4 = build_str_from_binding(&mut binding, str3, &mut heap, &mut None).unwrap();
 }

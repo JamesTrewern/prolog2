@@ -1,4 +1,4 @@
-use crate::binding::Binding;
+use crate::unification::Binding;
 
 use super::symbol_db::SymbolDB;
 use std::ops::{Deref, DerefMut};
@@ -62,14 +62,6 @@ impl Heap {
             }
         } else {
             addr
-        }
-    }
-
-    pub fn deref_cell(&self, addr: usize) -> Option<Cell> {
-        if addr < Heap::CON_PTR {
-            Some(self[self.deref(addr)])
-        } else {
-            None
         }
     }
 
@@ -240,6 +232,10 @@ impl Heap {
             }
             _ => self.structure_string(addr),
         }
+    }
+
+    pub fn get_deref(&self, addr: usize) -> Cell{
+        self[self.deref(addr)]
     }
 }
 

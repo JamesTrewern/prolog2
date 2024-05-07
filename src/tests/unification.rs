@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{binding, heap::Heap, unification::unify};
+use crate::{heap::Heap, unification::unify};
 #[test]
 fn unify_struct_1(){
     let mut heap = Heap::new(50);

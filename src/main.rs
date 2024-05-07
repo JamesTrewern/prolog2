@@ -1,9 +1,8 @@
 mod heap;
 mod program;
 mod solver;
-mod unification;
 mod state;
-pub (crate) mod binding;
+pub (crate) mod unification;
 mod tests;
 
 use std::{collections::HashMap, process::ExitCode, vec};

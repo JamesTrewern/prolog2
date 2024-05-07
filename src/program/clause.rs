@@ -15,7 +15,6 @@ pub trait ClauseTraits {
     fn subsumes(&self, other: &Clause, heap: &Heap) -> bool;
     fn pred_symbol(&self, heap: &Heap) -> usize;
     fn higher_order(&self, heap: &Heap) -> bool;
-    fn write_clause(&self, heap: &Heap);
     fn to_string(&self, heap: &Heap) -> String;
     fn deallocate(&self, heap: &mut Heap);
 }
@@ -23,28 +22,6 @@ pub trait ClauseTraits {
 impl ClauseTraits for Clause {
     fn higher_order(&self, heap: &Heap) -> bool {
         self.iter().any(|literal| ho_term(*literal, heap))
-    }
-
-    fn write_clause(&self, heap: &Heap) {
-        if self.len() == 1 {
-            let clause_str = heap.term_string(self[0]);
-            println!("{clause_str}.")
-        } else {
-            let mut buffer: String = String::new();
-            buffer += &heap.term_string(self[0]);
-            buffer += ":-";
-            let mut i = 1;
-            loop {
-                buffer += &heap.term_string(self[i]);
-                i += 1;
-                if i == self.len() {
-                    break;
-                } else {
-                    buffer += ","
-                }
-            }
-            println!("{buffer}.");
-        }
     }
 
     fn to_string(&self, heap: &Heap) -> String {
@@ -70,7 +47,7 @@ impl ClauseTraits for Clause {
     }
 
     fn pred_symbol(&self, heap: &Heap) -> usize {
-        heap[self[0]].0
+        heap[self[0]+1].1
     }
 
     fn subsumes(&self, other: &Clause, heap: &Heap) -> bool {
