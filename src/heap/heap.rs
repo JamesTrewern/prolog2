@@ -20,6 +20,7 @@ impl Heap {
     pub const CON: usize = usize::MAX - 5;
     pub const INT: usize = usize::MAX - 6;
     pub const FLT: usize = usize::MAX - 7;
+    pub const STR_REF: usize = usize::MAX - 8;
     pub const CON_PTR: usize = isize::MAX as usize;
 
     pub fn new(size: usize) -> Heap {
@@ -53,8 +54,12 @@ impl Heap {
         return self.cells.len() - 1;
     }
 
+    pub fn push(&mut self, cell: Cell){
+        self.cells.push(cell);
+    }
+
     pub fn deref(&self, addr: usize) -> usize {
-        if let (Heap::REF | Heap::REFA | Heap::REFC, pointer) = self[addr] {
+        if let (Heap::REF | Heap::REFA | Heap::REFC | Heap::STR_REF, pointer) = self[addr] {
             if addr == pointer {
                 addr
             } else {
@@ -143,6 +148,9 @@ impl Heap {
                 Heap::STR => {
                     println!("[{:3}]|{:w$}|{:w$}|", i, "STR", cell.1)
                 }
+                Heap::STR_REF => {
+                    println!("[{:3}]|{:w$}|{:w$}|", i, "STREF", cell.1)
+                }
                 Heap::LIS => {
                     if cell.1 == Heap::CON {
                         println!("[{:3}]|{:w$}|{:w$}|", i, "LIS", "[]")
@@ -164,14 +172,7 @@ impl Heap {
                         self.symbols.get_symbol(self.deref(i))
                     )
                 }
-                id => {
-                    println!(
-                        "[{:3}]|{:>w$}/{:<w$}|",
-                        i,
-                        self.symbols.get_symbol(id),
-                        cell.1
-                    )
-                }
+                _ => panic!("Unkown Tag")
             };
             println!("{:-<w$}--------{:-<w$}", "", "");
         }

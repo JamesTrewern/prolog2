@@ -93,7 +93,7 @@ impl Heap {
             .collect()
     }
 
-    fn text_compound(
+    fn text_structure(
         &mut self,
         text: &str,
         symbols_map: &mut HashMap<String, usize>,
@@ -113,7 +113,7 @@ impl Heap {
                 SubTerm::CELL(cell) => self.cells.push(cell),
             }
         }
-        SubTerm::CELL((Heap::REF, i))
+        SubTerm::CELL((Heap::STR_REF, i))
     }
 
     fn text_list(
@@ -195,7 +195,7 @@ impl Heap {
             if list_open < brackets_open {
                 self.text_list(text, symbols_map, uni_vars)
             } else {
-                self.text_compound(text, symbols_map, uni_vars)
+                self.text_structure(text, symbols_map, uni_vars)
             }
         }
     }
@@ -210,7 +210,7 @@ impl Heap {
             SubTerm::TEXT(_) => self.cells.len() - 1,
             SubTerm::CELL((Heap::STR, i)) => i,
             SubTerm::CELL((Heap::LIS, i)) => {self.cells.push((Heap::LIS, i)); self.cells.len()-1},
-            SubTerm::CELL((Heap::REF, i)) => {self.deref(i)},
+            SubTerm::CELL((Heap::REF| Heap::STR_REF, i)) => {self.deref(i)},
             SubTerm::CELL((tag,i)) => panic!("Unkown LIteral type: ({tag},{i}"),
         }
     }

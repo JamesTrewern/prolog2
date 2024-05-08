@@ -1,118 +1,53 @@
 use std::collections::HashMap;
+use crate::{unification::*, Heap};
 
-use crate::heap::Heap;
+#[test]
+fn should_update_ref(){
+    let mut heap = Heap::new(2);
+    heap.set_var(None, false);
+    let binding:Binding = vec![(0,1)];
+    heap.bind(&binding)
+}
 
 #[test]
-fn add_str_1(){
-    let mut heap = Heap::new(20);
-    heap.query_space = false;
-    let structure = "p(X,Y)";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
-    assert_eq!(heap.term_string(addr),structure);
-    debug_assert_eq!(heap[..],[
-        (Heap::STR,2),
-        (Heap::CON, Heap::CON_PTR),
-        (Heap::REFC, 2),
-        (Heap::REFC, 3)
-    ]);
+#[should_panic]
+fn should_not_update_ref(){
+    let mut heap = Heap::new(2);
+    heap.set_var(Some(1), false);
+    heap.set_var(None, false);
+    let binding:Binding = vec![(0,0)];
+    heap.bind(&binding);
 }
+
 #[test]
-fn add_str_2(){
-    let mut heap = Heap::new(20);
-    heap.query_space = false;
-    let structure = "P(X,Y)";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
-    assert_eq!(heap.term_string(addr),structure);
-    debug_assert_eq!(heap[..],[
-        (Heap::STR,2),
-        (Heap::REFC, 1),
-        (Heap::REFC, 2),
-        (Heap::REFC, 3)
-    ]);
+fn should_not_update_refc(){
+    let mut heap = Heap::new(2);
+    heap.query_space = true;
+    heap.set_var(None, false);
+    let binding:Binding = vec![(0,1)];
+    heap.bind(&binding);
+    heap[0] = (Heap::REFC, 0);
 }
+
 #[test]
-fn add_str_3(){
-    let mut heap = Heap::new(20);
-    heap.query_space = false;
-    let structure = "P(Q(x),Y)";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
-    debug_assert_eq!(heap.term_string(addr),structure);
-    debug_assert_eq!(heap[..],[
-        (Heap::STR,1),
-        (Heap::REFC, 1),
-        (Heap::CON,Heap::CON_PTR),
-        (Heap::STR, 2),
-        (Heap::REFC, 4),
-        (Heap::REF, 0),
-        (Heap::REFC, 6)
-    ]);
+fn should_not_update_refa(){
+    let mut heap = Heap::new(2);
+    heap.query_space = true;
+    heap.set_var(None, true);
+    let binding:Binding = vec![(0,1)];
+    heap.bind(&binding);
+    heap[0] = (Heap::REFA, 0);
 }
+
 #[test]
-fn add_str_4(){
-    let mut heap = Heap::new(20);
-    heap.query_space = false;
-    let structure = "P([x,y])";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
-    assert_eq!(heap.term_string(addr),structure);
-    debug_assert_eq!(heap[..],[
-        (Heap::CON,Heap::CON_PTR),
-        (Heap::LIS, 2),
-        (Heap::CON,Heap::CON_PTR+1),
-        (Heap::LIS, Heap::CON),
-        (Heap::STR, 1),
-        (Heap::REFC, 5),
-        (Heap::LIS, 0)
-    ]);
+fn should_not_panic_print_heap(){
+    let mut heap = Heap::new(100);
+    // heap.build_literal("[X,Y,Z]", &mut HashMap::new(), &vec![]);
+    // heap.build_literal("p([X,Y,Z])", &mut HashMap::new(), &vec![]);
+    // heap.build_literal("P(x,y)", &mut HashMap::new(), &vec![]);
+    heap.build_literal("P(x,Q(Y))", &mut HashMap::new(), &vec!["Y"]);
+    // heap.build_literal("[X,Y,Z]", &mut HashMap::new(), &vec!["X","Y"]);
+
+    heap.print_heap()
 }
-#[test]
-fn add_str_5(){
-    let mut heap = Heap::new(20);
-    heap.query_space = false;
-    let structure = "P([p(x,y)])";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
-    debug_assert_eq!(heap.term_string(addr),structure);
-    debug_assert_eq!(heap[..],[
-        (Heap::STR, 2),
-        (Heap::CON, Heap::CON_PTR),
-        (Heap::CON, Heap::CON_PTR+1),
-        (Heap::CON, Heap::CON_PTR+2),
-        (Heap::REF, 0),
-        (Heap::LIS, Heap::CON),
-        (Heap::STR, 1),
-        (Heap::REFC, 7),
-        (Heap::LIS,4)
-    ]);
-}
-#[test]
-fn add_str_6(){
-    let mut heap = Heap::new(20);
-    heap.query_space = false;
-    let structure = "P(X,Y)";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec!["X","Y"]);
-    assert_eq!(heap.term_string(addr),"P(∀'X,∀'Y)");
-    debug_assert_eq!(heap[..],[
-        (Heap::STR,2),
-        (Heap::REFC, 1),
-        (Heap::REFA, 2),
-        (Heap::REFA, 3)
-    ]);
-}
-#[test]
-fn add_str_7(){
-    let mut heap = Heap::new(20);
-    heap.query_space = false;
-    let structure = "P([p(X,Y)])";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec!["X","Y"]);
-    assert_eq!(heap.term_string(addr),"P([p(∀'X,∀'Y)])");
-    assert_eq!(heap[..],[
-        (Heap::STR, 2),
-        (Heap::CON, Heap::CON_PTR),
-        (Heap::REFA, 2),
-        (Heap::REFA, 3),
-        (Heap::REF, 0),
-        (Heap::LIS, Heap::CON),
-        (Heap::STR, 1),
-        (Heap::REFC, 7),
-        (Heap::LIS,4)
-    ]);
-}
+

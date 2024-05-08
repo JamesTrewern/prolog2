@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod heap;
+mod parse;
 
 #[cfg(test)]
 mod unification;
@@ -11,7 +11,7 @@ mod clause;
 // mod examples;
 
 #[cfg(test)]
-mod binding;
+mod heap;
 
 #[cfg(test)]
 mod load_file;

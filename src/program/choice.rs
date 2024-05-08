@@ -57,8 +57,8 @@ impl Choice {
         for body_literal in &state.prog.clauses.get(self.clause).1[1..] {
             goals.push(
                 match build_str_from_binding(&mut self.binding, *body_literal, &mut state.heap, &mut None) {
-                    Some(new_goal) => new_goal,
-                    None => *body_literal,
+                    (new_goal, false) => new_goal,
+                    _ => *body_literal,
                 },
             );
         }
@@ -73,8 +73,8 @@ impl Choice {
         let mut new_clause: Box<Clause> = vec![0; src_clause.len()].into_boxed_slice();
         for i in 0..src_clause.len() {
             new_clause[i] = match build_str_from_binding(&mut self.binding, src_clause[i],&mut state.heap, &mut uqvar_binding) {
-                Some(new_heap_i) => new_heap_i,
-                None => src_clause[i],
+                (new_heap_i, true) => new_heap_i,
+                _ => src_clause[i],
             }
         }
 

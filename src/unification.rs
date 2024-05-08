@@ -18,8 +18,6 @@ impl BindingTraits for Binding {
         }
     }
 
-
-
     fn to_string(&self, heap: &Heap) -> String {
         let mut buffer = String::from("{");
         for binding in self.iter() {
@@ -33,7 +31,6 @@ impl BindingTraits for Binding {
         buffer
     }
 }
-
 
 fn unify_vars(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
     // Create binding between vars
@@ -94,17 +91,18 @@ fn unify_list(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) ->
 }
 
 pub fn unify_rec(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
-    let (cell1, cell2) = (heap.get_deref(addr1), heap.get_deref(addr2));
-
-    match (cell1.0, cell2.0) {
+    let (addr1, addr2) = (heap.deref(addr1), heap.deref(addr2));
+    match (heap[addr1].0, heap[addr2].0) {
         (Heap::REF | Heap::REFC | Heap::REFA, Heap::REF | Heap::REFC | Heap::REFA) => {
             unify_vars(addr1, addr2, heap, binding)
         }
         (Heap::REF | Heap::REFA | Heap::REFC, _) => unify_ref(addr1, addr2, heap, binding),
         (_, Heap::REF | Heap::REFA | Heap::REFC) => unify_ref(addr2, addr1, heap, binding),
         (Heap::STR, Heap::STR) => unify_struct(addr1, addr2, heap, binding),
-        (Heap::LIS, Heap::LIS) => unify_list(cell1.1, cell2.1, heap, binding),
-        (Heap::CON | Heap::INT | Heap::FLT, Heap::CON | Heap::INT | Heap::FLT) => cell1 == cell2,
+        (Heap::LIS, Heap::LIS) => unify_list(heap[addr1].1, heap[addr2].1, heap, binding),
+        (Heap::CON | Heap::INT | Heap::FLT, Heap::CON | Heap::INT | Heap::FLT) => {
+            heap[addr1] == heap[addr2]
+        }
         (Heap::CON | Heap::INT | Heap::FLT, _) => panic!("Undefined unifiction behaviour"),
         (_, Heap::CON | Heap::INT | Heap::FLT) => panic!("Undefined unifiction behaviour"),
         _ => panic!("Undefined unifiction behaviour"),
@@ -125,14 +123,16 @@ pub fn build_str_from_binding(
     src_str: usize,
     heap: &mut Heap,
     uqvar_binding: &mut Option<Binding>,
-) -> Option<usize> {
+) -> (usize, bool) {
     let mut constant: bool = true;
     let arity = heap[src_str].1;
-    for i in 1..=arity{
-        match heap[src_str+1+i] {
-            (Heap::REF | Heap::REFA | Heap::REFC, _) => constant = false,
-            (Heap::STR, addr) => {
-                if let Some(new_addr) = build_str_from_binding(binding, addr, heap, uqvar_binding) {
+    for i in 1..=arity {
+        match heap[src_str + 1 + i] {
+            (Heap::REF | Heap::REFA | Heap::REFC, addr) => constant = false,
+            (Heap::STR_REF, addr) => {
+                if let (new_addr, false) =
+                    build_str_from_binding(binding, addr, heap, uqvar_binding)
+                {
                     binding.push((addr, new_addr));
                     constant = false;
                 }
@@ -142,55 +142,64 @@ pub fn build_str_from_binding(
         }
     }
 
+    if constant {
+        return (src_str, true);
+    }
+
+    let new_str = heap.len();
+    heap.push((Heap::STR, arity));
+
     for i in 1..=arity + 1 {
-        let arg = src_str+i;
-        let (tag, addr) = &mut heap[arg];
-        match *tag {
-            Heap::REFC => {
-                *tag = Heap::REF;
-                match binding.bound(*addr) {
-                    Some(new_ref) => {
-                        if new_ref >= Heap::CON_PTR {
-                            *tag = Heap::CON
-                        }
-                        *addr = new_ref
-                    }
-                    None => binding.push((*addr, arg)),
+        match heap[src_str + i] {
+            (Heap::REFA, addr) if uqvar_binding.is_some() => {
+                let binding = uqvar_binding.as_mut().unwrap();
+                if let Some(new_addr) = binding.bound(addr) {
+                    heap.push((Heap::REFA, new_addr))
+                } else {
+                    binding.push((addr, heap.len()));
+                    heap.push((Heap::REFC, heap.len()));
                 }
             }
-            Heap::REFA => {
-                if let Some(uqvar_binding) = uqvar_binding {
-                    *tag = Heap::REFC;
-                    match uqvar_binding.bound(*addr) {
-                        Some(new_ref) => {
-                            if new_ref >= Heap::CON_PTR {
-                                *tag = Heap::CON
-                            }
-                            *addr = new_ref
-                        }
-                        None => {
-                            uqvar_binding.push((*addr, arg));
-                            *addr = arg;
-                        }
+            (Heap::REF | Heap::REFC | Heap::REFA, addr) => {
+                if let Some(new_addr) = binding.bound(addr) {
+                    if heap[new_addr].0 == Heap::CON {
+                        heap.push(heap[new_addr])
+                    } else {
+                        if uqvar_binding.is_some() {
+                            heap.push((Heap::REFC, new_addr))
+                        } else {
+                            heap.push((Heap::REF, new_addr))
+                        };
                     }
                 } else {
-                    *tag = Heap::REF;
-                    match binding.bound(*addr) {
-                        Some(new_ref) => *addr = new_ref,
-                        None => {binding.push((*addr, arg)); *addr = arg},
-                    }
+                    binding.push((addr, heap.len()));
+                    heap.push((Heap::REFC, heap.len()));
                 }
             }
-            Heap::REF => {
-                if let Some(new_addr) = binding.bound(*addr) {
-                    *addr = new_addr
+            (Heap::STR_REF, addr) => {
+                if let Some(addr) = binding.bound(addr) {
+                    heap.push((Heap::STR_REF, addr))
+                } else {
+                    heap.push((Heap::STR_REF, addr))
                 }
             }
-            Heap::LIS => todo!("Consider list"),
-            Heap::CON => (),
-            _ => panic!("undefined tag or improperly formated heap {tag}"),
+            (Heap::LIS, addr) => {
+                todo!("Consider list when building")
+            }
+            (Heap::CON, _) => heap.push(heap[src_str + i]),
+            _ => panic!(),
         }
     }
 
-    Some(src_str)
+    (new_str, false)
+}
+
+fn build_list(
+    binding: &mut Binding,
+    src_str: usize,
+    heap: &mut Heap,
+    uqvar_binding: &mut Option<Binding>,
+) {
+
+    
 }
