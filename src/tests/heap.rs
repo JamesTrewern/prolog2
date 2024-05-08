@@ -58,7 +58,7 @@ fn list_iterator_1(){
     let list = heap.build_literal("[X,y,Z]", &mut HashMap::new(), &vec![]);
 
     heap.print_heap();
-    let elements: Vec<((usize,usize),bool)> = heap.list_iterator(list).collect();
+    let elements: Vec<((usize,usize),bool)> = heap.list_iterator(list).map(|(addr,tail)| (heap[addr],tail)).collect();
 
     assert!(elements.iter().all(|(_,tail)| !tail));
 
@@ -78,7 +78,7 @@ fn list_iterator_2(){
     let list = heap.build_literal("[x,y|Z]", &mut HashMap::new(), &vec![]);
 
     heap.print_heap();
-    let elements: Vec<((usize,usize),bool)> = heap.list_iterator(list).collect();
+    let elements: Vec<((usize,usize),bool)> = heap.list_iterator(list).map(|(addr,tail)| (heap[addr],tail)).collect();
 
     assert_eq!(&elements, &[
         ((Heap::CON, Heap::CON_PTR),false),

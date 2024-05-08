@@ -123,7 +123,7 @@ impl Heap {
         uni_vars: &Vec<&str>,
     ) -> SubTerm {
         if text == "[]" {
-            return SubTerm::CELL((Heap::LIS, Heap::CON));
+            return SubTerm::CELL(Heap::EMPTY_LIS);
         }
         let i1 = text.find('[').unwrap() + 1;
         let mut i2 = text.rfind(']').unwrap();
@@ -170,7 +170,7 @@ impl Heap {
                     self.cells.push(cell);
                 }
             },
-            None => self.cells.push((Heap::LIS, Heap::CON)),
+            None => self.cells.push(Heap::EMPTY_LIS),
         }
         SubTerm::CELL((Heap::LIS, i))
     }

@@ -58,7 +58,7 @@ fn add_str_4(){
         (Heap::CON,Heap::CON_PTR),
         (Heap::LIS, 2),
         (Heap::CON,Heap::CON_PTR+1),
-        (Heap::LIS, Heap::CON),
+        Heap::EMPTY_LIS,
         (Heap::STR, 1),
         (Heap::REFC, 5),
         (Heap::LIS, 0)
@@ -77,7 +77,7 @@ fn add_str_5(){
         (Heap::CON, Heap::CON_PTR+1),
         (Heap::CON, Heap::CON_PTR+2),
         (Heap::STR_REF, 0),
-        (Heap::LIS, Heap::CON),
+        Heap::EMPTY_LIS,
         (Heap::STR, 1),
         (Heap::REFC, 7),
         (Heap::LIS,4)
@@ -110,7 +110,7 @@ fn add_str_7(){
         (Heap::REFA, 2),
         (Heap::REFA, 3),
         (Heap::STR_REF, 0),
-        (Heap::LIS, Heap::CON),
+        Heap::EMPTY_LIS,
         (Heap::STR, 1),
         (Heap::REFC, 7),
         (Heap::LIS,4)

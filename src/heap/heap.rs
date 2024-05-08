@@ -1,7 +1,7 @@
 use crate::unification::Binding;
 
 use super::symbol_db::SymbolDB;
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, RangeInclusive};
 
 pub type Cell = (usize, usize);
 
@@ -22,6 +22,8 @@ impl Heap {
     pub const FLT: usize = usize::MAX - 7;
     pub const STR_REF: usize = usize::MAX - 8;
     pub const CON_PTR: usize = isize::MAX as usize;
+    pub const EMPTY_LIS: Cell = (Heap::LIS, Heap::CON);
+
 
     pub fn new(size: usize) -> Heap {
         Heap {
@@ -246,6 +248,10 @@ impl Heap {
             var_tail: false
         }
     }
+
+    pub fn str_iterator(&self, addr: usize) -> RangeInclusive<usize>{
+        addr+1..=addr+1+self[addr].1
+    }
 }
 
 pub struct ListIterator<'a> {
@@ -255,7 +261,7 @@ pub struct ListIterator<'a> {
 }
 
 impl<'a> Iterator for ListIterator<'a> {
-    type Item = (Cell, bool);
+    type Item = (usize, bool);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.var_tail {
@@ -263,14 +269,14 @@ impl<'a> Iterator for ListIterator<'a> {
         }
 
         match self.heap[self.current_addr] {
-            (Heap::LIS, Heap::CON) => None,
+            Heap::EMPTY_LIS => None,
             (Heap::LIS, list_ptr) => {
                 self.current_addr = list_ptr + 1;
-                Some((self.heap[self.current_addr-1], false))
+                Some((self.current_addr-1, false))
             },
             _ => {
                 self.var_tail = true;
-                Some((self.heap[self.current_addr], true))
+                Some((self.current_addr, true))
             }
         }
     }

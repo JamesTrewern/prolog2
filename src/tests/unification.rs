@@ -187,10 +187,12 @@ fn unify_list_struct_4(){
 #[test]
 fn build_goal_1(){
     let mut heap = Heap::new(50);
+    heap.query_space = false;
     let literal = heap.build_literal("p(X,Y)", &mut HashMap::new(), &vec![]);
+    heap.query_space = true;
     let term_list = heap.build_literal("tl(x,y)", &mut HashMap::new(), &vec![]);
     let mut binding: Binding = vec![(literal+2,term_list+2),(literal+3,term_list+3)];
-    let (new_goal, constant) = build_str_from_binding(&mut binding, literal, &mut heap, &mut None);
+    let (new_goal, constant) = build_str(&mut binding, literal, &mut heap, &mut None);
 
     assert!(!constant);
     assert_eq!(heap[term_list+2],heap[new_goal+2]);
@@ -201,12 +203,14 @@ fn build_goal_1(){
 #[test]
 fn build_goal_2(){
     let mut heap = Heap::new(50);
+    heap.query_space = false;
     let literal = heap.build_literal("p(q(X,Y))", &mut HashMap::new(), &vec![]);
+    heap.query_space = true;
     let sub_str = heap[literal+2].1;
     let term_list = heap.build_literal("tl(x,y)", &mut HashMap::new(), &vec![]);
     
     let mut binding: Binding = vec![(sub_str+2,term_list+2),(sub_str+3,term_list+3)];
-    let (new_goal, constant) = build_str_from_binding(&mut binding, literal, &mut heap, &mut None);
+    let (new_goal, constant) = build_str(&mut binding, literal, &mut heap, &mut None);
     let sub_str = heap[new_goal+2].1;
     heap.print_heap();
     assert!(!constant);
@@ -218,10 +222,12 @@ fn build_goal_2(){
 #[test]
 fn build_goal_3(){
     let mut heap = Heap::new(50);
+    heap.query_space = false;
     let literal = heap.build_literal("p(X,Y)", &mut HashMap::new(), &vec!["X","Y"]);
+    heap.query_space = true;
     let term_list = heap.build_literal("tl(x,y)", &mut HashMap::new(), &vec![]);
     let mut binding: Binding = vec![(literal+2,term_list+2),(literal+3,term_list+3)];
-    let (new_goal, constant) = build_str_from_binding(&mut binding, literal, &mut heap, &mut None);
+    let (new_goal, constant) = build_str(&mut binding, literal, &mut heap, &mut None);
 
     assert!(!constant);
     assert_eq!(heap[term_list+2],heap[new_goal+2]);
@@ -232,10 +238,12 @@ fn build_goal_3(){
 #[test]
 fn build_goal_4(){
     let mut heap = Heap::new(50);
+    heap.query_space = false;
     let literal = heap.build_literal("p(X,y)", &mut HashMap::new(), &vec!["X"]);
+    heap.query_space = true;
     let term_list = heap.build_literal("tl(x,y)", &mut HashMap::new(), &vec![]);
     let mut binding: Binding = vec![(literal+2,term_list+2)];
-    let (new_goal, constant) = build_str_from_binding(&mut binding, literal, &mut heap, &mut None);
+    let (new_goal, constant) = build_str(&mut binding, literal, &mut heap, &mut None);
 
     assert!(!constant);
     assert_eq!(heap[term_list+2],heap[new_goal+2]);
@@ -246,33 +254,114 @@ fn build_goal_4(){
 #[test]
 fn build_goal_5(){
     let mut heap = Heap::new(50);
+    heap.query_space = false;
     let literal = heap.build_literal("p([X,Y])", &mut HashMap::new(), &vec![]);
+    heap.query_space = true;
     let list: usize = heap[literal+2].1;
     let term_list = heap.build_literal("tl(x,y)", &mut HashMap::new(), &vec![]);
     
-    let mut binding: Binding = vec![(list+2,term_list+2),(list+3,term_list+3)];
-    let (new_goal, constant) = build_str_from_binding(&mut binding, literal, &mut heap, &mut None);
+    let mut binding: Binding = vec![(list,term_list+2),(list+2,term_list+3)];
 
-    heap.print_heap();
+    let (new_goal, constant) = build_str(&mut binding, literal, &mut heap, &mut None);
 
     let list:usize = heap[new_goal+2].1;
-
-    println!("List: {list}");
-
     assert!(!constant);
-    assert_eq!(heap[term_list+2],heap[list+2]);
-    assert_eq!(heap[term_list+3],heap[list+3]);
+    assert_eq!(heap[term_list+2],heap[list]);
+    assert_eq!(heap[term_list+3],heap[list+2]);
 }
 
 #[test]
 fn build_goal_6(){
     let mut heap = Heap::new(50);
-    let literal = heap.build_literal("p(x,y)", &mut HashMap::new(), &vec![]);
+    heap.query_space = false;
+    let literal = heap.build_literal("p([X],[X,Y])", &mut HashMap::new(), &vec![]);
+    heap.query_space = true;
     let term_list = heap.build_literal("tl(x,y)", &mut HashMap::new(), &vec![]);
     
-    let mut binding: Binding = vec![(literal+2,term_list+2),(literal+3,term_list+3)];
-    let (new_goal, constant) = build_str_from_binding(&mut binding, literal, &mut heap, &mut None);
+    let (lis1,lis2) = (heap[literal+2].1,heap[literal+3].1);
+
+    let mut binding: Binding = vec![(lis1,term_list+2),(lis2+2,term_list+3)];
+    let (new_goal, constant) = build_str(&mut binding, literal, &mut heap, &mut None);
+
+    let (lis1,lis2) = (heap[new_goal+2].1,heap[new_goal+3].1);
+
+    assert!(!constant);
+    assert_eq!(heap[term_list+2],heap[lis1]);
+    assert_eq!(heap[term_list+2],heap[lis2]);
+    assert_eq!(heap[term_list+3],heap[lis2+2]);
+}
+
+#[test]
+fn build_goal_7(){
+    let mut heap = Heap::new(50);
+    heap.query_space = false;
+    let literal = heap.build_literal("p(q(X,Y),[X,Y])", &mut HashMap::new(), &vec![]);
+    heap.query_space = true;
+    let term_list = heap.build_literal("tl(x,y)", &mut HashMap::new(), &vec![]);
+    
+    let sub_str= heap[literal+2].1;
+
+    let mut binding: Binding = vec![(sub_str+2,term_list+2),(sub_str+3,term_list+3)];
+    let (new_goal, constant) = build_str(&mut binding, literal, &mut heap, &mut None);
+
+    let (sub_str,lis) = (heap[new_goal+2].1,heap[new_goal+3].1);
+
+    assert!(!constant);
+    assert_eq!(heap[term_list+2],heap[lis]);
+    assert_eq!(heap[term_list+3],heap[lis+2]);
+    assert_eq!(heap[term_list+2],heap[sub_str+2]);
+    assert_eq!(heap[term_list+3],heap[sub_str+3]);
+}
+
+#[test]
+fn build_goal_8(){
+    let mut heap = Heap::new(50);
+    heap.query_space = false;
+    let literal = heap.build_literal("p(x,[y,z])", &mut HashMap::new(), &vec![]);
+    heap.query_space = true;
+    let mut binding: Binding = vec![];
+    let (new_goal, constant) = build_str(&mut binding, literal, &mut heap, &mut None);
 
     assert!(constant);
     assert_eq!(literal, new_goal);
+
+}
+
+#[test]
+fn build_clause_literal_1(){
+    let mut heap = Heap::new(50);
+    heap.query_space = false;
+    let literal = heap.build_literal("Q(X)", &mut HashMap::new(), &vec!["X"]);
+    heap.query_space = true;
+    let term_list = heap.build_literal("tl(p,x)", &mut HashMap::new(), &vec![]);
+    let mut binding: Binding = vec![(literal+1,term_list+2),(literal+2, term_list+3)];
+    let (new_goal, constant) = build_str(&mut binding, literal, &mut heap, &mut Some(vec![]));
+
+    assert!(!constant);
+    assert_eq!(heap[term_list+2],heap[new_goal+1]);
+    assert_ne!(heap[term_list+3],heap[new_goal+2])
+}
+
+#[test]
+fn build_clause_literal_2(){
+    let mut heap = Heap::new(50);
+    heap.query_space = false;
+    let literal = heap.build_literal("Q(X,R(Y))", &mut HashMap::new(), &vec!["X"]);
+    heap.query_space = true;
+    let term_list = heap.build_literal("tl(p,x)", &mut HashMap::new(), &vec![]);
+
+
+    let mut binding: Binding = vec![(literal+1,term_list+2),(literal+2, term_list+3)];
+    let (new_goal, constant) = build_str(&mut binding, literal, &mut heap, &mut Some(vec![]));
+    let sub_str = heap[new_goal+3].1;
+
+
+    assert!(!constant);
+    assert_eq!(heap[term_list+2],heap[new_goal+1]);
+    assert_ne!(heap[term_list+3],heap[new_goal+2]);
+    assert_ne!(heap[literal+3],heap[new_goal+3]);
+    assert_eq!(heap[sub_str+1],(Heap::REF, sub_str+1));
+    assert_eq!(heap[sub_str+2],(Heap::REF, sub_str+2));
+
+
 }
