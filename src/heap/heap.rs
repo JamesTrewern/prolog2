@@ -54,7 +54,7 @@ impl Heap {
         return self.cells.len() - 1;
     }
 
-    pub fn push(&mut self, cell: Cell){
+    pub fn push(&mut self, cell: Cell) {
         self.cells.push(cell);
     }
 
@@ -172,7 +172,7 @@ impl Heap {
                         self.symbols.get_symbol(self.deref(i))
                     )
                 }
-                _ => panic!("Unkown Tag")
+                _ => panic!("Unkown Tag"),
             };
             println!("{:-<w$}--------{:-<w$}", "", "");
         }
@@ -235,8 +235,44 @@ impl Heap {
         }
     }
 
-    pub fn get_deref(&self, addr: usize) -> Cell{
+    pub fn get_deref(&self, addr: usize) -> Cell {
         self[self.deref(addr)]
+    }
+
+    pub fn list_iterator(&self, addr: usize) -> ListIterator{
+        ListIterator{
+            heap: self,
+            current_addr: addr,
+            var_tail: false
+        }
+    }
+}
+
+pub struct ListIterator<'a> {
+    heap: &'a Heap,
+    current_addr: usize,
+    var_tail: bool,
+}
+
+impl<'a> Iterator for ListIterator<'a> {
+    type Item = (Cell, bool);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.var_tail {
+            return None;
+        }
+
+        match self.heap[self.current_addr] {
+            (Heap::LIS, Heap::CON) => None,
+            (Heap::LIS, list_ptr) => {
+                self.current_addr = list_ptr + 1;
+                Some((self.heap[self.current_addr-1], false))
+            },
+            _ => {
+                self.var_tail = true;
+                Some((self.heap[self.current_addr], true))
+            }
+        }
     }
 }
 
