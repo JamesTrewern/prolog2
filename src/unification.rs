@@ -156,28 +156,22 @@ fn add_term_binding(
         (Heap::REFA, addr) if uqvar_binding.is_some() => {
             let binding = uqvar_binding.as_mut().unwrap();
             if let Some(new_addr) = binding.bound(addr) {
-                heap.push((Heap::REFA, new_addr))
+                heap.push((Heap::REFC, new_addr))
             } else {
                 binding.push((addr, heap.len()));
                 heap.push((Heap::REFC, heap.len()));
             }
         }
         (Heap::REF | Heap::REFC | Heap::REFA, addr) => {
-            let tag = if uqvar_binding.is_some() {
-                Heap::REFC
-            } else {
-                Heap::REF
-            };
-
             if let Some(new_addr) = binding.bound(addr) {
                 if heap[new_addr].0 == Heap::CON {
                     heap.push(heap[new_addr])
                 } else {
-                    heap.push((tag, new_addr))
+                    heap.push((Heap::REF, new_addr))
                 }
             } else {
                 binding.push((addr, heap.len()));
-                heap.push((tag, heap.len()));
+                heap.push((Heap::REF, heap.len()));
             }
         }
         (Heap::STR_REF, addr) => {
