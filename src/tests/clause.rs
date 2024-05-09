@@ -23,7 +23,7 @@ fn parse_meta_fact_2(){
     let mut heap = Heap::new(20);
     let (clause_type, clause) = Clause::parse_clause("p(X,Y)\\X,Y", &mut heap);
     assert_eq!(clause_type, ClauseType::META);
-    assert_eq!(heap.term_string(clause[0]), "P(∀'X,∀'Y)");
+    assert_eq!(heap.term_string(clause[0]), "p(∀'X,∀'Y)");
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn parse_clause_with_con(){
     let mut heap = Heap::new(20);
     let (clause_type, clause) = Clause::parse_clause("p(X,Y,z):-q(X),r(Y)", &mut heap);
     assert_eq!(clause_type, ClauseType::CLAUSE);
-    assert_eq!(heap.term_string(clause[0]), "p(X,Y)");
+    assert_eq!(heap.term_string(clause[0]), "p(X,Y,z)");
     assert_eq!(heap.term_string(clause[1]), "q(X)");
     assert_eq!(heap.term_string(clause[2]), "r(Y)");
 }
@@ -111,9 +111,9 @@ fn parse_meta_clause_no_var_preds(){
     let mut heap = Heap::new(20);
     let (clause_type, clause) = Clause::parse_clause("p(X,Y,z):-q(X),r(Y)\\X,Y", &mut heap);
     assert_eq!(clause_type, ClauseType::META);
-    assert_eq!(heap.term_string(clause[0]), "P(∀'X,∀'Y,z)");
-    assert_eq!(heap.term_string(clause[1]), "Q(∀'X)");
-    assert_eq!(heap.term_string(clause[2]), "R(∀'Y)");
+    assert_eq!(heap.term_string(clause[0]), "p(∀'X,∀'Y,z)");
+    assert_eq!(heap.term_string(clause[1]), "q(∀'X)");
+    assert_eq!(heap.term_string(clause[2]), "r(∀'Y)");
 }
 
 #[test]
@@ -131,9 +131,9 @@ fn parse_meta_clause_con_head_pred_no_uni_vars(){
     let mut heap = Heap::new(20);
     let (clause_type, clause) = Clause::parse_clause("p(X,Y):-Q(X),R(Y)", &mut heap);
     assert_eq!(clause_type, ClauseType::META);
-    assert_eq!(heap.term_string(clause[0]), "p(∀'X,∀'Y)");
-    assert_eq!(heap.term_string(clause[1]), "Q(∀'X)");
-    assert_eq!(heap.term_string(clause[2]), "R(∀'Y)");
+    assert_eq!(heap.term_string(clause[0]), "p(X,Y)");
+    assert_eq!(heap.term_string(clause[1]), "Q(X)");
+    assert_eq!(heap.term_string(clause[2]), "R(Y)");
 }
 
 #[test]
@@ -141,9 +141,8 @@ fn parse_constraint_identity(){
     let mut heap = Heap::new(20);
     let (clause_type, clause) = Clause::parse_clause("P(A,B):<c>-P(A,B)", &mut heap);
     assert_eq!(clause_type, ClauseType::CONSTRAINT);
-    assert_eq!(heap.term_string(clause[0]), "p(∀'X,∀'Y)");
-    assert_eq!(heap.term_string(clause[1]), "Q(∀'X)");
-    assert_eq!(heap.term_string(clause[2]), "R(∀'Y)");
+    assert_eq!(heap.term_string(clause[0]), "P(A,B)");
+    assert_eq!(heap.term_string(clause[1]), "P(A,B)");
 }
 
 #[test]
@@ -151,7 +150,7 @@ fn parse_constraint_chain(){
     let mut heap = Heap::new(20);
     let (clause_type, clause) = Clause::parse_clause("P(A,B):<c>-P(A,C),P(C,B)", &mut heap);
     assert_eq!(clause_type, ClauseType::CONSTRAINT);
-    assert_eq!(heap.term_string(clause[0]), "p(∀'X,∀'Y)");
-    assert_eq!(heap.term_string(clause[1]), "Q(∀'X)");
-    assert_eq!(heap.term_string(clause[2]), "R(∀'Y)");
+    assert_eq!(heap.term_string(clause[0]), "P(A,B)");
+    assert_eq!(heap.term_string(clause[1]), "P(A,C)");
+    assert_eq!(heap.term_string(clause[2]), "P(C,B)");
 }

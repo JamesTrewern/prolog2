@@ -141,7 +141,7 @@ impl ClauseTraits for Clause {
                 ',' => {
                     if in_brackets == (0, 0) {
                         body_literals.push(&body[i1..i2]);
-                        if body[i1..i2].trim().chars().next().unwrap().is_uppercase(){
+                        if clause_type != ClauseType::CONSTRAINT && body[i1..i2].trim().chars().next().unwrap().is_uppercase(){
                             clause_type = ClauseType::META;
                         }
                         i1 = i2 + 1
