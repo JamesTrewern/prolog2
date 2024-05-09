@@ -33,9 +33,14 @@ impl Config {
 }
 
 impl State {
-    pub fn new() -> State {
+    pub fn new(config: Option<Config>) -> State {
+        let config = if let Some(config) = config {
+            config
+        } else{
+            Config::new()
+        };
         State {
-            config: Config::new(),
+            config,
             prog: Program::new(),
             heap: Heap::new(HEAP_SIZE),
         }
