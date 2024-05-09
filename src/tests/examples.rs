@@ -12,7 +12,8 @@ fn ancestor_1(){
 
     let goal1 = state.heap.build_literal("ancestor(adam,james)", &mut HashMap::new(), &vec![]);
 
-    start_proof(vec![goal1], &mut state);
+    assert!(start_proof(vec![goal1], &mut state));
+    
 }
 
 #[test]

@@ -1,6 +1,26 @@
-use crate::{heap::Heap, unification::{unify, unify_rec}};
+use std::{
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+};
+
+use crate::{
+    heap::Heap,
+    unification::{unify, unify_rec},
+};
+
+static CONSTRAINT: &'static str = ":<c>-";
+static IMPLICATION: &'static str = ":-";
 
 pub type Clause = [usize];
+
+pub trait ClauseTraits {
+    fn parse_clause(clause: &str, heap: &mut Heap) -> (ClauseType, Box<Clause>);
+    fn deallocate(&self, heap: &mut Heap);
+    fn subsumes(&self, other: &Clause, heap: &Heap) -> bool;
+    fn pred_symbol(&self, heap: &Heap) -> usize;
+    fn to_string(&self, heap: &Heap) -> String;
+    fn new(head: usize, body: &[usize]) -> Box<Self>;
+}
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub enum ClauseType {
@@ -11,17 +31,9 @@ pub enum ClauseType {
     HYPOTHESIS,
 }
 
-pub trait ClauseTraits {
-    fn subsumes(&self, other: &Clause, heap: &Heap) -> bool;
-    fn pred_symbol(&self, heap: &Heap) -> usize;
-    fn higher_order(&self, heap: &Heap) -> bool;
-    fn to_string(&self, heap: &Heap) -> String;
-    fn deallocate(&self, heap: &mut Heap);
-}
-
 impl ClauseTraits for Clause {
-    fn higher_order(&self, heap: &Heap) -> bool {
-        self.iter().any(|literal| ho_term(*literal, heap))
+    fn new(head: usize, body: &[usize]) -> Box<Clause> {
+            [&[head], body].concat().into()
     }
 
     fn to_string(&self, heap: &Heap) -> String {
@@ -47,7 +59,7 @@ impl ClauseTraits for Clause {
     }
 
     fn pred_symbol(&self, heap: &Heap) -> usize {
-        heap[self[0]+1].1
+        heap[self[0] + 1].1
     }
 
     fn subsumes(&self, other: &Clause, heap: &Heap) -> bool {
@@ -68,59 +80,102 @@ impl ClauseTraits for Clause {
             false
         }
     }
-    
+
     fn deallocate(&self, heap: &mut Heap) {
-        for str_addr in self.iter().rev(){
+        for str_addr in self.iter().rev() {
             heap.deallocate_str(*str_addr);
         }
     }
-}
 
-
-//TO DO remove this and return HO? from build literal
-fn ho_struct(addr: usize, heap: &Heap) -> bool {
-    let arity = match heap[addr]{
-        (Heap::STR, arity) => arity,
-        _ => panic!("Literal ptr does not point to strucutre")
-    };
-
-    
-    if Heap::REFC < heap[addr+1].0 {
-        return true;
-    }
-    for i in 2..arity + 2 {
-        match heap[addr + i] {
-            (Heap::REFA, _) => return true,
-            (Heap::STR, ptr) => {
-                if ho_struct(ptr, heap) {
-                    return true;
-                }
+    fn parse_clause(clause: &str, heap: &mut Heap) -> (ClauseType, Box<Clause>) {
+        let (i3, uni_vars) = get_uni_vars(clause);
+        
+        let mut clause_type = if !uni_vars.is_empty() || clause.trim().chars().next().unwrap().is_uppercase() {
+            ClauseType::META
+        } else {
+            ClauseType::CLAUSE
+        };
+        
+        let (mut i1, i2) = match clause.find(CONSTRAINT) {
+            Some(i) => {
+                clause_type = ClauseType::CONSTRAINT;
+                (i, i + CONSTRAINT.len())
             }
-            _ => (),
+            None => match clause.find(IMPLICATION) {
+                Some(i) => (i, i + IMPLICATION.len()),
+                None => {
+                    //No implication present, build fact
+                    if clause.trim().chars().next().unwrap().is_uppercase() {
+                        clause_type = ClauseType::META
+                    }
+                    let head = heap.build_literal(clause, &mut HashMap::new(), &uni_vars);
+                    return (clause_type, Clause::new(head, &[]));
+                }
+            },
+        };
+        let head = &clause[..i1];
+        let body = &clause[i2..i3];
+        i1 = 0;
+        let mut in_brackets = (0, 0);
+        let mut body_literals: Vec<&str> = vec![];
+        for (i2, c) in body.chars().enumerate() {
+            match c {
+                '(' => {
+                    in_brackets.0 += 1;
+                }
+                ')' => {
+                    if in_brackets.0 == 0 {
+                        break;
+                    }
+                    in_brackets.0 -= 1;
+                }
+                '[' => {
+                    in_brackets.1 += 1;
+                }
+                ']' => {
+                    if in_brackets.1 == 0 {
+                        break;
+                    }
+                    in_brackets.1 -= 1;
+                }
+                ',' => {
+                    if in_brackets == (0, 0) {
+                        body_literals.push(&body[i1..i2]);
+                        if body[i1..i2].trim().chars().next().unwrap().is_uppercase(){
+                            clause_type = ClauseType::META;
+                        }
+                        i1 = i2 + 1
+                    }
+                }
+                _ => (),
+            }
+            if i2 == body.len() - 1 {
+                body_literals.push(body[i1..].trim());
+            }
         }
-    }
-    false
-}
+        let mut map: HashMap<String, usize> = HashMap::new();
+        let head = heap.build_literal(head, &mut map, &uni_vars);
+        let body: Vec<usize> = body_literals
+            .iter()
+            .map(|text| heap.build_literal(text, &mut map, &uni_vars))
+            .collect();
 
-fn ho_list(addr: usize, heap: &Heap) -> bool {
-    if ho_term(addr, heap) {
-        return true;
-    }
-    if ho_term(addr + 1, heap) {
-        return true;
-    }
-    false
-}
-
-fn ho_term(addr: usize, heap: &Heap) -> bool {
-    match heap[addr] {
-        (Heap::REFA, _) => true,
-        (Heap::STR, _) => ho_struct(addr, heap),
-
-        (Heap::LIS, ptr) => ptr != Heap::CON && ho_list(ptr, heap),
-        (Heap::CON | Heap::INT, _) => false,
-        _ => ho_struct(addr, heap),
+        (clause_type, Clause::new(head, &body))
     }
 }
 
-
+fn get_uni_vars<'a>(clause: &'a str) -> (usize, Vec<&'a str>) {
+    match clause.rfind('\\') {
+        Some(i) => {
+            if clause[i..].chars().any(|c| c == '"' || c == '\'') {
+                (clause.len(), vec![])
+            } else {
+                (
+                    i,
+                    clause[i + 1..].split(',').map(|var| var.trim()).collect(),
+                )
+            }
+        }
+        None => (clause.len(), vec![]),
+    }
+}

@@ -1,8 +1,8 @@
 use crate::{
-    unification::*,
     // clause::*,
     heap::Heap,
     program::Choice,
+    unification::*,
     State,
 };
 
@@ -46,26 +46,21 @@ fn prove_again() -> bool {
     // }
 }
 
-pub fn start_proof(goals: Vec<usize>, state: &mut State) {
+pub fn start_proof(goals: Vec<usize>, state: &mut State) -> bool{
     let mut proof_stack: Vec<Env> = vec![];
-    loop {
-        if prove(goals.clone(), &mut proof_stack, state) {
-            println!("TRUE");
-            for goal in goals {
-                println!("{},", state.heap.term_string(goal))
-            }
-            state.prog.write_h(&state.heap);
-            // if !prove_again() {
-            //     break;
-            // }
-        } else {
-            println!("FALSE");
-            print_stack(&mut proof_stack, &mut state.heap);
-            break;
-            // heap.print_heap();
+
+    if prove(goals.clone(), &mut proof_stack, state) {
+        println!("TRUE");
+        for goal in goals {
+            println!("{},", state.heap.term_string(goal))
         }
-        // prog.reset_h();
-        break;
+        state.prog.write_h(&state.heap);
+        true
+    } else {
+        println!("FALSE");
+        print_stack(&mut proof_stack, &mut state.heap);
+        false
+        // heap.print_heap();
     }
 }
 
@@ -97,7 +92,7 @@ fn prove(goals: Vec<usize>, proof_stack: &mut Vec<Env>, state: &mut State) -> bo
         loop {
             if let Some(choice) = choices.pop() {
                 if apply_choice(proof_stack, pointer, choice, state) {
-                    let env  = proof_stack.get_mut(pointer).unwrap();
+                    let env = proof_stack.get_mut(pointer).unwrap();
                     env.choices = choices;
                     pointer += 1;
                     break;
@@ -171,9 +166,9 @@ fn apply_choice(
         // state.heap.print_heap();
 
         let mut i = 1;
-        for goal in goals{
+        for goal in goals {
             proof_stack.insert(pointer + i, Env::new(goal, depth));
-            i+=1;
+            i += 1;
         }
         true
     } else {

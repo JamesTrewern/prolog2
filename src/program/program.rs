@@ -88,12 +88,7 @@ impl Program {
         choices
     }
 
-    pub fn add_clause(&mut self, clause: Box<Clause>, heap: &Heap) {
-        let clause_type = if clause.higher_order(heap) {
-            ClauseType::META
-        } else {
-            ClauseType::BODY
-        };
+    pub fn add_clause(&mut self, clause_type: ClauseType, clause: Box<Clause>) {
         self.clauses.add_clause(clause, clause_type);
     }
 
@@ -138,10 +133,6 @@ impl Program {
             self.invented_preds -= 1;
         }
         self.clauses.remove_clause(self.clauses.clauses.len() - 1)
-    }
-
-    pub fn add_constraint(&mut self, clause: Box<Clause>) {
-        self.clauses.add_clause(clause, ClauseType::CONSTRAINT);
     }
 
     pub fn check_constraints(&self, clause: usize, heap: &Heap) -> bool {

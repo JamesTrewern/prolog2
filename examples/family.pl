@@ -1,4 +1,4 @@
-dad(jim,ken)
+dad(jim,ken).
 dad(ken,adam).
 dad(adam,james).
 dad(ken,saul).
