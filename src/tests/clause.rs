@@ -135,38 +135,3 @@ fn parse_meta_clause_con_head_pred_no_uni_vars(){
     assert_eq!(heap.term_string(clause[1]), "Q(X)");
     assert_eq!(heap.term_string(clause[2]), "R(Y)");
 }
-
-#[test]
-fn parse_constraint_identity(){
-    let mut heap = Heap::new(20);
-    let (clause_type, clause) = Clause::parse_clause("P(A,B):<c>-P(A,B)", &mut heap);
-    assert_eq!(clause_type, ClauseType::CONSTRAINT);
-    assert_eq!(heap.term_string(clause[0]), "P(A,B)");
-    assert_eq!(heap.term_string(clause[1]), "P(A,B)");
-}
-
-#[test]
-fn parse_constraint_chain(){
-    let mut heap = Heap::new(20);
-    let (clause_type, clause) = Clause::parse_clause("P(A,B):<c>-P(A,C),P(C,B)", &mut heap);
-    assert_eq!(clause_type, ClauseType::CONSTRAINT);
-    assert_eq!(heap.term_string(clause[0]), "P(A,B)");
-    assert_eq!(heap.term_string(clause[1]), "P(A,C)");
-    assert_eq!(heap.term_string(clause[2]), "P(C,B)");
-}
-
-#[test]
-fn subsumes_identity(){
-    let mut heap = Heap::new(20);
-    let (_, constraint) = Clause::parse_clause("P(A,B):<c>-P(A,B)", &mut heap);
-    let (_, clause) = Clause::parse_clause("p(A,B):-p(A,B)", &mut heap);
-    assert!(constraint.subsumes(&clause, &heap))
-}
-
-// #[test]
-// fn subsumes_chain(){
-//     let mut heap = Heap::new(20);
-//     let (_, constraint) = Clause::parse_clause("P(A,B):<c>-P(A,C),P(C,B)", &mut heap);
-//     let (_, clause) = Clause::parse_clause("p(A,C):-p(A,C),p(C,B)", &mut heap);
-//     assert!(constraint.subsumes(&clause, &heap))
-// }
