@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{clause::*, unification::BindingTraits, Heap, Program};
+use crate::{clause::*, unification::BindingTraits, Heap, Program, State};
 
 use super::heap;
 
@@ -164,3 +164,17 @@ fn call_con_head_meta() {
 
 #[test]
 fn call_list_load_file() {}
+
+#[test]
+fn test_constraint() {
+    let mut state = State::new(None);
+    state.heap.query_space = false;
+    let (ct, c) = Clause::parse_clause("P(X,Y):-Q(X,Y)\\X,Y", &mut state.heap);
+    state.prog.add_clause(ct, c);
+    state.heap.query_space = true;
+    let mut goal = state.heap.build_literal("p(a,b)", &mut HashMap::new(), &mut vec![]);
+    let choice = &mut state.prog.call(goal, &mut state.heap)[0];
+    goal = choice.choose(&mut state).unwrap().0[0];
+    let choices = state.prog.call(goal, &mut state.heap);
+    assert!(choices.len()==0);
+}

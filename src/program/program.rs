@@ -128,6 +128,7 @@ impl Program {
             None
         };
 
+        //Value or Ref should never address same value as other ref
         for atom1 in clause.iter(){
             for atom2 in clause.iter(){
                 if atom1 == atom2 {continue;}
@@ -153,7 +154,13 @@ impl Program {
     }
 
     pub fn check_constraints(&self, binding: &Binding, heap: &Heap) -> bool {
-        binding.iter().any(|b| self.constraints.contains(b))
+        for con in self.constraints.iter(){
+            let constraint = (heap.deref(con.0),heap.deref(con.1));
+            if binding.bound(constraint.0) == Some(constraint.1){
+                return true;
+            }
+        }
+        false
     }
 
     pub fn write_prog(&self, heap: &Heap) {

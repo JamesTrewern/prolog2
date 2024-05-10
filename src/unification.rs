@@ -263,8 +263,6 @@ pub fn build_str(
         }
     }
 
-    println!("binding: {binding:?}");
-
     if constant {
         return (src_str, true);
     }
