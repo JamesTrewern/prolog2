@@ -1,7 +1,7 @@
 use crate::{
     heap::Heap,
     state::Config,
-    unification::unify,
+    unification::*,
 };
 use super::{
     choice::Choice,
@@ -19,8 +19,9 @@ pub struct Program {
     predicate_functions: HashMap<(usize, usize), PredicateFN>,
     pub predicates: HashMap<(usize, usize), Vec<usize>>, //(id, arity): Predicate
     pub clauses: ClauseTable,
+    pub constraints: Vec<(usize,usize)>,
     invented_preds: usize,
-    pub h_clauses: usize,
+    pub h_size: usize,
 }
 
 impl Program {
@@ -30,7 +31,8 @@ impl Program {
             predicate_functions: HashMap::new(),
             clauses: ClauseTable::new(),
             invented_preds: 0,
-            h_clauses: 0,
+            h_size: 0,
+            constraints: vec![],
         }
     }
     // pub fn add_module(&mut self, pred_module: PredModule, heap: &mut Heap) {
@@ -46,6 +48,11 @@ impl Program {
     fn match_clause(&self, clause_i: usize, goal_addr: usize, heap: &Heap) -> Option<Choice> {
         let (clause_type, clause) = self.clauses.get(clause_i);
         if let Some(binding) = unify(clause[0], goal_addr, heap) {
+            if clause_type != ClauseType::CLAUSE {
+                if self.check_constraints(&binding, heap){
+                    return None;
+                }
+            }
             Some(Choice {
                 clause: clause_i,
                 binding,
@@ -99,7 +106,7 @@ impl Program {
         heap: &mut Heap,
         config: &Config,
     ) -> Option<Option<usize>> {
-        if self.h_clauses == config.max_clause {
+        if self.h_size == config.max_clause {
             println!("Max H size can't add clause");
             clause.deallocate(heap);
             return None;
@@ -121,28 +128,32 @@ impl Program {
             None
         };
 
+        for atom1 in clause.iter(){
+            for atom2 in clause.iter(){
+                if atom1 == atom2 {continue;}
+                if heap[*atom1].1 == heap[*atom2].1 && heap[atom1+1] != heap[atom2+1]{
+                    self.constraints.push((atom1+1,atom2+1));
+                    self.constraints.push((atom2+1,atom1+1));
+                }
+            }
+        }
+
         self.clauses.add_clause(clause, ClauseType::HYPOTHESIS);
-        self.h_clauses += 1;
+        self.h_size += 1;
 
         Some(id)
     }
 
     pub fn remove_h_clause(&mut self, invented: bool) {
-        self.h_clauses -= 1;
+        self.h_size -= 1;
         if invented {
             self.invented_preds -= 1;
         }
         self.clauses.remove_clause(self.clauses.clauses.len() - 1)
     }
 
-    pub fn check_constraints(&self, clause: usize, heap: &Heap) -> bool {
-        !self
-            .clauses
-            .iter([true, false, false, false, false])
-            .any(|(i, (_, constraint))| {
-                // println!("constraint: {}", constraint.to_string(heap));
-                constraint.subsumes(&self.clauses.get(clause).1, heap)
-            })
+    pub fn check_constraints(&self, binding: &Binding, heap: &Heap) -> bool {
+        binding.iter().any(|b| self.constraints.contains(b))
     }
 
     pub fn write_prog(&self, heap: &Heap) {

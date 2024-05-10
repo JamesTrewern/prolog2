@@ -20,7 +20,7 @@ Remove terms from heap when no longer needed
 New Clause rules: constraints, head can't be existing predicate
 */
 fn main() -> ExitCode {
-    let mut state = State::new();
+    let mut state = State::new(None);
 
     state.prog.load_file("examples/ancestor.pl", &mut state.heap);
 

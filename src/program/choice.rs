@@ -21,7 +21,7 @@ impl Choice {
         let invented_pred = if self.new_clause {
             let new_clause: Box<Clause> = self.build_clause(state); //Use binding to make new clause
             if state.config.debug{
-                println!("New Clause: {}, {new_clause:?}, H size: {}", new_clause.to_string(&state.heap), state.prog.h_clauses);
+                println!("New Clause: {}, {new_clause:?}, H size: {}", new_clause.to_string(&state.heap), state.prog.h_size);
             }
             let pred_symbol = new_clause.pred_symbol(&state.heap);
             match state
@@ -44,13 +44,8 @@ impl Choice {
             println!("Bindings: {}, {:?}", self.binding.to_string(&state.heap), self.binding);
         }
 
-        if self.check_contraint && !state.prog.check_constraints(self.clause, &state.heap){
-            println!("Failed contraints unbind: {}", self.binding.to_string(&state.heap));
-            state.heap.unbind(&self.binding);
-            None
-        }else{
-            Some((goals,invented_pred))
-        }
+        Some((goals,invented_pred))
+        
     }
     pub fn build_goals(&mut self, state: &mut State) -> Vec<usize> {
         let mut goals: Vec<usize> = vec![];
