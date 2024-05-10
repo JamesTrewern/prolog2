@@ -14,4 +14,4 @@ mod examples;
 mod heap;
 
 #[cfg(test)]
-mod load_file;
+mod program;

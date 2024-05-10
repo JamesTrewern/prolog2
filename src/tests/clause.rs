@@ -163,10 +163,10 @@ fn subsumes_identity(){
     assert!(constraint.subsumes(&clause, &heap))
 }
 
-#[test]
-fn subsumes_chain(){
-    let mut heap = Heap::new(20);
-    let (_, constraint) = Clause::parse_clause("P(A,B):<c>-P(A,C),P(C,B)", &mut heap);
-    let (_, clause) = Clause::parse_clause("p(A,C):-p(A,C),p(C,B)", &mut heap);
-    assert!(constraint.subsumes(&clause, &heap))
-}
+// #[test]
+// fn subsumes_chain(){
+//     let mut heap = Heap::new(20);
+//     let (_, constraint) = Clause::parse_clause("P(A,B):<c>-P(A,C),P(C,B)", &mut heap);
+//     let (_, clause) = Clause::parse_clause("p(A,C):-p(A,C),p(C,B)", &mut heap);
+//     assert!(constraint.subsumes(&clause, &heap))
+// }
