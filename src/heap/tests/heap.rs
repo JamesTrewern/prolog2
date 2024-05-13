@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::{unification::*, Heap};
+use crate::{heap::unification::Binding, Heap};
 
 #[test]
 fn should_update_ref(){

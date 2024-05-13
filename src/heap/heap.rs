@@ -1,5 +1,4 @@
-use crate::unification::Binding;
-
+use super::unification::Binding;
 use super::symbol_db::SymbolDB;
 use std::ops::{Deref, DerefMut, RangeInclusive};
 

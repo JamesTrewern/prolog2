@@ -6,12 +6,18 @@ const SHARE_PREDS: bool = false; //Can program and H share pred symbols
 const DEBUG: bool = true;
 const HEAP_SIZE: usize = 2056;
 const MAX_DEPTH: usize = 4;
+
+#[derive(Clone, Copy)]
 pub struct Config {
     pub share_preds: bool,
     pub max_clause: usize,
     pub max_invented: usize,
     pub debug: bool,
     pub max_depth: usize,
+}
+
+pub struct ConfigBuilder {
+    config: Config,
 }
 
 pub struct State {
@@ -30,13 +36,28 @@ impl Config {
             max_depth: MAX_DEPTH,
         }
     }
+
+    pub fn max_h_size(&mut self, a: usize) -> Config {
+        self.max_clause = a;
+        *self
+    }
+
+    pub fn max_invented(&mut self, a: usize) -> Config {
+        self.max_invented = a;
+        *self
+    }
+
+    pub fn max_depth(&mut self, a: usize) -> Config {
+        self.max_depth = a;
+        *self
+    }
 }
 
 impl State {
     pub fn new(config: Option<Config>) -> State {
         let config = if let Some(config) = config {
             config
-        } else{
+        } else {
             Config::new()
         };
         State {

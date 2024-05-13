@@ -1,12 +1,5 @@
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-};
-
-use crate::{
-    heap::Heap,
-    unification::{unify, unify_rec},
-};
+use std::collections::HashMap;
+use crate::heap::{Heap,unification::{unify, unify_rec}};
 
 static CONSTRAINT: &'static str = ":<c>-";
 static IMPLICATION: &'static str = ":-";
@@ -24,7 +17,6 @@ pub trait ClauseTraits {
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub enum ClauseType {
-    CONSTRAINT,
     CLAUSE,
     BODY,
     META,
@@ -33,7 +25,7 @@ pub enum ClauseType {
 
 impl ClauseTraits for Clause {
     fn new(head: usize, body: &[usize]) -> Box<Clause> {
-            [&[head], body].concat().into()
+        [&[head], body].concat().into()
     }
 
     fn to_string(&self, heap: &Heap) -> String {
@@ -89,29 +81,24 @@ impl ClauseTraits for Clause {
 
     fn parse_clause(clause: &str, heap: &mut Heap) -> (ClauseType, Box<Clause>) {
         let (i3, uni_vars) = get_uni_vars(clause);
-        
-        let mut clause_type = if !uni_vars.is_empty() || clause.trim().chars().next().unwrap().is_uppercase() {
-            ClauseType::META
-        } else {
-            ClauseType::CLAUSE
-        };
-        
-        let (mut i1, i2) = match clause.find(CONSTRAINT) {
-            Some(i) => {
-                clause_type = ClauseType::CONSTRAINT;
-                (i, i + CONSTRAINT.len())
-            }
-            None => match clause.find(IMPLICATION) {
-                Some(i) => (i, i + IMPLICATION.len()),
-                None => {
-                    //No implication present, build fact
-                    if clause.trim().chars().next().unwrap().is_uppercase() {
-                        clause_type = ClauseType::META
-                    }
-                    let head = heap.build_literal(clause, &mut HashMap::new(), &uni_vars);
-                    return (clause_type, Clause::new(head, &[]));
+
+        let mut clause_type =
+            if !uni_vars.is_empty() || clause.trim().chars().next().unwrap().is_uppercase() {
+                ClauseType::META
+            } else {
+                ClauseType::CLAUSE
+            };
+
+        let (mut i1, i2) = match clause.find(IMPLICATION) {
+            Some(i) => (i, i + IMPLICATION.len()),
+            None => {
+                //No implication present, build fact
+                if clause.trim().chars().next().unwrap().is_uppercase() {
+                    clause_type = ClauseType::META
                 }
-            },
+                let head = heap.build_literal(clause, &mut HashMap::new(), &uni_vars);
+                return (clause_type, Clause::new(head, &[]));
+            }
         };
         let head = &clause[..i1];
         let body = &clause[i2..i3];
@@ -141,7 +128,8 @@ impl ClauseTraits for Clause {
                 ',' => {
                     if in_brackets == (0, 0) {
                         body_literals.push(&body[i1..i2]);
-                        if clause_type != ClauseType::CONSTRAINT && body[i1..i2].trim().chars().next().unwrap().is_uppercase(){
+                        if body[i1..i2].trim().chars().next().unwrap().is_uppercase()
+                        {
                             clause_type = ClauseType::META;
                         }
                         i1 = i2 + 1

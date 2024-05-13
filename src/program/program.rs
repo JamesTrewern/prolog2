@@ -1,7 +1,6 @@
 use crate::{
-    heap::Heap,
+    heap::{Heap, unification::*},
     state::Config,
-    unification::*,
 };
 use super::{
     choice::Choice,
@@ -64,10 +63,10 @@ impl Program {
         }
     }
 
-    pub fn call(&mut self, goal_addr: usize, heap: &mut Heap) -> Vec<Choice> {
+    pub fn call(&mut self, goal_addr: usize, heap: &mut Heap, config: &Config) -> Vec<Choice> {
         let mut choices: Vec<Choice> = vec![];
 
-        let (mut symbol, arity) = heap[goal_addr];
+        let (mut symbol, arity) = (heap[goal_addr+1].1,heap[goal_addr].1);
         if symbol < Heap::CON_PTR {
             symbol = heap[heap.deref(symbol)].1;
         }
@@ -80,10 +79,18 @@ impl Program {
                 }
             }
         } else {
-            let iterator = if symbol < Heap::CON_PTR {
-                self.clauses.iter([false, false, true, true, true])
+            let iterator = if symbol < Heap::CON_PTR{
+                if self.h_size == config.max_clause || self.invented_preds == config.max_invented{
+                    self.clauses.iter(&[ClauseType::BODY, ClauseType::HYPOTHESIS])
+                }else{
+                    self.clauses.iter(&[ClauseType::BODY, ClauseType::META, ClauseType::HYPOTHESIS])
+                }
             } else {
-                self.clauses.iter([false, false, false, true, true])
+                if self.h_size == config.max_clause{
+                    self.clauses.iter(&[ClauseType::HYPOTHESIS])
+                }else{
+                    self.clauses.iter(&[ClauseType::META, ClauseType::HYPOTHESIS])
+                }
             };
             //TO DO use clause returned by iterator
             for (i, _) in iterator {
@@ -164,13 +171,13 @@ impl Program {
     }
 
     pub fn write_prog(&self, heap: &Heap) {
-        for (i, (c_type, clause)) in self.clauses.iter([true, true, true, true, false]) {
+        for (i, (c_type, clause)) in self.clauses.iter(&[ClauseType::CLAUSE,ClauseType::CLAUSE,ClauseType::META]) {
             println!("{c_type:?}, {}", clause.to_string(heap))
         }
     }
 
     pub fn write_h(&self, heap: &Heap) {
-        for (i, (c_type, clause)) in self.clauses.iter([false, false, false, false, true]) {
+        for (i, (c_type, clause)) in self.clauses.iter(&[ClauseType::HYPOTHESIS]) {
             println!("{c_type:?}, {}", clause.to_string(heap))
         }
     }

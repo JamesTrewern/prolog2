@@ -1,7 +1,5 @@
 use crate::{clause::*, Heap};
 
-use super::heap;
-
 #[test]
 fn parse_fact(){
     let mut heap = Heap::new(20);

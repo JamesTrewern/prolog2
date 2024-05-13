@@ -2,7 +2,6 @@ mod heap;
 mod program;
 mod solver;
 mod state;
-pub (crate) mod unification;
 mod tests;
 
 use std::{collections::HashMap, process::ExitCode, vec};
@@ -11,6 +10,7 @@ pub (crate) use program::Program;
 use solver::start_proof;
 pub (crate) use state::State;
 pub (crate) use program::clause;
+pub (crate) use heap::unification::*;
 
 
 

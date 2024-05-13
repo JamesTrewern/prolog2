@@ -1,9 +1,10 @@
 mod maths;
 pub(crate) mod clause;
-mod clause_table;
+pub(crate) mod clause_table;
 mod load_file;
 mod program;
 mod choice;
+mod tests;
 
 pub(crate) use program::Program;
 pub(crate) use choice::Choice;
