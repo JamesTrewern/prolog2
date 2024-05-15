@@ -1,8 +1,6 @@
 use crate::{
     // clause::*,
-    heap::{Heap, unification::*},
-    program::Choice,
-    State,
+    choice::Choice, unification::*, Heap, State
 };
 
 struct Env {
@@ -86,7 +84,7 @@ fn prove(goals: Vec<usize>, proof_stack: &mut Vec<Env>, state: &mut State) -> bo
             }
         }
         println!("[{}]Try: {}", depth, state.heap.term_string(goal));
-        let mut choices = state.prog.call(goal, &mut state.heap, &state.config);
+        let mut choices = state.prog.call(goal, &mut state.heap, &mut state.config);
 
         loop {
             if let Some(choice) = choices.pop() {

@@ -3,13 +3,6 @@ use std::collections::HashMap;
 use crate::{clause::*, state::Config, Heap, Program, State};
 
 #[test]
-fn load_file_family() {
-    let mut prog = Program::new();
-    let mut heap = Heap::new(60);
-    prog.load_file("examples/family", &mut heap)
-}
-
-#[test]
 fn call_con_head() {
     let mut state = State::new(None);
     state.heap.query_space = false;
@@ -18,8 +11,10 @@ fn call_con_head() {
         state.prog.add_clause(ct, c)
     }
     state.heap.query_space = true;
-    let goal = state.heap.build_literal("p(A,B)", &mut HashMap::new(), &mut vec![]);
-    let choices = state.prog.call(goal, &mut state.heap, &state.config);
+    let goal = state
+        .heap
+        .build_literal("p(A,B)", &mut HashMap::new(), &mut vec![]);
+    let choices = state.prog.call(goal, &mut state.heap, &mut state.config);
     assert!(choices.len() == 1);
     let choice = &choices[0];
     for choice in choices {
@@ -39,8 +34,10 @@ fn call_fact() {
         state.prog.add_clause(ct, c)
     }
     state.heap.query_space = true;
-    let goal = state.heap.build_literal("p(A,B)", &mut HashMap::new(), &mut vec![]);
-    let choices = state.prog.call(goal, &mut state.heap, &state.config);
+    let goal = state
+        .heap
+        .build_literal("p(A,B)", &mut HashMap::new(), &mut vec![]);
+    let choices = state.prog.call(goal, &mut state.heap, &mut state.config);
     assert!(choices.len() == 1);
     for choice in choices {
         assert_eq!(
@@ -59,8 +56,10 @@ fn call_meta_with_con() {
         state.prog.add_clause(ct, c)
     }
     state.heap.query_space = true;
-    let goal = state.heap.build_literal("p(a,B,[c])", &mut HashMap::new(), &mut vec![]);
-    let choices = state.prog.call(goal, &mut state.heap, &state.config);
+    let goal = state
+        .heap
+        .build_literal("p(a,B,[c])", &mut HashMap::new(), &mut vec![]);
+    let choices = state.prog.call(goal, &mut state.heap, &mut state.config);
     assert!(choices.len() == 1);
     let choice = &choices[0];
     assert_eq!(
@@ -83,8 +82,10 @@ fn call_unkown_no_match() {
         state.prog.add_clause(ct, c)
     }
     state.heap.query_space = true;
-    let goal = state.heap.build_literal("q(a,B,[c])", &mut HashMap::new(), &mut vec![]);
-    let choices = state.prog.call(goal, &mut state.heap, &state.config);
+    let goal = state
+        .heap
+        .build_literal("q(a,B,[c])", &mut HashMap::new(), &mut vec![]);
+    let choices = state.prog.call(goal, &mut state.heap, &mut state.config);
     assert!(choices.len() == 0);
 }
 
@@ -104,8 +105,10 @@ fn call_with_var_match_meta_and_body() {
         )
     }
     state.heap.query_space = true;
-    let goal = state.heap.build_literal("P(A,B)", &mut HashMap::new(), &mut vec![]);
-    let choices = state.prog.call(goal, &mut state.heap, &state.config);
+    let goal = state
+        .heap
+        .build_literal("P(A,B)", &mut HashMap::new(), &mut vec![]);
+    let choices = state.prog.call(goal, &mut state.heap, &mut state.config);
     assert!(choices.len() == 2);
 
     let choice = &choices[0];
@@ -140,8 +143,10 @@ fn call_con_head_meta() {
         state.prog.add_clause(ct, c)
     }
     state.heap.query_space = true;
-    let goal = state.heap.build_literal("p(a,B,[c])", &mut HashMap::new(), &mut vec![]);
-    let choices = state.prog.call(goal, &mut state.heap, &state.config);
+    let goal = state
+        .heap
+        .build_literal("p(a,B,[c])", &mut HashMap::new(), &mut vec![]);
+    let choices = state.prog.call(goal, &mut state.heap, &mut state.config);
     assert!(choices.len() == 1);
     let choice = &choices[0];
     assert_eq!(
@@ -166,13 +171,15 @@ fn max_invented_predicates() {
     state.heap.query_space = true;
     state.prog.clauses.sort_clauses();
     state.prog.clauses.find_flags();
-    let mut goal = state.heap.build_literal("P(a,b)", &mut HashMap::new(), &mut vec![]);
-    let choices = &mut state.prog.call(goal, &mut state.heap, &state.config);
-    assert!(choices.len()==0);
+    let mut goal = state
+        .heap
+        .build_literal("P(a,b)", &mut HashMap::new(), &mut vec![]);
+    let choices = &mut state.prog.call(goal, &mut state.heap, &mut state.config);
+    assert!(choices.len() == 0);
 }
 
 #[test]
-fn max_clause_predicates() {
+fn max_predicates_0() {
     let mut state = State::new(Some(Config::new().max_invented(0)));
     state.heap.query_space = false;
     let (ct, c) = Clause::parse_clause("P(X,Y):-Q(X,Y)\\X,Y", &mut state.heap);
@@ -180,22 +187,71 @@ fn max_clause_predicates() {
     state.heap.query_space = true;
     state.prog.clauses.sort_clauses();
     state.prog.clauses.find_flags();
-    let mut goal = state.heap.build_literal("p(a,b)", &mut HashMap::new(), &mut vec![]);
-    let choices = &mut state.prog.call(goal, &mut state.heap, &state.config);
-    assert!(choices.len()==0);
+    let mut goal = state
+        .heap
+        .build_literal("P(a,b)", &mut HashMap::new(), &mut vec![]);
+    let choices = &mut state.prog.call(goal, &mut state.heap, &mut state.config);
+    assert!(choices.len() == 0);
 }
 
+#[test]
+fn max_predicates_1() {
+    let mut state = State::new(Some(Config::new().max_invented(1)));
+    state.heap.query_space = false;
+    let (ct, c) = Clause::parse_clause("P(X,Y):-Q(X,Y)\\X,Y", &mut state.heap);
+    state.prog.add_clause(ct, c);
+    let (ct, c) = Clause::parse_clause("P(X):-Q(X)\\X", &mut state.heap);
+    state.prog.add_clause(ct, c);
+    state.heap.query_space = true;
+    state.prog.clauses.sort_clauses();
+    state.prog.clauses.find_flags();
+    
+    let goal1 = state
+        .heap
+        .build_literal("P(a,b)", &mut HashMap::new(), &mut vec![]);
+    let choices = &mut state.prog.call(goal1, &mut state.heap, &mut state.config);
+    choices.first_mut().unwrap().choose(&mut state);
+    let goal2 = state
+        .heap
+        .build_literal("P(a)", &mut HashMap::new(), &mut vec![]);
+    let choices = &mut state.prog.call(goal2, &mut state.heap, &mut state.config);
+    assert!(choices.len() == 0);
+}
 
 #[test]
-fn test_constraint() {
-    let mut state = State::new(None);
+fn max_clause_0() {
+    let mut state = State::new(Some(Config::new().max_h_size(0)));
     state.heap.query_space = false;
     let (ct, c) = Clause::parse_clause("P(X,Y):-Q(X,Y)\\X,Y", &mut state.heap);
     state.prog.add_clause(ct, c);
     state.heap.query_space = true;
-    let mut goal = state.heap.build_literal("p(a,b)", &mut HashMap::new(), &mut vec![]);
-    let choice = &mut state.prog.call(goal, &mut state.heap, &state.config)[0];
+    state.prog.clauses.sort_clauses();
+    state.prog.clauses.find_flags();
+    let mut goal = state
+        .heap
+        .build_literal("p(a,b)", &mut HashMap::new(), &mut vec![]);
+    let choices = &mut state.prog.call(goal, &mut state.heap, &mut state.config);
+    assert!(choices.len() == 0);
+}
+
+#[test]
+fn test_constraint() {
+    let mut state = State::new(Some(Config::new().max_h_size(1).max_invented(0)));
+    state.heap.query_space = false;
+    let (ct, c) = Clause::parse_clause("P(X,Y):-Q(X,Y)\\X,Y", &mut state.heap);
+    state.prog.add_clause(ct, c);
+    let (_, c) = Clause::parse_clause("p(a,b)", &mut state.heap);
+    state.prog.add_clause(ClauseType::BODY, c);
+    state.heap.query_space = true;
+    state.prog.clauses.sort_clauses();
+    state.prog.clauses.find_flags();
+    let mut goal = state
+        .heap
+        .build_literal("p(a,b)", &mut HashMap::new(), &mut vec![]);
+    let choice = &mut state.prog.call(goal, &mut state.heap, &mut state.config)[0];
     goal = choice.choose(&mut state).unwrap().0[0];
-    let choices = state.prog.call(goal, &mut state.heap, &state.config);
-    assert!(choices.len()==0);
+    state.heap.print_heap();
+    println!("Goal: {goal}");
+    let choices = state.prog.call(goal, &mut state.heap, &mut state.config);
+    assert!(choices.len() == 0);
 }

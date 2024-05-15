@@ -23,7 +23,11 @@ impl BindingTraits for Binding {
         for binding in self.iter() {
             buffer += &heap.term_string(binding.0);
             buffer += "/";
-            buffer += &heap.term_string(binding.1);
+            if binding.1 < Heap::CON_PTR {
+                buffer += &heap.term_string(binding.1)
+            } else {
+                buffer += heap.symbols.get_const(binding.1)
+            };
             buffer += ",";
         }
         buffer.pop();
@@ -91,7 +95,7 @@ fn unify_list(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) ->
 }
 
 pub fn unify_rec(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
-    let (addr1, addr2) = (heap.deref(addr1), heap.deref(addr2));
+    let (addr1, addr2) = (heap.deref_addr(addr1), heap.deref_addr(addr2));
     match (heap[addr1].0, heap[addr2].0) {
         (Heap::REF | Heap::REFC | Heap::REFA, Heap::REF | Heap::REFC | Heap::REFA) => {
             unify_vars(addr1, addr2, heap, binding)
@@ -137,7 +141,7 @@ fn build_subterm(
             if let (new_addr, false) = build_list(binding, sub_term, heap, uqvar_binding) {
                 binding.push((sub_term, new_addr)); // This maps from the address containg the list tag to the address of the first element in the new list
                 return false;
-            }else{
+            } else {
                 println!("const list")
             }
         }
@@ -226,7 +230,7 @@ fn build_list(
 
     let new_lis = heap.len();
     addr = src_lis;
-    
+
     loop {
         println!("{addr} -> {}", heap.len());
         match heap[addr] {

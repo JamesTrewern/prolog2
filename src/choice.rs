@@ -1,5 +1,5 @@
-use crate::{clause::*,heap::unification::*};
-use crate::State;
+use crate::{clause::*,unification::*};
+use crate::{Heap, State};
 
 
 #[derive(Debug)]
@@ -7,12 +7,14 @@ pub struct Choice {
     pub clause: usize, // index in program clause bank
     pub binding: Binding,
     pub new_clause: bool,
-    pub check_contraint: bool,
 }
 
 impl Choice {
     pub fn choose(&mut self, state: &mut State) -> Option<(Vec<usize>, bool)> {
         // self.binding.undangle_const(&mut state.heap);
+        if self.clause == Heap::CON_PTR{
+            return Some((vec![],false));
+        }
         let goals = self.build_goals(state);
         if state.config.debug{
             println!("Matched with: {}", state.prog.clauses.get(self.clause).1.to_string(&state.heap));
@@ -23,7 +25,7 @@ impl Choice {
             if state.config.debug{
                 println!("New Clause: {}, {new_clause:?}, H size: {}", new_clause.to_string(&state.heap), state.prog.h_size);
             }
-            let pred_symbol = new_clause.pred_symbol(&state.heap);
+            let (pred_symbol,_) = new_clause.symbol_arity(&state.heap);
             match state
                 .prog
                 .add_h_clause(new_clause, &mut state.heap, &state.config)

@@ -11,7 +11,7 @@ fn ancestor_1(){
     config.max_invented = 0;
     let mut state = State::new(Some(config));
 
-    state.prog.load_file("./examples/family", &mut state.heap);
+    state.load_file("./examples/family");
 
     let goal1 = state.heap.build_literal("ancestor(adam,james)", &mut HashMap::new(), &vec![]);
 
@@ -26,7 +26,7 @@ fn ancestor_2(){
     config.max_invented = 0;
     let mut state = State::new(Some(config));
 
-    state.prog.load_file("./examples/family", &mut state.heap);
+    state.load_file("./examples/family");
 
     let goal1 = state.heap.build_literal("ancestor(adam,james)", &mut HashMap::new(), &vec![]);
     let goal2 = state.heap.build_literal("ancestor(mum,james)", &mut HashMap::new(), &vec![]);

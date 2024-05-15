@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap, ops::Deref};
+use std::{cmp::Ordering, collections::HashMap, ops::Deref, usize};
 
 use crate::{clause::*, Heap};
 
@@ -21,7 +21,7 @@ fn order_clauses(c1: &(ClauseType, usize, usize), c2: &(ClauseType, usize, usize
 pub(crate) struct ClauseTable {
     pub clauses: Vec<(ClauseType, usize, usize)>,
     literal_addrs: Vec<usize>,
-    type_flags: [usize; 4],
+    pub type_flags: [usize; 4],
 }
 
 impl<'a> ClauseTable {
@@ -99,7 +99,12 @@ impl<'a> ClauseTable {
                 self.type_flags[type_i] = self.type_flags[type_i + 1]
             }
         }
-        println!("{:?}", self.type_flags);
+    }
+
+    pub fn set_body(&mut self, i: usize){
+        if let Some((clause_type,_,_)) = self.clauses.get_mut(i){
+            *clause_type = ClauseType::BODY;
+        }
     }
 
     //TO DO make types a &'static [ClauseType] array

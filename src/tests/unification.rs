@@ -108,7 +108,6 @@ fn unify_list_3(){
     let str1 = heap.build_literal("[X,y|T]", &mut HashMap::new(), &vec![]);
     let str2 = heap.build_literal("[x,Y|T]", &mut HashMap::new(), &vec![]);
     let binding: Option<Vec<(usize, usize)>> = unify(str1, str2, &heap);
-    heap.print_heap();
     assert_ne!(binding,None);
     if let Some(binding) = binding{
         assert_eq!(binding[..], [

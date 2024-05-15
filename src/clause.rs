@@ -1,16 +1,15 @@
 use std::collections::HashMap;
-use crate::heap::{Heap,unification::{unify, unify_rec}};
+use crate::{heap::Heap, unification::*};
 
-static CONSTRAINT: &'static str = ":<c>-";
 static IMPLICATION: &'static str = ":-";
 
 pub type Clause = [usize];
 
 pub trait ClauseTraits {
+    fn symbol_arity(&self, heap: &Heap) -> (usize, usize);
     fn parse_clause(clause: &str, heap: &mut Heap) -> (ClauseType, Box<Clause>);
     fn deallocate(&self, heap: &mut Heap);
     fn subsumes(&self, other: &Clause, heap: &Heap) -> bool;
-    fn pred_symbol(&self, heap: &Heap) -> usize;
     fn to_string(&self, heap: &Heap) -> String;
     fn new(head: usize, body: &[usize]) -> Box<Self>;
 }
@@ -50,8 +49,8 @@ impl ClauseTraits for Clause {
         }
     }
 
-    fn pred_symbol(&self, heap: &Heap) -> usize {
-        heap[self[0] + 1].1
+    fn symbol_arity(&self, heap: &Heap) -> (usize, usize) {
+        heap.str_symbol_arity(self[0])
     }
 
     fn subsumes(&self, other: &Clause, heap: &Heap) -> bool {

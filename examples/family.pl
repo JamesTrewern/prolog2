@@ -14,3 +14,6 @@ mum(christine,tami).
 
 P(X,Y):-Q(X,Y)\X,Y.
 P(X,Y):-Q(X,Z),P(Z,Y)\X,Y,Z. % Tail Recursion
+
+:- body_pred(dad,2).
+:- body_pred(mum,2).

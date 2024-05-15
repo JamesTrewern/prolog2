@@ -116,3 +116,5 @@ fn add_str_7(){
         (Heap::LIS,4)
     ]);
 }
+
+//TODO add number parsing tests
