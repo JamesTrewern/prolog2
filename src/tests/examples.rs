@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fs};
 
-use crate::{solver::start_proof, state::Config, State};
+use crate::{clause::{ClauseTraits, ClauseType}, solver::start_proof, state::Config, State};
 
 #[test]
 fn ancestor_1(){
@@ -12,6 +12,21 @@ fn ancestor_1(){
     let mut state = State::new(Some(config));
 
     state.load_file("./examples/family");
+
+    // state.prog.write_prog(&state.heap);
+
+    // let body_clauses: Vec<String> = state
+    //     .prog
+    //     .clauses
+    //     .iter(&[ClauseType::BODY])
+    //     .map(|c| c.1 .1.to_string(&state.heap))
+    //     .collect();
+
+
+
+    // for text in body_clauses{
+    //     println!("{text}");
+    // }
 
     let goal1 = state.heap.build_literal("ancestor(adam,james)", &mut HashMap::new(), &vec![]);
 

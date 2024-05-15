@@ -14,7 +14,7 @@ const PRED_NAME: &'static str = "James";
 
 pub struct Program {
     pub predicate_functions: HashMap<(usize, usize), PredicateFN>,
-    pub predicates: HashMap<(usize, usize), Vec<usize>>, //(id, arity): Predicate
+    pub predicates: HashMap<(usize, usize), Box<[usize]>>, //(id, arity): Predicate
     pub clauses: ClauseTable,
     pub constraints: Vec<(usize, usize)>,
     pub invented_preds: usize,
@@ -73,7 +73,6 @@ impl Program {
         config: &mut Config,
     ) -> Option<bool> {
         let (symbol, arity) = heap.str_symbol_arity(goal_addr);
-        println!("sym: {symbol}, ar: {arity}");
         if let Some(predfn) = self.predicate_functions.get(&(symbol, arity)) {
             Some(predfn(goal_addr, heap, config, self))
         } else {
@@ -128,7 +127,6 @@ impl Program {
             //TO DO use clause returned by iterator
             for (i, (clause_type, clause)) in iterator {
                 if let Some(choice) = self.match_clause(i, clause_type, clause, goal_addr, heap) {
-                    println!("Matched: {}", clause.to_string(heap));
                     choices.push(choice);
                 }
             }
@@ -137,13 +135,14 @@ impl Program {
     }
 
     pub fn add_body_pred(&mut self, symbol: usize, arity: usize, heap: &Heap) {
-        self.predicates = self.clauses.predicate_map(heap);
+        self.organise_clause_table(heap);
         self.body_preds.push((symbol, arity));
         if let Some(clauses) = self.predicates.get(&(symbol, arity)) {
-            for clause in clauses {
+            for clause in clauses.iter() {
                 self.clauses.set_body(*clause)
             }
         }
+        self.organise_clause_table(heap);
     }
 
     pub fn add_clause(&mut self, clause_type: ClauseType, clause: Box<Clause>) {
@@ -216,7 +215,7 @@ impl Program {
     pub fn write_prog(&self, heap: &Heap) {
         for (_i, (c_type, clause)) in
             self.clauses
-                .iter(&[ClauseType::CLAUSE, ClauseType::CLAUSE, ClauseType::META])
+                .iter(&[ClauseType::CLAUSE, ClauseType::BODY, ClauseType::META])
         {
             println!("{c_type:?}, {}", clause.to_string(heap))
         }
@@ -233,7 +232,12 @@ impl Program {
             let symbol = heap.add_const_symbol(symbol);
             self.predicate_functions.insert((symbol, *arity), *predfn);
         }
-        println!("{:?}", self.predicate_functions);
+    }
+
+    pub fn organise_clause_table(&mut self, heap: &Heap){
+        self.clauses.sort_clauses();
+        self.clauses.find_flags();
+        self.predicates = self.clauses.predicate_map(heap)
     }
 }
 

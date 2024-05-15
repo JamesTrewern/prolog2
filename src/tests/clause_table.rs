@@ -76,3 +76,8 @@ fn iter_meta_hypothesis() {
         assert_eq!(heap.term_string(clause[0]), expected.pop().unwrap());
     }
 }
+
+#[test]
+pub fn predicate_map(){
+    todo!()
+}

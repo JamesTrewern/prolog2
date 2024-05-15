@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs};
 
-use crate::{clause::*, heap::Heap, program::Program, solver::start_proof};
+use crate::{clause::*, heap::Heap, pred_module::get_module, program::Program, solver::start_proof};
 
 const MAX_H_SIZE: usize = 2; //Max number of clauses in H
 const MAX_INVENTED: usize = 0; //Max invented predicate symbols
@@ -90,7 +90,6 @@ impl State {
             if !speech && !quote && char == '.' {
                 let segment = file[i1..i2].trim();
                 if Some(0) == segment.find(":-") {
-                    println!("{segment}");
                     self.handle_directive(&segment[2..]);
                 } else {
                     let (mut clause_type, clause) = Clause::parse_clause(segment, &mut self.heap);
@@ -159,7 +158,6 @@ impl State {
                 goal_literals.push(text[i1..].trim());
             }
         }
-        println!("{goal_literals:?}");
         let mut map: HashMap<String, usize> = HashMap::new();
         let goals: Vec<usize> = goal_literals
             .iter()
@@ -171,6 +169,13 @@ impl State {
     pub fn handle_directive(&mut self, text: &str){
         let goals = self.parse_goals(text);
         start_proof(goals, self);
+    }
+
+    pub fn load_module(&mut self, name: &str){
+        match  get_module(&name.to_lowercase()){
+            Some(pred_module) => self.prog.add_pred_module(pred_module, &mut self.heap),
+            None => println!("{name} is not a recognised module"),
+        }
     }
 }
 

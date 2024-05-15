@@ -55,11 +55,11 @@ impl<'a> ClauseTable {
             .truncate(self.literal_addrs.len() - clause_literals_len)
     }
 
-    pub fn predicate_map(&self, heap: &Heap) -> HashMap<(usize, usize), Vec<usize>> {
+    pub fn predicate_map(&self, heap: &Heap) -> HashMap<(usize, usize), Box<[usize]>> {
         let mut predicate_map = HashMap::<(usize, usize), Vec<usize>>::new();
 
         for (ci, (_, clause)) in self.iter(&[ClauseType::CLAUSE, ClauseType::BODY]) {
-            let cell = heap[clause[0]];
+            let cell = heap.str_symbol_arity(clause[0]);
             if cell.0 >= isize::MAX as usize {
                 match predicate_map.get_mut(&cell) {
                     Some(clauses) => clauses.push(ci),
@@ -70,7 +70,8 @@ impl<'a> ClauseTable {
             }
         }
 
-        predicate_map
+
+        predicate_map.into_iter().map(|(k,v)| (k,v.into_boxed_slice())).collect()
     }
 
     pub fn find_flags(&mut self) {

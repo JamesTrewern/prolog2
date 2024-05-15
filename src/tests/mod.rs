@@ -18,3 +18,6 @@ mod program;
 
 #[cfg(test)]
 mod unification;
+
+#[cfg(test)]
+mod pred_modules;
