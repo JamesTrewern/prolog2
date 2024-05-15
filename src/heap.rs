@@ -155,6 +155,14 @@ impl Heap {
                         self.symbols.get_symbol(self.deref_addr(i))
                     )
                 }
+                Heap::INT => {
+                    println!(
+                        "[{:3}]|{:w$?}|{:w$}|",
+                        i,
+                        "INT",
+                        cell.1
+                    )
+                }
                 _ => panic!("Unkown Tag"),
             };
             println!("{:-<w$}--------{:-<w$}", "", "");
@@ -185,12 +193,12 @@ impl Heap {
     }
 
     pub fn structure_string(&self, addr: usize) -> String {
-        let (_, arity) = self[addr];
-        let mut buf = self.term_string(addr + 1);
-        buf += "(";
-        for i in 1..=arity {
-            buf += &self.term_string(addr + 1 + i);
-            buf += ","
+        let mut buf = "".to_string();
+        let mut first = true;
+        for i in self.str_iterator(addr){
+            buf += &self.term_string(i);
+            buf += if first {"("} else {","};
+            if first { first = false}
         }
         buf.pop();
         buf += ")";
@@ -216,6 +224,10 @@ impl Heap {
                     format!("∀'_{addr}")
                 }
             }
+            Heap::INT => {
+                format!("{}", self[addr].1)
+            }
+            Heap::STR_REF => self.structure_string(self[addr].1),
             _ => self.structure_string(addr),
         }
     }
@@ -256,13 +268,28 @@ impl Heap {
         let id = self.symbols.set_const(text);
         self.set_const(id)
     }
+    fn text_number(&mut self, text: &str) -> usize {
+        if text.contains('.') {
+            todo!("parse floats")
+        } else {
+            match text.parse::<usize>() {
+                Ok(value) => {
+                    self.push((Heap::INT, value));
+                    self.len() - 1
+                }
+                Err(_) => panic!("Cannot parse number"),
+            }
+        }
+    }
     fn text_singlet(
         &mut self,
         text: &str,
         symbols_map: &mut HashMap<String, usize>,
         uni_vars: &Vec<&str>,
     ) -> usize {
-        if text.chars().next().unwrap().is_uppercase() {
+        if text.chars().next().unwrap().is_ascii_digit() {
+            self.text_number(text)
+        } else if text.chars().next().unwrap().is_uppercase() {
             self.text_var(text, symbols_map, uni_vars)
         } else {
             self.text_const(text, symbols_map)
