@@ -249,6 +249,14 @@ impl Heap {
     pub fn str_symbol_arity(&self, addr: usize) -> (usize, usize) {
         (self[addr + 1].1, self[addr].1)
     }
+
+    pub fn create_var_symbols(&mut self, vars: Vec<usize>){
+        let mut alphabet = (b'A'..=b'Z').map(|c| String::from_utf8(vec![c]).unwrap());
+        for var in vars{
+            let symbol = alphabet.next().unwrap();
+            self.symbols.set_var(&symbol, var)
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -515,7 +523,21 @@ impl Heap {
             Heap::LIS => {
                 Term::List((self.get_term_object(self[addr].1).into(),self.get_term_object(self[addr].1+1).into()))
             }
-            _ => Term::Value(self[addr]),
+            _ => Term::Value(self[self.deref_addr(addr)]),
         }
+    }
+}
+
+impl Term {
+    pub fn vars(&self)-> Vec<usize>{
+        let mut vars = Vec::<usize>::new();
+        match self {
+            Term::Value((tag,value)) => if *tag == Heap::REFC { vars.push(*value)},
+            Term::List((h,t)) => {vars.append(&mut h.vars());vars.append(&mut t.vars())},
+            Term::STR(sub_terms) => {for sub_term in sub_terms {
+                vars.append(&mut sub_term.vars())
+            }},
+        }
+        vars
     }
 }

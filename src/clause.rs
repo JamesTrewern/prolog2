@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, env::var};
 use crate::{heap::Heap, unification::*};
 
 static IMPLICATION: &'static str = ":-";
@@ -6,6 +6,7 @@ static IMPLICATION: &'static str = ":-";
 pub type Clause = [usize];
 
 pub trait ClauseTraits {
+    fn vars(&self, heap: &Heap) -> Vec<usize>;
     fn symbol_arity(&self, heap: &Heap) -> (usize, usize);
     fn parse_clause(clause: &str, heap: &mut Heap) -> (ClauseType, Box<Clause>);
     fn deallocate(&self, heap: &mut Heap);
@@ -148,6 +149,16 @@ impl ClauseTraits for Clause {
             .collect();
 
         (clause_type, Clause::new(head, &body))
+    }
+
+    fn vars(&self, heap: &Heap) -> Vec<usize>{
+        let mut vars = Vec::<usize>::new();
+        for literal in self.iter(){
+            vars.append(&mut heap.get_term_object(*literal).vars())
+        }
+        vars.sort();
+        vars.dedup();
+        vars 
     }
 }
 

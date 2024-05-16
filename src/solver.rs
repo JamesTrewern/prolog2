@@ -76,6 +76,7 @@ impl<'a> Iterator for Proof <'a> {
             let mut hypothesis = String::new();
             for (_,(_,h_clause)) in self.state.prog.clauses.iter(&[ClauseType::HYPOTHESIS]){
                 hypothesis += "\n";
+                self.state.heap.create_var_symbols(h_clause.vars(&self.state.heap));
                 hypothesis += &h_clause.to_string(&self.state.heap);
             }
             Some(hypothesis)
