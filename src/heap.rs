@@ -7,6 +7,8 @@ use unification::Binding;
 
 pub type Cell = (usize, usize);
 
+
+
 pub struct Heap {
     pub(super) cells: Vec<Cell>,
     pub(super) symbols: SymbolDB,
@@ -495,5 +497,25 @@ impl Deref for Heap {
 impl DerefMut for Heap {
     fn deref_mut(&mut self) -> &mut [Cell] {
         &mut self.cells
+    }
+}
+
+
+pub enum Term {
+    Value(Cell),
+    List((Box<Term>,Box<Term>)),
+    STR(Vec<Term>)
+}
+
+impl Heap {
+    pub fn get_term_object(&self, addr: usize) -> Term{
+        match self[addr].0 {
+            Heap::STR => Term::STR(self.str_iterator(addr).map(|addr: usize| self.get_term_object(addr)).collect()),
+            Heap::STR_REF => Term::STR(self.str_iterator(self[addr].1).map(|addr: usize| self.get_term_object(addr)).collect()),
+            Heap::LIS => {
+                Term::List((self.get_term_object(self[addr].1).into(),self.get_term_object(self[addr].1+1).into()))
+            }
+            _ => Term::Value(self[addr]),
+        }
     }
 }

@@ -13,7 +13,7 @@ mod pred_module;
 use std::{collections::HashMap, process::ExitCode, vec};
 pub (crate) use heap::Heap;
 pub (crate) use program::Program;
-use solver::start_proof;
+use solver::Proof;
 pub (crate) use state::State;
 
 
@@ -31,7 +31,7 @@ fn main() -> ExitCode {
 
     let goal1 = state.heap.build_literal("ancestor(adam,james)", &mut HashMap::new(), &vec![]);
 
-    start_proof(vec![goal1], &mut state);
+    // start_proof(vec![goal1], &mut state);s
 
 
     ExitCode::SUCCESS

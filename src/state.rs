@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs};
 
-use crate::{clause::*, heap::Heap, pred_module::get_module, program::Program, solver::start_proof};
+use crate::{clause::*, heap::Heap, pred_module::get_module, program::Program, solver::Proof};
 
 const MAX_H_SIZE: usize = 2; //Max number of clauses in H
 const MAX_INVENTED: usize = 0; //Max invented predicate symbols
@@ -54,6 +54,11 @@ impl Config {
 
     pub fn max_depth(&mut self, a: usize) -> Config {
         self.max_depth = a;
+        *self
+    }
+
+    pub fn debug(&mut self, debug: bool) -> Config{
+        self.debug = debug;
         *self
     }
 }
@@ -168,7 +173,8 @@ impl State {
 
     pub fn handle_directive(&mut self, text: &str){
         let goals = self.parse_goals(text);
-        start_proof(goals, self);
+        let mut proof = Proof::new(&goals, self);
+        proof.next();
     }
 
     pub fn load_module(&mut self, name: &str){

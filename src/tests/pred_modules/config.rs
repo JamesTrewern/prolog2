@@ -1,4 +1,4 @@
-use crate::{clause::*, solver::start_proof, State};
+use crate::{clause::*, solver::Proof, State};
 
 #[test]
 fn body_pred() {
@@ -10,7 +10,7 @@ fn body_pred() {
     }
     state.heap.query_space = true;
     let directive = state.parse_goals("body_pred(dad,2),body_pred(mum,2)");
-    assert!(start_proof(directive, &mut state));
+    assert!(Proof::new(&directive, &mut state).next().is_some());
     let body_clauses: Vec<String> = state
         .prog
         .clauses

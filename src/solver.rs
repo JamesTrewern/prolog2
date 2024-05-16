@@ -1,6 +1,6 @@
 use crate::{
     // clause::*,
-    choice::Choice, unification::*, Heap, State
+    choice::Choice, clause::{ClauseTraits, ClauseType}, heap::{self, Cell, Term}, unification::*, Heap, State
 };
 
 struct Env {
@@ -27,80 +27,121 @@ impl Env {
     }
 }
 
-fn prove_again() -> bool {
-    todo!()
-    // loop{
-    //     match read().unwrap() {
-    //         event::Event::Key(key) => {
-    //             if key.code == KeyCode::Enter || key.code == KeyCode::Char('.'){
-    //                 return false;
-    //             } else if key.code == KeyCode::Char(';') || key.code == KeyCode::Char(' '){
-    //                 return true;
-    //             }
-    //         },
-    //         _ => ()
-    //     }
-    // }
+pub(crate) struct Proof<'a> {
+    proof_stack: Vec<Env>,
+    state: &'a mut State,
+    original_goals: Box<[Term]>,
+    goals: Box<[usize]>,
+    pointer: usize
 }
 
-pub fn start_proof(goals: Vec<usize>, state: &mut State) -> bool{
-    let mut proof_stack: Vec<Env> = vec![];
+impl<'a> Proof<'a> {
+    pub fn new(goals: &[usize], state: &'a mut State) -> Proof<'a> {
+        let goals: Box<[usize]> = goals.into();
+        let original_goals: Box<[Term]> = goals
+            .iter()
+            .map(|goal_addr| state.heap.get_term_object(*goal_addr))
+            .collect();
+        let mut proof_stack:Vec<Env> = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
 
-    if prove(goals.clone(), &mut proof_stack, state) {
-        println!("TRUE");
-        for goal in goals {
-            println!("{},", state.heap.term_string(goal))
+        Proof {
+            proof_stack,
+            state,
+            original_goals,
+            goals,
+            pointer: 0,
         }
-        state.prog.write_h(&state.heap);
-        true
-    } else {
-        println!("FALSE");
-        print_stack(&mut proof_stack, &mut state.heap);
-        false
-        // heap.print_heap();
     }
 }
 
-fn prove(goals: Vec<usize>, proof_stack: &mut Vec<Env>, state: &mut State) -> bool {
-    for goal in &goals {
-        proof_stack.push(Env::new(goal.clone(), 0));
+impl<'a> Iterator for Proof <'a> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+
+        if self.pointer != 0 {
+            match retry(&mut self.proof_stack, self.pointer-1, &mut self.state) {
+                Some(p) => {
+                    self.pointer = p;
+                }
+                None => return None,
+            }
+        }
+
+        if prove(&mut self.pointer, &mut self.proof_stack, &mut self.state) {
+            println!("TRUE");
+            for goal in self.goals.iter() {
+                println!("{},", self.state.heap.term_string(*goal))
+            }
+            let mut hypothesis = String::new();
+            for (_,(_,h_clause)) in self.state.prog.clauses.iter(&[ClauseType::HYPOTHESIS]){
+                hypothesis += "\n";
+                hypothesis += &h_clause.to_string(&self.state.heap);
+            }
+            Some(hypothesis)
+        } else {
+            println!("FALSE");
+            print_stack(&mut self.proof_stack, &mut self.state.heap);
+            None
+            // heap.print_heap();
+        }
     }
+}
 
-    let mut pointer = 0;
+// pub fn start_proof(goals: Vec<usize>, state: &mut State) -> bool {
+//     let mut proof_stack: Vec<Env> = vec![];
 
+//     if prove(goals.clone(), &mut proof_stack, state) {
+//         println!("TRUE");
+//         for goal in goals {
+//             println!("{},", state.heap.term_string(goal))
+//         }
+//         state.prog.write_h(&state.heap);
+//         true
+//     } else {
+//         println!("FALSE");
+//         print_stack(&mut proof_stack, &mut state.heap);
+//         false
+//         // heap.print_heap();
+//     }
+// }
+
+fn prove(pointer: &mut usize, proof_stack: &mut Vec<Env>, state: &mut State) -> bool {
     loop {
-        let (depth, goal) = match proof_stack.get_mut(pointer) {
+        let (depth, goal) = match proof_stack.get_mut(*pointer) {
             Some(e) => (e.depth, e.goal),
             None => {
                 return true;
             }
         };
         if depth == state.config.max_depth {
-            match retry(proof_stack, pointer, state) {
+            match retry(proof_stack, *pointer, state) {
                 Some(p) => {
-                    pointer = p;
+                    *pointer = p;
                 }
                 None => return false,
             }
         }
-        println!("[{}]Try: {}", depth, state.heap.term_string(goal));
+        if state.config.debug {
+            println!("[{}]Try: {}", depth, state.heap.term_string(goal));
+        }
         let mut choices = state.prog.call(goal, &mut state.heap, &mut state.config);
 
         loop {
             if let Some(choice) = choices.pop() {
-                if apply_choice(proof_stack, pointer, choice, state) {
-                    let env = proof_stack.get_mut(pointer).unwrap();
+                if apply_choice(proof_stack, *pointer, choice, state) {
+                    let env = proof_stack.get_mut(*pointer).unwrap();
                     env.choices = choices;
-                    pointer += 1;
+                    *pointer += 1;
                     break;
                 }
             } else {
                 if state.config.debug {
                     println!("[{}]FAILED: {}", depth, state.heap.term_string(goal));
                 }
-                match retry(proof_stack, pointer, state) {
+                match retry(proof_stack, *pointer, state) {
                     Some(p) => {
-                        pointer = p;
+                        *pointer = p;
                         break;
                     }
                     None => return false,
@@ -117,12 +158,13 @@ fn retry(proof_stack: &mut Vec<Env>, pointer: usize, state: &mut State) -> Optio
     }
     let env = proof_stack.get_mut(pointer).unwrap();
     //Undo Enviroment
-    println!(
-        "[{pointer}]UNDO: {},{}",
-        state.heap.term_string(env.goal),
-        env.bindings.to_string(&state.heap)
-    );
-
+    if state.config.debug {
+        println!(
+            "[{pointer}]UNDO: {},{}",
+            state.heap.term_string(env.goal),
+            env.bindings.to_string(&state.heap)
+        );
+    }
     state.heap.unbind(&env.bindings);
 
     if env.new_clause == true {
