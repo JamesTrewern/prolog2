@@ -43,9 +43,11 @@ fn ancestor_2(){
 
     state.load_file("./examples/family");
 
-    let goal1 = state.heap.build_literal("ancestor(adam,james)", &mut HashMap::new(), &vec![]);
-    let goal2 = state.heap.build_literal("ancestor(mum,james)", &mut HashMap::new(), &vec![]);
+    state.prog.write_prog(&state.heap);
+
+    let goal1 = state.heap.build_literal("ancestor(ken,james)", &mut HashMap::new(), &vec![]);
+    let goal2 = state.heap.build_literal("ancestor(christine,james)", &mut HashMap::new(), &vec![]);
 
 
-    start_proof(vec![goal1,goal2], &mut state);
+    assert!(start_proof(vec![goal1,goal2], &mut state));
 }

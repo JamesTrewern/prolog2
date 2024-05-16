@@ -128,16 +128,17 @@ fn build_subterm(
     heap: &mut Heap,
     uqvar_binding: &mut Option<Binding>,
 ) -> bool {
-    match heap[sub_term] {
-        (Heap::REF | Heap::REFA | Heap::REFC, addr) => return false,
-        (Heap::STR_REF, addr) => {
+    let addr = heap.deref_addr(sub_term);
+    match heap[heap.deref_addr(sub_term)] {
+        (Heap::REF | Heap::REFA | Heap::REFC, _) => return false,
+        (Heap::STR, _) => {
             if let (new_addr, false) = build_str(binding, addr, heap, uqvar_binding) {
                 binding.push((addr, new_addr));
                 return false;
             }
         }
 
-        (Heap::LIS, addr) => {
+        (Heap::LIS, _) => {
             if let (new_addr, false) = build_list(binding, sub_term, heap, uqvar_binding) {
                 binding.push((sub_term, new_addr)); // This maps from the address containg the list tag to the address of the first element in the new list
                 return false;
@@ -156,7 +157,8 @@ fn add_term_binding(
     heap: &mut Heap,
     uqvar_binding: &mut Option<Binding>,
 ) {
-    match heap[term_addr] {
+    let addr = heap.deref_addr(term_addr);
+    match heap[addr] {
         (Heap::REFA, addr) if uqvar_binding.is_some() => {
             let binding = uqvar_binding.as_mut().unwrap();
             if let Some(new_addr) = binding.bound(addr) {
@@ -178,7 +180,7 @@ fn add_term_binding(
                 heap.push((Heap::REF, heap.len()));
             }
         }
-        (Heap::STR_REF, addr) => {
+        (Heap::STR, _) => {
             if let Some(addr) = binding.bound(addr) {
                 heap.push((Heap::STR_REF, addr))
             } else {
@@ -244,7 +246,7 @@ fn build_list(
                 addr = list_ptr + 1;
             }
             _ => {
-                add_term_binding(addr, binding, heap, uqvar_binding);
+                add_term_binding(heap.deref_addr(addr), binding, heap, uqvar_binding);
                 break;
             }
         }

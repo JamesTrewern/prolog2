@@ -1,7 +1,7 @@
 use crate::{symbol_db::SymbolDB, unification};
 use std::{
     collections::HashMap,
-    ops::{Deref, DerefMut, RangeInclusive},
+    ops::{Deref, DerefMut, RangeInclusive}, usize,
 };
 use unification::Binding;
 
@@ -25,6 +25,14 @@ impl Heap {
     pub const STR_REF: usize = usize::MAX - 8;
     pub const CON_PTR: usize = isize::MAX as usize;
     pub const EMPTY_LIS: Cell = (Heap::LIS, Heap::CON);
+
+    pub fn from_slice(cells: &[Cell]) -> Heap{
+        Heap {
+            cells: Vec::from(cells),
+            query_space: true,
+            symbols: SymbolDB::new(),
+        }
+    }
 
     pub fn new(size: usize) -> Heap {
         Heap {

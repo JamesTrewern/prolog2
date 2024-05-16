@@ -51,6 +51,27 @@ fn should_not_panic_print_heap(){
     heap.print_heap()
 }
 
+#[test]
+fn deref_addr(){
+    let mut heap = Heap::new(100);
+    heap.push((Heap::REF,1));
+    heap.push((Heap::REF,2));
+    heap.push((Heap::REF,3));
+    heap.push((Heap::REF,3));
+    assert_eq!(heap.deref_addr(0),3)
+}
+
+#[test]
+fn deref_addr_con(){
+    let mut heap = Heap::new(100);
+    heap.push((Heap::REF,1));
+    heap.push((Heap::REF,2));
+    heap.push((Heap::REF,3));
+    heap.push((Heap::CON,3));
+    assert_eq!(heap.deref_addr(0),3)
+}
+
+
 // #[test]
 // fn list_iterator_1(){
 //     let mut heap = Heap::new(10);
