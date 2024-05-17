@@ -6,9 +6,9 @@ use std::{
 };
 use unification::Binding;
 
-pub type Cell = (usize, usize);
+use fsize::fsize;
 
-pub type fsize = f64;
+pub type Cell = (usize, usize);
 
 pub struct Heap {
     pub(super) cells: Vec<Cell>,
@@ -27,21 +27,29 @@ impl Heap {
     pub const FLT: usize = usize::MAX - 7;
     pub const STR_REF: usize = usize::MAX - 8;
     pub const CON_PTR: usize = isize::MAX as usize;
+    pub const FALSE: Cell = (Heap::CON, Heap::CON_PTR);
+    pub const TRUE: Cell = (Heap::CON, Heap::CON_PTR+1);
     pub const EMPTY_LIS: Cell = (Heap::LIS, Heap::CON);
 
     pub fn from_slice(cells: &[Cell]) -> Heap {
+        let mut symbols = SymbolDB::new();
+        symbols.set_const("false");
+        symbols.set_const("true");
         Heap {
             cells: Vec::from(cells),
             query_space: true,
-            symbols: SymbolDB::new(),
+            symbols,
         }
     }
 
     pub fn new(size: usize) -> Heap {
+        let mut symbols = SymbolDB::new();
+        symbols.set_const("false");
+        symbols.set_const("true");
         Heap {
             cells: Vec::with_capacity(size),
             query_space: true,
-            symbols: SymbolDB::new(),
+            symbols,
         }
     }
 

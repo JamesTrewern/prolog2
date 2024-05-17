@@ -12,8 +12,8 @@ use crate::{
 #[test]
 fn ancestor_1() {
     let mut config = Config::new();
-    config.max_clause = 2;
-    config.max_invented = 0;
+    config.max_h_clause = 2;
+    config.max_h_pred = 0;
     let mut state = State::new(Some(config));
 
     state.load_file("./examples/family");
@@ -47,7 +47,7 @@ fn ancestor_1() {
 #[test]
 fn ancestor_2() {
     let mut state = State::new(Some(
-        Config::new().max_h_size(4).max_invented(0).debug(false),
+        Config::new().max_h_clause(4).max_h_preds(0).debug(false),
     ));
 
     state.load_file("./examples/family");

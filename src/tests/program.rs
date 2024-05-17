@@ -164,7 +164,7 @@ fn call_list_load_file() {}
 
 #[test]
 fn max_invented_predicates() {
-    let mut state = State::new(Some(Config::new().max_invented(0)));
+    let mut state = State::new(Some(Config::new().max_h_preds(0)));
     state.heap.query_space = false;
     let (ct, c) = Clause::parse_clause("P(X,Y):-Q(X,Y)\\X,Y", &mut state.heap);
     state.prog.add_clause(ct, c);
@@ -180,7 +180,7 @@ fn max_invented_predicates() {
 
 #[test]
 fn max_predicates_0() {
-    let mut state = State::new(Some(Config::new().max_invented(0)));
+    let mut state = State::new(Some(Config::new().max_h_preds(0)));
     state.heap.query_space = false;
     let (ct, c) = Clause::parse_clause("P(X,Y):-Q(X,Y)\\X,Y", &mut state.heap);
     state.prog.add_clause(ct, c);
@@ -196,7 +196,7 @@ fn max_predicates_0() {
 
 #[test]
 fn max_predicates_1() {
-    let mut state = State::new(Some(Config::new().max_invented(1)));
+    let mut state = State::new(Some(Config::new().max_h_preds(1)));
     state.heap.query_space = false;
     let (ct, c) = Clause::parse_clause("P(X,Y):-Q(X,Y)\\X,Y", &mut state.heap);
     state.prog.add_clause(ct, c);
@@ -220,7 +220,7 @@ fn max_predicates_1() {
 
 #[test]
 fn max_clause_0() {
-    let mut state = State::new(Some(Config::new().max_h_size(0)));
+    let mut state = State::new(Some(Config::new().max_h_clause(0)));
     state.heap.query_space = false;
     let (ct, c) = Clause::parse_clause("P(X,Y):-Q(X,Y)\\X,Y", &mut state.heap);
     state.prog.add_clause(ct, c);
@@ -236,7 +236,7 @@ fn max_clause_0() {
 
 #[test]
 fn test_constraint() {
-    let mut state = State::new(Some(Config::new().max_h_size(1).max_invented(0)));
+    let mut state = State::new(Some(Config::new().max_h_clause(1).max_h_preds(0)));
     state.heap.query_space = false;
     let (ct, c) = Clause::parse_clause("P(X,Y):-Q(X,Y)\\X,Y", &mut state.heap);
     state.prog.add_clause(ct, c);

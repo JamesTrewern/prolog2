@@ -15,8 +15,8 @@ static IMPLICATION: &'static str = ":-";
 #[derive(Clone, Copy)]
 pub struct Config {
     pub share_preds: bool,
-    pub max_clause: usize,
-    pub max_invented: usize,
+    pub max_h_clause: usize,
+    pub max_h_pred: usize,
     pub debug: bool,
     pub max_depth: usize,
 }
@@ -35,20 +35,20 @@ impl Config {
     pub fn new() -> Config {
         Config {
             share_preds: SHARE_PREDS,
-            max_clause: MAX_H_SIZE,
-            max_invented: MAX_INVENTED,
+            max_h_clause: MAX_H_SIZE,
+            max_h_pred: MAX_INVENTED,
             debug: DEBUG,
             max_depth: MAX_DEPTH,
         }
     }
 
-    pub fn max_h_size(&mut self, a: usize) -> Config {
-        self.max_clause = a;
+    pub fn max_h_clause(&mut self, a: usize) -> Config {
+        self.max_h_clause = a;
         *self
     }
 
-    pub fn max_invented(&mut self, a: usize) -> Config {
-        self.max_invented = a;
+    pub fn max_h_preds(&mut self, a: usize) -> Config {
+        self.max_h_pred = a;
         *self
     }
 

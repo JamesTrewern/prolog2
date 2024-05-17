@@ -5,13 +5,14 @@ use crate::heap::Heap;
 #[test]
 fn add_str_1(){
     let mut heap = Heap::new(20);
+    let p = heap.add_const_symbol("p");
     heap.query_space = false;
     let structure = "p(X,Y)";
     let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
     assert_eq!(heap.term_string(addr),structure);
     debug_assert_eq!(heap[..],[
         (Heap::STR,2),
-        (Heap::CON, Heap::CON_PTR),
+        (Heap::CON, p),
         (Heap::REFC, 2),
         (Heap::REFC, 3)
     ]);
@@ -33,6 +34,7 @@ fn add_str_2(){
 #[test]
 fn add_str_3(){
     let mut heap = Heap::new(20);
+    let x = heap.add_const_symbol("x");
     heap.query_space = false;
     let structure = "P(Q(x),Y)";
     let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
@@ -40,7 +42,7 @@ fn add_str_3(){
     debug_assert_eq!(heap[..],[
         (Heap::STR,1),
         (Heap::REFC, 1),
-        (Heap::CON,Heap::CON_PTR),
+        (Heap::CON,x),
         (Heap::STR, 2),
         (Heap::REFC, 4),
         (Heap::STR_REF, 0),
@@ -50,14 +52,16 @@ fn add_str_3(){
 #[test]
 fn add_str_4(){
     let mut heap = Heap::new(20);
+    let x = heap.add_const_symbol("x");
+    let y = heap.add_const_symbol("y");
     heap.query_space = false;
     let structure = "P([x,y])";
     let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
     assert_eq!(heap.term_string(addr),structure);
     debug_assert_eq!(heap[..],[
-        (Heap::CON,Heap::CON_PTR),
+        (Heap::CON,x),
         (Heap::LIS, 2),
-        (Heap::CON,Heap::CON_PTR+1),
+        (Heap::CON,y),
         Heap::EMPTY_LIS,
         (Heap::STR, 1),
         (Heap::REFC, 5),
@@ -67,15 +71,18 @@ fn add_str_4(){
 #[test]
 fn add_str_5(){
     let mut heap = Heap::new(20);
+    let p = heap.add_const_symbol("p");
+    let x = heap.add_const_symbol("x");
+    let y = heap.add_const_symbol("y");
     heap.query_space = false;
     let structure = "P([p(x,y)])";
     let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
     debug_assert_eq!(heap.term_string(addr),structure);
     debug_assert_eq!(heap[..],[
         (Heap::STR, 2),
-        (Heap::CON, Heap::CON_PTR),
-        (Heap::CON, Heap::CON_PTR+1),
-        (Heap::CON, Heap::CON_PTR+2),
+        (Heap::CON, p),
+        (Heap::CON, x),
+        (Heap::CON, y),
         (Heap::STR_REF, 0),
         Heap::EMPTY_LIS,
         (Heap::STR, 1),
@@ -100,13 +107,14 @@ fn add_str_6(){
 #[test]
 fn add_str_7(){
     let mut heap = Heap::new(20);
+    let p = heap.add_const_symbol("p");
     heap.query_space = false;
     let structure = "P([p(X,Y)])";
     let addr = heap.build_literal(structure, &mut HashMap::new(), &vec!["X","Y"]);
     assert_eq!(heap.term_string(addr),"P([p(∀'X,∀'Y)])");
     assert_eq!(heap[..],[
         (Heap::STR, 2),
-        (Heap::CON, Heap::CON_PTR),
+        (Heap::CON, p),
         (Heap::REFA, 2),
         (Heap::REFA, 3),
         (Heap::STR_REF, 0),
@@ -120,13 +128,14 @@ fn add_str_7(){
 #[test]
 fn build_float_and_int(){
     let mut heap = Heap::new(20);
+    let p = heap.add_const_symbol("p");
     heap.query_space = false;
     let structure = "p(5,11.10)";
     let addr = heap.build_literal(structure, &mut HashMap::new(), &Vec::new());
     assert_eq!(heap.term_string(addr),"p(5,11.1)");
     debug_assert_eq!(heap[..],[
         (Heap::STR,2),
-        (Heap::CON, Heap::CON_PTR),
+        (Heap::CON, p),
         (Heap::INT, 5),
         (Heap::FLT, (11.1 as f64).to_bits() as usize)
     ]);

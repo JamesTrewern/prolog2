@@ -109,7 +109,7 @@ impl Program {
             }
         } else {
             let iterator = if symbol < Heap::CON_PTR {
-                if self.h_size == config.max_clause || self.invented_preds == config.max_invented {
+                if self.h_size == config.max_h_clause || self.invented_preds == config.max_h_pred {
                     self.clauses
                         .iter(&[ClauseType::BODY, ClauseType::HYPOTHESIS])
                 } else {
@@ -117,7 +117,7 @@ impl Program {
                         .iter(&[ClauseType::BODY, ClauseType::META, ClauseType::HYPOTHESIS])
                 }
             } else {
-                if self.h_size == config.max_clause {
+                if self.h_size == config.max_h_clause {
                     self.clauses.iter(&[ClauseType::HYPOTHESIS])
                 } else {
                     self.clauses

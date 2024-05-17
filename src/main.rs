@@ -27,7 +27,7 @@ New Clause rules: constraints, head can't be existing predicate
 */
 fn main() -> ExitCode {
     let mut state = State::new(Some(
-        Config::new().max_h_size(4).max_invented(1).debug(true).max_depth(10),
+        Config::new().max_h_clause(4).max_h_preds(1).debug(true).max_depth(10),
     ));
 
     state.load_file("./examples/family");
