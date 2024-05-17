@@ -117,4 +117,19 @@ fn add_str_7(){
     ]);
 }
 
+#[test]
+fn build_float_and_int(){
+    let mut heap = Heap::new(20);
+    heap.query_space = false;
+    let structure = "p(5,11.10)";
+    let addr = heap.build_literal(structure, &mut HashMap::new(), &Vec::new());
+    assert_eq!(heap.term_string(addr),"p(5,11.1)");
+    debug_assert_eq!(heap[..],[
+        (Heap::STR,2),
+        (Heap::CON, Heap::CON_PTR),
+        (Heap::INT, 5),
+        (Heap::FLT, (11.1 as f64).to_bits() as usize)
+    ]);
+}
+
 //TODO add number parsing tests

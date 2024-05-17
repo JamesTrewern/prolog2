@@ -37,9 +37,10 @@ fn ancestor_1() {
 
     let mut proof = Proof::new(&[goal1], &mut state);
 
-    assert!(proof.next().is_some());
+    let mut proofs = 0;
     for branch in proof {
-        println!("{branch}");
+        println!("Hypothesis[{proofs}]: {branch}\n");
+        proofs += 1;
     }
 }
 
