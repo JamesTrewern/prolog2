@@ -16,6 +16,49 @@ fn body_pred(call: usize, heap: &mut Heap, _: &mut Config, prog: &mut Program) -
     true
 }
 
+fn max_h_preds(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> bool{
+    if let (Heap::INT, value) = heap[call+2]{
+        config.max_h_pred = value;
+        true
+    }else{
+        false
+    }
+}
+
+fn max_h_clause(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> bool{
+    if let (Heap::INT, value) = heap[call+2]{
+        config.max_h_clause = value;
+        true
+    }else{
+        false
+    }
+}
+
+fn share_preds(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> bool{
+    let value = match heap[call+2] {
+        Heap::TRUE => true,
+        Heap::FALSE => false,
+        _ => {println!("Value passed to share_preds wasn't true/false"); return false;}
+    };
+    config.share_preds = value;
+    true
+}
+
+fn debug(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> bool{
+    let value = match heap[call+2] {
+        Heap::TRUE => true,
+        Heap::FALSE => false,
+        _ => {println!("Value passed to debug wasn't true/false"); return false;}
+    };
+    config.debug = value;
+    true
+}
+
 pub static CONFIG: PredModule = &[
-    ("body_pred",2,body_pred)
+    ("body_pred",2,body_pred),
+    ("max_h_preds",1,max_h_preds),
+    ("max_h_clause",1,max_h_clause),
+    ("share_preds",1,share_preds),
+    ("debug",1,debug),
+
 ];

@@ -1,4 +1,4 @@
-use crate::{clause::*, solver::Proof, State};
+use crate::{clause::*, solver::Proof, state::Config, State};
 
 #[test]
 fn body_pred() {
@@ -18,4 +18,47 @@ fn body_pred() {
         .map(|c| c.1 .1.to_string(&state.heap))
         .collect();
     assert_eq!(&body_clauses,&["mum(tami,james)", "dad(adam,james)"])
+}
+
+
+#[test]
+fn max_h_pred() {
+    let mut state = State::new(Some(Config::new().max_h_preds(0)));
+    state.parse_prog(":- max_h_preds(1).".to_string());
+    assert_eq!(state.config.max_h_pred, 1);
+    state.parse_prog(":- max_h_preds(10).".to_string());
+    assert_eq!(state.config.max_h_pred, 10);
+    state.parse_prog(":- max_h_preds(0).".to_string());
+    assert_eq!(state.config.max_h_pred, 0);
+}
+
+#[test]
+fn max_h_clause() {
+    let mut state = State::new(Some(Config::new().max_h_clause(0)));
+    state.parse_prog(":- max_h_clause(1).".to_string());
+    assert_eq!(state.config.max_h_clause, 1);
+    state.parse_prog(":- max_h_clause(10).".to_string());
+    assert_eq!(state.config.max_h_clause, 10);
+    state.parse_prog(":- max_h_clause(0).".to_string());
+    assert_eq!(state.config.max_h_clause, 0);
+}
+
+#[test]
+fn share_preds() {
+    let mut state = State::new(Some(Config::new().share_preds(false)));
+    assert_eq!(state.config.share_preds, false);
+    state.parse_prog(":- share_preds(true).".to_string());
+    assert_eq!(state.config.share_preds, true);
+    state.parse_prog(":- share_preds(false).".to_string());
+    assert_eq!(state.config.share_preds, false);
+}
+
+#[test]
+fn debug() {
+    let mut state = State::new(Some(Config::new().debug(false)));
+    assert_eq!(state.config.debug, false);
+    state.parse_prog(":- debug(true).".to_string());
+    assert_eq!(state.config.debug, true);
+    state.parse_prog(":- debug(false).".to_string());
+    assert_eq!(state.config.debug, false);
 }

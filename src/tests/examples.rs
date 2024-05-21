@@ -65,3 +65,24 @@ fn ancestor_2() {
 
     assert!(proofs > 0);
 }
+
+#[test]
+fn ancestor_3() {
+    let mut state = State::new(Some(
+        Config::new().max_h_clause(4).max_h_preds(0).debug(false),
+    ));
+
+    state.load_file("./examples/family");
+
+    let goal1 = state.heap.build_literal("dad(ken,adam)", &mut HashMap::new(), &vec![]);
+
+    let proof = Proof::new(&[goal1], &mut state);
+
+    let mut proofs = 0;
+    for branch in proof {
+        println!("Hypothesis[{proofs}]: {branch}\n");
+        proofs += 1;
+    }
+
+    assert!(proofs > 0);
+}

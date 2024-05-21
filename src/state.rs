@@ -7,7 +7,7 @@ const MAX_INVENTED: usize = 0; //Max invented predicate symbols
 const SHARE_PREDS: bool = false; //Can program and H share pred symbols
 const DEBUG: bool = true;
 const HEAP_SIZE: usize = 2056;
-const MAX_DEPTH: usize = 4;
+const MAX_DEPTH: usize = usize::MAX;
 
 static CONSTRAINT: &'static str = ":<c>-";
 static IMPLICATION: &'static str = ":-";
@@ -34,11 +34,11 @@ pub struct State {
 impl Config {
     pub fn new() -> Config {
         Config {
-            share_preds: SHARE_PREDS,
-            max_h_clause: MAX_H_SIZE,
-            max_h_pred: MAX_INVENTED,
-            debug: DEBUG,
-            max_depth: MAX_DEPTH,
+            share_preds: SHARE_PREDS, // Can H use known predicates
+            max_h_clause: MAX_H_SIZE, // Max clause size of H
+            max_h_pred: MAX_INVENTED, // Max number of invented predicate symbols
+            debug: DEBUG, //Print Debug statements during solving. TODO allow for step by step debugging
+            max_depth: MAX_DEPTH, //Maximum depth of SLD resolution
         }
     }
 
@@ -57,8 +57,13 @@ impl Config {
         *self
     }
 
-    pub fn debug(&mut self, debug: bool) -> Config{
+    pub fn debug(&mut self, debug: bool) -> Config {
         self.debug = debug;
+        *self
+    }
+
+    pub fn share_preds(&mut self, share_preds: bool) -> Config {
+        self.share_preds = share_preds;
         *self
     }
 }
@@ -73,11 +78,7 @@ impl State {
         let mut prog = Program::new();
         let mut heap = Heap::new(HEAP_SIZE);
         prog.add_pred_module(crate::pred_module::CONFIG, &mut heap);
-        State {
-            config,
-            prog,
-            heap
-        }
+        State { config, prog, heap }
     }
 
     pub fn load_file(&mut self, path: &str) {
@@ -87,7 +88,7 @@ impl State {
         self.parse_prog(file);
     }
 
-    pub fn parse_prog(&mut self, file: String){
+    pub fn parse_prog(&mut self, file: String) {
         let mut speech: bool = false;
         let mut quote: bool = false;
         let mut i1 = 0;
@@ -99,7 +100,7 @@ impl State {
                 } else {
                     let (mut clause_type, clause) = Clause::parse_clause(segment, &mut self.heap);
                     let sym_arr = self.heap.str_symbol_arity(clause[0]);
-                    if self.prog.body_preds.contains(&sym_arr){
+                    if self.prog.body_preds.contains(&sym_arr) {
                         clause_type = ClauseType::BODY;
                     }
                     self.prog.add_clause(clause_type, clause);
@@ -127,7 +128,7 @@ impl State {
         self.prog.predicates = self.prog.clauses.predicate_map(&self.heap);
     }
 
-    pub fn parse_goals(&mut self, text: &str) -> Vec<usize>{
+    pub fn parse_goals(&mut self, text: &str) -> Vec<usize> {
         let mut i1 = 0;
         let mut in_brackets = (0, 0);
         let mut goal_literals: Vec<&str> = vec![];
@@ -171,14 +172,14 @@ impl State {
         goals
     }
 
-    pub fn handle_directive(&mut self, text: &str){
+    pub fn handle_directive(&mut self, text: &str) {
         let goals = self.parse_goals(text);
         let mut proof = Proof::new(&goals, self);
         proof.next();
     }
 
-    pub fn load_module(&mut self, name: &str){
-        match  get_module(&name.to_lowercase()){
+    pub fn load_module(&mut self, name: &str) {
+        match get_module(&name.to_lowercase()) {
             Some(pred_module) => self.prog.add_pred_module(pred_module, &mut self.heap),
             None => println!("{name} is not a recognised module"),
         }
