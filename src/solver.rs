@@ -1,6 +1,6 @@
 use crate::{
     // clause::*,
-    choice::Choice, clause::{ClauseTraits, ClauseType}, heap::{self, Cell, Term}, unification::*, Heap, State
+    choice::Choice, clause::{ClauseTraits, ClauseType}, unification::*, Heap, State, term::Term
 };
 
 struct Env {

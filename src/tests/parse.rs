@@ -1,144 +1,297 @@
-use std::collections::HashMap;
+use crate::{
+    parser::{parse_clause, tokenise},
+    term::Term,
+};
 
-use crate::heap::Heap;
-
 #[test]
-fn add_str_1(){
-    let mut heap = Heap::new(20);
-    let p = heap.add_const_symbol("p");
-    heap.query_space = false;
-    let structure = "p(X,Y)";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
-    assert_eq!(heap.term_string(addr),structure);
-    debug_assert_eq!(heap[..],[
-        (Heap::STR,2),
-        (Heap::CON, p),
-        (Heap::REFC, 2),
-        (Heap::REFC, 3)
-    ]);
-}
-#[test]
-fn add_str_2(){
-    let mut heap = Heap::new(20);
-    heap.query_space = false;
-    let structure = "P(X,Y)";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
-    assert_eq!(heap.term_string(addr),structure);
-    debug_assert_eq!(heap[..],[
-        (Heap::STR,2),
-        (Heap::REFC, 1),
-        (Heap::REFC, 2),
-        (Heap::REFC, 3)
-    ]);
-}
-#[test]
-fn add_str_3(){
-    let mut heap = Heap::new(20);
-    let x = heap.add_const_symbol("x");
-    heap.query_space = false;
-    let structure = "P(Q(x),Y)";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
-    debug_assert_eq!(heap.term_string(addr),structure);
-    debug_assert_eq!(heap[..],[
-        (Heap::STR,1),
-        (Heap::REFC, 1),
-        (Heap::CON,x),
-        (Heap::STR, 2),
-        (Heap::REFC, 4),
-        (Heap::STR_REF, 0),
-        (Heap::REFC, 6)
-    ]);
-}
-#[test]
-fn add_str_4(){
-    let mut heap = Heap::new(20);
-    let x = heap.add_const_symbol("x");
-    let y = heap.add_const_symbol("y");
-    heap.query_space = false;
-    let structure = "P([x,y])";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
-    assert_eq!(heap.term_string(addr),structure);
-    debug_assert_eq!(heap[..],[
-        (Heap::CON,x),
-        (Heap::LIS, 2),
-        (Heap::CON,y),
-        Heap::EMPTY_LIS,
-        (Heap::STR, 1),
-        (Heap::REFC, 5),
-        (Heap::LIS, 0)
-    ]);
-}
-#[test]
-fn add_str_5(){
-    let mut heap = Heap::new(20);
-    let p = heap.add_const_symbol("p");
-    let x = heap.add_const_symbol("x");
-    let y = heap.add_const_symbol("y");
-    heap.query_space = false;
-    let structure = "P([p(x,y)])";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec![]);
-    debug_assert_eq!(heap.term_string(addr),structure);
-    debug_assert_eq!(heap[..],[
-        (Heap::STR, 2),
-        (Heap::CON, p),
-        (Heap::CON, x),
-        (Heap::CON, y),
-        (Heap::STR_REF, 0),
-        Heap::EMPTY_LIS,
-        (Heap::STR, 1),
-        (Heap::REFC, 7),
-        (Heap::LIS,4)
-    ]);
-}
-#[test]
-fn add_str_6(){
-    let mut heap = Heap::new(20);
-    heap.query_space = false;
-    let structure = "P(X,Y)";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec!["X","Y"]);
-    assert_eq!(heap.term_string(addr),"P(∀'X,∀'Y)");
-    debug_assert_eq!(heap[..],[
-        (Heap::STR,2),
-        (Heap::REFC, 1),
-        (Heap::REFA, 2),
-        (Heap::REFA, 3)
-    ]);
-}
-#[test]
-fn add_str_7(){
-    let mut heap = Heap::new(20);
-    let p = heap.add_const_symbol("p");
-    heap.query_space = false;
-    let structure = "P([p(X,Y)])";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &vec!["X","Y"]);
-    assert_eq!(heap.term_string(addr),"P([p(∀'X,∀'Y)])");
-    assert_eq!(heap[..],[
-        (Heap::STR, 2),
-        (Heap::CON, p),
-        (Heap::REFA, 2),
-        (Heap::REFA, 3),
-        (Heap::STR_REF, 0),
-        Heap::EMPTY_LIS,
-        (Heap::STR, 1),
-        (Heap::REFC, 7),
-        (Heap::LIS,4)
-    ]);
+fn parse_fact() {
+    let terms = parse_clause(tokenise("p(a,b).")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::CON("p".into()),
+                Term::CON("a".into()),
+                Term::CON("b".into())
+            ]
+            .into()
+        )
+    );
 }
 
 #[test]
-fn build_float_and_int(){
-    let mut heap = Heap::new(20);
-    let p = heap.add_const_symbol("p");
-    heap.query_space = false;
-    let structure = "p(5,11.10)";
-    let addr = heap.build_literal(structure, &mut HashMap::new(), &Vec::new());
-    assert_eq!(heap.term_string(addr),"p(5,11.1)");
-    debug_assert_eq!(heap[..],[
-        (Heap::STR,2),
-        (Heap::CON, p),
-        (Heap::INT, 5),
-        (Heap::FLT, (11.1 as f64).to_bits() as usize)
-    ]);
+fn parse_simple_clause() {
+    let terms = parse_clause(tokenise("p(X,Y):-q(X,Y).")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::CON("p".into()),
+                Term::VAR("X".into()),
+                Term::VAR("Y".into())
+            ]
+            .into()
+        )
+    );
+    assert_eq!(
+        terms[1],
+        Term::STR(
+            [
+                Term::CON("q".into()),
+                Term::VAR("X".into()),
+                Term::VAR("Y".into())
+            ]
+            .into()
+        )
+    );
 }
 
-//TODO add number parsing tests
+#[test]
+fn parse_clause_with_list() {
+    let terms = parse_clause(tokenise("p(X,Y):-q([X,Y]).")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::CON("p".into()),
+                Term::VAR("X".into()),
+                Term::VAR("Y".into())
+            ]
+            .into()
+        )
+    );
+    assert_eq!(
+        terms[1],
+        Term::STR(
+            [
+                Term::CON("q".into()),
+                Term::LIS([Term::VAR("X".into()), Term::VAR("Y".into())].into(), false)
+            ]
+            .into()
+        )
+    );
+}
+
+#[test]
+fn parse_clause_with_float() {
+    let terms = parse_clause(tokenise("p(X):-q(X,2.3).")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR([Term::CON("p".into()), Term::VAR("X".into()),].into())
+    );
+    assert_eq!(
+        terms[1],
+        Term::STR([Term::CON("q".into()), Term::VAR("X".into()), Term::FLT(2.3)].into())
+    );
+}
+
+#[test]
+fn parse_clause_with_infix() {
+    let terms = parse_clause(tokenise("p(X,Y,Z):- Z is X**2/Y**2.")).unwrap();
+
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::CON("p".into()),
+                Term::VAR("X".into()),
+                Term::VAR("Y".into()),
+                Term::VAR("Z".into())
+            ]
+            .into()
+        )
+    );
+    assert_eq!(
+        terms[1],
+        Term::STR(
+            [
+                Term::CON("is".into()),
+                Term::VAR("Z".into()),
+                Term::STR(
+                    [
+                        Term::CON("/".into()),
+                        Term::STR(
+                            [Term::CON("**".into()), Term::VAR("X".into()), Term::INT(2)].into()
+                        ),
+                        Term::STR(
+                            [Term::CON("**".into()), Term::VAR("Y".into()), Term::INT(2)].into()
+                        ),
+                    ]
+                    .into()
+                )
+            ]
+            .into()
+        )
+    );
+}
+
+#[test]
+fn parse_meta_no_uq() {
+    let terms = parse_clause(tokenise("P(X,Y):-Q(X,Y).")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::VAR("P".into()),
+                Term::VAR("X".into()),
+                Term::VAR("Y".into())
+            ]
+            .into()
+        )
+    );
+    assert_eq!(
+        terms[1],
+        Term::STR(
+            [
+                Term::VAR("Q".into()),
+                Term::VAR("X".into()),
+                Term::VAR("Y".into())
+            ]
+            .into()
+        )
+    );
+}
+
+#[test]
+fn parse_meta_with_uq() {
+    let terms = parse_clause(tokenise("P(X,Y):-Q(X,Y)\\X.")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::VAR("P".into()),
+                Term::VARUQ("X".into()),
+                Term::VAR("Y".into())
+            ]
+            .into()
+        )
+    );
+    assert_eq!(
+        terms[1],
+        Term::STR(
+            [
+                Term::VAR("Q".into()),
+                Term::VARUQ("X".into()),
+                Term::VAR("Y".into())
+            ]
+            .into()
+        )
+    );
+}
+
+#[test]
+fn parse_meta_with_list() {
+    let terms = parse_clause(tokenise("P(X,Y):-Q([X,Y])\\X.")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::VAR("P".into()),
+                Term::VARUQ("X".into()),
+                Term::VAR("Y".into())
+            ]
+            .into()
+        )
+    );
+    assert_eq!(
+        terms[1],
+        Term::STR(
+            [
+                Term::VAR("Q".into()),
+                Term::LIS(
+                    [Term::VARUQ("X".into()), Term::VAR("Y".into())].into(),
+                    false
+                )
+            ]
+            .into()
+        )
+    );
+}
+
+#[test]
+fn parse_meta_with_list_explicit_uq_tail() {
+    let terms = parse_clause(tokenise("P(X,Y):-Q([X,Y|Z])\\X,Z.")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::VAR("P".into()),
+                Term::VARUQ("X".into()),
+                Term::VAR("Y".into())
+            ]
+            .into()
+        )
+    );
+    assert_eq!(
+        terms[1],
+        Term::STR(
+            [
+                Term::VAR("Q".into()),
+                Term::LIS(
+                    [
+                        Term::VARUQ("X".into()),
+                        Term::VAR("Y".into()),
+                        Term::VARUQ("Z".into())
+                    ]
+                    .into(),
+                    true
+                )
+            ]
+            .into()
+        )
+    );
+}
+
+#[test]
+fn parse_meta_with_infix() {
+    println!("{:?}", tokenise("p(X,Y,Z):- Z is X**2/Y**2\\X,Y,Z."));
+    let terms = parse_clause(tokenise("p(X,Y,Z):- Z is X**2/Y**2\\X,Y,Z.")).unwrap();
+
+    for term in &terms {
+        println!("{term:?}");
+    }
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::CON("p".into()),
+                Term::VARUQ("X".into()),
+                Term::VARUQ("Y".into()),
+                Term::VARUQ("Z".into())
+            ]
+            .into()
+        )
+    );
+    assert_eq!(
+        terms[1],
+        Term::STR(
+            [
+                Term::CON("is".into()),
+                Term::VARUQ("Z".into()),
+                Term::STR(
+                    [
+                        Term::CON("/".into()),
+                        Term::STR(
+                            [
+                                Term::CON("**".into()),
+                                Term::VARUQ("X".into()),
+                                Term::INT(2)
+                            ]
+                            .into()
+                        ),
+                        Term::STR(
+                            [
+                                Term::CON("**".into()),
+                                Term::VARUQ("Y".into()),
+                                Term::INT(2)
+                            ]
+                            .into()
+                        ),
+                    ]
+                    .into()
+                )
+            ]
+            .into()
+        )
+    );
+}

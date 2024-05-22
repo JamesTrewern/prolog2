@@ -1,4 +1,4 @@
-use crate::{symbol_db::SymbolDB, unification};
+use crate::{symbol_db::SymbolDB, term::Term, unification};
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut, RangeInclusive},
@@ -28,7 +28,7 @@ impl Heap {
     pub const STR_REF: usize = usize::MAX - 8;
     pub const CON_PTR: usize = isize::MAX as usize;
     pub const FALSE: Cell = (Heap::CON, Heap::CON_PTR);
-    pub const TRUE: Cell = (Heap::CON, Heap::CON_PTR+1);
+    pub const TRUE: Cell = (Heap::CON, Heap::CON_PTR + 1);
     pub const EMPTY_LIS: Cell = (Heap::LIS, Heap::CON);
 
     pub fn from_slice(cells: &[Cell]) -> Heap {
@@ -524,12 +524,6 @@ impl DerefMut for Heap {
     }
 }
 
-pub enum Term {
-    Value(Cell),
-    List((Box<Term>, Box<Term>)),
-    STR(Vec<Term>),
-}
-
 impl Heap {
     pub fn get_term_object(&self, addr: usize) -> Term {
         match self[addr].0 {
@@ -543,34 +537,8 @@ impl Heap {
                     .map(|addr: usize| self.get_term_object(addr))
                     .collect(),
             ),
-            Heap::LIS => Term::List((
-                self.get_term_object(self[addr].1).into(),
-                self.get_term_object(self[addr].1 + 1).into(),
-            )),
-            _ => Term::Value(self[self.deref_addr(addr)]),
+            Heap::LIS => Term::LIS(todo!(),todo!()),
+            _ => todo!(),
         }
-    }
-}
-
-impl Term {
-    pub fn vars(&self) -> Vec<usize> {
-        let mut vars = Vec::<usize>::new();
-        match self {
-            Term::Value((tag, value)) => {
-                if *tag == Heap::REFC {
-                    vars.push(*value)
-                }
-            }
-            Term::List((h, t)) => {
-                vars.append(&mut h.vars());
-                vars.append(&mut t.vars())
-            }
-            Term::STR(sub_terms) => {
-                for sub_term in sub_terms {
-                    vars.append(&mut sub_term.vars())
-                }
-            }
-        }
-        vars
     }
 }

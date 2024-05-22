@@ -9,6 +9,9 @@ mod state;
 mod tests;
 mod symbol_db;
 mod pred_module;
+mod parser;
+mod term;
+
 
 use std::{collections::HashMap, process::ExitCode, vec};
 pub (crate) use heap::Heap;
