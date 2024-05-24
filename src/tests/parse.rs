@@ -1,11 +1,11 @@
 use crate::{
-    parser::{parse_clause, tokenise},
+    parser::{parse_literals, tokenise},
     term::Term,
 };
 
 #[test]
 fn parse_fact() {
-    let terms = parse_clause(tokenise("p(a,b).")).unwrap();
+    let terms = parse_literals(&tokenise("p(a,b).")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR(
@@ -21,7 +21,7 @@ fn parse_fact() {
 
 #[test]
 fn parse_simple_clause() {
-    let terms = parse_clause(tokenise("p(X,Y):-q(X,Y).")).unwrap();
+    let terms = parse_literals(&tokenise("p(X,Y):-q(X,Y).")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR(
@@ -48,7 +48,7 @@ fn parse_simple_clause() {
 
 #[test]
 fn parse_clause_with_list() {
-    let terms = parse_clause(tokenise("p(X,Y):-q([X,Y]).")).unwrap();
+    let terms = parse_literals(&tokenise("p(X,Y):-q([X,Y]).")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR(
@@ -74,7 +74,7 @@ fn parse_clause_with_list() {
 
 #[test]
 fn parse_clause_with_float() {
-    let terms = parse_clause(tokenise("p(X):-q(X,2.3).")).unwrap();
+    let terms = parse_literals(&tokenise("p(X):-q(X,2.3).")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR([Term::CON("p".into()), Term::VAR("X".into()),].into())
@@ -87,7 +87,7 @@ fn parse_clause_with_float() {
 
 #[test]
 fn parse_clause_with_infix() {
-    let terms = parse_clause(tokenise("p(X,Y,Z):- Z is X**2/Y**2.")).unwrap();
+    let terms = parse_literals(&tokenise("p(X,Y,Z):- Z is X**2/Y**2.")).unwrap();
 
     assert_eq!(
         terms[0],
@@ -127,7 +127,7 @@ fn parse_clause_with_infix() {
 
 #[test]
 fn parse_meta_no_uq() {
-    let terms = parse_clause(tokenise("P(X,Y):-Q(X,Y).")).unwrap();
+    let terms = parse_literals(&tokenise("P(X,Y):-Q(X,Y).")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR(
@@ -154,7 +154,7 @@ fn parse_meta_no_uq() {
 
 #[test]
 fn parse_meta_with_uq() {
-    let terms = parse_clause(tokenise("P(X,Y):-Q(X,Y)\\X.")).unwrap();
+    let terms = parse_literals(&tokenise("P(X,Y):-Q(X,Y)\\X.")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR(
@@ -181,7 +181,7 @@ fn parse_meta_with_uq() {
 
 #[test]
 fn parse_meta_with_list() {
-    let terms = parse_clause(tokenise("P(X,Y):-Q([X,Y])\\X.")).unwrap();
+    let terms = parse_literals(&tokenise("P(X,Y):-Q([X,Y])\\X.")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR(
@@ -210,7 +210,7 @@ fn parse_meta_with_list() {
 
 #[test]
 fn parse_meta_with_list_explicit_uq_tail() {
-    let terms = parse_clause(tokenise("P(X,Y):-Q([X,Y|Z])\\X,Z.")).unwrap();
+    let terms = parse_literals(&tokenise("P(X,Y):-Q([X,Y|Z])\\X,Z.")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR(
@@ -245,7 +245,7 @@ fn parse_meta_with_list_explicit_uq_tail() {
 #[test]
 fn parse_meta_with_infix() {
     println!("{:?}", tokenise("p(X,Y,Z):- Z is X**2/Y**2\\X,Y,Z."));
-    let terms = parse_clause(tokenise("p(X,Y,Z):- Z is X**2/Y**2\\X,Y,Z.")).unwrap();
+    let terms = parse_literals(&tokenise("p(X,Y,Z):- Z is X**2/Y**2\\X,Y,Z.")).unwrap();
 
     for term in &terms {
         println!("{term:?}");

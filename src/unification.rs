@@ -1,4 +1,4 @@
-use crate::heap::Heap;
+use crate::heap::{Heap, Tag};
 
 pub type Binding = Vec<(usize, usize)>;
 pub trait BindingTraits {
@@ -86,9 +86,9 @@ fn unify_struct(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) 
 
 fn unify_list(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
     //Check for empty list
-    if addr1 == Heap::CON && addr2 == Heap::CON {
+    if addr1 == Heap::CON_PTR && addr2 == Heap::CON_PTR {
         return true;
-    } else if addr1 == Heap::CON || addr2 == Heap::CON {
+    } else if addr1 == Heap::CON_PTR || addr2 == Heap::CON_PTR {
         return false;
     }
     unify_rec(addr1, addr2, heap, binding) && unify_rec(addr1 + 1, addr2 + 1, heap, binding)
@@ -97,18 +97,18 @@ fn unify_list(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) ->
 pub fn unify_rec(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
     let (addr1, addr2) = (heap.deref_addr(addr1), heap.deref_addr(addr2));
     match (heap[addr1].0, heap[addr2].0) {
-        (Heap::REF | Heap::REFC | Heap::REFA, Heap::REF | Heap::REFC | Heap::REFA) => {
+        (Tag::REF | Tag::REFC | Tag::REFA, Tag::REF | Tag::REFC | Tag::REFA) => {
             unify_vars(addr1, addr2, heap, binding)
         }
-        (Heap::REF | Heap::REFA | Heap::REFC, _) => unify_ref(addr1, addr2, heap, binding),
-        (_, Heap::REF | Heap::REFA | Heap::REFC) => unify_ref(addr2, addr1, heap, binding),
-        (Heap::STR, Heap::STR) => unify_struct(addr1, addr2, heap, binding),
-        (Heap::LIS, Heap::LIS) => unify_list(heap[addr1].1, heap[addr2].1, heap, binding),
-        (Heap::CON | Heap::INT | Heap::FLT, Heap::CON | Heap::INT | Heap::FLT) => {
+        (Tag::REF | Tag::REFA | Tag::REFC, _) => unify_ref(addr1, addr2, heap, binding),
+        (_, Tag::REF | Tag::REFA | Tag::REFC) => unify_ref(addr2, addr1, heap, binding),
+        (Tag::STR, Tag::STR) => unify_struct(addr1, addr2, heap, binding),
+        (Tag::LIS, Tag::LIS) => unify_list(heap[addr1].1, heap[addr2].1, heap, binding),
+        (Tag::CON | Tag::INT | Tag::FLT, Tag::CON | Tag::INT | Tag::FLT) => {
             heap[addr1] == heap[addr2]
         }
-        (Heap::CON | Heap::INT | Heap::FLT, _) => panic!("Undefined unifiction behaviour"),
-        (_, Heap::CON | Heap::INT | Heap::FLT) => panic!("Undefined unifiction behaviour"),
+        (Tag::CON | Tag::INT | Tag::FLT, _) => {panic!("Undefined unifiction behaviour {addr1}:{:?}, {addr2}{:?}", heap[addr1], heap[addr2])},
+        (_, Tag::CON | Tag::INT | Tag::FLT) => panic!("Undefined unifiction behaviour {addr1}:{:?}, {addr2}:{:?}", heap[addr1], heap[addr2]),
         _ => panic!("Undefined unifiction behaviour"),
     }
 }
@@ -130,15 +130,15 @@ fn build_subterm(
 ) -> bool {
     let addr = heap.deref_addr(sub_term);
     match heap[heap.deref_addr(sub_term)] {
-        (Heap::REF | Heap::REFA | Heap::REFC, _) => return false,
-        (Heap::STR, _) => {
+        (Tag::REF | Tag::REFA | Tag::REFC, _) => return false,
+        (Tag::STR, _) => {
             if let (new_addr, false) = build_str(binding, addr, heap, uqvar_binding) {
                 binding.push((addr, new_addr));
                 return false;
             }
         }
 
-        (Heap::LIS, _) => {
+        (Tag::LIS, _) => {
             if let (new_addr, false) = build_list(binding, sub_term, heap, uqvar_binding) {
                 binding.push((sub_term, new_addr)); // This maps from the address containg the list tag to the address of the first element in the new list
                 return false;
@@ -159,42 +159,42 @@ fn add_term_binding(
 ) {
     let addr = heap.deref_addr(term_addr);
     match heap[addr] {
-        (Heap::REFA, addr) if uqvar_binding.is_some() => {
+        (Tag::REFA, addr) if uqvar_binding.is_some() => {
             let binding = uqvar_binding.as_mut().unwrap();
             if let Some(new_addr) = binding.bound(addr) {
-                heap.push((Heap::REFC, new_addr))
+                heap.push((Tag::REFC, new_addr))
             } else {
                 binding.push((addr, heap.len()));
-                heap.push((Heap::REFC, heap.len()));
+                heap.push((Tag::REFC, heap.len()));
             }
         }
-        (Heap::REF | Heap::REFC | Heap::REFA, addr) => {
+        (Tag::REF | Tag::REFC | Tag::REFA, addr) => {
             if let Some(new_addr) = binding.bound(addr) {
-                if heap[new_addr].0 == Heap::CON {
+                if heap[new_addr].0 == Tag::CON {
                     heap.push(heap[new_addr])
                 } else {
-                    heap.push((Heap::REF, new_addr))
+                    heap.push((Tag::REF, new_addr))
                 }
             } else {
                 binding.push((addr, heap.len()));
-                heap.push((Heap::REF, heap.len()));
+                heap.push((Tag::REF, heap.len()));
             }
         }
-        (Heap::STR, _) => {
+        (Tag::STR, _) => {
             if let Some(addr) = binding.bound(addr) {
-                heap.push((Heap::STR_REF, addr))
+                heap.push((Tag::STR_REF, addr))
             } else {
-                heap.push((Heap::STR_REF, addr))
+                heap.push((Tag::STR_REF, addr))
             }
         }
-        (Heap::LIS, addr) => {
+        (Tag::LIS, addr) => {
             if let Some(new_addr) = binding.bound(term_addr) {
-                heap.push((Heap::LIS, new_addr))
+                heap.push((Tag::LIS, new_addr))
             } else {
-                heap.push((Heap::LIS, addr))
+                heap.push((Tag::LIS, addr))
             }
         }
-        (Heap::CON, _) => heap.push(heap[term_addr]),
+        (Tag::CON, _) => heap.push(heap[term_addr]),
         _ => panic!(),
     }
 }
@@ -211,7 +211,7 @@ fn build_list(
     loop {
         match heap[addr] {
             Heap::EMPTY_LIS => break,
-            (Heap::LIS, list_ptr) => {
+            (Tag::LIS, list_ptr) => {
                 addr = list_ptr + 1;
                 if !build_subterm(binding, list_ptr, heap, uqvar_binding) {
                     constant = false
@@ -240,9 +240,9 @@ fn build_list(
                 heap.push(Heap::EMPTY_LIS);
                 break;
             }
-            (Heap::LIS, list_ptr) => {
+            (Tag::LIS, list_ptr) => {
                 add_term_binding(list_ptr, binding, heap, uqvar_binding);
-                heap.push((Heap::LIS, heap.len() + 1));
+                heap.push((Tag::LIS, heap.len() + 1));
                 addr = list_ptr + 1;
             }
             _ => {
@@ -274,7 +274,7 @@ pub fn build_str(
     }
 
     let new_str = heap.len();
-    heap.push((Heap::STR, arity));
+    heap.push((Tag::STR, arity));
 
     for addr in heap.str_iterator(src_str) {
         add_term_binding(addr, binding, heap, uqvar_binding)

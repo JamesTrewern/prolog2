@@ -1,7 +1,7 @@
 use fsize::fsize;
-use std::fmt::{self, Display};
+use std::{collections::HashMap, fmt::{self, Display}};
 
-use crate::term::Term;
+use crate::{heap, term::Term, Heap};
 
 const DELIMINATORS: &[char] = &[
     '(', ')', ',', '.', ' ', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|',
@@ -105,7 +105,7 @@ pub fn tokenise(text: &str) -> Vec<&str> {
         }
     }
 
-    tokens.retain(|token| ![" ", "\n", "\t"].contains(token));
+    tokens.retain(|token| ![" ", "\t", "\r"].contains(token));
 
     tokens
 }
@@ -196,7 +196,7 @@ fn build_list(term_stack: &mut Vec<Term>, op_stack: &mut Vec<Term>) -> Result<()
     Ok(())
 }
 
-fn get_uq_vars<'a>(tokens: &Vec<&'a str>) -> Result<Vec<&'a str>, String> {
+fn get_uq_vars<'a>(tokens: &[&'a str]) -> Result<Vec<&'a str>, String> {
     match tokens.iter().position(|token| *token == "\\") {
         Some(i) => {
             let mut uqvars = Vec::<&str>::new();
@@ -216,7 +216,7 @@ fn get_uq_vars<'a>(tokens: &Vec<&'a str>) -> Result<Vec<&'a str>, String> {
     }
 }
 
-pub fn parse_clause(tokens: Vec<&str>) -> Result<Vec<Term>, String> {
+pub fn parse_literals(tokens: &[&str]) -> Result<Vec<Term>, String> {
     let mut term_stack: Vec<Term> = Vec::new();
     let mut op_stack: Vec<Term> = Vec::new();
 
@@ -227,23 +227,30 @@ pub fn parse_clause(tokens: Vec<&str>) -> Result<Vec<Term>, String> {
             resolve_infix(&mut term_stack, &mut op_stack, INFIX_ORDER.len());
             break;
         }
-        if token == "(" {
+        if *token == "(" {
             op_stack.push(term_stack.pop().unwrap());
         } else if [",", ":-", "|"].contains(&token) {
             resolve_infix(&mut term_stack, &mut op_stack, INFIX_ORDER.len());
             op_stack.push(parse_atom(token, &uqvars));
-        } else if token == ")" {
+        } else if *token == ")" {
             build_str(&mut term_stack, &mut op_stack)?;
-        } else if token == "[" {
+        } else if *token == "[" {
             op_stack.push(parse_atom(token, &uqvars));
-        } else if token == "]" {
+        } else if *token == "]" {
             build_list(&mut term_stack, &mut op_stack)?
         } else if INFIX_ORDER.contains(&token) {
             resolve_infix(&mut term_stack, &mut op_stack, infix_order(token));
             op_stack.push(parse_atom(token, &uqvars));
-        } else {
+        } else if *token != "\n"{
             term_stack.push(parse_atom(token, &uqvars));
         }
     }
     Ok(term_stack)
+}
+
+pub fn parse_goals(tokens: &[&str], heap: &mut Heap) -> Result<Box<[usize]>, String>{
+    let mut var_ref = HashMap::new();
+    Ok(parse_literals(tokens)?
+    .into_iter()
+    .map(|t| t.build_on_heap(heap, &mut var_ref)).collect())
 }

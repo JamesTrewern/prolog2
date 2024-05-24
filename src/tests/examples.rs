@@ -3,18 +3,12 @@
 use std::{collections::HashMap, fs};
 
 use crate::{
-    clause::{ClauseTraits, ClauseType},
-    solver::Proof,
-    state::Config,
-    State,
+    clause::{self, ClauseTraits, ClauseType}, parser::{parse_goals, tokenise}, solver::Proof, state::Config, State
 };
 
 #[test]
 fn ancestor_1() {
-    let mut config = Config::new();
-    config.max_h_clause = 2;
-    config.max_h_pred = 0;
-    let mut state = State::new(Some(config));
+    let mut state = State::new(Some(Config::new().max_h_clause(2).max_h_preds(0).debug(true)));
 
     state.load_file("./examples/family");
 
@@ -31,11 +25,11 @@ fn ancestor_1() {
     //     println!("{text}");
     // }
 
-    let goal1 = state
-        .heap
-        .build_literal("ancestor(adam,james)", &mut HashMap::new(), &vec![]);
+    let goals = parse_goals(&tokenise("ancestor(adam,james)"), &mut state.heap).unwrap();
 
-    let mut proof = Proof::new(&[goal1], &mut state);
+    state.heap.print_heap();
+
+    let proof = Proof::new(&goals, &mut state);
 
     let mut proofs = 0;
     for branch in proof {
@@ -47,15 +41,14 @@ fn ancestor_1() {
 #[test]
 fn ancestor_2() {
     let mut state = State::new(Some(
-        Config::new().max_h_clause(4).max_h_preds(0).debug(false),
+        Config::new().max_h_clause(4).max_h_preds(0).debug(true),
     ));
 
     state.load_file("./examples/family");
 
-    let goal1 = state.heap.build_literal("ancestor(ken,james)", &mut HashMap::new(), &vec![]);
-    let goal2 = state.heap.build_literal("ancestor(christine,james)", &mut HashMap::new(), &vec![]);
+    let goals = parse_goals(&tokenise("ancestor(ken,james), ancestor(christine,james)"), &mut state.heap).unwrap();
 
-    let proof = Proof::new(&[goal1, goal2], &mut state);
+    let proof = Proof::new(&goals, &mut state);
 
     let mut proofs = 0;
     for branch in proof {
@@ -74,9 +67,9 @@ fn ancestor_3() {
 
     state.load_file("./examples/family");
 
-    let goal1 = state.heap.build_literal("dad(ken,adam)", &mut HashMap::new(), &vec![]);
+    let goals = parse_goals(&tokenise("dad(ken,adam)"), &mut state.heap).unwrap();
 
-    let proof = Proof::new(&[goal1], &mut state);
+    let proof = Proof::new(&goals, &mut state);
 
     let mut proofs = 0;
     for branch in proof {

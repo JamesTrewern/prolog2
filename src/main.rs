@@ -1,27 +1,24 @@
 mod choice;
-mod clause_table;
 mod clause;
+mod clause_table;
 mod heap;
-mod unification;
+mod parser;
+mod pred_module;
 mod program;
 mod solver;
 mod state;
-mod tests;
 mod symbol_db;
-mod pred_module;
-mod parser;
 mod term;
+mod tests;
+mod unification;
 
-
-use std::{collections::HashMap, process::ExitCode, vec};
-pub (crate) use heap::Heap;
-pub (crate) use program::Program;
+pub(crate) use heap::Heap;
+use parser::{parse_literals, tokenise};
+pub(crate) use program::Program;
 use solver::Proof;
 use state::Config;
-pub (crate) use state::State;
-
-
-
+pub(crate) use state::State;
+use std::{collections::HashMap, process::ExitCode, vec};
 
 /*
 
@@ -30,15 +27,21 @@ New Clause rules: constraints, head can't be existing predicate
 */
 fn main() -> ExitCode {
     let mut state = State::new(Some(
-        Config::new().max_h_clause(4).max_h_preds(1).debug(true).max_depth(10),
+        Config::new()
+            .max_h_clause(4)
+            .max_h_preds(1)
+            .debug(true)
+            .max_depth(10),
     ));
 
     state.load_file("./examples/family");
 
-    let goal1 = state.heap.build_literal("ancestor(ken,james)", &mut HashMap::new(), &vec![]);
-    let goal2 = state.heap.build_literal("ancestor(christine,james)", &mut HashMap::new(), &vec![]);
+    let goals: Box<[usize]> = parse_literals(&tokenise("ancestor(ken,james), ancestor(christine,james)"))
+        .unwrap()
+        .into_iter()
+        .map(|t| t.build_on_heap(&mut state.heap, &mut HashMap::new())).collect();
 
-    let proof = Proof::new(&[goal1, goal2], &mut state);
+    let proof = Proof::new(&goals, &mut state);
 
     let mut proofs = 0;
     for branch in proof {

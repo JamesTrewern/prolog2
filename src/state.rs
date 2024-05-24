@@ -1,6 +1,13 @@
 use std::{collections::HashMap, fs};
 
-use crate::{clause::*, heap::Heap, pred_module::get_module, program::Program, solver::Proof};
+use crate::{
+    clause::*,
+    heap::Heap,
+    parser::{parse_literals, tokenise},
+    pred_module::get_module,
+    program::Program,
+    solver::Proof,
+};
 
 const MAX_H_SIZE: usize = 2; //Max number of clauses in H
 const MAX_INVENTED: usize = 0; //Max invented predicate symbols
@@ -89,93 +96,62 @@ impl State {
     }
 
     pub fn parse_prog(&mut self, file: String) {
-        let mut speech: bool = false;
-        let mut quote: bool = false;
-        let mut i1 = 0;
-        for (i2, char) in file.chars().enumerate() {
-            if !speech && !quote && char == '.' {
-                let segment = file[i1..i2].trim();
-                if Some(0) == segment.find(":-") {
-                    self.handle_directive(&segment[2..]);
-                } else {
-                    let (mut clause_type, clause) = Clause::parse_clause(segment, &mut self.heap);
-                    let sym_arr = self.heap.str_symbol_arity(clause[0]);
-                    if self.prog.body_preds.contains(&sym_arr) {
-                        clause_type = ClauseType::BODY;
-                    }
-                    self.prog.add_clause(clause_type, clause);
-                }
-                i1 = i2 + 1;
-            } else {
-                match char {
-                    '"' => {
-                        if !quote {
-                            speech = !speech
-                        }
-                    }
-                    '\'' => {
-                        if !speech {
-                            quote = !quote
-                        }
-                    }
-                    _ => (),
+        let mut line = 0;
+        let tokens = tokenise(&file);
+        'outer: for mut segment in tokens.split(|t| *t == ".") {
+
+            loop{
+                match segment.first() {
+                    Some(t) => if *t == "\n"{line += 1; segment = &segment[1..]}else{break;},
+                    None => continue 'outer,
                 }
             }
+
+            if segment[0] == ":-" {
+                if let Err(msg) = self.handle_directive(segment){
+                    println!("Error after ln[{line}]: {msg}");
+                    return;
+                }
+            } else {
+                let (mut clause_type, clause) = match Clause::parse_clause(segment, &mut self.heap)
+                {
+                    Ok(res) => res,
+                    Err(msg) => {
+                        println!("Error after ln[{line}]: {msg}");
+                        return;
+                    }
+                };
+                let sym_arr = self.heap.str_symbol_arity(clause[0]);
+                if self.prog.body_preds.contains(&sym_arr) {
+                    clause_type = ClauseType::BODY;
+                }
+                self.prog.add_clause(clause_type, clause);
+            }
+
+            line += segment.iter().filter(|t| **t == "\n").count();
         }
         self.heap.query_space = true;
-        self.prog.clauses.sort_clauses();
-        self.prog.clauses.find_flags();
-        self.prog.predicates = self.prog.clauses.predicate_map(&self.heap);
+        self.prog.organise_clause_table(&self.heap);
     }
 
-    pub fn parse_goals(&mut self, text: &str) -> Vec<usize> {
-        let mut i1 = 0;
-        let mut in_brackets = (0, 0);
-        let mut goal_literals: Vec<&str> = vec![];
-        for (i2, c) in text.chars().enumerate() {
-            match c {
-                '(' => {
-                    in_brackets.0 += 1;
-                }
-                ')' => {
-                    if in_brackets.0 == 0 {
-                        break;
-                    }
-                    in_brackets.0 -= 1;
-                }
-                '[' => {
-                    in_brackets.1 += 1;
-                }
-                ']' => {
-                    if in_brackets.1 == 0 {
-                        break;
-                    }
-                    in_brackets.1 -= 1;
-                }
-                ',' => {
-                    if in_brackets == (0, 0) {
-                        goal_literals.push(&text[i1..i2]);
-                        i1 = i2 + 1
-                    }
-                }
-                _ => (),
+    pub fn handle_directive(&mut self, segment: &[&str]) -> Result<(),String> {
+        let goals = match parse_literals(segment) {
+            Ok(res) => res,
+            Err(error) => {
+                println!();
+                return Err(error);
             }
-            if i2 == text.len() - 1 {
-                goal_literals.push(text[i1..].trim());
-            }
-        }
-        let mut map: HashMap<String, usize> = HashMap::new();
-        let goals: Vec<usize> = goal_literals
-            .iter()
-            .map(|text| self.heap.build_literal(text, &mut map, &vec![]))
+        };
+
+        let mut var_ref = HashMap::new();
+        let goals: Box<[usize]> = goals
+            .into_iter()
+            .map(|t| t.build_on_heap(&mut self.heap, &mut var_ref))
             .collect();
-        goals
-    }
-
-    pub fn handle_directive(&mut self, text: &str) {
-        let goals = self.parse_goals(text);
         let mut proof = Proof::new(&goals, self);
         proof.next();
+        self.heap.deallocate_above(*goals.first().unwrap());
+        Ok(())
     }
 
     pub fn load_module(&mut self, name: &str) {

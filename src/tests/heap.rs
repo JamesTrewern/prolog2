@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::{unification::*, Heap};
+use crate::{heap::Tag, parser::{parse_literals, tokenise}, unification::*, Heap};
 
 #[test]
 fn should_update_ref(){
@@ -26,7 +26,7 @@ fn should_not_update_refc(){
     heap.set_var(None, false);
     let binding:Binding = vec![(0,1)];
     heap.bind(&binding);
-    heap[0] = (Heap::REFC, 0);
+    heap[0] = (Tag::REFC, 0);
 }
 
 #[test]
@@ -36,38 +36,38 @@ fn should_not_update_refa(){
     heap.set_var(None, true);
     let binding:Binding = vec![(0,1)];
     heap.bind(&binding);
-    heap[0] = (Heap::REFA, 0);
+    heap[0] = (Tag::REFA, 0);
 }
 
 #[test]
 fn should_not_panic_print_heap(){
     let mut heap = Heap::new(100);
-    heap.build_literal("[X,Y,Z]", &mut HashMap::new(), &vec![]);
-    heap.build_literal("p([X,Y,Z])", &mut HashMap::new(), &vec![]);
-    heap.build_literal("P(x,y)", &mut HashMap::new(), &vec![]);
-    heap.build_literal("P(x,Q(Y))", &mut HashMap::new(), &vec!["Y"]);
-    heap.build_literal("[X,Y,Z]", &mut HashMap::new(), &vec!["X","Y"]);
+    for term in ["p(A,B)", "X == [1,2,3]", "P(Q([X,Y]))", "Z is X**2/Y**2", "R(Z)"]{
+        let tokens = tokenise(term);
+        let term = parse_literals(&tokens).unwrap().remove(0);
+        term.build_on_heap(&mut heap, &mut HashMap::new());
+    }
 
-    heap.print_heap()
+    heap.print_heap();
 }
 
 #[test]
 fn deref_addr(){
     let mut heap = Heap::new(100);
-    heap.push((Heap::REF,1));
-    heap.push((Heap::REF,2));
-    heap.push((Heap::REF,3));
-    heap.push((Heap::REF,3));
+    heap.push((Tag::REF,1));
+    heap.push((Tag::REF,2));
+    heap.push((Tag::REF,3));
+    heap.push((Tag::REF,3));
     assert_eq!(heap.deref_addr(0),3)
 }
 
 #[test]
 fn deref_addr_con(){
     let mut heap = Heap::new(100);
-    heap.push((Heap::REF,1));
-    heap.push((Heap::REF,2));
-    heap.push((Heap::REF,3));
-    heap.push((Heap::CON,3));
+    heap.push((Tag::REF,1));
+    heap.push((Tag::REF,2));
+    heap.push((Tag::REF,3));
+    heap.push((Tag::CON,3));
     assert_eq!(heap.deref_addr(0),3)
 }
 
@@ -86,9 +86,9 @@ fn deref_addr_con(){
 //     // let elements: Vec<(usize,usize)> = elements.iter().map(|(cell,tail)| cell.clone()).collect();
 
 //     // assert_eq!(&elements, &[
-//     //     (Heap::REF, 0),
-//     //     (Heap::CON, Heap::CON_PTR),
-//     //     (Heap::REF, 4)
+//     //     (Tag::REF, 0),
+//     //     (Tag::CON, Heap::CON_PTR),
+//     //     (Tag::REF, 4)
 //     // ])
 // }
 
@@ -102,8 +102,8 @@ fn deref_addr_con(){
 //     // let elements: Vec<((usize,usize),bool)> = heap.list_iterator(list).map(|(addr,tail)| (heap[addr],tail)).collect();
 
 //     // assert_eq!(&elements, &[
-//     //     ((Heap::CON, Heap::CON_PTR),false),
-//     //     ((Heap::CON, Heap::CON_PTR+1),false),
-//     //     ((Heap::REF, 3),true)
+//     //     ((Tag::CON, Heap::CON_PTR),false),
+//     //     ((Tag::CON, Heap::CON_PTR+1),false),
+//     //     ((Tag::REF, 3),true)
 //     // ])
 // }

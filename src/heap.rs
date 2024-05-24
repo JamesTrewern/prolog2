@@ -1,6 +1,7 @@
 use crate::{symbol_db::SymbolDB, term::Term, unification};
 use std::{
     collections::HashMap,
+    mem,
     ops::{Deref, DerefMut, RangeInclusive},
     usize,
 };
@@ -8,7 +9,27 @@ use unification::Binding;
 
 use fsize::fsize;
 
-pub type Cell = (usize, usize);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(usize)]
+pub enum Tag {
+    REF,
+    REFC,
+    REFA,
+    STR,
+    LIS,
+    CON,
+    INT,
+    FLT,
+    STR_REF,
+}
+
+impl std::fmt::Display for Tag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+pub type Cell = (Tag, usize);
 
 pub struct Heap {
     pub(super) cells: Vec<Cell>,
@@ -27,9 +48,9 @@ impl Heap {
     pub const FLT: usize = usize::MAX - 7;
     pub const STR_REF: usize = usize::MAX - 8;
     pub const CON_PTR: usize = isize::MAX as usize;
-    pub const FALSE: Cell = (Heap::CON, Heap::CON_PTR);
-    pub const TRUE: Cell = (Heap::CON, Heap::CON_PTR + 1);
-    pub const EMPTY_LIS: Cell = (Heap::LIS, Heap::CON);
+    pub const FALSE: Cell = (Tag::CON, Heap::CON_PTR);
+    pub const TRUE: Cell = (Tag::CON, Heap::CON_PTR + 1);
+    pub const EMPTY_LIS: Cell = (Tag::LIS, Heap::CON_PTR);
 
     pub fn from_slice(cells: &[Cell]) -> Heap {
         let mut symbols = SymbolDB::new();
@@ -60,11 +81,11 @@ impl Heap {
         };
 
         let tag = if universal {
-            Heap::REFA
+            Tag::REFA
         } else if !self.query_space {
-            Heap::REFC
+            Tag::REFC
         } else {
-            Heap::REF
+            Tag::REF
         };
 
         self.cells.push((tag, addr));
@@ -72,7 +93,7 @@ impl Heap {
     }
 
     pub fn set_const(&mut self, id: usize) -> usize {
-        self.cells.push((Heap::CON, id));
+        self.cells.push((Tag::CON, id));
         return self.cells.len() - 1;
     }
 
@@ -81,7 +102,7 @@ impl Heap {
     }
 
     pub fn deref_addr(&self, addr: usize) -> usize {
-        if let (Heap::REF | Heap::REFA | Heap::REFC | Heap::STR_REF, pointer) = self[addr] {
+        if let (Tag::REF | Tag::REFA | Tag::REFC | Tag::STR_REF, pointer) = self[addr] {
             if addr == pointer {
                 addr
             } else {
@@ -101,13 +122,13 @@ impl Heap {
 
     pub fn bind(&mut self, binding: &Binding) {
         for (src, target) in binding {
-            if let (tag @ Heap::REF, pointer) = &mut self[*src] {
+            if let (tag @ Tag::REF, pointer) = &mut self[*src] {
                 if *pointer != *src {
                     self.print_heap();
                     panic!("Tried to reset bound ref: {} \n Binding: {binding:?}", src)
                 }
                 if *target >= Heap::CON_PTR {
-                    *tag = Heap::CON;
+                    *tag = Tag::CON;
                 }
                 *pointer = *target;
             }
@@ -116,9 +137,9 @@ impl Heap {
 
     pub fn unbind(&mut self, binding: &Binding) {
         for (src, _target) in binding {
-            if let (tag @ (Heap::REF | Heap::CON), pointer) = &mut self[*src] {
-                if *tag == Heap::CON {
-                    *tag = Heap::REF
+            if let (tag @ (Tag::REF | Tag::CON), pointer) = &mut self[*src] {
+                if *tag == Tag::CON {
+                    *tag = Tag::REF
                 }
                 *pointer = *src;
             }
@@ -135,49 +156,39 @@ impl Heap {
         //TO DO recursively delete structures pointed to within structure
     }
 
+    pub fn deallocate_above(&mut self, addr: usize){
+        self.cells.truncate(addr)
+    }
+
     pub fn print_heap(&self) {
         let w = 6;
-        for (i, cell) in self.iter().enumerate() {
-            match cell.0 {
-                Heap::CON => {
-                    println!(
-                        "[{:3}]|{:w$}|{:w$}|",
-                        i,
-                        "CON",
-                        self.symbols.get_const(cell.1)
-                    )
+        for (i, (tag, value)) in self.iter().enumerate() {
+            match tag {
+                Tag::CON => {
+                    println!("[{i:3}]|{tag:w$}|{:w$}|", self.symbols.get_const(*value))
                 }
-                Heap::STR => {
-                    println!("[{:3}]|{:w$}|{:w$}|", i, "STR", cell.1)
-                }
-                Heap::STR_REF => {
-                    println!("[{:3}]|{:w$}|{:w$}|", i, "STREF", cell.1)
-                }
-                Heap::LIS => {
-                    if cell.1 == Heap::CON {
-                        println!("[{:3}]|{:w$}|{:w$}|", i, "LIS", "[]")
+                Tag::LIS => {
+                    if *value == Heap::CON_PTR {
+                        println!("[{i:3}]|{tag:w$}|{:w$}|", "[]")
                     } else {
-                        println!("[{:3}]|{:w$}|{:w$}|", i, "LIS", cell.1)
+                        println!("[{i:3}]|{tag:w$}|{value:w$}|")
                     }
                 }
-                Heap::REF | Heap::REFA | Heap::REFC => {
+                Tag::REF | Tag::REFA | Tag::REFC => {
                     println!(
-                        "[{:3}]|{:w$?}|{:w$}|:({})",
-                        i,
-                        match cell.0 {
-                            Heap::REF => "REF",
-                            Heap::REFA => "REFA",
-                            Heap::REFC => "REFC",
-                            _ => "",
-                        },
-                        cell.1,
+                        "[{i:3}]|{tag:w$?}|{value:w$}|:({})",
                         self.symbols.get_symbol(self.deref_addr(i))
                     )
                 }
-                Heap::INT => {
-                    println!("[{:3}]|{:w$?}|{:w$}|", i, "INT", cell.1)
+                Tag::INT => {
+                    let value: isize = unsafe { mem::transmute_copy(value) };
+                    println!("[{i:3}]|{tag:w$?}|{value:w$}|")
                 }
-                _ => panic!("Unkown Tag"),
+                Tag::FLT => {
+                    let value: fsize = unsafe { mem::transmute_copy(value) };
+                    println!("[{i:3}]|{tag:w$?}|{value:w$}|")
+                }
+                _ => println!("[{i:3}]|{tag:w$?}|{value:w$}|"),
             };
             println!("{:-<w$}--------{:-<w$}", "", "");
         }
@@ -189,7 +200,7 @@ impl Heap {
         // println!("{pointer}");
         loop {
             buffer += &self.term_string(pointer);
-            if self[pointer + 1].0 != Heap::LIS {
+            if self[pointer + 1].0 != Tag::LIS {
                 buffer += "|";
                 buffer += &self.term_string(pointer + 1);
                 break;
@@ -197,7 +208,7 @@ impl Heap {
                 buffer += ",";
             }
             pointer = self[pointer + 1].1;
-            if pointer == Heap::CON {
+            if pointer == Heap::CON_PTR {
                 buffer.pop();
                 break;
             }
@@ -224,30 +235,29 @@ impl Heap {
     pub fn term_string(&self, addr: usize) -> String {
         let addr = self.deref_addr(addr);
         match self[addr].0 {
-            Heap::CON => self.symbols.get_const(self[addr].1).to_owned(),
-            Heap::STR => self.structure_string(addr),
-            Heap::LIS => self.list_string(addr),
-            Heap::REF | Heap::REFC => {
-                match self.symbols.get_var(self.deref_addr(addr)).to_owned() {
-                    Some(symbol) => symbol.to_owned(),
-                    None => format!("_{addr}"),
-                }
-            }
-            Heap::REFA => {
+            Tag::CON => self.symbols.get_const(self[addr].1).to_owned(),
+            Tag::STR => self.structure_string(addr),
+            Tag::LIS => self.list_string(addr),
+            Tag::REF | Tag::REFC => match self.symbols.get_var(self.deref_addr(addr)).to_owned() {
+                Some(symbol) => symbol.to_owned(),
+                None => format!("_{addr}"),
+            },
+            Tag::REFA => {
                 if let Some(symbol) = self.symbols.get_var(self.deref_addr(addr)) {
                     format!("∀'{symbol}")
                 } else {
                     format!("∀'_{addr}")
                 }
             }
-            Heap::INT => {
-                format!("{}", self[addr].1)
-            }
-            Heap::FLT => {
-                let value = fsize::from_bits(self[addr].1.try_into().unwrap());
+            Tag::INT => {
+                let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
                 format!("{value}")
             }
-            Heap::STR_REF => self.structure_string(self[addr].1),
+            Tag::FLT => {
+                let value: fsize = unsafe { mem::transmute_copy(&self[addr].1) };
+                format!("{value}")
+            }
+            Tag::STR_REF => self.structure_string(self[addr].1),
             _ => self.structure_string(addr),
         }
     }
@@ -267,248 +277,45 @@ impl Heap {
             self.symbols.set_var(&symbol, var)
         }
     }
-}
 
-#[derive(Clone)]
-enum SubTerm {
-    TEXT(String),
-    CELL((usize, usize)),
-}
-
-impl Heap {
-    fn text_var(
-        &mut self,
-        text: &str,
-        symbols_map: &mut HashMap<String, usize>,
-        uni_vars: &Vec<&str>,
-    ) -> usize {
-        match symbols_map.get(text) {
-            Some(ref_addr) => self.set_var(Some(*ref_addr), uni_vars.contains(&text)),
-            None => {
-                let addr = self.set_var(None, uni_vars.contains(&text));
-                symbols_map.insert(text.to_owned(), addr);
-                self.symbols.set_var(text, addr);
-                addr
-            }
-        }
-    }
-    fn text_const(&mut self, text: &str, symbols_map: &mut HashMap<String, usize>) -> usize {
-        let id = self.symbols.set_const(text);
-        self.set_const(id)
-    }
-    fn text_number(&mut self, text: &str) -> usize {
-        if text.contains('.') {
-            match text.parse::<fsize>() {
-                Ok(value) => {
-                    self.push((Heap::FLT, value.to_bits() as usize));
-                    self.len() - 1
-                }
-                Err(_) => panic!("Cannot parse number"),
-            }
-        } else {
-            match text.parse::<usize>() {
-                Ok(value) => {
-                    self.push((Heap::INT, value));
-                    self.len() - 1
-                }
-                Err(_) => panic!("Cannot parse number"),
-            }
-        }
-    }
-    fn text_singlet(
-        &mut self,
-        text: &str,
-        symbols_map: &mut HashMap<String, usize>,
-        uni_vars: &Vec<&str>,
-    ) -> usize {
-        if text.chars().next().unwrap().is_ascii_digit() {
-            self.text_number(text)
-        } else if text.chars().next().unwrap().is_uppercase() {
-            self.text_var(text, symbols_map, uni_vars)
-        } else {
-            self.text_const(text, symbols_map)
+    pub fn get_term_object(&self, addr: usize) -> Term {
+        let addr = self.deref_addr(addr);
+        match self[addr].0 {
+            Tag::STR => Term::STR(
+                self.str_iterator(addr)
+                    .map(|addr: usize| self.get_term_object(addr))
+                    .collect(),
+            ),
+            Tag::STR_REF => Term::STR(
+                self.str_iterator(self[addr].1)
+                    .map(|addr: usize| self.get_term_object(addr))
+                    .collect(),
+            ),
+            Tag::LIS => Term::LIS(todo!(), todo!()),
+            Tag::REFC | Tag::REF => Term::VAR(match self.symbols.get_var(addr) {
+                Some(symbol) => symbol.into(),
+                None => format!("_{addr}").into(),
+            }),
+            Tag::REFA => Term::VARUQ(match self.symbols.get_var(addr) {
+                Some(symbol) => symbol.into(),
+                None => format!("_{addr}").into(),
+            }),
+            Tag::INT => Term::INT(unsafe { mem::transmute(self[addr].1) }),
+            Tag::FLT => Term::FLT(unsafe { mem::transmute(self[addr].1) }),
+            Tag::CON => Term::CON(self.symbols.get_const(self[addr].1).into()),
+            _ => todo!(),
         }
     }
 
-    fn handle_sub_terms(
-        &mut self,
-        text: &str,
-        symbols_map: &mut HashMap<String, usize>,
-        uni_vars: &Vec<&str>,
-    ) -> Vec<SubTerm> {
-        let mut last_i: usize = 0;
-        let mut in_brackets = (0, 0);
-        let mut subterms_txt: Vec<&str> = vec![];
-        for (i, c) in text.chars().enumerate() {
-            match c {
-                '(' => {
-                    in_brackets.0 += 1;
-                }
-                ')' => {
-                    if in_brackets.0 == 0 {
-                        break;
-                    }
-                    in_brackets.0 -= 1;
-                }
-                '[' => {
-                    in_brackets.1 += 1;
-                }
-                ']' => {
-                    if in_brackets.1 == 0 {
-                        break;
-                    }
-                    in_brackets.1 -= 1;
-                }
-                ',' => {
-                    if in_brackets == (0, 0) {
-                        subterms_txt.push(&text[last_i..i]);
-                        last_i = i + 1
-                    }
-                }
-                _ => (),
-            }
-        }
-        subterms_txt.push(&text[last_i..]);
-        subterms_txt
-            .iter()
-            .map(|sub_term| {
-                if complex_term(sub_term) {
-                    self.build_heap_term_rec(sub_term, symbols_map, uni_vars)
-                } else {
-                    SubTerm::TEXT(sub_term.to_string())
-                }
-            })
-            .collect()
-    }
-
-    fn text_structure(
-        &mut self,
-        text: &str,
-        symbols_map: &mut HashMap<String, usize>,
-        uni_vars: &Vec<&str>,
-    ) -> SubTerm {
-        let i1 = text.find('(').unwrap();
-        let i2 = text.rfind(')').unwrap();
-        let sub_terms = self.handle_sub_terms(&text[i1 + 1..i2], symbols_map, uni_vars);
-        let i = self.cells.len();
-        self.cells.push((Heap::STR, sub_terms.len()));
-        self.text_singlet(&text[..i1], symbols_map, uni_vars);
-        for sub_term in sub_terms {
-            match sub_term {
-                SubTerm::TEXT(text) => {
-                    self.text_singlet(&text, symbols_map, uni_vars);
-                }
-                SubTerm::CELL(cell) => self.cells.push(cell),
-            }
-        }
-        SubTerm::CELL((Heap::STR_REF, i))
-    }
-
-    fn text_list(
-        &mut self,
-        text: &str,
-        symbols_map: &mut HashMap<String, usize>,
-        uni_vars: &Vec<&str>,
-    ) -> SubTerm {
-        if text == "[]" {
-            return SubTerm::CELL(Heap::EMPTY_LIS);
-        }
-        let i1 = text.find('[').unwrap() + 1;
-        let mut i2 = text.rfind(']').unwrap();
-        let mut explicit_tail = false;
-        i2 = match text.rfind('|') {
-            Some(i) => {
-                explicit_tail = true;
-                i
-            }
-            None => i2,
-        };
-        let subterms = self.handle_sub_terms(&text[i1..i2], symbols_map, uni_vars);
-        let tail = if explicit_tail {
-            Some(
-                self.handle_sub_terms(
-                    &text[i2 + 1..text.rfind(']').unwrap()],
-                    symbols_map,
-                    uni_vars,
-                )[0]
-                .clone(),
-            )
-        } else {
-            None
-        };
-        let i = self.cells.len();
-        for sub_term in subterms {
-            match sub_term {
-                SubTerm::TEXT(text) => {
-                    self.text_singlet(&text, symbols_map, uni_vars);
-                }
-                SubTerm::CELL(cell) => {
-                    self.cells.push(cell);
-                }
-            }
-            self.cells.push((Heap::LIS, self.cells.len() + 1))
-        }
-        self.cells.pop(); //Remove last LIS tag cell
-        match tail {
-            Some(sub_term) => match sub_term {
-                SubTerm::TEXT(text) => {
-                    self.text_singlet(&text, symbols_map, uni_vars);
-                }
-                SubTerm::CELL(cell) => {
-                    self.cells.push(cell);
-                }
-            },
-            None => self.cells.push(Heap::EMPTY_LIS),
-        }
-        SubTerm::CELL((Heap::LIS, i))
-    }
-
-    fn build_heap_term_rec(
-        &mut self,
-        text: &str,
-        symbols_map: &mut HashMap<String, usize>,
-        uni_vars: &Vec<&str>,
-    ) -> SubTerm {
-        let list_open = match text.find('[') {
-            Some(i) => i,
-            None => usize::MAX,
-        };
-        let brackets_open = match text.find('(') {
-            Some(i) => i,
-            None => usize::MAX,
-        };
-        if list_open == usize::MAX && brackets_open == usize::MAX {
-            panic!("help")
-        } else {
-            if list_open < brackets_open {
-                self.text_list(text, symbols_map, uni_vars)
-            } else {
-                self.text_structure(text, symbols_map, uni_vars)
-            }
+    pub fn term_vars(&self, mut addr: usize) -> Vec<Cell>{
+        addr = self.deref_addr(addr);
+        match self[addr].0 {
+            Tag::REF | Tag::REFA | Tag::REFC => vec![self[addr]],
+            Tag::LIS if self[addr].1 != Heap::CON_PTR => [self.term_vars(self[addr].1), self.term_vars(self[addr].1+1)].concat(),
+            Tag::STR => self.str_iterator(addr).map(|addr| self.term_vars(addr)).collect::<Vec<Vec<Cell>>>().concat(),
+            _ => vec![],
         }
     }
-
-    pub fn build_literal(
-        &mut self,
-        text: &str,
-        symbols_map: &mut HashMap<String, usize>,
-        uni_vars: &Vec<&str>,
-    ) -> usize {
-        match self.build_heap_term_rec(text, symbols_map, uni_vars) {
-            SubTerm::TEXT(_) => self.cells.len() - 1,
-            SubTerm::CELL((Heap::STR, i)) => i,
-            SubTerm::CELL((Heap::LIS, i)) => {
-                self.cells.push((Heap::LIS, i));
-                self.cells.len() - 1
-            }
-            SubTerm::CELL((Heap::REF | Heap::STR_REF, i)) => self.deref_addr(i),
-            SubTerm::CELL((tag, i)) => panic!("Unkown LIteral type: ({tag},{i}"),
-        }
-    }
-}
-
-fn complex_term(text: &str) -> bool {
-    text.chars().any(|c| c == '(' || c == '[')
 }
 
 impl Deref for Heap {
@@ -524,21 +331,3 @@ impl DerefMut for Heap {
     }
 }
 
-impl Heap {
-    pub fn get_term_object(&self, addr: usize) -> Term {
-        match self[addr].0 {
-            Heap::STR => Term::STR(
-                self.str_iterator(addr)
-                    .map(|addr: usize| self.get_term_object(addr))
-                    .collect(),
-            ),
-            Heap::STR_REF => Term::STR(
-                self.str_iterator(self[addr].1)
-                    .map(|addr: usize| self.get_term_object(addr))
-                    .collect(),
-            ),
-            Heap::LIS => Term::LIS(todo!(),todo!()),
-            _ => todo!(),
-        }
-    }
-}

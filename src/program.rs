@@ -1,13 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    choice::Choice,
-    clause::*,
-    clause_table::ClauseTable,
-    pred_module::{PredModule, PredicateFN},
-    state::Config,
-    unification::*,
-    Heap,
+    choice::Choice, clause::*, clause_table::ClauseTable, heap::Tag, pred_module::{PredModule, PredicateFN}, state::Config, unification::*, Heap
 };
 
 const PRED_NAME: &'static str = "James";
@@ -171,14 +165,14 @@ impl Program {
         for i in 0..clause.len() {
             for j in i..clause.len() {
                 match (heap[clause[i] + 1], heap[clause[j] + 1]) {
-                    ((Heap::REF, addr1), (Heap::REF, addr2)) if addr1 != addr2 => {
+                    ((Tag::REF, addr1), (Tag::REF, addr2)) if addr1 != addr2 => {
                         self.constraints.push((clause[i] + 1, clause[j] + 1));
                         self.constraints.push((clause[j] + 1, clause[i] + 1));
                     }
-                    ((Heap::REF, addr1), (Heap::CON, addr2)) if addr1 != addr2 => {
+                    ((Tag::REF, addr1), (Tag::CON, addr2)) if addr1 != addr2 => {
                         self.constraints.push((clause[i] + 1, clause[j] + 1))
                     }
-                    ((Heap::CON, addr1), (Heap::REF, addr2)) if addr1 != addr2 => {
+                    ((Tag::CON, addr1), (Tag::REF, addr2)) if addr1 != addr2 => {
                         self.constraints.push((clause[j] + 1, clause[i] + 1))
                     }
                     _ => (),

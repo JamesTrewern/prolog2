@@ -1,23 +1,25 @@
-use crate::{state::Config, Heap, Program};
+use std::mem;
+
+use crate::{heap::Tag, state::Config, Heap, Program};
 use super::PredModule;
 
 fn body_pred(call: usize, heap: &mut Heap, _: &mut Config, prog: &mut Program) -> bool{
-    let symbol = if let (Heap::CON, symbol) = heap[call+2]{
+    let symbol = if let (Tag::CON, symbol) = heap[call+2]{
         symbol
     }else{
         return false;
     };
-    let arity = if let (Heap::INT, arity) = heap[call+3]{
-        arity
+    let arity: isize = if let (Tag::INT, arity) = &heap[call+3]{
+        unsafe { mem::transmute_copy(arity) }
     }else{
         return false;
     };
-    prog.add_body_pred(symbol, arity, heap);
+    prog.add_body_pred(symbol, arity as usize, heap);
     true
 }
 
 fn max_h_preds(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> bool{
-    if let (Heap::INT, value) = heap[call+2]{
+    if let (Tag::INT, value) = heap[call+2]{
         config.max_h_pred = value;
         true
     }else{
@@ -26,7 +28,7 @@ fn max_h_preds(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Progra
 }
 
 fn max_h_clause(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> bool{
-    if let (Heap::INT, value) = heap[call+2]{
+    if let (Tag::INT, value) = heap[call+2]{
         config.max_h_clause = value;
         true
     }else{

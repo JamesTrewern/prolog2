@@ -1,16 +1,15 @@
-use crate::{clause::*, solver::Proof, state::Config, State};
+use crate::{clause::*, parser::tokenise, solver::Proof, state::Config, State};
 
 #[test]
 fn body_pred() {
     let mut state = State::new(None);
     state.heap.query_space = false;
     for clause in ["dad(adam,james)", "mum(tami,james)"] {
-        let (clause_type, clause) = Clause::parse_clause(clause, &mut state.heap);
+        let (clause_type, clause) = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
         state.prog.add_clause(clause_type, clause)
     }
     state.heap.query_space = true;
-    let directive = state.parse_goals("body_pred(dad,2),body_pred(mum,2)");
-    assert!(Proof::new(&directive, &mut state).next().is_some());
+    state.handle_directive(&tokenise("body_pred(dad,2),body_pred(mum,2)"));
     let body_clauses: Vec<String> = state
         .prog
         .clauses

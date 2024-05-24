@@ -5,9 +5,6 @@ mod examples;
 mod clause_table;
 
 #[cfg(test)]
-mod clause;
-
-#[cfg(test)]
 mod heap;
 
 #[cfg(test)]
@@ -21,3 +18,9 @@ mod unification;
 
 #[cfg(test)]
 mod pred_modules;
+
+#[cfg(test)]
+mod term;
+
+#[cfg(test)]
+mod state;

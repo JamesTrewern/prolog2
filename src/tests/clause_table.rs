@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::{clause::ClauseType, clause_table::ClauseTable, Heap};
+use crate::{clause::*, clause_table::ClauseTable, parser::tokenise, Heap};
 
 fn setup() -> (Heap, ClauseTable) {
     let mut heap = Heap::new(200);
@@ -16,8 +16,8 @@ fn setup() -> (Heap, ClauseTable) {
     ];
 
     for (clause_type, clause_string) in clauses {
-        let clause_addr = heap.build_literal(&clause_string, &mut HashMap::new(), &vec![]);
-        clause_table.add_clause(Box::new([clause_addr]), clause_type)
+        let (_, clause) = Clause::parse_clause(&tokenise(&clause_string), &mut heap).unwrap();
+        clause_table.add_clause(clause, clause_type)
     }
 
     (heap, clause_table)

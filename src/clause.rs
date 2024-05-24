@@ -1,5 +1,6 @@
+use core::hash;
 use std::{collections::HashMap, env::var};
-use crate::{heap::Heap, unification::*};
+use crate::{heap::{self, Cell, Heap, Tag}, parser::parse_literals, term::Term, unification::*};
 
 static IMPLICATION: &'static str = ":-";
 
@@ -8,7 +9,7 @@ pub type Clause = [usize];
 pub trait ClauseTraits {
     fn vars(&self, heap: &Heap) -> Vec<usize>;
     fn symbol_arity(&self, heap: &Heap) -> (usize, usize);
-    fn parse_clause(clause: &str, heap: &mut Heap) -> (ClauseType, Box<Clause>);
+    fn parse_clause(terms: &[&str], heap: &mut Heap) -> Result<(ClauseType, Box<Clause>),String>;
     fn deallocate(&self, heap: &mut Heap);
     fn subsumes(&self, other: &Clause, heap: &Heap) -> bool;
     fn to_string(&self, heap: &Heap) -> String;
@@ -79,101 +80,25 @@ impl ClauseTraits for Clause {
         }
     }
 
-    fn parse_clause(clause: &str, heap: &mut Heap) -> (ClauseType, Box<Clause>) {
-        let (i3, uni_vars) = get_uni_vars(clause);
-
-        let mut clause_type =
-            if !uni_vars.is_empty() || clause.trim().chars().next().unwrap().is_uppercase() {
-                ClauseType::META
-            } else {
-                ClauseType::CLAUSE
-            };
-
-        let (mut i1, i2) = match clause.find(IMPLICATION) {
-            Some(i) => (i, i + IMPLICATION.len()),
-            None => {
-                //No implication present, build fact
-                if clause.trim().chars().next().unwrap().is_uppercase() {
-                    clause_type = ClauseType::META
-                }
-                let head = heap.build_literal(clause, &mut HashMap::new(), &uni_vars);
-                return (clause_type, Clause::new(head, &[]));
-            }
+    fn parse_clause(tokens: &[&str], heap: &mut Heap) -> Result<(ClauseType, Box<Clause>),String> {
+        let terms = parse_literals(tokens)?;
+        let clause_type = if terms.iter().any(|t| t.meta()){
+            ClauseType::META
+        }else{
+            ClauseType::CLAUSE
         };
-        let head = &clause[..i1];
-        let body = &clause[i2..i3];
-        i1 = 0;
-        let mut in_brackets = (0, 0);
-        let mut body_literals: Vec<&str> = vec![];
-        for (i2, c) in body.chars().enumerate() {
-            match c {
-                '(' => {
-                    in_brackets.0 += 1;
-                }
-                ')' => {
-                    if in_brackets.0 == 0 {
-                        break;
-                    }
-                    in_brackets.0 -= 1;
-                }
-                '[' => {
-                    in_brackets.1 += 1;
-                }
-                ']' => {
-                    if in_brackets.1 == 0 {
-                        break;
-                    }
-                    in_brackets.1 -= 1;
-                }
-                ',' => {
-                    if in_brackets == (0, 0) {
-                        body_literals.push(&body[i1..i2]);
-                        if body[i1..i2].trim().chars().next().unwrap().is_uppercase()
-                        {
-                            clause_type = ClauseType::META;
-                        }
-                        i1 = i2 + 1
-                    }
-                }
-                _ => (),
-            }
-            if i2 == body.len() - 1 {
-                body_literals.push(body[i1..].trim());
-            }
-        }
-        let mut map: HashMap<String, usize> = HashMap::new();
-        let head = heap.build_literal(head, &mut map, &uni_vars);
-        let body: Vec<usize> = body_literals
-            .iter()
-            .map(|text| heap.build_literal(text, &mut map, &uni_vars))
-            .collect();
-
-        (clause_type, Clause::new(head, &body))
+        let mut var_ref = HashMap::new();
+        let literals: Box<Clause> = terms.iter().map(|t| t.build_on_heap(heap, &mut var_ref)).collect(); 
+        Ok((clause_type, literals))
     }
 
     fn vars(&self, heap: &Heap) -> Vec<usize>{
         let mut vars = Vec::<usize>::new();
         for literal in self.iter(){
-            vars.append(&mut heap.get_term_object(*literal).vars())
+            vars.append(&mut heap.term_vars(*literal).iter().filter_map(|(tag,addr)| if *tag == Tag::REFC{ Some(*addr)}else{None}).collect());
         }
         vars.sort();
         vars.dedup();
         vars 
-    }
-}
-
-fn get_uni_vars<'a>(clause: &'a str) -> (usize, Vec<&'a str>) {
-    match clause.rfind('\\') {
-        Some(i) => {
-            if clause[i..].chars().any(|c| c == '"' || c == '\'') {
-                (clause.len(), vec![])
-            } else {
-                (
-                    i,
-                    clause[i + 1..].split(',').map(|var| var.trim()).collect(),
-                )
-            }
-        }
-        None => (clause.len(), vec![]),
     }
 }
