@@ -7,7 +7,7 @@ static IMPLICATION: &'static str = ":-";
 pub type Clause = [usize];
 
 pub trait ClauseTraits {
-    fn vars(&self, heap: &Heap) -> Vec<usize>;
+    fn vars(&self, heap: &Heap, tags: &[Tag]) -> Vec<usize>;
     fn symbol_arity(&self, heap: &Heap) -> (usize, usize);
     fn parse_clause(terms: &[&str], heap: &mut Heap) -> Result<(ClauseType, Box<Clause>),String>;
     fn deallocate(&self, heap: &mut Heap);
@@ -92,10 +92,10 @@ impl ClauseTraits for Clause {
         Ok((clause_type, literals))
     }
 
-    fn vars(&self, heap: &Heap) -> Vec<usize>{
+    fn vars(&self, heap: &Heap, tags: &[Tag]) -> Vec<usize>{
         let mut vars = Vec::<usize>::new();
         for literal in self.iter(){
-            vars.append(&mut heap.term_vars(*literal).iter().filter_map(|(tag,addr)| if *tag == Tag::REFC{ Some(*addr)}else{None}).collect());
+            vars.append(&mut heap.term_vars(*literal).iter().filter_map(|(tag,addr)| if tags.contains(tag){ Some(*addr)}else{None}).collect());
         }
         vars.sort();
         vars.dedup();

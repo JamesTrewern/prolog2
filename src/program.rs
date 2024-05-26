@@ -1,7 +1,14 @@
 use std::collections::HashMap;
 
 use crate::{
-    choice::Choice, clause::*, clause_table::ClauseTable, heap::Tag, pred_module::{PredModule, PredicateFN}, state::Config, unification::*, Heap
+    choice::Choice,
+    clause::*,
+    clause_table::ClauseTable,
+    heap::Tag,
+    pred_module::{PredModule, PredicateFN},
+    state::Config,
+    unification::*,
+    Heap,
 };
 
 const PRED_NAME: &'static str = "James";
@@ -10,7 +17,7 @@ pub struct Program {
     pub predicate_functions: HashMap<(usize, usize), PredicateFN>,
     pub predicates: HashMap<(usize, usize), Box<[usize]>>, //(id, arity): Predicate
     pub clauses: ClauseTable,
-    pub constraints: Vec<(usize, usize)>,
+    pub constraints: Vec<Box<[(usize, usize)]>>,
     pub invented_preds: usize,
     pub h_size: usize,
     pub body_preds: Vec<(usize, usize)>,
@@ -162,23 +169,26 @@ impl Program {
         };
 
         //Value or Ref should never address same value as other ref
+        let mut cons = Vec::<(usize,usize)>::new();
         for i in 0..clause.len() {
             for j in i..clause.len() {
                 match (heap[clause[i] + 1], heap[clause[j] + 1]) {
                     ((Tag::REF, addr1), (Tag::REF, addr2)) if addr1 != addr2 => {
-                        self.constraints.push((clause[i] + 1, clause[j] + 1));
-                        self.constraints.push((clause[j] + 1, clause[i] + 1));
+                        cons.push((clause[i] + 1, clause[j] + 1));
+                        cons.push((clause[j] + 1, clause[i] + 1));
                     }
                     ((Tag::REF, addr1), (Tag::CON, addr2)) if addr1 != addr2 => {
-                        self.constraints.push((clause[i] + 1, clause[j] + 1))
+                        cons.push((clause[i] + 1, clause[j] + 1))
                     }
                     ((Tag::CON, addr1), (Tag::REF, addr2)) if addr1 != addr2 => {
-                        self.constraints.push((clause[j] + 1, clause[i] + 1))
+                        cons.push((clause[j] + 1, clause[i] + 1))
                     }
                     _ => (),
                 }
             }
         }
+
+        self.constraints.push(cons.into());
 
         self.clauses.add_clause(clause, ClauseType::HYPOTHESIS);
         self.h_size += 1;
@@ -186,20 +196,23 @@ impl Program {
         Some(id)
     }
 
-    pub fn remove_h_clause(&mut self, invented: bool) {
+    pub fn remove_h_clause(&mut self, invented: bool, heap: &Heap) {
         self.h_size -= 1;
         if invented {
             self.invented_preds -= 1;
         }
-        self.clauses.remove_clause(self.clauses.clauses.len() - 1)
+        self.clauses.remove_clause(self.clauses.clauses.len() - 1);
+        self.constraints.pop();
     }
 
     pub fn check_constraints(&self, binding: &Binding, heap: &Heap) -> bool {
-        for con in self.constraints.iter() {
-            let constraint = (heap.deref_addr(con.0), heap.deref_addr(con.1));
-            if let Some(bound) = binding.bound(constraint.0) {
-                if heap[constraint.1] == heap[bound] {
-                    return true;
+        for cons in self.constraints.iter() {
+            for con in cons.iter() {
+                let constraint = (heap.deref_addr(con.0), heap.deref_addr(con.1));
+                if let Some(bound) = binding.bound(constraint.0) {
+                    if heap[constraint.1] == heap[bound] {
+                        return true;
+                    }
                 }
             }
         }
@@ -228,7 +241,7 @@ impl Program {
         }
     }
 
-    pub fn organise_clause_table(&mut self, heap: &Heap){
+    pub fn organise_clause_table(&mut self, heap: &Heap) {
         self.clauses.sort_clauses();
         self.clauses.find_flags();
         self.predicates = self.clauses.predicate_map(heap)

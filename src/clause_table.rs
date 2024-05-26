@@ -45,14 +45,13 @@ impl<'a> ClauseTable {
         self.clauses.sort_by(|c1, c2| order_clauses(c1, c2));
     }
 
-    pub fn remove_clause(&mut self, i: usize) {
+    pub fn remove_clause(&mut self, i: usize) -> Box<Clause>{
         let (_, literals_ptr, clause_literals_len) = self.clauses.remove(i);
         assert!(
             self.literal_addrs.len() == literals_ptr + clause_literals_len,
             "Clause Not removed from top"
         );
-        self.literal_addrs
-            .truncate(self.literal_addrs.len() - clause_literals_len)
+        self.literal_addrs.drain(literals_ptr..literals_ptr+clause_literals_len).collect()
     }
 
     pub fn predicate_map(&self, heap: &Heap) -> HashMap<(usize, usize), Box<[usize]>> {

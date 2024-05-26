@@ -1,6 +1,6 @@
 use crate::{
     // clause::*,
-    choice::Choice, clause::{ClauseTraits, ClauseType}, unification::*, Heap, State, term::Term
+    choice::Choice, clause::{ClauseTraits, ClauseType}, heap::{self, Tag}, term::Term, unification::*, Heap, State
 };
 
 struct Env {
@@ -76,7 +76,7 @@ impl<'a> Iterator for Proof <'a> {
             let mut hypothesis = String::new();
             for (_,(_,h_clause)) in self.state.prog.clauses.iter(&[ClauseType::HYPOTHESIS]){
                 hypothesis += "\n";
-                self.state.heap.create_var_symbols(h_clause.vars(&self.state.heap));
+                self.state.heap.create_var_symbols(h_clause.vars(&self.state.heap, &[Tag::REFC]));
                 hypothesis += &h_clause.to_string(&self.state.heap);
             }
             Some(hypothesis)
@@ -153,12 +153,10 @@ fn prove(pointer: &mut usize, proof_stack: &mut Vec<Env>, state: &mut State) -> 
 }
 
 fn retry(proof_stack: &mut Vec<Env>, pointer: usize, state: &mut State) -> Option<usize> {
-    let children = proof_stack.get(pointer).unwrap().children;
-    for _ in 0..children {
-        proof_stack.remove(pointer + 1);
-    }
-    let env = proof_stack.get_mut(pointer).unwrap();
-    //Undo Enviroment
+    let n_children = proof_stack[pointer].children;
+    let children: Box<[Env]> = proof_stack.drain(pointer+1..=pointer+n_children).rev().collect();
+    let env = &mut proof_stack[pointer];
+
     if state.config.debug {
         println!(
             "[{pointer}]UNDO: {},{}",
@@ -166,11 +164,15 @@ fn retry(proof_stack: &mut Vec<Env>, pointer: usize, state: &mut State) -> Optio
             env.bindings.to_string(&state.heap)
         );
     }
-    state.heap.unbind(&env.bindings);
 
+    state.heap.unbind(&env.bindings);
     if env.new_clause == true {
-        state.prog.remove_h_clause(env.invent_pred);
+        state.prog.remove_h_clause(env.invent_pred, &state.heap);
         env.new_clause = false;
+    }
+
+    for child in children.into_iter(){
+        state.heap.deallocate_above(child.goal);
     }
 
     //is pointer a choice point
