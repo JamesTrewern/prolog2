@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use super::heap::Heap;
 
+const KNOWN_SYMBOLS: &[&str] = &["false", "true"];
+
 pub struct SymbolDB {
     const_symbols: Vec<Box<str>>,
     var_symbols: Vec<Box<str>>,
@@ -10,7 +12,7 @@ pub struct SymbolDB {
 impl SymbolDB {
     pub fn new() -> SymbolDB {
         SymbolDB {
-            const_symbols: vec![],
+            const_symbols: Vec::from(KNOWN_SYMBOLS.iter().map(|symbol| (*symbol).into()).collect::<Vec<Box<str>>>()),
             var_symbols: vec![],
             var_symbol_map: HashMap::new(),
         }

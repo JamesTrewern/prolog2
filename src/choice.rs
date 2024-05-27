@@ -30,12 +30,11 @@ impl Choice {
                 .prog
                 .add_h_clause(new_clause, &mut state.heap, &state.config)
             {
-                Some(Some(invented_pred)) => {
+                Some(invented_pred) => {
                     self.binding.push((pred_symbol, invented_pred));
                     true
                 }
-                None => return None,
-                _ => false,
+                None => false,
             }
         } else {
             false

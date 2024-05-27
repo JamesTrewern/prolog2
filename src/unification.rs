@@ -21,6 +21,11 @@ impl BindingTraits for Binding {
     fn to_string(&self, heap: &Heap) -> String {
         let mut buffer = String::from("{");
         for binding in self.iter() {
+            if let Some(symbol) = heap.symbols.get_var(binding.0){
+                buffer += symbol;
+            }else{
+                buffer += &format!("_{}", binding.0);
+            }
             buffer += &heap.term_string(binding.0);
             buffer += "/";
             if binding.1 < Heap::CON_PTR {
@@ -129,7 +134,7 @@ fn build_subterm(
     uqvar_binding: &mut Option<Binding>,
 ) -> bool {
     let addr = heap.deref_addr(sub_term);
-    match heap[heap.deref_addr(sub_term)] {
+    match heap[addr] {
         (Tag::REF | Tag::REFA | Tag::REFC, _) => return false,
         (Tag::STR, _) => {
             if let (new_addr, false) = build_str(binding, addr, heap, uqvar_binding) {
@@ -182,9 +187,9 @@ fn add_term_binding(
         }
         (Tag::STR, _) => {
             if let Some(addr) = binding.bound(addr) {
-                heap.push((Tag::STR_REF, addr))
+                heap.push((Tag::StrRef, addr))
             } else {
-                heap.push((Tag::STR_REF, addr))
+                heap.push((Tag::StrRef, addr))
             }
         }
         (Tag::LIS, addr) => {

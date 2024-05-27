@@ -1,26 +1,25 @@
 use crate::{symbol_db::SymbolDB, term::Term, unification};
 use std::{
-    collections::HashMap,
     mem,
     ops::{Deref, DerefMut, RangeInclusive},
     usize,
 };
 use unification::Binding;
-
 use fsize::fsize;
 
+/** Tag which describes cell type */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(usize)]
+#[repr(u8)]
 pub enum Tag {
-    REF,
-    REFC,
-    REFA,
-    STR,
-    LIS,
-    CON,
-    INT,
-    FLT,
-    STR_REF,
+    REF,    //Query Variable
+    REFC,   //Clause Variable
+    REFA,   //Universally Quantified variable
+    STR,    //Structure
+    LIS,    //List
+    CON,    //Constant
+    INT,    //Integer
+    FLT,    //Float
+    StrRef, //Reference to Structure
 }
 
 impl std::fmt::Display for Tag {
@@ -31,55 +30,50 @@ impl std::fmt::Display for Tag {
 
 pub type Cell = (Tag, usize);
 
+/** Heap data structure
+ * Stores contigious block of cells describing all compliled terms
+ */
 pub struct Heap {
-    pub(super) cells: Vec<Cell>,
-    pub(super) symbols: SymbolDB,
+    cells: Vec<Cell>,
+    pub symbols: SymbolDB,
     pub query_space: bool,
 }
 
 impl Heap {
-    pub const REF: usize = usize::MAX;
-    pub const REFC: usize = usize::MAX - 1;
-    pub const REFA: usize = usize::MAX - 2;
-    pub const STR: usize = usize::MAX - 3;
-    pub const LIS: usize = usize::MAX - 4;
-    pub const CON: usize = usize::MAX - 5;
-    pub const INT: usize = usize::MAX - 6;
-    pub const FLT: usize = usize::MAX - 7;
-    pub const STR_REF: usize = usize::MAX - 8;
     pub const CON_PTR: usize = isize::MAX as usize;
     pub const FALSE: Cell = (Tag::CON, Heap::CON_PTR);
     pub const TRUE: Cell = (Tag::CON, Heap::CON_PTR + 1);
     pub const EMPTY_LIS: Cell = (Tag::LIS, Heap::CON_PTR);
 
+    /** Builds a new heap from a reference to a slice of cells, used for creating test instances */
     pub fn from_slice(cells: &[Cell]) -> Heap {
-        let mut symbols = SymbolDB::new();
-        symbols.set_const("false");
-        symbols.set_const("true");
         Heap {
             cells: Vec::from(cells),
             query_space: true,
-            symbols,
+            symbols: SymbolDB::new(),
         }
     }
 
     pub fn new(size: usize) -> Heap {
-        let mut symbols = SymbolDB::new();
-        symbols.set_const("false");
-        symbols.set_const("true");
         Heap {
             cells: Vec::with_capacity(size),
             query_space: true,
-            symbols,
+            symbols: SymbolDB::new(),
         }
     }
 
+    /**Create new variable on heap
+     * @ref_addr: optional value, if None create self reference
+     * @universal: is the new var universally quantified
+     */
     pub fn set_var(&mut self, ref_addr: Option<usize>, universal: bool) -> usize {
+        //If no address provided set addr to current heap len
         let addr = match ref_addr {
             Some(a) => a,
             None => self.cells.len(),
         };
 
+        //Define variable cell tag
         let tag = if universal {
             Tag::REFA
         } else if !self.query_space {
@@ -92,23 +86,25 @@ impl Heap {
         return self.cells.len() - 1;
     }
 
+    /**Create new constant on heap
+     * @id: integer which represents constant symbol (held by symbol db)
+     */
     pub fn set_const(&mut self, id: usize) -> usize {
         self.cells.push((Tag::CON, id));
         return self.cells.len() - 1;
     }
 
+    /**Push cell to heap */
     pub fn push(&mut self, cell: Cell) {
         self.cells.push(cell);
     }
 
+    /**Recursively dereference cell address until non ref or self ref cell */
     pub fn deref_addr(&self, addr: usize) -> usize {
-        if let (Tag::REF | Tag::REFA | Tag::REFC | Tag::STR_REF, pointer) = self[addr] {
+        if let (Tag::REF | Tag::REFA | Tag::REFC | Tag::StrRef, pointer) = self[addr] {
             if addr == pointer {
                 addr
             } else {
-                if self[addr].1 >= Heap::CON_PTR {
-                    panic!("What: [{addr}] {:?}", self[addr])
-                }
                 self.deref_addr(self[addr].1)
             }
         } else {
@@ -116,25 +112,29 @@ impl Heap {
         }
     }
 
+    /**Add new constant symbol to symbol database and return ID*/
     pub fn add_const_symbol(&mut self, symbol: &str) -> usize {
         self.symbols.set_const(symbol)
     }
 
+    /** Update address value of ref cells affected by binding
+     * @binding: List of (usize, usize) tuples representing heap indexes, left -> right
+    */
     pub fn bind(&mut self, binding: &Binding) {
         for (src, target) in binding {
-            if let (tag @ Tag::REF, pointer) = &mut self[*src] {
+            if let (Tag::REF, pointer) = &mut self[*src] {
                 if *pointer != *src {
                     self.print_heap();
                     panic!("Tried to reset bound ref: {} \n Binding: {binding:?}", src)
-                }
-                if *target >= Heap::CON_PTR {
-                    *tag = Tag::CON;
                 }
                 *pointer = *target;
             }
         }
     }
 
+    /** Reset Ref cells affected by binding to self references
+     * @binding: List of (usize, usize) tuples representing heap indexes, left -> right
+    */
     pub fn unbind(&mut self, binding: &Binding) {
         for (src, _target) in binding {
             if let (tag @ (Tag::REF | Tag::CON), pointer) = &mut self[*src] {
@@ -146,20 +146,13 @@ impl Heap {
         }
     }
 
-    pub fn deallocate_str(&mut self, addr: usize) {
-        let length = self[addr].1 + 2;
-        if addr + length != self.cells.len() {
-            self.print_heap();
-            panic!("Deallocation error, addr:{addr}");
-        }
-        self.cells.truncate(self.cells.len() - length)
-        //TO DO recursively delete structures pointed to within structure
-    }
-
+    /**Dealocate all heap cells above a certain address */
     pub fn deallocate_above(&mut self, addr: usize){
         self.cells.truncate(addr)
+        //Effect symbol db to remove vars above this point
     }
 
+    /**Debug function for printing formatted string of current heap state */
     pub fn print_heap(&self) {
         let w = 6;
         for (i, (tag, value)) in self.iter().enumerate() {
@@ -194,6 +187,7 @@ impl Heap {
         }
     }
 
+    /**Create a string from a list */
     pub fn list_string(&self, addr: usize) -> String {
         let mut buffer = "[".to_string();
         let mut pointer = self[addr].1;
@@ -217,6 +211,7 @@ impl Heap {
         buffer
     }
 
+    /**Create a string for a structure */
     pub fn structure_string(&self, addr: usize) -> String {
         let mut buf = "".to_string();
         let mut first = true;
@@ -232,6 +227,7 @@ impl Heap {
         buf
     }
 
+    /** Create String to represent cell, can be recursively used to format complex structures or list */
     pub fn term_string(&self, addr: usize) -> String {
         let addr = self.deref_addr(addr);
         match self[addr].0 {
@@ -257,27 +253,25 @@ impl Heap {
                 let value: fsize = unsafe { mem::transmute_copy(&self[addr].1) };
                 format!("{value}")
             }
-            Tag::STR_REF => self.structure_string(self[addr].1),
-            _ => self.structure_string(addr),
+            Tag::StrRef => self.structure_string(self[addr].1),
         }
     }
 
+    /** Given address to a str cell create an operator over the sub terms addresses, including functor/predicate */
     pub fn str_iterator(&self, addr: usize) -> RangeInclusive<usize> {
         addr + 1..=addr + 1 + self[addr].1
     }
 
+    /** Given address to str cell return tuple for (symbol, arity)
+     * If symbol is greater than isize::MAX then it is a constant id
+     * If symbol is lower that isize::Max then it is a reference address
+    */
     pub fn str_symbol_arity(&self, addr: usize) -> (usize, usize) {
-        (self[addr + 1].1, self[addr].1)
+        let symbol = self[self.deref_addr(addr + 1)].1;
+        (symbol, self[addr].1)
     }
 
-    pub fn create_var_symbols(&mut self, vars: Vec<usize>) {
-        let mut alphabet = (b'A'..=b'Z').map(|c| String::from_utf8(vec![c]).unwrap());
-        for var in vars {
-            let symbol = alphabet.next().unwrap();
-            self.symbols.set_var(&symbol, var)
-        }
-    }
-
+    /**Create term object indepent of heap*/
     pub fn get_term_object(&self, addr: usize) -> Term {
         let addr = self.deref_addr(addr);
         match self[addr].0 {
@@ -286,7 +280,7 @@ impl Heap {
                     .map(|addr: usize| self.get_term_object(addr))
                     .collect(),
             ),
-            Tag::STR_REF => Term::STR(
+            Tag::StrRef => Term::STR(
                 self.str_iterator(self[addr].1)
                     .map(|addr: usize| self.get_term_object(addr))
                     .collect(),
@@ -303,10 +297,12 @@ impl Heap {
             Tag::INT => Term::INT(unsafe { mem::transmute(self[addr].1) }),
             Tag::FLT => Term::FLT(unsafe { mem::transmute(self[addr].1) }),
             Tag::CON => Term::CON(self.symbols.get_const(self[addr].1).into()),
-            _ => todo!(),
         }
     }
 
+    /**Collect all REF, REFC, and REFA cells in structure or referenced by structure
+     * If cell at addr is a reference return that cell  
+     */
     pub fn term_vars(&self, mut addr: usize) -> Vec<Cell>{
         addr = self.deref_addr(addr);
         match self[addr].0 {

@@ -200,6 +200,7 @@ fn max_predicates_1() {
     state.prog.clauses.find_flags();
 
     let goal1 = parse_goals(&tokenise("P(a,b)"), &mut state.heap).unwrap()[0];
+
     let choices = &mut state.prog.call(goal1, &mut state.heap, &mut state.config);
     choices.first_mut().unwrap().choose(&mut state);
 

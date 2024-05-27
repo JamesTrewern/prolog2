@@ -18,7 +18,7 @@ pub(crate) use program::Program;
 use solver::Proof;
 use state::Config;
 pub(crate) use state::State;
-use std::{collections::HashMap, process::ExitCode, vec};
+use std::{collections::HashMap, process::ExitCode};
 
 /*
 
@@ -45,7 +45,7 @@ fn main() -> ExitCode {
 
     let mut proofs = 0;
     for branch in proof {
-        println!("Hypothesis[{proofs}]: {branch}\n");
+        println!("Hypothesis[{proofs}]: {branch:?}\n");
         proofs += 1;
     }
     ExitCode::SUCCESS

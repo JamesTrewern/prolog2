@@ -91,7 +91,7 @@ impl Term {
                 }
             }
         }
-        (Tag::STR_REF, addr)
+        (Tag::StrRef, addr)
     }
 
     fn build_lis(
@@ -190,6 +190,10 @@ impl Term {
             }
             Term::STR(terms) => Self::build_str(terms, heap, var_ref).1,
         }
+    }
+
+    pub fn build_from_heap(heap: &mut Heap, addr: usize) -> Term{
+        todo!()
     }
 
     pub fn meta(&self) -> bool {

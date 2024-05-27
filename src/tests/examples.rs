@@ -33,7 +33,7 @@ fn ancestor_1() {
 
     let mut proofs = 0;
     for branch in proof {
-        println!("Hypothesis[{proofs}]: {branch}\n");
+        println!("Hypothesis[{proofs}]: {branch:?}\n");
         proofs += 1;
     }
 }
@@ -52,7 +52,7 @@ fn ancestor_2() {
 
     let mut proofs = 0;
     for branch in proof {
-        println!("Hypothesis[{proofs}]: {branch}\n");
+        println!("Hypothesis[{proofs}]: {branch:?}\n");
         proofs += 1;
     }
 
@@ -73,7 +73,7 @@ fn ancestor_3() {
 
     let mut proofs = 0;
     for branch in proof {
-        println!("Hypothesis[{proofs}]: {branch}\n");
+        println!("Hypothesis[{proofs}]: {branch:?}\n");
         proofs += 1;
     }
 

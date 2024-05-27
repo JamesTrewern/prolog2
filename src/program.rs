@@ -35,13 +35,6 @@ impl Program {
             body_preds: vec![],
         }
     }
-    // pub fn add_module(&mut self, pred_module: PredModule, heap: &mut Heap) {
-    //     for (symbol, arity, f) in pred_module {
-    //         let id = heap.add_const_symbol(symbol);
-    //         self.predicates
-    //             .insert((id, *arity), Predicate::FUNCTION(*f));
-    //     }
-    // }
 
     fn match_clause(
         &self,
@@ -156,44 +149,43 @@ impl Program {
         clause: Box<Clause>,
         heap: &mut Heap,
         config: &Config,
-    ) -> Option<Option<usize>> {
-        let (symbol, _) = clause.symbol_arity(heap);
-        let id = if symbol < Heap::CON_PTR {
-            self.invented_preds += 1;
-            let symbol_id = heap.add_const_symbol(&format!("{PRED_NAME}_{}", self.invented_preds));
-            Some(symbol_id)
-            // Some(heap.set_const(symbol_id))
-        } else {
-            //New Clause, No invented predicate symbol
-            None
-        };
-
-        //Value or Ref should never address same value as other ref
-        let mut cons = Vec::<(usize,usize)>::new();
+    ) -> Option<usize> {
+        //Build contraints for new clause. This assumes that no unifcation should happen between variable predicate symbols 
+        let mut constraints = Vec::<(usize,usize)>::new();
         for i in 0..clause.len() {
             for j in i..clause.len() {
                 match (heap[clause[i] + 1], heap[clause[j] + 1]) {
                     ((Tag::REF, addr1), (Tag::REF, addr2)) if addr1 != addr2 => {
-                        cons.push((clause[i] + 1, clause[j] + 1));
-                        cons.push((clause[j] + 1, clause[i] + 1));
+                        constraints.push((clause[i] + 1, clause[j] + 1));
+                        constraints.push((clause[j] + 1, clause[i] + 1));
                     }
                     ((Tag::REF, addr1), (Tag::CON, addr2)) if addr1 != addr2 => {
-                        cons.push((clause[i] + 1, clause[j] + 1))
+                        constraints.push((clause[i] + 1, clause[j] + 1))
                     }
                     ((Tag::CON, addr1), (Tag::REF, addr2)) if addr1 != addr2 => {
-                        cons.push((clause[j] + 1, clause[i] + 1))
+                        constraints.push((clause[j] + 1, clause[i] + 1))
                     }
                     _ => (),
                 }
             }
         }
+        self.constraints.push(constraints.into());
 
-        self.constraints.push(cons.into());
+        //Get clause symbol before ownership is moved to clause table
+        let (mut symbol, _) = clause.symbol_arity(heap);
 
+        //Add clause to clause table and icrement H clause counter
         self.clauses.add_clause(clause, ClauseType::HYPOTHESIS);
         self.h_size += 1;
 
-        Some(id)
+        //If head predicate is variable invent new symbol
+        if symbol < Heap::CON_PTR {
+            self.invented_preds += 1;
+            symbol = heap.add_const_symbol(&format!("{PRED_NAME}_{}", self.invented_preds));
+            Some(heap.set_const(symbol))
+        }else{
+            None
+        }
     }
 
     pub fn remove_h_clause(&mut self, invented: bool, heap: &Heap) {
@@ -219,18 +211,10 @@ impl Program {
         false
     }
 
-    pub fn write_prog(&self, heap: &Heap) {
-        for (_i, (c_type, clause)) in
-            self.clauses
-                .iter(&[ClauseType::CLAUSE, ClauseType::BODY, ClauseType::META])
-        {
-            println!("{c_type:?}, {}", clause.to_string(heap))
-        }
-    }
-
-    pub fn write_h(&self, heap: &Heap) {
+    pub fn symbolise_hypothesis(&self, heap: &mut Heap) {
+        //TO DO could turn unbound refs in H into constants
         for (i, (c_type, clause)) in self.clauses.iter(&[ClauseType::HYPOTHESIS]) {
-            println!("{c_type:?}, {}", clause.to_string(heap))
+            clause.symbolise_vars(heap);
         }
     }
 
@@ -248,10 +232,3 @@ impl Program {
     }
 }
 
-// impl<'a> Index<usize> for Program {
-//     type Output = (ClauseType,Clause<'a>);
-
-//     fn index(&'a self, index: usize) -> &Self::Output {
-//         self.clauses.get(index)
-//     }
-// }

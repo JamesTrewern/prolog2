@@ -1,6 +1,12 @@
 use crate::{
     // clause::*,
-    choice::Choice, clause::{ClauseTraits, ClauseType}, heap::{self, Tag}, term::Term, unification::*, Heap, State
+    choice::Choice,
+    clause::{ClauseTraits, ClauseType},
+    heap::{self, Tag},
+    term::Term,
+    unification::*,
+    Heap,
+    State,
 };
 
 struct Env {
@@ -32,7 +38,7 @@ pub(crate) struct Proof<'a> {
     state: &'a mut State,
     original_goals: Box<[Term]>,
     goals: Box<[usize]>,
-    pointer: usize
+    pointer: usize,
 }
 
 impl<'a> Proof<'a> {
@@ -42,7 +48,7 @@ impl<'a> Proof<'a> {
             .iter()
             .map(|goal_addr| state.heap.get_term_object(*goal_addr))
             .collect();
-        let mut proof_stack:Vec<Env> = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
+        let mut proof_stack: Vec<Env> = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
 
         Proof {
             proof_stack,
@@ -54,13 +60,14 @@ impl<'a> Proof<'a> {
     }
 }
 
-impl<'a> Iterator for Proof <'a> {
-    type Item = String;
+impl<'a> Iterator for Proof<'a> {
+    type Item = Box<[Box<[Term]>]>;
 
     fn next(&mut self) -> Option<Self::Item> {
 
+        //If not first attempt at proof backtrack to last choice point
         if self.pointer != 0 {
-            match retry(&mut self.proof_stack, self.pointer-1, &mut self.state) {
+            match retry(&mut self.proof_stack, self.pointer - 1, &mut self.state) {
                 Some(p) => {
                     self.pointer = p;
                 }
@@ -70,43 +77,41 @@ impl<'a> Iterator for Proof <'a> {
 
         if prove(&mut self.pointer, &mut self.proof_stack, &mut self.state) {
             println!("TRUE");
+
+            //Add symbols to hypothesis variables
+            self.state.prog.symbolise_hypothesis(&mut self.state.heap);
+            
+            //Print goals with query vairables substituted
             for goal in self.goals.iter() {
                 println!("{},", self.state.heap.term_string(*goal))
             }
-            let mut hypothesis = String::new();
-            for (_,(_,h_clause)) in self.state.prog.clauses.iter(&[ClauseType::HYPOTHESIS]){
-                hypothesis += "\n";
-                self.state.heap.create_var_symbols(h_clause.vars(&self.state.heap, &[Tag::REFC]));
-                hypothesis += &h_clause.to_string(&self.state.heap);
-            }
-            Some(hypothesis)
+
+            //For every clause in hypothesis convert into an array non heap terms
+            let h: Self::Item = self
+                .state
+                .prog
+                .clauses
+                .iter(&[ClauseType::HYPOTHESIS])
+                .map(|(_, (_, clause))| {
+                    clause
+                        .iter()
+                        .map(|literal| self.state.heap.get_term_object(*literal))
+                        .collect::<Box<[Term]>>()
+                })
+                .collect();
+
+            Some(h)
         } else {
             println!("FALSE");
-            print_stack(&mut self.proof_stack, &mut self.state.heap);
             None
-            // heap.print_heap();
         }
     }
 }
 
-// pub fn start_proof(goals: Vec<usize>, state: &mut State) -> bool {
-//     let mut proof_stack: Vec<Env> = vec![];
 
-//     if prove(goals.clone(), &mut proof_stack, state) {
-//         println!("TRUE");
-//         for goal in goals {
-//             println!("{},", state.heap.term_string(goal))
-//         }
-//         state.prog.write_h(&state.heap);
-//         true
-//     } else {
-//         println!("FALSE");
-//         print_stack(&mut proof_stack, &mut state.heap);
-//         false
-//         // heap.print_heap();
-//     }
-// }
-
+/**Proof loop
+ * By 
+ */
 fn prove(pointer: &mut usize, proof_stack: &mut Vec<Env>, state: &mut State) -> bool {
     loop {
         let (depth, goal) = match proof_stack.get_mut(*pointer) {
@@ -154,7 +159,10 @@ fn prove(pointer: &mut usize, proof_stack: &mut Vec<Env>, state: &mut State) -> 
 
 fn retry(proof_stack: &mut Vec<Env>, pointer: usize, state: &mut State) -> Option<usize> {
     let n_children = proof_stack[pointer].children;
-    let children: Box<[Env]> = proof_stack.drain(pointer+1..=pointer+n_children).rev().collect();
+    let children: Box<[Env]> = proof_stack
+        .drain(pointer + 1..=pointer + n_children)
+        .rev()
+        .collect();
     let env = &mut proof_stack[pointer];
 
     if state.config.debug {
@@ -171,7 +179,7 @@ fn retry(proof_stack: &mut Vec<Env>, pointer: usize, state: &mut State) -> Optio
         env.new_clause = false;
     }
 
-    for child in children.into_iter(){
+    for child in children.into_iter() {
         state.heap.deallocate_above(child.goal);
     }
 

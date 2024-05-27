@@ -1,17 +1,12 @@
-use core::hash;
-use std::{collections::HashMap, env::var};
-use crate::{heap::{self, Cell, Heap, Tag}, parser::parse_literals, term::Term, unification::*};
-
-static IMPLICATION: &'static str = ":-";
+use std::collections::HashMap;
+use crate::{heap::{Cell, Heap, Tag}, parser::parse_literals};
 
 pub type Clause = [usize];
 
 pub trait ClauseTraits {
-    fn vars(&self, heap: &Heap, tags: &[Tag]) -> Vec<usize>;
+    fn symbolise_vars(&self, heap: &mut Heap);
     fn symbol_arity(&self, heap: &Heap) -> (usize, usize);
     fn parse_clause(terms: &[&str], heap: &mut Heap) -> Result<(ClauseType, Box<Clause>),String>;
-    fn deallocate(&self, heap: &mut Heap);
-    fn subsumes(&self, other: &Clause, heap: &Heap) -> bool;
     fn to_string(&self, heap: &Heap) -> String;
     fn new(head: usize, body: &[usize]) -> Box<Self>;
 }
@@ -55,31 +50,6 @@ impl ClauseTraits for Clause {
         heap.str_symbol_arity(self[0])
     }
 
-    fn subsumes(&self, other: &Clause, heap: &Heap) -> bool {
-        //TO DO
-        //Implement proper Subsumtption
-        if self.len() == other.len() {
-            let mut binding = match unify(self[0], other[0], heap) {
-                Some(b) => b,
-                None => return false,
-            };
-            for i in 1..self.len() {
-                if !unify_rec(self[i], other[i], heap, &mut binding) {
-                    return false;
-                }
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    fn deallocate(&self, heap: &mut Heap) {
-        for str_addr in self.iter().rev() {
-            heap.deallocate_str(*str_addr);
-        }
-    }
-
     fn parse_clause(tokens: &[&str], heap: &mut Heap) -> Result<(ClauseType, Box<Clause>),String> {
         let terms = parse_literals(tokens)?;
         let clause_type = if terms.iter().any(|t| t.meta()){
@@ -92,13 +62,18 @@ impl ClauseTraits for Clause {
         Ok((clause_type, literals))
     }
 
-    fn vars(&self, heap: &Heap, tags: &[Tag]) -> Vec<usize>{
+    fn symbolise_vars(&self, heap: &mut Heap){
         let mut vars = Vec::<usize>::new();
         for literal in self.iter(){
-            vars.append(&mut heap.term_vars(*literal).iter().filter_map(|(tag,addr)| if tags.contains(tag){ Some(*addr)}else{None}).collect());
+            vars.append(&mut heap.term_vars(*literal).iter().filter_map(|(tag,addr)| if *tag == Tag::REF { Some(*addr)}else{None}).collect());
         }
         vars.sort();
         vars.dedup();
-        vars 
+
+        let mut alphabet = (b'A'..=b'Z').map(|c| String::from_utf8(vec![c]).unwrap());
+        for var in vars {
+            let symbol = alphabet.next().unwrap();
+            heap.symbols.set_var(&symbol, var)
+        }
     }
 }

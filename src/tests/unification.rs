@@ -1,8 +1,5 @@
-use std::{arch::x86_64, collections::HashMap};
-
 use crate::{heap::{Heap, Tag}, unification::*};
 
-use super::heap;
 
 
 #[test]
@@ -17,13 +14,13 @@ fn build_clause_literal_with_substr(){
         (Tag::STR, 2),
         (Tag::REFC, 4),
         (Tag::REFC, 5),
-        (Tag::STR_REF, 0),
+        (Tag::StrRef, 0),
         (Tag::CON, p),
         (Tag::CON, x),
     ]);
 
     let mut binding: Binding = vec![(4,7),(5,8)];
-    let (new_goal, constant) = build_str(&mut binding, 3, &mut heap, &mut Some(vec![]));
+    let (new_goal, _) = build_str(&mut binding, 3, &mut heap, &mut Some(vec![]));
 
     assert_eq!(&heap[new_goal-3..], &[
         (Tag::STR, 1),
@@ -32,7 +29,7 @@ fn build_clause_literal_with_substr(){
         (Tag::STR, 2),
         (Tag::CON, p),
         (Tag::CON, x),
-        (Tag::STR_REF, new_goal-3)
+        (Tag::StrRef, new_goal-3)
     ])
 }
 
@@ -51,7 +48,7 @@ fn build_goal_with_sub_str(){
         (Tag::REFC, 3),
         (Tag::STR, 1),
         (Tag::CON, p),
-        (Tag::STR_REF, 0),
+        (Tag::StrRef, 0),
         (Tag::CON, x),
         (Tag::CON, y),
     ]);
@@ -67,7 +64,7 @@ fn build_goal_with_sub_str(){
         (Tag::CON, y),
         (Tag::STR, 1),
         (Tag::CON, p),
-        (Tag::STR_REF, new_goal-4),
+        (Tag::StrRef, new_goal-4),
     ])
 }
 
