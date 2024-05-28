@@ -2,6 +2,7 @@ use crate::{
     // clause::*,
     choice::Choice,
     clause::ClauseType,
+    program::CallRes,
     term::Term,
     unification::*,
     Heap,
@@ -122,26 +123,44 @@ fn prove(pointer: &mut usize, proof_stack: &mut Vec<Env>, state: &mut State) -> 
         if state.config.debug {
             println!("[{}]Try: {}", depth, state.heap.term_string(goal));
         }
-        let mut choices = state.prog.call(goal, &mut state.heap, &mut state.config);
-
-        loop {
-            if let Some(choice) = choices.pop() {
-                if apply_choice(proof_stack, *pointer, choice, state) {
-                    let env = proof_stack.get_mut(*pointer).unwrap();
-                    env.choices = choices;
-                    *pointer += 1;
-                    break;
-                }
-            } else {
-                if state.config.debug {
-                    println!("[{}]FAILED: {}", depth, state.heap.term_string(goal));
-                }
-                match retry(proof_stack, *pointer, state) {
-                    Some(p) => {
-                        *pointer = p;
-                        break;
+        match state.prog.call(goal, &mut state.heap, &mut state.config) {
+            CallRes::Function(function) => {
+                if function(goal, &mut state.heap, &mut state.config, &mut state.prog) {
+                    *pointer += 1
+                } else {
+                    match retry(proof_stack, *pointer, state) {
+                        Some(p) => {
+                            *pointer = p;
+                        }
+                        None => return false,
                     }
-                    None => return false,
+                }
+            }
+            CallRes::Clauses(clauses) => {
+                let mut choices: Vec<Choice> = clauses
+                    .filter_map(|ci| Choice::build_choice(goal, ci, state))
+                    .collect();
+
+                loop {
+                    if let Some(choice) = choices.pop() {
+                        if apply_choice(proof_stack, *pointer, choice, state) {
+                            let env = proof_stack.get_mut(*pointer).unwrap();
+                            env.choices = choices;
+                            *pointer += 1;
+                            break;
+                        }
+                    } else {
+                        if state.config.debug {
+                            println!("[{}]FAILED: {}", depth, state.heap.term_string(goal));
+                        }
+                        match retry(proof_stack, *pointer, state) {
+                            Some(p) => {
+                                *pointer = p;
+                                break;
+                            }
+                            None => return false,
+                        }
+                    }
                 }
             }
         }
@@ -201,7 +220,7 @@ fn apply_choice(
     let env = proof_stack.get_mut(pointer).unwrap();
     env.children = goals.len();
     env.bindings = choice.binding;
-    env.new_clause = choice.new_clause;
+    env.new_clause = choice.clause.clause_type == ClauseType::META;
     env.invent_pred = invented_pred;
     let depth = env.depth + 1;
     // state.heap.print_heap();

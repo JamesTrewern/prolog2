@@ -16,7 +16,11 @@ fn body_pred() {
         .iter(&[ClauseType::BODY])
         .map(|i| state.prog.clauses.get(i).to_string(&state.heap))
         .collect();
-    assert_eq!(&body_clauses,&["mum(tami,james)", "dad(adam,james)"])
+    
+    assert_eq!(body_clauses.len(),["mum(tami,james)", "dad(adam,james)"].len());
+    for bc in body_clauses{
+        assert!(["mum(tami,james)".to_string(), "dad(adam,james)".to_string()].contains(&bc))
+    }
 }
 
 

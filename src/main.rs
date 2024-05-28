@@ -26,20 +26,26 @@ Remove terms from heap when no longer needed
 New Clause rules: constraints, head can't be existing predicate
 */
 fn main() -> ExitCode {
-    let mut state = State::new(Some(
-        Config::new()
-            .max_h_clause(4)
-            .max_h_preds(1)
-            .debug(true)
-            .max_depth(10),
-    ));
+    let mut state = State::new(Some(Config::new().max_h_clause(2).max_h_preds(0).debug(true)));
 
     state.load_file("./examples/family");
 
-    let goals: Box<[usize]> = parse_literals(&tokenise("ancestor(ken,james), ancestor(christine,james)"))
-        .unwrap()
-        .into_iter()
-        .map(|t| t.build_on_heap(&mut state.heap, &mut HashMap::new())).collect();
+    // state.prog.write_prog(&state.heap);
+
+    // let body_clauses: Vec<String> = state
+    //     .prog
+    //     .clauses
+    //     .iter(&[ClauseType::BODY])
+    //     .map(|c| c.1 .1.to_string(&state.heap))
+    //     .collect();
+
+    // for text in body_clauses{
+    //     println!("{text}");
+    // }
+
+    let goals = parser::parse_goals(&tokenise("ancestor(adam,james)"), &mut state.heap).unwrap();
+
+    state.heap.print_heap();
 
     let proof = Proof::new(&goals, &mut state);
 

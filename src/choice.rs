@@ -1,37 +1,54 @@
 use std::mem::ManuallyDrop;
 
-use crate::{clause::*,unification::*};
+use crate::{
+    clause::{self, *},
+    unification::*,
+};
 use crate::{Heap, State};
 
-
-#[derive(Debug)]
 pub struct Choice {
-    pub clause: usize, // index in program clause bank
+    pub clause: Clause, // index in program clause bank
     pub binding: Binding,
-    pub new_clause: bool,
 }
 
 impl Choice {
+    pub fn build_choice(goal: usize, clause: usize, state: &mut State) -> Option<Choice> {
+        let clause = state.prog.clauses.get(clause);
+        println!("{:?}", &clause[..]);
+        if let Some(binding) = unify(clause[0], goal, &state.heap) {
+            if !state.prog.check_constraints(&binding, &state.heap) {
+                println!("{binding:?}");
+                Some(Choice { clause, binding})
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn choose(&mut self, state: &mut State) -> (Vec<usize>, bool) {
         // self.binding.undangle_const(&mut state.heap);
-        if self.clause == Heap::CON_PTR{
-            return (vec![],false);
-        }
         let goals = self.build_goals(state);
-        if state.config.debug{
-            println!("Matched with: {}", state.prog.clauses.get(self.clause).to_string(&state.heap));
+        if state.config.debug {
+            println!(
+                "Matched with: {}",
+                self.clause.to_string(&state.heap)
+            );
             println!("Goals: {goals:?}");
         }
-        let invented_pred = if self.new_clause {
+        let invented_pred = if self.clause.clause_type == ClauseType::META {
             let new_clause: Clause = self.build_clause(state); //Use binding to make new clause
-            if state.config.debug{
-                println!("New Clause: {}, {:?}, H size: {}", new_clause.to_string(&state.heap), &new_clause[..], state.prog.h_size);
+            if state.config.debug {
+                println!(
+                    "New Clause: {}, {:?}, H size: {}",
+                    new_clause.to_string(&state.heap),
+                    &new_clause[..],
+                    state.prog.h_size
+                );
             }
-            let (pred_symbol,_) = new_clause.symbol_arity(&state.heap);
-            match state
-                .prog
-                .add_h_clause(new_clause, &mut state.heap)
-            {
+            let (pred_symbol, _) = new_clause.symbol_arity(&state.heap);
+            match state.prog.add_h_clause(new_clause, &mut state.heap) {
                 Some(invented_pred) => {
                     self.binding.push((pred_symbol, invented_pred));
                     true
@@ -43,16 +60,20 @@ impl Choice {
         };
 
         state.heap.bind(&self.binding);
-        if state.config.debug{
-            println!("Bindings: {}, {:?}", self.binding.to_string(&state.heap), self.binding);
+        if state.config.debug {
+            println!(
+                "Bindings: {}, {:?}",
+                self.binding.to_string(&state.heap),
+                self.binding
+            );
         }
 
-        (goals,invented_pred)
-        
+        (goals, invented_pred)
     }
+
     pub fn build_goals(&mut self, state: &mut State) -> Vec<usize> {
         let mut goals: Vec<usize> = vec![];
-        for body_literal in &state.prog.clauses.get(self.clause)[1..] {
+        for body_literal in &self.clause[1..] {
             goals.push(
                 match build_str(&mut self.binding, *body_literal, &mut state.heap, &mut None) {
                     (new_goal, false) => new_goal,
@@ -64,21 +85,22 @@ impl Choice {
     }
     pub fn build_clause(&mut self, state: &mut State) -> Clause {
         let mut uqvar_binding: Option<Binding> = Some(vec![]);
-        // let new_clause:Box<[usize]> = Box::new_uninit_slice(src_clause.len());
-        // let mut new_clause: Vec<usize> = Vec::with_capacity(self.clause.len());
-
-        let src_clause = state.prog.clauses.get(self.clause);
-        let mut new_literals: Box<[usize]> = vec![0; src_clause.len()].into_boxed_slice();
-        for i in 0..src_clause.len() {
-            new_literals[i] = match build_str(&mut self.binding, src_clause[i],&mut state.heap, &mut uqvar_binding) {
+        let mut new_literals: Box<[usize]> = vec![0; self.clause.len()].into_boxed_slice();
+        for i in 0..self.clause.len() {
+            new_literals[i] = match build_str(
+                &mut self.binding,
+                self.clause[i],
+                &mut state.heap,
+                &mut uqvar_binding,
+            ) {
                 (new_heap_i, false) => new_heap_i,
-                _ => src_clause[i],
+                _ => self.clause[i],
             }
         }
 
-        Clause{
+        Clause {
             clause_type: ClauseType::HYPOTHESIS,
-            literals: ManuallyDrop::new(new_literals)
+            literals: ManuallyDrop::new(new_literals),
         }
     }
 }

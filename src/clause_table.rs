@@ -2,21 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, mem::ManuallyDrop, ops::{Index, R
 
 use crate::{clause::*, Heap};
 
-fn order_clauses(c1: &(ClauseType, usize, usize), c2: &(ClauseType, usize, usize)) -> Ordering {
-    let o1 = match c1.0 {
-        ClauseType::CLAUSE => 1,
-        ClauseType::BODY => 2,
-        ClauseType::META => 3,
-        ClauseType::HYPOTHESIS => 4,
-    };
-    let o2 = match c2.0 {
-        ClauseType::CLAUSE => 1,
-        ClauseType::BODY => 2,
-        ClauseType::META => 3,
-        ClauseType::HYPOTHESIS => 4,
-    };
-    o1.cmp(&o2)
-}
+
 
 pub(crate) struct ClauseTable {
     pub clauses: Vec<(ClauseType, usize, usize)>,
@@ -47,8 +33,34 @@ impl<'a> ClauseTable {
         self.literal_addrs.extend_from_slice(&literals);
     }
 
-    pub fn sort_clauses(&mut self) {
-        self.clauses.sort_by(|c1, c2| order_clauses(c1, c2));
+    fn order_clauses(c1: &(ClauseType, usize, usize), c2: &(ClauseType, usize, usize), literals: &[usize], heap: &Heap) -> Ordering {
+        let o1 = match c1.0 {
+            ClauseType::CLAUSE => 1,
+            ClauseType::BODY => 2,
+            ClauseType::META => 3,
+            ClauseType::HYPOTHESIS => 4,
+        };
+        let o2 = match c2.0 {
+            ClauseType::CLAUSE => 1,
+            ClauseType::BODY => 2,
+            ClauseType::META => 3,
+            ClauseType::HYPOTHESIS => 4,
+        };
+        match o1.cmp(&o2){
+            Ordering::Equal => {
+                let (symbol1, arity1) = heap.str_symbol_arity(literals[c1.1]);
+                let (symbol2, arity2) = heap.str_symbol_arity(literals[c2.1]);
+                match  symbol1.cmp(&symbol2){
+                    Ordering::Equal => arity1.cmp(&arity2),
+                    v => v
+                }
+            },
+            v => v,
+        }
+    }
+
+    pub fn sort_clauses(&mut self, heap: &Heap) {
+        self.clauses.sort_by(|c1, c2| Self::order_clauses(c1, c2, &self.literal_addrs, heap));
     }
 
     pub fn remove_clause(&mut self, i: usize){

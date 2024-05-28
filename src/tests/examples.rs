@@ -33,6 +33,8 @@ fn ancestor_1() {
         println!("Hypothesis[{proofs}]: {branch:?}\n");
         proofs += 1;
     }
+
+    assert!(proofs > 0)
 }
 
 #[test]

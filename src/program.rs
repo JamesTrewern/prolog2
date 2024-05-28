@@ -13,9 +13,18 @@ use crate::{
 
 const PRED_NAME: &'static str = "James";
 
+enum Predicate {
+    Function(PredicateFN),
+    Clauses(Box<[usize]>)
+}
+
+pub enum CallRes {
+    Function(PredicateFN),
+    Clauses(Box<dyn Iterator<Item = usize>>)
+}
 pub struct Program {
-    pub predicate_functions: HashMap<(usize, usize), PredicateFN>,
-    pub predicates: HashMap<(usize, usize), Box<[usize]>>, //(id, arity): Predicate
+    // pub predicate_functions: HashMap<(usize, usize), PredicateFN>,
+    pub predicates: HashMap<(usize, usize), Predicate>, //(id, arity): Predicate
     pub clauses: ClauseTable,
     pub constraints: Vec<Box<[(usize, usize)]>>,
     pub invented_preds: usize,
@@ -27,7 +36,7 @@ impl Program {
     pub fn new() -> Program {
         Program {
             predicates: HashMap::new(),
-            predicate_functions: HashMap::new(),
+            // predicate_functions: HashMap::new(),
             clauses: ClauseTable::new(),
             invented_preds: 0,
             h_size: 0,
@@ -36,102 +45,81 @@ impl Program {
         }
     }
 
-    fn match_clause(
-        &self,
-        clause_i: usize,
-        clause: Clause,
-        goal_addr: usize,
-        heap: &Heap,
-    ) -> Option<Choice> {
-        if let Some(binding) = unify(clause[0], goal_addr, heap) {
-            if clause.clause_type != ClauseType::CLAUSE {
-                if self.check_constraints(&binding, heap) {
-                    return None;
-                }
-            }
-            Some(Choice {
-                clause: clause_i,
-                binding,
-                new_clause: clause.clause_type == ClauseType::META,
-            })
-        } else {
-            None
-        }
-    }
+    // fn match_clause(
+    //     &self,
+    //     clause_i: usize,
+    //     clause: Clause,
+    //     goal_addr: usize,
+    //     heap: &Heap,
+    // ) -> Option<Choice> {
+    //     if let Some(binding) = unify(clause[0], goal_addr, heap) {
+    //         if clause.clause_type != ClauseType::CLAUSE {
+    //             if self.check_constraints(&binding, heap) {
+    //                 return None;
+    //             }
+    //         }
+    //         Some(Choice {
+    //             clause: clause_i,
+    //             binding,
+    //             new_clause: clause.clause_type == ClauseType::META,
+    //         })
+    //     } else {
+    //         None
+    //     }
+    // }
 
-    pub fn call_predfn(
-        &mut self,
-        goal_addr: usize,
-        heap: &mut Heap,
-        config: &mut Config,
-    ) -> Option<bool> {
-        let (symbol, arity) = heap.str_symbol_arity(goal_addr);
-        if let Some(predfn) = self.predicate_functions.get(&(symbol, arity)) {
-            Some(predfn(goal_addr, heap, config, self))
-        } else {
-            None
-        }
-    }
+    // pub fn call_predfn(
+    //     &mut self,
+    //     goal_addr: usize,
+    //     heap: &mut Heap,
+    //     config: &mut Config,
+    // ) -> Option<bool> {
+    //     let (symbol, arity) = heap.str_symbol_arity(goal_addr);
+    //     if let Some(predfn) = self.predicate_functions.get(&(symbol, arity)) {
+    //         Some(predfn(goal_addr, heap, config, self))
+    //     } else {
+    //         None
+    //     }
+    // }
 
-    pub fn call(&mut self, goal_addr: usize, heap: &mut Heap, config: &mut Config) -> Vec<Choice> {
+    pub fn call(&mut self, goal_addr: usize, heap: &mut Heap, config: &mut Config) -> CallRes {
         let mut choices: Vec<Choice> = vec![];
-
-        if let Some(res) = self.call_predfn(goal_addr, heap, config) {
-            if res {
-                return vec![Choice {
-                    clause: Heap::CON_PTR,
-                    binding: vec![],
-                    new_clause: false,
-                }];
-            } else {
-                return vec![];
-            }
-        }
 
         let (mut symbol, arity) = heap.str_symbol_arity(goal_addr);
         if symbol < Heap::CON_PTR {
             symbol = heap[heap.deref_addr(symbol)].1;
         }
 
-        if let Some(clauses) = self.predicates.get(&(symbol, arity)) {
-            for i in clauses.iter() {
-                let clause = self.clauses.get(*i);
-                if let Some(choice) = self.match_clause(*i, clause, goal_addr, heap) {
-                    choices.push(choice)
-                }
-            }
-        } else {
-            let iterator = if symbol < Heap::CON_PTR {
-                if self.h_size == config.max_h_clause || self.invented_preds == config.max_h_pred {
-                    self.clauses
-                        .iter(&[ClauseType::BODY, ClauseType::HYPOTHESIS])
+
+        match self.predicates.get(&(symbol, arity)) {
+            Some(Predicate::Function(function)) => CallRes::Function(*function),
+            Some(Predicate::Clauses(clauses)) => {CallRes::Clauses(Box::new(clauses[0]..clauses.len()))}, //TO DO sort clause table so that this can be range
+            None => {
+                let iterator = if symbol < Heap::CON_PTR {
+                    if self.h_size == config.max_h_clause || self.invented_preds == config.max_h_pred {
+                        self.clauses
+                            .iter(&[ClauseType::BODY, ClauseType::HYPOTHESIS])
+                    } else {
+                        self.clauses
+                            .iter(&[ClauseType::BODY, ClauseType::META, ClauseType::HYPOTHESIS])
+                    }
                 } else {
-                    self.clauses
-                        .iter(&[ClauseType::BODY, ClauseType::META, ClauseType::HYPOTHESIS])
-                }
-            } else {
-                if self.h_size == config.max_h_clause {
-                    self.clauses.iter(&[ClauseType::HYPOTHESIS])
-                } else {
-                    self.clauses
-                        .iter(&[ClauseType::META, ClauseType::HYPOTHESIS])
-                }
-            };
-            //TO DO use clause returned by iterator
-            for i in iterator {
-                let clause = self.clauses.get(i);
-                if let Some(choice) = self.match_clause(i, clause, goal_addr, heap) {
-                    choices.push(choice);
-                }
-            }
+                    if self.h_size == config.max_h_clause {
+                        self.clauses.iter(&[ClauseType::HYPOTHESIS])
+                    } else {
+                        self.clauses
+                            .iter(&[ClauseType::META, ClauseType::HYPOTHESIS])
+                    }
+                };
+                CallRes::Clauses(Box::new(iterator))
+            },
         }
-        choices
     }
 
     pub fn add_body_pred(&mut self, symbol: usize, arity: usize, heap: &Heap) {
         self.organise_clause_table(heap);
         self.body_preds.push((symbol, arity));
-        if let Some(clauses) = self.predicates.get(&(symbol, arity)) {
+        if let Some(Predicate::Clauses(clauses)) = self.predicates.get(&(symbol, arity)) {
             for clause in clauses.iter() {
                 self.clauses.set_body(*clause)
             }
@@ -220,14 +208,14 @@ impl Program {
     pub fn add_pred_module(&mut self, pred_module: PredModule, heap: &mut Heap) {
         for (symbol, arity, predfn) in pred_module {
             let symbol = heap.add_const_symbol(symbol);
-            self.predicate_functions.insert((symbol, *arity), *predfn);
+            self.predicates.insert((symbol, *arity), Predicate::Function(*predfn));
         }
     }
 
     pub fn organise_clause_table(&mut self, heap: &Heap) {
-        self.clauses.sort_clauses();
+        self.clauses.sort_clauses(heap);
         self.clauses.find_flags();
-        self.predicates = self.clauses.predicate_map(heap)
+        self.predicates.extend(self.clauses.predicate_map(heap).into_iter().map(|(k,v)| (k, Predicate::Clauses(v))))
     }
 }
 
