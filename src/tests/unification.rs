@@ -1,11 +1,12 @@
-use crate::{heap::{Heap, Tag}, unification::*};
-
-
+use crate::{
+    heap::heap::{Heap, Tag},
+    resolution::unification::{build_str, unify, Binding},
+};
 
 #[test]
-fn build_clause_literal_with_substr(){
+fn build_clause_literal_with_substr() {
     let p = Heap::CON_PTR;
-    let x = Heap::CON_PTR+1;
+    let x = Heap::CON_PTR + 1;
     // P(X,Q(Y)) \X
     let mut heap = Heap::from_slice(&[
         (Tag::STR, 1),
@@ -19,26 +20,32 @@ fn build_clause_literal_with_substr(){
         (Tag::CON, x),
     ]);
 
-    let mut binding: Binding = vec![(4,7),(5,8)];
-    let (new_goal, _) = build_str(&mut binding, 3, &mut heap, &mut Some(vec![]));
+    let mut binding = Binding::new();
+    binding.push((4, 7));
+    binding.push((5, 8));
 
-    assert_eq!(&heap[new_goal-3..], &[
-        (Tag::STR, 1),
-        (Tag::REF, new_goal-2),
-        (Tag::REFC, new_goal-1),
-        (Tag::STR, 2),
-        (Tag::CON, p),
-        (Tag::CON, x),
-        (Tag::StrRef, new_goal-3)
-    ])
+    let (new_goal, _) = build_str(&mut binding, 3, &mut heap, &mut Some(Binding::new()));
+
+    assert_eq!(
+        &heap[new_goal - 3..],
+        &[
+            (Tag::STR, 1),
+            (Tag::REF, new_goal - 2),
+            (Tag::REFC, new_goal - 1),
+            (Tag::STR, 2),
+            (Tag::CON, p),
+            (Tag::CON, x),
+            (Tag::StrRef, new_goal - 3)
+        ]
+    )
 }
 
 #[test]
-fn build_goal_with_sub_str(){
+fn build_goal_with_sub_str() {
     let p = Heap::CON_PTR;
-    let q = Heap::CON_PTR+1;
-    let x = Heap::CON_PTR+2;
-    let y = Heap::CON_PTR+3;
+    let q = Heap::CON_PTR + 1;
+    let x = Heap::CON_PTR + 2;
+    let y = Heap::CON_PTR + 3;
 
     // p(q(X,Y))
     let mut heap = Heap::from_slice(&[
@@ -53,26 +60,31 @@ fn build_goal_with_sub_str(){
         (Tag::CON, y),
     ]);
 
-    let mut binding: Binding = vec![(2,7),(3,8)];
+    let mut binding = Binding::new();
+    binding.push((2, 7));
+    binding.push((3, 8));
 
     let (new_goal, _) = build_str(&mut binding, 4, &mut heap, &mut None);
 
-    assert_eq!(&heap[new_goal-4..], &[
-        (Tag::STR, 2),
-        (Tag::CON, q),
-        (Tag::CON, x),
-        (Tag::CON, y),
-        (Tag::STR, 1),
-        (Tag::CON, p),
-        (Tag::StrRef, new_goal-4),
-    ])
+    assert_eq!(
+        &heap[new_goal - 4..],
+        &[
+            (Tag::STR, 2),
+            (Tag::CON, q),
+            (Tag::CON, x),
+            (Tag::CON, y),
+            (Tag::STR, 1),
+            (Tag::CON, p),
+            (Tag::StrRef, new_goal - 4),
+        ]
+    )
 }
 
 #[test]
-fn unfify_const_structs(){
+fn unfify_const_structs() {
     let p = Heap::CON_PTR;
-    let a = Heap::CON_PTR+1;
-    let b = Heap::CON_PTR+2;
+    let a = Heap::CON_PTR + 1;
+    let b = Heap::CON_PTR + 2;
     let heap = Heap::from_slice(&[
         (Tag::STR, 2),
         (Tag::CON, p),
@@ -85,14 +97,14 @@ fn unfify_const_structs(){
     ]);
 
     let binding = unify(0, 4, &heap).unwrap();
-    assert_eq!(&binding,&[]);
+    assert_eq!(&binding[..], &[]);
 }
 
 #[test]
-fn unfify_var_arguments_with_consts(){
+fn unfify_var_arguments_with_consts() {
     let p = Heap::CON_PTR;
-    let a = Heap::CON_PTR+1;
-    let b = Heap::CON_PTR+2;
+    let a = Heap::CON_PTR + 1;
+    let b = Heap::CON_PTR + 2;
     let heap = Heap::from_slice(&[
         (Tag::STR, 2),
         (Tag::CON, p),
@@ -105,11 +117,11 @@ fn unfify_var_arguments_with_consts(){
     ]);
 
     let binding = unify(0, 4, &heap).unwrap();
-    assert_eq!(&binding,&[(6,2),(3,7)]);
+    assert_eq!(&binding[..], &[(6, 2), (3, 7)]);
 }
 
 #[test]
-fn unfify_var_arguments_consts(){
+fn unfify_var_arguments_consts() {
     let p = Heap::CON_PTR;
     let heap = Heap::from_slice(&[
         (Tag::STR, 2),
@@ -123,11 +135,11 @@ fn unfify_var_arguments_consts(){
     ]);
 
     let binding = unify(0, 4, &heap).unwrap();
-    assert_eq!(&binding,&[(2,6),(3,7)]);
+    assert_eq!(&binding[..], &[(2, 6), (3, 7)]);
 }
 
 #[test]
-fn unfify_var_arguments_with_meta(){
+fn unfify_var_arguments_with_meta() {
     let p = Heap::CON_PTR;
     let heap = Heap::from_slice(&[
         (Tag::STR, 2),
@@ -141,14 +153,14 @@ fn unfify_var_arguments_with_meta(){
     ]);
 
     let binding = unify(0, 4, &heap).unwrap();
-    assert_eq!(&binding,&[(1,5),(2,6),(3,7)]);
+    assert_eq!(&binding[..], &[(1, 5), (2, 6), (3, 7)]);
 }
 
 #[test]
-fn unfify_const_arguments_with_meta(){
+fn unfify_const_arguments_with_meta() {
     let p = Heap::CON_PTR;
-    let a = Heap::CON_PTR+1;
-    let b = Heap::CON_PTR+2;
+    let a = Heap::CON_PTR + 1;
+    let b = Heap::CON_PTR + 2;
     let heap = Heap::from_slice(&[
         (Tag::STR, 2),
         (Tag::REF, 1),
@@ -161,15 +173,15 @@ fn unfify_const_arguments_with_meta(){
     ]);
 
     let binding = unify(0, 4, &heap).unwrap();
-    assert_eq!(&binding,&[(1,5),(2,6),(3,7)]);
+    assert_eq!(&binding[..], &[(1, 5), (2, 6), (3, 7)]);
 }
 
 #[test]
-fn unfify_const_with_var_list(){
+fn unfify_const_with_var_list() {
     let a = Heap::CON_PTR;
-    let b = Heap::CON_PTR+1;
+    let b = Heap::CON_PTR + 1;
     let heap = Heap::from_slice(&[
-        (Tag::LIS,1),
+        (Tag::LIS, 1),
         (Tag::CON, a),
         (Tag::LIS, 3),
         (Tag::CON, b),
@@ -182,15 +194,15 @@ fn unfify_const_with_var_list(){
     ]);
 
     let binding = unify(0, 5, &heap).unwrap();
-    assert_eq!(&binding,&[(6,1),(8,3),(9,4)]);
+    assert_eq!(&binding[..], &[(6, 1), (8, 3), (9, 4)]);
 }
 
 #[test]
-fn unfify_const_lists(){
+fn unfify_const_lists() {
     let a = Heap::CON_PTR;
-    let b = Heap::CON_PTR+1;
+    let b = Heap::CON_PTR + 1;
     let heap = Heap::from_slice(&[
-        (Tag::LIS,1),
+        (Tag::LIS, 1),
         (Tag::CON, a),
         (Tag::LIS, 3),
         (Tag::CON, b),
@@ -199,19 +211,19 @@ fn unfify_const_lists(){
         (Tag::CON, a),
         (Tag::LIS, 8),
         (Tag::CON, b),
-        Heap::EMPTY_LIS
+        Heap::EMPTY_LIS,
     ]);
 
     let binding = unify(0, 5, &heap).unwrap();
-    assert_eq!(&binding,&[]);
+    assert_eq!(&binding[..], &[]);
 }
 
 #[test]
-fn unfify_const_with_meta_list(){
+fn unfify_const_with_meta_list() {
     let a = Heap::CON_PTR;
-    let b = Heap::CON_PTR+1;
+    let b = Heap::CON_PTR + 1;
     let heap = Heap::from_slice(&[
-        (Tag::LIS,1),
+        (Tag::LIS, 1),
         (Tag::CON, a),
         (Tag::LIS, 3),
         (Tag::CON, b),
@@ -224,14 +236,14 @@ fn unfify_const_with_meta_list(){
     ]);
 
     let binding = unify(0, 5, &heap).unwrap();
-    assert_eq!(&binding,&[(6,1),(8,3),(9,4)]);
+    assert_eq!(&binding[..], &[(6, 1), (8, 3), (9, 4)]);
 }
 
 #[test]
-fn unify_ref_to_con_with_con(){
+fn unify_ref_to_con_with_con() {
     let p = Heap::CON_PTR;
-    let a = Heap::CON_PTR+1;
-    let b = Heap::CON_PTR+2;
+    let a = Heap::CON_PTR + 1;
+    let b = Heap::CON_PTR + 2;
     let heap = Heap::from_slice(&[
         (Tag::STR, 2),
         (Tag::CON, p),
@@ -246,6 +258,5 @@ fn unify_ref_to_con_with_con(){
 
     let binding = unify(0, 5, &heap).unwrap();
 
-    assert_eq!(&binding,&[(8,3)]);
+    assert_eq!(&binding[..], &[(8, 3)]);
 }
- 

@@ -1,70 +1,68 @@
 use std::mem;
+use crate::{heap::heap::{Heap, Tag}, interface::state::State};
 
-use crate::{heap::Tag, state::Config, Heap, Program};
 use super::{get_module, PredModule};
 
-fn body_pred(call: usize, heap: &mut Heap, _: &mut Config, prog: &mut Program) -> bool{
-    let symbol = if let (Tag::CON, symbol) = heap[call+2]{
+fn body_pred(call: usize, state: &mut State) -> bool{
+    let symbol = if let (Tag::CON, symbol) = state.heap[call+2]{
         symbol
     }else{
         return false;
     };
-    let arity: isize = if let (Tag::INT, arity) = &heap[call+3]{
+    let arity: isize = if let (Tag::INT, arity) = &state.heap[call+3]{
         unsafe { mem::transmute_copy(arity) }
     }else{
         return false;
     };
-    prog.add_body_pred(symbol, arity as usize, heap);
+    state.prog.add_body_pred(symbol, arity as usize, &state.heap);
     true
 }
 
-fn max_h_preds(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> bool{
-    if let (Tag::INT, value) = heap[call+2]{
-        config.max_h_pred = value;
+fn max_h_preds(call: usize, state: &mut State) -> bool{
+    if let (Tag::INT, value) = state.heap[call+2]{
+        state.config.max_h_pred = value;
         true
     }else{
         false
     }
 }
 
-fn max_h_clause(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> bool{
-    if let (Tag::INT, value) = heap[call+2]{
-        config.max_h_clause = value;
+fn max_h_clause(call: usize, state: &mut State) -> bool{
+    if let (Tag::INT, value) = state.heap[call+2]{
+        state.config.max_h_clause = value;
         true
     }else{
         false
     }
 }
 
-fn share_preds(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> bool{
-    let value = match heap[call+2] {
+fn share_preds(call: usize, state: &mut State) -> bool{
+    let value = match state.heap[call+2] {
         Heap::TRUE => true,
         Heap::FALSE => false,
         _ => {println!("Value passed to share_preds wasn't true/false"); return false;}
     };
-    config.share_preds = value;
+    state.config.share_preds = value;
     true
 }
 
-fn debug(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> bool{
-    let value = match heap[call+2] {
+fn debug(call: usize, state: &mut State) -> bool{
+    let value = match state.heap[call+2] {
         Heap::TRUE => true,
         Heap::FALSE => false,
         _ => {println!("Value passed to debug wasn't true/false"); return false;}
     };
-    config.debug = value;
+    state.config.debug = value;
     true
 }
 
-pub fn load_module(call: usize, heap: &mut Heap, config: &mut Config, prog: &mut Program) -> bool {
-    let name = match heap[call+2] {
-        (Tag::CON, id) => heap.symbols.get_const(id),
+pub fn load_module(call: usize, state: &mut State) -> bool {
+    let name = match state.heap[call+2] {
+        (Tag::CON, id) => state.heap.term_string(call+2),
         _ => return false
     };
-    match get_module(name) {
-        Some(pred_module) => {prog.add_pred_module(pred_module, heap); true},
-        None => {println!("{name} is not a recognised module"); false},
-    }
+    state.load_module(&name);
+    true
 }
 
 pub static CONFIG: PredModule = &[

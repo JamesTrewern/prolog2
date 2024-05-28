@@ -1,16 +1,15 @@
-use crate::{symbol_db::SymbolDB, term::Term, unification};
+use super::symbol_db::SymbolDB;
 use std::{
     mem,
     ops::{Deref, DerefMut, RangeInclusive},
     usize,
 };
-use unification::Binding;
 use fsize::fsize;
 
 /** Tag which describes cell type */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum Tag {
+pub(crate) enum Tag {
     REF,    //Query Variable
     REFC,   //Clause Variable
     REFA,   //Universally Quantified variable
@@ -33,7 +32,7 @@ pub type Cell = (Tag, usize);
 /** Heap data structure
  * Stores contigious block of cells describing all compliled terms
  */
-pub struct Heap {
+pub(crate) struct Heap {
     cells: Vec<Cell>,
     pub symbols: SymbolDB,
     pub query_space: bool,
@@ -120,7 +119,7 @@ impl Heap {
     /** Update address value of ref cells affected by binding
      * @binding: List of (usize, usize) tuples representing heap indexes, left -> right
     */
-    pub fn bind(&mut self, binding: &Binding) {
+    pub fn bind(&mut self, binding: &[(usize,usize)]) {
         for (src, target) in binding {
             if let (Tag::REF, pointer) = &mut self[*src] {
                 if *pointer != *src {
@@ -135,7 +134,7 @@ impl Heap {
     /** Reset Ref cells affected by binding to self references
      * @binding: List of (usize, usize) tuples representing heap indexes, left -> right
     */
-    pub fn unbind(&mut self, binding: &Binding) {
+    pub fn unbind(&mut self, binding: &[(usize,usize)]) {
         for (src, _target) in binding {
             if let (tag @ (Tag::REF | Tag::CON), pointer) = &mut self[*src] {
                 if *tag == Tag::CON {
@@ -269,35 +268,6 @@ impl Heap {
     pub fn str_symbol_arity(&self, addr: usize) -> (usize, usize) {
         let symbol = self[self.deref_addr(addr + 1)].1;
         (symbol, self[addr].1)
-    }
-
-    /**Create term object indepent of heap*/
-    pub fn get_term_object(&self, addr: usize) -> Term {
-        let addr = self.deref_addr(addr);
-        match self[addr].0 {
-            Tag::STR => Term::STR(
-                self.str_iterator(addr)
-                    .map(|addr: usize| self.get_term_object(addr))
-                    .collect(),
-            ),
-            Tag::StrRef => Term::STR(
-                self.str_iterator(self[addr].1)
-                    .map(|addr: usize| self.get_term_object(addr))
-                    .collect(),
-            ),
-            Tag::LIS => Term::LIS(todo!(), todo!()),
-            Tag::REFC | Tag::REF => Term::VAR(match self.symbols.get_var(addr) {
-                Some(symbol) => symbol.into(),
-                None => format!("_{addr}").into(),
-            }),
-            Tag::REFA => Term::VARUQ(match self.symbols.get_var(addr) {
-                Some(symbol) => symbol.into(),
-                None => format!("_{addr}").into(),
-            }),
-            Tag::INT => Term::INT(unsafe { mem::transmute(self[addr].1) }),
-            Tag::FLT => Term::FLT(unsafe { mem::transmute(self[addr].1) }),
-            Tag::CON => Term::CON(self.symbols.get_const(self[addr].1).into()),
-        }
     }
 
     /**Collect all REF, REFC, and REFA cells in structure or referenced by structure

@@ -1,4 +1,4 @@
-use crate::{clause::*, clause_table::ClauseTable, parser::tokenise, Heap};
+use crate::{heap::heap::Heap, interface::parser::{parse_literals, tokenise}, program::{clause::{Clause, ClauseType}, clause_table::ClauseTable}};
 
 fn setup() -> (Heap, ClauseTable) {
     let mut heap = Heap::new(200);
@@ -15,7 +15,7 @@ fn setup() -> (Heap, ClauseTable) {
     ];
 
     for (clause_type, clause_string) in clauses {
-        let mut clause = Clause::parse_clause(&tokenise(&clause_string), &mut heap).unwrap();
+        let mut clause = Clause::parse_clause(parse_literals(&tokenise(&clause_string)).unwrap(), &mut heap);
         clause.clause_type = clause_type;
         clause_table.add_clause(clause)
     }
@@ -84,7 +84,7 @@ fn predicate_map(){
     //add 2 p/2 clauses
 
     for clause_string in ["p(a,b)", "p(X,Y)"] {
-        let clause = Clause::parse_clause(&tokenise(&clause_string), &mut heap).unwrap();
+        let mut clause = Clause::parse_clause(parse_literals(&tokenise(&clause_string)).unwrap(), &mut heap);
         clause_table.add_clause(clause)
     }
 
@@ -118,7 +118,7 @@ fn complex_ordering(){
     ];
 
     for (clause_type, clause_string) in clauses {
-        let mut clause = Clause::parse_clause(&tokenise(&clause_string), &mut heap).unwrap();
+        let mut clause = Clause::parse_clause(parse_literals(&tokenise(&clause_string)).unwrap(), &mut heap);
         clause.clause_type = clause_type;
         clause_table.add_clause(clause)
     }

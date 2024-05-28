@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::{term::Term, Heap};
+use super::term::Term;
 
 const DELIMINATORS: &[char] = &[
     '(', ')', ',', '.', ' ', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|', '>', '<',
@@ -240,11 +240,4 @@ pub fn parse_literals(tokens: &[&str]) -> Result<Vec<Term>, String> {
         }
     }
     Ok(term_stack)
-}
-
-pub fn parse_goals(tokens: &[&str], heap: &mut Heap) -> Result<Box<[usize]>, String>{
-    let mut var_ref = HashMap::new();
-    Ok(parse_literals(tokens)?
-    .into_iter()
-    .map(|t| t.build_on_heap(heap, &mut var_ref)).collect())
 }

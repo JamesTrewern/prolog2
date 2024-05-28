@@ -1,18 +1,18 @@
 use crate::{
-    heap::{Heap, Tag},
-    parser::parse_literals,
+    heap::heap::{Heap, Tag},
+    interface::term::Term,
 };
 use std::{collections::HashMap, mem::ManuallyDrop, ops::Deref};
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
-pub enum ClauseType {
+pub(crate) enum ClauseType {
     CLAUSE,
     BODY,
     META,
     HYPOTHESIS,
 }
 
-pub struct Clause {
+pub(crate) struct Clause {
     pub clause_type: ClauseType,
     pub literals: ManuallyDrop<Box<[usize]>>,
 }
@@ -51,8 +51,7 @@ impl Clause {
         heap.str_symbol_arity(self[0])
     }
 
-    pub fn parse_clause(tokens: &[&str], heap: &mut Heap) -> Result<Clause, String> {
-        let terms = parse_literals(tokens)?;
+    pub fn parse_clause(terms: Vec<Term>, heap: &mut Heap) -> Clause {
         let clause_type = if terms.iter().any(|t| t.meta()) {
             ClauseType::META
         } else {
@@ -63,7 +62,7 @@ impl Clause {
             .iter()
             .map(|t| t.build_on_heap(heap, &mut var_ref))
             .collect::<Box<[usize]>>());
-        Ok(Clause { clause_type, literals})
+        Clause { clause_type, literals}
     }
 
     pub fn symbolise_vars(&self, heap: &mut Heap) {

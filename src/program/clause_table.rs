@@ -1,10 +1,8 @@
-use std::{cmp::Ordering, collections::HashMap, mem::ManuallyDrop, ops::{Index, Range}, ptr::slice_from_raw_parts, slice};
+use std::{cmp::Ordering, collections::HashMap, mem::ManuallyDrop, ops::{Index, Range}, ptr::slice_from_raw_parts};
+use crate::heap::heap::Heap;
+use super::clause::{Clause, ClauseType};
 
-use crate::{clause::*, Heap};
-
-
-
-pub(crate) struct ClauseTable {
+pub struct ClauseTable {
     pub clauses: Vec<(ClauseType, usize, usize)>,
     literal_addrs: Vec<usize>,
     pub type_flags: [usize; 4],

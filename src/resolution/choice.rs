@@ -1,10 +1,6 @@
 use std::mem::ManuallyDrop;
-
-use crate::{
-    clause::{self, *},
-    unification::*,
-};
-use crate::{Heap, State};
+use crate::{interface::state::State, program::clause::{Clause, ClauseType}};
+use super::unification::{build_str, unify, Binding};
 
 pub struct Choice {
     pub clause: Clause, // index in program clause bank
@@ -14,10 +10,8 @@ pub struct Choice {
 impl Choice {
     pub fn build_choice(goal: usize, clause: usize, state: &mut State) -> Option<Choice> {
         let clause = state.prog.clauses.get(clause);
-        println!("{:?}", &clause[..]);
         if let Some(binding) = unify(clause[0], goal, &state.heap) {
             if !state.prog.check_constraints(&binding, &state.heap) {
-                println!("{binding:?}");
                 Some(Choice { clause, binding})
             } else {
                 None
@@ -84,7 +78,7 @@ impl Choice {
         goals
     }
     pub fn build_clause(&mut self, state: &mut State) -> Clause {
-        let mut uqvar_binding: Option<Binding> = Some(vec![]);
+        let mut uqvar_binding: Option<Binding> = Some(Binding::new());
         let mut new_literals: Box<[usize]> = vec![0; self.clause.len()].into_boxed_slice();
         for i in 0..self.clause.len() {
             new_literals[i] = match build_str(

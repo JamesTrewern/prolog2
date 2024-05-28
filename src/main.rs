@@ -1,24 +1,14 @@
-mod choice;
-mod clause;
-mod clause_table;
+mod resolution;
 mod heap;
-mod parser;
 mod pred_module;
 mod program;
-mod solver;
-mod state;
-mod symbol_db;
-mod term;
+mod interface;
 mod tests;
-mod unification;
 
-pub(crate) use heap::Heap;
-use parser::{parse_literals, tokenise};
-pub(crate) use program::Program;
-use solver::Proof;
-use state::Config;
-pub(crate) use state::State;
-use std::{collections::HashMap, process::ExitCode};
+use std::process::ExitCode;
+
+use interface::{parser::{self, tokenise}, state::{Config, State}};
+use resolution::solver::Proof;
 
 /*
 
@@ -43,16 +33,6 @@ fn main() -> ExitCode {
     //     println!("{text}");
     // }
 
-    let goals = parser::parse_goals(&tokenise("ancestor(adam,james)"), &mut state.heap).unwrap();
-
-    state.heap.print_heap();
-
-    let proof = Proof::new(&goals, &mut state);
-
-    let mut proofs = 0;
-    for branch in proof {
-        println!("Hypothesis[{proofs}]: {branch:?}\n");
-        proofs += 1;
-    }
+    state.handle_directive(&tokenise("ancestor(adam,james)"));
     ExitCode::SUCCESS
 }

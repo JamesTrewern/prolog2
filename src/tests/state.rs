@@ -1,4 +1,4 @@
-use crate::{heap::Tag, State};
+use crate::{heap::heap::Tag, interface::state::State};
 
 #[test]
 fn load_family() {

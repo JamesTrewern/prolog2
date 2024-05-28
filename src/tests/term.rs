@@ -1,6 +1,8 @@
 use std::{collections::HashMap, f64::consts::PI, mem};
 use fsize::fsize;
-use crate::{heap::Tag, term::Term, Heap};
+
+use crate::{heap::heap::{Heap, Tag}, interface::term::Term};
+
 
 #[test]
 fn build_simple_term(){

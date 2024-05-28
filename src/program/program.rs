@@ -1,25 +1,17 @@
+use super::{clause::{Clause, ClauseType}, clause_table::ClauseTable};
+use crate::{heap::heap::{Heap, Tag}, interface::state::Config, pred_module::{PredModule, PredicateFN}, resolution::unification::Binding};
 use std::collections::HashMap;
-
-use crate::{
-    clause::*,
-    clause_table::ClauseTable,
-    heap::Tag,
-    pred_module::{PredModule, PredicateFN},
-    state::Config,
-    unification::*,
-    Heap,
-};
 
 const PRED_NAME: &'static str = "James";
 
 enum Predicate {
     Function(PredicateFN),
-    Clauses(Box<[usize]>)
+    Clauses(Box<[usize]>),
 }
 
 pub enum CallRes {
     Function(PredicateFN),
-    Clauses(Box<dyn Iterator<Item = usize>>)
+    Clauses(Box<dyn Iterator<Item = usize>>),
 }
 pub struct Program {
     pub clauses: ClauseTable,
@@ -49,18 +41,22 @@ impl Program {
             symbol = heap[heap.deref_addr(symbol)].1;
         }
 
-
         match self.predicates.get(&(symbol, arity)) {
             Some(Predicate::Function(function)) => CallRes::Function(*function),
-            Some(Predicate::Clauses(clauses)) => {CallRes::Clauses(Box::new(clauses[0]..clauses.len()))}, //TO DO sort clause table so that this can be range
+            Some(Predicate::Clauses(clauses)) => CallRes::Clauses(Box::new(clauses[0]..clauses[0] + clauses.len())), //TO DO sort clause table so that this can be range
             None => {
                 let iterator = if symbol < Heap::CON_PTR {
-                    if self.h_size == config.max_h_clause || self.invented_preds == config.max_h_pred {
+                    if self.h_size == config.max_h_clause
+                        || self.invented_preds == config.max_h_pred
+                    {
                         self.clauses
                             .iter(&[ClauseType::BODY, ClauseType::HYPOTHESIS])
                     } else {
-                        self.clauses
-                            .iter(&[ClauseType::BODY, ClauseType::META, ClauseType::HYPOTHESIS])
+                        self.clauses.iter(&[
+                            ClauseType::BODY,
+                            ClauseType::META,
+                            ClauseType::HYPOTHESIS,
+                        ])
                     }
                 } else {
                     if self.h_size == config.max_h_clause {
@@ -71,7 +67,7 @@ impl Program {
                     }
                 };
                 CallRes::Clauses(Box::new(iterator))
-            },
+            }
         }
     }
 
@@ -95,13 +91,9 @@ impl Program {
     }
 
     //Add clause, If invented predicate symbol return true
-    pub fn add_h_clause(
-        &mut self,
-        clause: Clause,
-        heap: &mut Heap,
-    ) -> Option<usize> {
-        //Build contraints for new clause. This assumes that no unifcation should happen between variable predicate symbols 
-        let mut constraints = Vec::<(usize,usize)>::new();
+    pub fn add_h_clause(&mut self, clause: Clause, heap: &mut Heap) -> Option<usize> {
+        //Build contraints for new clause. This assumes that no unifcation should happen between variable predicate symbols
+        let mut constraints = Vec::<(usize, usize)>::new();
         for i in 0..clause.len() {
             for j in i..clause.len() {
                 match (heap[clause[i] + 1], heap[clause[j] + 1]) {
@@ -133,7 +125,7 @@ impl Program {
             self.invented_preds += 1;
             symbol = heap.add_const_symbol(&format!("{PRED_NAME}_{}", self.invented_preds));
             Some(heap.set_const(symbol))
-        }else{
+        } else {
             None
         }
     }
@@ -171,14 +163,19 @@ impl Program {
     pub fn add_pred_module(&mut self, pred_module: PredModule, heap: &mut Heap) {
         for (symbol, arity, predfn) in pred_module {
             let symbol = heap.add_const_symbol(symbol);
-            self.predicates.insert((symbol, *arity), Predicate::Function(*predfn));
+            self.predicates
+                .insert((symbol, *arity), Predicate::Function(*predfn));
         }
     }
 
     pub fn organise_clause_table(&mut self, heap: &Heap) {
         self.clauses.sort_clauses(heap);
         self.clauses.find_flags();
-        self.predicates.extend(self.clauses.predicate_map(heap).into_iter().map(|(k,v)| (k, Predicate::Clauses(v))))
+        self.predicates.extend(
+            self.clauses
+                .predicate_map(heap)
+                .into_iter()
+                .map(|(k, v)| (k, Predicate::Clauses(v))),
+        )
     }
 }
-

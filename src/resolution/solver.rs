@@ -1,13 +1,7 @@
-use crate::{
-    // clause::*,
-    choice::Choice,
-    clause::ClauseType,
-    program::CallRes,
-    term::Term,
-    unification::*,
-    Heap,
-    State,
-};
+use crate::{interface::{state::State, term::Term}, program::{clause::ClauseType, program::CallRes}};
+
+use super::{choice::Choice, unification::Binding};
+
 
 struct Env {
     goal: usize, // Pointer to heap literal
@@ -23,7 +17,7 @@ impl Env {
     pub fn new(goal: usize, depth: usize) -> Env {
         Env {
             goal,
-            bindings: vec![],
+            bindings: Binding::new(),
             choices: vec![],
             new_clause: false,
             children: 0,
@@ -88,7 +82,7 @@ impl<'a> Iterator for Proof<'a> {
                 .map(|i| {
                     self.state.prog.clauses[i]
                         .iter()
-                        .map(|literal| self.state.heap.get_term_object(*literal))
+                        .map(|literal| Term::build_from_heap(*literal, &self.state.heap))
                         .collect::<Box<[Term]>>()
                 })
                 .collect();
@@ -125,7 +119,7 @@ fn prove(pointer: &mut usize, proof_stack: &mut Vec<Env>, state: &mut State) -> 
         }
         match state.prog.call(goal, &mut state.heap, &mut state.config) {
             CallRes::Function(function) => {
-                if function(goal, &mut state.heap, &mut state.config, &mut state.prog) {
+                if function(goal, state) {
                     *pointer += 1
                 } else {
                     match retry(proof_stack, *pointer, state) {

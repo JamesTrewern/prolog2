@@ -1,13 +1,6 @@
+use super::parser::{parse_literals, remove_comments, tokenise};
+use crate::{heap::heap::Heap, pred_module::get_module, program::{clause::Clause, program::Program}, resolution::solver::Proof};
 use std::{collections::HashMap, fs};
-
-use crate::{
-    clause::{self, *},
-    heap::Heap,
-    parser::{parse_literals, remove_comments, tokenise},
-    pred_module::get_module,
-    program::Program,
-    solver::Proof,
-};
 
 const MAX_H_SIZE: usize = 2; //Max number of clauses in H
 const MAX_INVENTED: usize = 0; //Max invented predicate symbols
@@ -94,29 +87,34 @@ impl State {
         let mut line = 0;
         let tokens = tokenise(&file);
         'outer: for mut segment in tokens.split(|t| *t == ".") {
-
-            loop{
+            loop {
                 match segment.first() {
-                    Some(t) => if *t == "\n"{line += 1; segment = &segment[1..]}else{break;},
+                    Some(t) => {
+                        if *t == "\n" {
+                            line += 1;
+                            segment = &segment[1..]
+                        } else {
+                            break;
+                        }
+                    }
                     None => continue 'outer,
                 }
             }
 
             if segment[0] == ":-" {
-                if let Err(msg) = self.handle_directive(segment){
+                if let Err(msg) = self.handle_directive(segment) {
                     println!("Error after ln[{line}]: {msg}");
                     return;
                 }
             } else {
-                let mut clause = match Clause::parse_clause(segment, &mut self.heap)
-                {
+                let terms = match parse_literals(segment) {
                     Ok(res) => res,
                     Err(msg) => {
                         println!("Error after ln[{line}]: {msg}");
                         return;
                     }
                 };
-                self.prog.add_clause(clause, &self.heap);
+                self.prog.add_clause(Clause::parse_clause(terms, &mut self.heap), &self.heap);
             }
 
             line += segment.iter().filter(|t| **t == "\n").count();
@@ -125,7 +123,7 @@ impl State {
         self.prog.organise_clause_table(&self.heap);
     }
 
-    pub fn handle_directive(&mut self, segment: &[&str]) -> Result<(),String> {
+    pub fn handle_directive(&mut self, segment: &[&str]) -> Result<(), String> {
         let goals = match parse_literals(segment) {
             Ok(res) => res,
             Err(error) => {

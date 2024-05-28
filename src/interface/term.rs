@@ -1,9 +1,6 @@
-use std::{collections::HashMap, fmt, mem};
+use crate::heap::heap::{Cell, Heap, Tag};
 use fsize::fsize;
-use crate::{
-    heap::{Cell, Tag},
-    Heap,
-};
+use std::{collections::HashMap, fmt, mem};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Term {
@@ -186,6 +183,35 @@ impl Term {
                 Self::build_lis(terms, *explicit_tail, heap, var_ref).1
             }
             Term::STR(terms) => Self::build_str(terms, heap, var_ref).1,
+        }
+    }
+
+    /**Create term object indepent of heap*/
+    pub fn build_from_heap(addr: usize, heap: &Heap) -> Term {
+        let addr = heap.deref_addr(addr);
+        match heap[addr].0 {
+            Tag::STR => Term::STR(
+                heap.str_iterator(addr)
+                    .map(|addr: usize| Self::build_from_heap(addr, heap))
+                    .collect(),
+            ),
+            Tag::StrRef => Term::STR(
+                heap.str_iterator(heap[addr].1)
+                    .map(|addr: usize| Self::build_from_heap(addr, heap))
+                    .collect(),
+            ),
+            Tag::LIS => Term::LIS(todo!(), todo!()),
+            Tag::REFC | Tag::REF => Term::VAR(match heap.symbols.get_var(addr) {
+                Some(symbol) => symbol.into(),
+                None => format!("_{addr}").into(),
+            }),
+            Tag::REFA => Term::VARUQ(match heap.symbols.get_var(addr) {
+                Some(symbol) => symbol.into(),
+                None => format!("_{addr}").into(),
+            }),
+            Tag::INT => Term::INT(unsafe { mem::transmute(heap[addr].1) }),
+            Tag::FLT => Term::FLT(unsafe { mem::transmute(heap[addr].1) }),
+            Tag::CON => Term::CON(heap.symbols.get_const(heap[addr].1).into()),
         }
     }
 

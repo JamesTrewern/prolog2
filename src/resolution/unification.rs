@@ -1,13 +1,16 @@
-use crate::heap::{Heap, Tag};
+use std::ops::Deref;
 
-pub type Binding = Vec<(usize, usize)>;
-pub trait BindingTraits {
-    fn bound(&self, addr: usize) -> Option<usize>;
-    fn to_string(&self, heap: &Heap) -> String;
-}
+use crate::heap::heap::{Heap, Tag};
 
-impl BindingTraits for Binding {
-    fn bound(&self, addr: usize) -> Option<usize> {
+#[derive(Debug)]
+pub struct  Binding  (Vec<(usize, usize)>);
+
+impl  Binding {
+    pub fn new() -> Binding{
+        Binding(Vec::new())
+    }
+
+    pub fn bound(&self, addr: usize) -> Option<usize> {
         // println!("{addr}");
         match self.iter().find(|(a1, _)| *a1 == addr) {
             Some((_, a2)) => match self.bound(*a2) {
@@ -18,7 +21,7 @@ impl BindingTraits for Binding {
         }
     }
 
-    fn to_string(&self, heap: &Heap) -> String {
+    pub fn to_string(&self, heap: &Heap) -> String {
         let mut buffer = String::from("{");
         for binding in self.iter() {
             if let Some(symbol) = heap.symbols.get_var(binding.0){
@@ -26,7 +29,6 @@ impl BindingTraits for Binding {
             }else{
                 buffer += &format!("_{}", binding.0);
             }
-            buffer += &heap.term_string(binding.0);
             buffer += "/";
             if binding.1 < Heap::CON_PTR {
                 buffer += &heap.term_string(binding.1)
@@ -38,6 +40,18 @@ impl BindingTraits for Binding {
         buffer.pop();
         buffer += "}";
         buffer
+    }
+
+    pub fn push(&mut self, bind: (usize, usize)){
+        self.0.push(bind)
+    }
+}
+
+impl Deref for Binding {
+    type Target = [(usize, usize)];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -119,7 +133,7 @@ pub fn unify_rec(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding)
 }
 
 pub fn unify(addr1: usize, addr2: usize, heap: &Heap) -> Option<Binding> {
-    let mut binding: Binding = vec![];
+    let mut binding = Binding::new();
     if unify_rec(addr1, addr2, heap, &mut binding) {
         Some(binding)
     } else {

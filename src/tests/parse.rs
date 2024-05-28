@@ -1,6 +1,6 @@
 use crate::{
-    parser::{parse_literals, tokenise},
-    term::Term,
+    interface::parser::{parse_literals, tokenise},
+    interface::term::Term,
 };
 
 #[test]
