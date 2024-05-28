@@ -116,11 +116,7 @@ impl State {
                         return;
                     }
                 };
-                let sym_arr = self.heap.str_symbol_arity(clause[0]);
-                if self.prog.body_preds.contains(&sym_arr) {
-                    clause.clause_type = ClauseType::BODY;
-                }
-                self.prog.add_clause(clause);
+                self.prog.add_clause(clause, &self.heap);
             }
 
             line += segment.iter().filter(|t| **t == "\n").count();

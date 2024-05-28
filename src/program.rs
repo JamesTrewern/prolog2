@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::{
-    choice::Choice,
     clause::*,
     clause_table::ClauseTable,
     heap::Tag,
@@ -23,13 +22,12 @@ pub enum CallRes {
     Clauses(Box<dyn Iterator<Item = usize>>)
 }
 pub struct Program {
-    // pub predicate_functions: HashMap<(usize, usize), PredicateFN>,
-    pub predicates: HashMap<(usize, usize), Predicate>, //(id, arity): Predicate
     pub clauses: ClauseTable,
-    pub constraints: Vec<Box<[(usize, usize)]>>,
-    pub invented_preds: usize,
+    predicates: HashMap<(usize, usize), Predicate>, //(id, arity): Predicate
+    constraints: Vec<Box<[(usize, usize)]>>,
+    invented_preds: usize,
     pub h_size: usize,
-    pub body_preds: Vec<(usize, usize)>,
+    body_preds: Vec<(usize, usize)>,
 }
 
 impl Program {
@@ -45,46 +43,7 @@ impl Program {
         }
     }
 
-    // fn match_clause(
-    //     &self,
-    //     clause_i: usize,
-    //     clause: Clause,
-    //     goal_addr: usize,
-    //     heap: &Heap,
-    // ) -> Option<Choice> {
-    //     if let Some(binding) = unify(clause[0], goal_addr, heap) {
-    //         if clause.clause_type != ClauseType::CLAUSE {
-    //             if self.check_constraints(&binding, heap) {
-    //                 return None;
-    //             }
-    //         }
-    //         Some(Choice {
-    //             clause: clause_i,
-    //             binding,
-    //             new_clause: clause.clause_type == ClauseType::META,
-    //         })
-    //     } else {
-    //         None
-    //     }
-    // }
-
-    // pub fn call_predfn(
-    //     &mut self,
-    //     goal_addr: usize,
-    //     heap: &mut Heap,
-    //     config: &mut Config,
-    // ) -> Option<bool> {
-    //     let (symbol, arity) = heap.str_symbol_arity(goal_addr);
-    //     if let Some(predfn) = self.predicate_functions.get(&(symbol, arity)) {
-    //         Some(predfn(goal_addr, heap, config, self))
-    //     } else {
-    //         None
-    //     }
-    // }
-
     pub fn call(&mut self, goal_addr: usize, heap: &mut Heap, config: &mut Config) -> CallRes {
-        let mut choices: Vec<Choice> = vec![];
-
         let (mut symbol, arity) = heap.str_symbol_arity(goal_addr);
         if symbol < Heap::CON_PTR {
             symbol = heap[heap.deref_addr(symbol)].1;
@@ -127,7 +86,11 @@ impl Program {
         self.organise_clause_table(heap);
     }
 
-    pub fn add_clause(&mut self, clause: Clause) {
+    pub fn add_clause(&mut self, mut clause: Clause, heap: &Heap) {
+        let sym_arr = heap.str_symbol_arity(clause[0]);
+        if self.body_preds.contains(&sym_arr) {
+            clause.clause_type = ClauseType::BODY;
+        }
         self.clauses.add_clause(clause);
     }
 
