@@ -57,7 +57,6 @@ impl<'a> Iterator for Proof<'a> {
     type Item = Box<[Box<[Term]>]>;
 
     fn next(&mut self) -> Option<Self::Item> {
-
         //If not first attempt at proof backtrack to last choice point
         if self.pointer != 0 {
             match retry(&mut self.proof_stack, self.pointer - 1, &mut self.state) {
@@ -73,7 +72,7 @@ impl<'a> Iterator for Proof<'a> {
 
             //Add symbols to hypothesis variables
             self.state.prog.symbolise_hypothesis(&mut self.state.heap);
-            
+
             //Print goals with query vairables substituted
             for goal in self.goals.iter() {
                 println!("{},", self.state.heap.term_string(*goal))
@@ -101,9 +100,8 @@ impl<'a> Iterator for Proof<'a> {
     }
 }
 
-
 /**Proof loop
- * By 
+ * By
  */
 fn prove(pointer: &mut usize, proof_stack: &mut Vec<Env>, state: &mut State) -> bool {
     loop {
@@ -199,22 +197,19 @@ fn apply_choice(
     mut choice: Choice,
     state: &mut State,
 ) -> bool {
-    if let (goals, invented_pred) = choice.choose(state) {
-        let env = proof_stack.get_mut(pointer).unwrap();
-        env.children = goals.len();
-        env.bindings = choice.binding;
-        env.new_clause = choice.new_clause;
-        env.invent_pred = invented_pred;
-        let depth = env.depth + 1;
-        // state.heap.print_heap();
+    let (goals, invented_pred) = choice.choose(state);
+    let env = proof_stack.get_mut(pointer).unwrap();
+    env.children = goals.len();
+    env.bindings = choice.binding;
+    env.new_clause = choice.new_clause;
+    env.invent_pred = invented_pred;
+    let depth = env.depth + 1;
+    // state.heap.print_heap();
 
-        let mut i = 1;
-        for goal in goals {
-            proof_stack.insert(pointer + i, Env::new(goal, depth));
-            i += 1;
-        }
-        true
-    } else {
-        false
+    let mut i = 1;
+    for goal in goals {
+        proof_stack.insert(pointer + i, Env::new(goal, depth));
+        i += 1;
     }
+    true
 }

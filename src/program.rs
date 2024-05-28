@@ -39,13 +39,12 @@ impl Program {
     fn match_clause(
         &self,
         clause_i: usize,
-        clause_type: ClauseType,
-        clause: &Clause,
+        clause: Clause,
         goal_addr: usize,
         heap: &Heap,
     ) -> Option<Choice> {
         if let Some(binding) = unify(clause[0], goal_addr, heap) {
-            if clause_type != ClauseType::CLAUSE {
+            if clause.clause_type != ClauseType::CLAUSE {
                 if self.check_constraints(&binding, heap) {
                     return None;
                 }
@@ -53,7 +52,7 @@ impl Program {
             Some(Choice {
                 clause: clause_i,
                 binding,
-                new_clause: clause_type == ClauseType::META,
+                new_clause: clause.clause_type == ClauseType::META,
             })
         } else {
             None
@@ -96,8 +95,8 @@ impl Program {
 
         if let Some(clauses) = self.predicates.get(&(symbol, arity)) {
             for i in clauses.iter() {
-                let (clause_type, clause) = self.clauses.get(*i);
-                if let Some(choice) = self.match_clause(*i, clause_type, clause, goal_addr, heap) {
+                let clause = self.clauses.get(*i);
+                if let Some(choice) = self.match_clause(*i, clause, goal_addr, heap) {
                     choices.push(choice)
                 }
             }
@@ -120,8 +119,8 @@ impl Program {
             };
             //TO DO use clause returned by iterator
             for i in iterator {
-                let (clause_type, clause) = self.clauses.get(i);
-                if let Some(choice) = self.match_clause(i, clause_type, clause, goal_addr, heap) {
+                let clause = self.clauses.get(i);
+                if let Some(choice) = self.match_clause(i, clause, goal_addr, heap) {
                     choices.push(choice);
                 }
             }
@@ -140,14 +139,14 @@ impl Program {
         self.organise_clause_table(heap);
     }
 
-    pub fn add_clause(&mut self, clause_type: ClauseType, clause: Box<Clause>) {
-        self.clauses.add_clause(clause, clause_type);
+    pub fn add_clause(&mut self, clause: Clause) {
+        self.clauses.add_clause(clause);
     }
 
     //Add clause, If invented predicate symbol return true
     pub fn add_h_clause(
         &mut self,
-        clause: Box<Clause>,
+        clause: Clause,
         heap: &mut Heap,
     ) -> Option<usize> {
         //Build contraints for new clause. This assumes that no unifcation should happen between variable predicate symbols 
@@ -175,7 +174,7 @@ impl Program {
         let (mut symbol, _) = clause.symbol_arity(heap);
 
         //Add clause to clause table and icrement H clause counter
-        self.clauses.add_clause(clause, ClauseType::HYPOTHESIS);
+        self.clauses.add_clause(clause);
         self.h_size += 1;
 
         //If head predicate is variable invent new symbol
@@ -214,7 +213,7 @@ impl Program {
     pub fn symbolise_hypothesis(&self, heap: &mut Heap) {
         //TO DO could turn unbound refs in H into constants
         for i in self.clauses.iter(&[ClauseType::HYPOTHESIS]) {
-            self.clauses.get(i).1.symbolise_vars(heap);
+            self.clauses.get(i).symbolise_vars(heap);
         }
     }
 

@@ -1,5 +1,5 @@
 use crate::{
-    clause::*,
+    clause::{self, *},
     parser::{parse_goals, tokenise},
     state::Config,
     State,
@@ -10,8 +10,8 @@ fn call_con_head() {
     let mut state = State::new(None);
     state.heap.query_space = false;
     for clause in ["p(X,Y):-q(X,Y)"] {
-        let (ct, c) = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
-        state.prog.add_clause(ct, c)
+        let clause = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
+        state.prog.add_clause(clause)
     }
     state.heap.query_space = true;
     let goal = parse_goals(&tokenise("p(A,B)"), &mut state.heap).unwrap()[0];
@@ -30,8 +30,8 @@ fn call_fact() {
     let mut state = State::new(None);
     state.heap.query_space = false;
     for clause in ["p(x,y)"] {
-        let (ct, c) = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
-        state.prog.add_clause(ct, c)
+        let clause = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
+        state.prog.add_clause(clause)
     }
     state.heap.query_space = true;
     let goal = parse_goals(&tokenise("p(A,B)"), &mut state.heap).unwrap()[0];
@@ -50,8 +50,8 @@ fn call_meta_with_con() {
     let mut state = State::new(None);
     state.heap.query_space = false;
     for clause in ["P(X,Y,Z):-Q(X,Y,Z)\\X,Y"] {
-        let (ct, c) = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
-        state.prog.add_clause(ct, c)
+        let clause = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
+        state.prog.add_clause(clause)
     }
     state.heap.query_space = true;
     let goal = parse_goals(&tokenise("p(a,B,[c])"), &mut state.heap).unwrap()[0];
@@ -74,8 +74,8 @@ fn call_unkown_no_match() {
     let mut state = State::new(None);
     state.heap.query_space = false;
     for clause in ["p(X,Y,Z):-Q(X,Y,Z)\\X,Y"] {
-        let (ct, c) = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
-        state.prog.add_clause(ct, c)
+        let clause = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
+        state.prog.add_clause(clause)
     }
     state.heap.query_space = true;
     let goal = parse_goals(&tokenise("p(A,B)"), &mut state.heap).unwrap()[0];
@@ -88,15 +88,11 @@ fn call_with_var_match_meta_and_body() {
     let mut state = State::new(None);
     state.heap.query_space = false;
     for clause in ["P(X,Y):-Q(X,Y)\\X,Y", "p(X,Y):-q(X)"] {
-        let (ct, c) = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
-        state.prog.add_clause(
-            if ct == ClauseType::CLAUSE {
-                ClauseType::BODY
-            } else {
-                ct
-            },
-            c,
-        )
+        let mut clause = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
+        if clause.clause_type == ClauseType::CLAUSE {
+            clause.clause_type = ClauseType::BODY
+        } 
+        state.prog.add_clause(clause)
     }
     state.heap.query_space = true;
     let goal = parse_goals(&tokenise("P(A,B)"), &mut state.heap).unwrap()[0];
@@ -105,7 +101,7 @@ fn call_with_var_match_meta_and_body() {
     assert!(choices.len() == 2);
 
     let choice = &choices[0];
-    let head = state.prog.clauses.get(choice.clause).1[0];
+    let head = state.prog.clauses.get(choice.clause)[0];
     assert_eq!(
         choice.binding,
         [
@@ -116,7 +112,7 @@ fn call_with_var_match_meta_and_body() {
     );
 
     let choice = &choices[1];
-    let head = state.prog.clauses.get(choice.clause).1[0];
+    let head = state.prog.clauses.get(choice.clause)[0];
     assert_eq!(
         choice.binding,
         [
@@ -132,8 +128,8 @@ fn call_con_head_meta() {
     let mut state = State::new(None);
     state.heap.query_space = false;
     for clause in ["p(X,Y,Z):-Q(X,Y,Z)\\X,Y"] {
-        let (ct, c) = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
-        state.prog.add_clause(ct, c)
+        let clause = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
+        state.prog.add_clause(clause)
     }
     state.heap.query_space = true;
     let goal = parse_goals(&tokenise("p(a,B,[c])"), &mut state.heap).unwrap()[0];
@@ -158,8 +154,8 @@ fn call_list_load_file() {}
 fn max_invented_predicates() {
     let mut state = State::new(Some(Config::new().max_h_preds(0)));
     state.heap.query_space = false;
-    let (ct, c) = Clause::parse_clause(&tokenise("P(X,Y):-Q(X,Y)\\X,Y"), &mut state.heap).unwrap();
-    state.prog.add_clause(ct, c);
+    let clause = Clause::parse_clause(&tokenise("P(X,Y):-Q(X,Y)\\X,Y"), &mut state.heap).unwrap();
+    state.prog.add_clause(clause);
     state.heap.query_space = true;
     state.prog.clauses.sort_clauses();
     state.prog.clauses.find_flags();
@@ -173,8 +169,8 @@ fn max_invented_predicates() {
 fn max_predicates_0() {
     let mut state = State::new(Some(Config::new().max_h_preds(0)));
     state.heap.query_space = false;
-    let (ct, c) = Clause::parse_clause(&tokenise("P(X,Y):-Q(X,Y)\\X,Y"), &mut state.heap).unwrap();
-    state.prog.add_clause(ct, c);
+    let clause = Clause::parse_clause(&tokenise("P(X,Y):-Q(X,Y)\\X,Y"), &mut state.heap).unwrap();
+    state.prog.add_clause(clause);
     state.heap.query_space = true;
     state.prog.clauses.sort_clauses();
     state.prog.clauses.find_flags();
@@ -188,10 +184,10 @@ fn max_predicates_0() {
 fn max_predicates_1() {
     let mut state = State::new(Some(Config::new().max_h_preds(1)));
     state.heap.query_space = false;
-    let (ct, c) = Clause::parse_clause(&tokenise("P(X,Y):-Q(X,Y)\\X,Y"), &mut state.heap).unwrap();
-    state.prog.add_clause(ct, c);
-    let (ct, c) = Clause::parse_clause(&tokenise("P(X):-Q(X)\\X"), &mut state.heap).unwrap();
-    state.prog.add_clause(ct, c);
+    let clause = Clause::parse_clause(&tokenise("P(X,Y):-Q(X,Y)\\X,Y"), &mut state.heap).unwrap();
+    state.prog.add_clause(clause);
+    let clause = Clause::parse_clause(&tokenise("P(X):-Q(X)\\X"), &mut state.heap).unwrap();
+    state.prog.add_clause(clause);
     state.heap.query_space = true;
     state.prog.clauses.sort_clauses();
     state.prog.clauses.find_flags();
@@ -211,8 +207,8 @@ fn max_predicates_1() {
 fn max_clause_0() {
     let mut state = State::new(Some(Config::new().max_h_clause(0)));
     state.heap.query_space = false;
-    let (ct, c) = Clause::parse_clause(&tokenise("P(X,Y):-Q(X,Y)\\X,Y"), &mut state.heap).unwrap();
-    state.prog.add_clause(ct, c);
+    let clause = Clause::parse_clause(&tokenise("P(X,Y):-Q(X,Y)\\X,Y"), &mut state.heap).unwrap();
+    state.prog.add_clause(clause);
     state.heap.query_space = true;
     state.prog.clauses.sort_clauses();
     state.prog.clauses.find_flags();
@@ -226,10 +222,11 @@ fn max_clause_0() {
 fn test_constraint() {
     let mut state = State::new(Some(Config::new().max_h_clause(1).max_h_preds(0)));
     state.heap.query_space = false;
-    let (ct, c) = Clause::parse_clause(&tokenise("P(X,Y):-Q(X,Y)\\X,Y"), &mut state.heap).unwrap();
-    state.prog.add_clause(ct, c);
-    let (_, c) = Clause::parse_clause(&tokenise("q(a,b)"), &mut state.heap).unwrap();
-    state.prog.add_clause(ClauseType::BODY, c);
+    let clause = Clause::parse_clause(&tokenise("P(X,Y):-Q(X,Y)\\X,Y"), &mut state.heap).unwrap();
+    state.prog.add_clause(clause);
+    let mut clause = Clause::parse_clause(&tokenise("q(a,b)"), &mut state.heap).unwrap();
+    clause.clause_type = ClauseType::BODY;
+    state.prog.add_clause(clause);
     state.heap.query_space = true;
     state.prog.organise_clause_table(&state.heap);
     let mut goal = parse_goals(&tokenise("p(a,b)"), &mut state.heap).unwrap()[0];

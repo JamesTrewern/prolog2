@@ -1,15 +1,8 @@
-use std::collections::HashMap;
-use crate::{heap::{Heap, Tag}, parser::parse_literals};
-
-pub type Clause = [usize];
-
-pub trait ClauseTraits {
-    fn symbolise_vars(&self, heap: &mut Heap);
-    fn symbol_arity(&self, heap: &Heap) -> (usize, usize);
-    fn parse_clause(terms: &[&str], heap: &mut Heap) -> Result<(ClauseType, Box<Clause>),String>;
-    fn to_string(&self, heap: &Heap) -> String;
-    fn new(head: usize, body: &[usize]) -> Box<Self>;
-}
+use crate::{
+    heap::{Heap, Tag},
+    parser::parse_literals,
+};
+use std::{collections::HashMap, mem::ManuallyDrop, ops::Deref};
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub enum ClauseType {
@@ -19,12 +12,20 @@ pub enum ClauseType {
     HYPOTHESIS,
 }
 
-impl ClauseTraits for Clause {
-    fn new(head: usize, body: &[usize]) -> Box<Clause> {
-        [&[head], body].concat().into()
+pub struct Clause {
+    pub clause_type: ClauseType,
+    pub literals: ManuallyDrop<Box<[usize]>>,
+}
+
+impl Clause {
+    pub fn new(head: usize, body: &[usize], clause_type: ClauseType) -> Clause {
+        Clause {
+            clause_type,
+            literals:  ManuallyDrop::new([&[head], body].concat().into()),
+        }
     }
 
-    fn to_string(&self, heap: &Heap) -> String {
+    pub fn to_string(&self, heap: &Heap) -> String {
         if self.len() == 1 {
             let clause_str = heap.term_string(self[0]);
             clause_str
@@ -46,26 +47,35 @@ impl ClauseTraits for Clause {
         }
     }
 
-    fn symbol_arity(&self, heap: &Heap) -> (usize, usize) {
+    pub fn symbol_arity(&self, heap: &Heap) -> (usize, usize) {
         heap.str_symbol_arity(self[0])
     }
 
-    fn parse_clause(tokens: &[&str], heap: &mut Heap) -> Result<(ClauseType, Box<Clause>),String> {
+    pub fn parse_clause(tokens: &[&str], heap: &mut Heap) -> Result<Clause, String> {
         let terms = parse_literals(tokens)?;
-        let clause_type = if terms.iter().any(|t| t.meta()){
+        let clause_type = if terms.iter().any(|t| t.meta()) {
             ClauseType::META
-        }else{
+        } else {
             ClauseType::CLAUSE
         };
         let mut var_ref = HashMap::new();
-        let literals: Box<Clause> = terms.iter().map(|t| t.build_on_heap(heap, &mut var_ref)).collect(); 
-        Ok((clause_type, literals))
+        let literals: ManuallyDrop<Box<[usize]>> = ManuallyDrop::new(terms
+            .iter()
+            .map(|t| t.build_on_heap(heap, &mut var_ref))
+            .collect::<Box<[usize]>>());
+        Ok(Clause { clause_type, literals})
     }
 
-    fn symbolise_vars(&self, heap: &mut Heap){
+    pub fn symbolise_vars(&self, heap: &mut Heap) {
         let mut vars = Vec::<usize>::new();
-        for literal in self.iter(){
-            vars.append(&mut heap.term_vars(*literal).iter().filter_map(|(tag,addr)| if *tag == Tag::REF { Some(*addr)}else{None}).collect());
+        for literal in self.iter() {
+            vars.append(
+                &mut heap
+                    .term_vars(*literal)
+                    .iter()
+                    .filter_map(|(tag, addr)| if *tag == Tag::REF { Some(*addr) } else { None })
+                    .collect(),
+            );
         }
         vars.sort();
         vars.dedup();
@@ -75,5 +85,13 @@ impl ClauseTraits for Clause {
             let symbol = alphabet.next().unwrap();
             heap.symbols.set_var(&symbol, var)
         }
+    }
+}
+
+impl Deref for Clause {
+    type Target = [usize];
+
+    fn deref(&self) -> &Self::Target {
+        &self.literals
     }
 }

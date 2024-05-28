@@ -5,8 +5,8 @@ fn body_pred() {
     let mut state = State::new(None);
     state.heap.query_space = false;
     for clause in ["dad(adam,james)", "mum(tami,james)"] {
-        let (clause_type, clause) = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
-        state.prog.add_clause(clause_type, clause)
+        let clause = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
+        state.prog.add_clause(clause)
     }
     state.heap.query_space = true;
     state.handle_directive(&tokenise("body_pred(dad,2),body_pred(mum,2)")).unwrap();
@@ -14,7 +14,7 @@ fn body_pred() {
         .prog
         .clauses
         .iter(&[ClauseType::BODY])
-        .map(|i| state.prog.clauses[i].to_string(&state.heap))
+        .map(|i| state.prog.clauses.get(i).to_string(&state.heap))
         .collect();
     assert_eq!(&body_clauses,&["mum(tami,james)", "dad(adam,james)"])
 }

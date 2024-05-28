@@ -1,9 +1,9 @@
 use std::{collections::HashMap, fs};
 
 use crate::{
-    clause::*,
+    clause::{self, *},
     heap::Heap,
-    parser::{parse_literals, tokenise, remove_comments},
+    parser::{parse_literals, remove_comments, tokenise},
     pred_module::get_module,
     program::Program,
     solver::Proof,
@@ -108,7 +108,7 @@ impl State {
                     return;
                 }
             } else {
-                let (mut clause_type, clause) = match Clause::parse_clause(segment, &mut self.heap)
+                let mut clause = match Clause::parse_clause(segment, &mut self.heap)
                 {
                     Ok(res) => res,
                     Err(msg) => {
@@ -118,9 +118,9 @@ impl State {
                 };
                 let sym_arr = self.heap.str_symbol_arity(clause[0]);
                 if self.prog.body_preds.contains(&sym_arr) {
-                    clause_type = ClauseType::BODY;
+                    clause.clause_type = ClauseType::BODY;
                 }
-                self.prog.add_clause(clause_type, clause);
+                self.prog.add_clause(clause);
             }
 
             line += segment.iter().filter(|t| **t == "\n").count();

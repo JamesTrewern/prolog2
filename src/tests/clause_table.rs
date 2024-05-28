@@ -16,8 +16,9 @@ fn setup() -> (Heap, ClauseTable) {
     ];
 
     for (clause_type, clause_string) in clauses {
-        let (_, clause) = Clause::parse_clause(&tokenise(&clause_string), &mut heap).unwrap();
-        clause_table.add_clause(clause, clause_type)
+        let mut clause = Clause::parse_clause(&tokenise(&clause_string), &mut heap).unwrap();
+        clause.clause_type = clause_type;
+        clause_table.add_clause(clause)
     }
 
     (heap, clause_table)
@@ -79,5 +80,25 @@ fn iter_meta_hypothesis() {
 
 #[test]
 pub fn predicate_map(){
-    todo!()
+    let (mut heap, mut clause_table) = setup();
+
+    //add 2 p/2 clauses
+
+    for clause_string in ["p(a,b)", "p(X,Y)"] {
+        let clause = Clause::parse_clause(&tokenise(&clause_string), &mut heap).unwrap();
+        clause_table.add_clause(clause)
+    }
+
+    clause_table.sort_clauses();
+    clause_table.find_flags();
+    let predicate_map = clause_table.predicate_map(&heap);
+
+    //check predicate map keys are a/2, c/2, d/2, b/2
+    for (symbol, arity, clause_count) in [("a", 2, 1),("b", 2, 1),("c", 2, 1),("d", 2, 1),("p", 2, 2),]{
+        let symbol = heap.add_const_symbol(symbol);
+
+        let clauses = predicate_map.get(&(symbol, arity)).unwrap();
+
+        assert_eq!(clauses.len(), clause_count)
+    }
 }
