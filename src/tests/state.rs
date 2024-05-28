@@ -1,9 +1,9 @@
-use crate::{heap::Tag, symbol_db, State};
+use crate::{heap::Tag, State};
 
 #[test]
 fn load_family() {
     let mut state = State::new(None);
-    let [mum, dad, christine, ken, tami, adam, james, body_pred] = [
+    let [mum, dad, christine, ken, tami, adam, james] = [
         "mum",
         "dad",
         "christine",
@@ -11,7 +11,6 @@ fn load_family() {
         "tami",
         "adam",
         "james",
-        "body_pred",
     ]
     .map(|symbol| state.heap.add_const_symbol(symbol));
 

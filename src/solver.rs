@@ -1,8 +1,7 @@
 use crate::{
     // clause::*,
     choice::Choice,
-    clause::{ClauseTraits, ClauseType},
-    heap::{self, Tag},
+    clause::ClauseType,
     term::Term,
     unification::*,
     Heap,
@@ -36,7 +35,6 @@ impl Env {
 pub(crate) struct Proof<'a> {
     proof_stack: Vec<Env>,
     state: &'a mut State,
-    original_goals: Box<[Term]>,
     goals: Box<[usize]>,
     pointer: usize,
 }
@@ -44,16 +42,11 @@ pub(crate) struct Proof<'a> {
 impl<'a> Proof<'a> {
     pub fn new(goals: &[usize], state: &'a mut State) -> Proof<'a> {
         let goals: Box<[usize]> = goals.into();
-        let original_goals: Box<[Term]> = goals
-            .iter()
-            .map(|goal_addr| state.heap.get_term_object(*goal_addr))
-            .collect();
-        let mut proof_stack: Vec<Env> = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
+        let proof_stack: Vec<Env> = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
 
         Proof {
             proof_stack,
             state,
-            original_goals,
             goals,
             pointer: 0,
         }
@@ -92,8 +85,8 @@ impl<'a> Iterator for Proof<'a> {
                 .prog
                 .clauses
                 .iter(&[ClauseType::HYPOTHESIS])
-                .map(|(_, (_, clause))| {
-                    clause
+                .map(|i| {
+                    self.state.prog.clauses[i]
                         .iter()
                         .map(|literal| self.state.heap.get_term_object(*literal))
                         .collect::<Box<[Term]>>()
@@ -175,7 +168,7 @@ fn retry(proof_stack: &mut Vec<Env>, pointer: usize, state: &mut State) -> Optio
 
     state.heap.unbind(&env.bindings);
     if env.new_clause == true {
-        state.prog.remove_h_clause(env.invent_pred, &state.heap);
+        state.prog.remove_h_clause(env.invent_pred);
         env.new_clause = false;
     }
 
@@ -206,7 +199,7 @@ fn apply_choice(
     mut choice: Choice,
     state: &mut State,
 ) -> bool {
-    if let Some((goals, invented_pred)) = choice.choose(state) {
+    if let (goals, invented_pred) = choice.choose(state) {
         let env = proof_stack.get_mut(pointer).unwrap();
         env.children = goals.len();
         env.bindings = choice.binding;
@@ -223,11 +216,5 @@ fn apply_choice(
         true
     } else {
         false
-    }
-}
-
-fn print_stack(proof_stack: &mut Vec<Env>, heap: &mut Heap) {
-    for env in proof_stack {
-        println!("[{}]: {}", env.depth, heap.term_string(env.goal));
     }
 }

@@ -1,14 +1,17 @@
-use crate::{program, state::Config, Heap, Program};
+use std::mem;
+use crate::{heap::Tag, state::Config, Heap, Program};
 use super::PredModule;
+use fsize::fsize;
 
-fn equal(args: usize, heap: &mut Heap, config: &mut Config, prog: &mut Program) -> bool{
-    // match (heap[args[0]].0,heap[args[1]].0) {
-    //     (Tag::INT, Tag::INT) => heap[args[0]].1 == heap[args[1]].1,
-    //     _ => false
-    // }
-    false
+fn math_equal(call: usize, heap: &mut Heap, _: &mut Config, _: &mut Program) -> bool{
+    match (heap[call+2], heap[call+3]){
+        ((Tag::INT, bits1), (Tag::INT, bits2)) => bits1==bits2,
+        ((Tag::FLT, bits1), (Tag::FLT, bits2)) => unsafe { mem::transmute::<usize, fsize>(bits1)  == mem::transmute::<usize, fsize>(bits2)},
+        _ => false
+    }
+
 }
 
 pub static MATH: PredModule = &[
-    ("=:=",2,equal)
+    ("=:=",2,math_equal)
 ];

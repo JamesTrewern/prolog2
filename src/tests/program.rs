@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-
 use crate::{
     clause::*,
     parser::{parse_goals, tokenise},
     state::Config,
-    Heap, Program, State,
+    State,
 };
 
 #[test]
@@ -12,14 +10,13 @@ fn call_con_head() {
     let mut state = State::new(None);
     state.heap.query_space = false;
     for clause in ["p(X,Y):-q(X,Y)"] {
-        let (ct, c) = Clause::parse_clause(&tokenise("p(X,Y):-q(X,Y)"), &mut state.heap).unwrap();
+        let (ct, c) = Clause::parse_clause(&tokenise(clause), &mut state.heap).unwrap();
         state.prog.add_clause(ct, c)
     }
     state.heap.query_space = true;
     let goal = parse_goals(&tokenise("p(A,B)"), &mut state.heap).unwrap()[0];
     let choices = state.prog.call(goal, &mut state.heap, &mut state.config);
     assert!(choices.len() == 1);
-    let choice = &choices[0];
     for choice in choices {
         assert_eq!(
             choice.binding,
@@ -237,7 +234,7 @@ fn test_constraint() {
     state.prog.organise_clause_table(&state.heap);
     let mut goal = parse_goals(&tokenise("p(a,b)"), &mut state.heap).unwrap()[0];
     let choice = &mut state.prog.call(goal, &mut state.heap, &mut state.config)[0];
-    goal = choice.choose(&mut state).unwrap().0[0];
+    goal = choice.choose(&mut state).0[0];
     state.heap.print_heap();
     println!("Goal: {goal}");
     let choices = state.prog.call(goal, &mut state.heap, &mut state.config);

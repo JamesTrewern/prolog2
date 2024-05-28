@@ -88,8 +88,6 @@ fn build_term_with_list_explicit_tail(){
 #[test]
 fn build_naked_list(){
     let mut heap = Heap::new(100);
-    let mut heap = Heap::new(100);
-    let p = heap.add_const_symbol("p");
     let term = Term::LIS([Term::VAR("X".into()),Term::VAR("Y".into())].into(),false);
     heap.query_space = false;
     term.build_on_heap(&mut heap, &mut HashMap::new());

@@ -1,20 +1,15 @@
-use fsize::fsize;
-use std::{collections::HashMap, fmt::{self, Display}};
-
-use crate::{heap, term::Term, Heap};
+use std::collections::HashMap;
+use crate::{term::Term, Heap};
 
 const DELIMINATORS: &[char] = &[
-    '(', ')', ',', '.', ' ', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|',
+    '(', ')', ',', '.', ' ', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|', '>', '<',
 ];
-
-const KNOWN_SYMBOLS: &[&str] = &[":-", "==", "=/=", "/=", "=:=", "**"];
-
+const KNOWN_SYMBOLS: &[&str] = &[":-", "==", "=/=", "/=", "=:=", "**", "<=", ">="];
 const INFIX_ORDER: &[&str] = &["**", "*", "/", "+", "-", "==", "=/=", "/=", "=:=", "is"];
 
-fn remove_comments(file: &mut String) {
+pub fn remove_comments(file: &mut String) {
     //Must ingore % if in string
     let mut i = 0;
-    let mut comment = false;
     loop {
         let c = match file.chars().nth(i) {
             Some(c) => c,
@@ -37,7 +32,6 @@ fn remove_comments(file: &mut String) {
 
 pub fn tokenise(text: &str) -> Vec<&str> {
     let mut tokens = Vec::<&str>::new();
-    let mut row = 0;
     let mut last_i = 0;
     let mut iterator = text.chars().enumerate();
 

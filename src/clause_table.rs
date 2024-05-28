@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap, ops::Deref, usize};
+use std::{cmp::Ordering, collections::HashMap, ops::{Index, Range}};
 
 use crate::{clause::*, Heap};
 
@@ -35,6 +35,10 @@ impl<'a> ClauseTable {
         }
     }
 
+    pub fn len(&self) ->usize{
+        self.clauses.len()
+    }
+
     pub fn add_clause(&mut self, clause: Box<Clause>, clause_type: ClauseType) {
         self.clauses
             .push((clause_type, self.literal_addrs.len(), clause.len()));
@@ -57,13 +61,14 @@ impl<'a> ClauseTable {
     pub fn predicate_map(&self, heap: &Heap) -> HashMap<(usize, usize), Box<[usize]>> {
         let mut predicate_map = HashMap::<(usize, usize), Vec<usize>>::new();
 
-        for (ci, (_, clause)) in self.iter(&[ClauseType::CLAUSE, ClauseType::BODY]) {
+        for idx in self.iter(&[ClauseType::CLAUSE, ClauseType::BODY]) {
+            let (_,clause) = self.get(idx);
             let cell = heap.str_symbol_arity(clause[0]);
             if cell.0 >= isize::MAX as usize {
                 match predicate_map.get_mut(&cell) {
-                    Some(clauses) => clauses.push(ci),
+                    Some(clauses) => clauses.push(idx),
                     None => {
-                        predicate_map.insert(cell, vec![ci]);
+                        predicate_map.insert(cell, vec![idx]);
                     }
                 }
             }
@@ -108,21 +113,23 @@ impl<'a> ClauseTable {
     }
 
     //TO DO make types a &'static [ClauseType] array
-    pub fn iter(&self, c_types: &[ClauseType]) -> ClauseIterator {
-        let mut types = [false; 4];
+    pub fn iter(&self, c_types: &[ClauseType]) -> impl Iterator<Item = usize> {
+        let mut ranges = Vec::<Range<usize>>::new();
+
         if c_types.contains(&ClauseType::CLAUSE) {
-            types[0] = true;
+            ranges.push(0..self.type_flags[1]);
         }
         if c_types.contains(&ClauseType::BODY) {
-            types[1] = true;
+            ranges.push(self.type_flags[1]..self.type_flags[2]);
         }
         if c_types.contains(&ClauseType::META) {
-            types[2] = true;
+            ranges.push(self.type_flags[2]..self.type_flags[3]);
         }
         if c_types.contains(&ClauseType::HYPOTHESIS) {
-            types[3] = true;
+            ranges.push(self.type_flags[3]..self.len());
         }
-        ClauseIterator::new(self, types)
+
+        ranges.into_iter().flat_map(|range| range)
     }
 
     pub fn get(&self, index: usize) -> (ClauseType, &Clause) {
@@ -133,71 +140,12 @@ impl<'a> ClauseTable {
     }
 }
 
-impl Deref for ClauseTable {
-    type Target = [usize];
-    fn deref(&self) -> &[usize] {
-        &self.literal_addrs
+impl<'a> Index<usize> for ClauseTable {
+    type Output = [usize];
+
+    fn index(&self, index: usize) -> &Self::Output {
+        let (_, literals_ptr, clause_literals_len) = self.clauses[index];
+        &self.literal_addrs[literals_ptr..literals_ptr + clause_literals_len]
     }
 }
 
-pub struct ClauseIterator<'a> {
-    clause_table: &'a ClauseTable,
-    i: usize,
-    skip_points: Vec<(usize, usize)>, // (start_idx, end_idx) pairs to skip
-}
-
-impl<'a> ClauseIterator<'a> {
-    fn new(clause_table: &ClauseTable, types: [bool; 4]) -> ClauseIterator {
-        let mut skip_points: Vec<(usize, usize)> = Vec::with_capacity(4);
-
-        if !types[3] {
-            skip_points.push((clause_table.type_flags[3], clause_table.clauses.len()))
-        }
-
-        for type_i in (0..3).rev() {
-            if !types[type_i] {
-                skip_points.push((
-                    clause_table.type_flags[type_i],
-                    clause_table.type_flags[type_i + 1],
-                ));
-            }
-        }
-
-        //TO DO Merge skip points if possible
-
-        ClauseIterator {
-            clause_table,
-            i: 0,
-            skip_points,
-        }
-    }
-    fn skip_if_required(&mut self) {
-        loop {
-            if let Some((start_i, end_i)) = self.skip_points.last().copied() {
-                if self.i == start_i {
-                    self.i = end_i;
-                    self.skip_points.pop();
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-    }
-}
-
-impl<'a> Iterator for ClauseIterator<'a> {
-    type Item = (usize, (ClauseType, &'a Clause));
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.skip_if_required();
-
-        if self.i == self.clause_table.clauses.len() {
-            return None;
-        }
-        let result = Some((self.i, self.clause_table.get(self.i)));
-        self.i += 1;
-        result
-    }
-}

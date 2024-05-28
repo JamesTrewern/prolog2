@@ -3,7 +3,7 @@ use std::{collections::HashMap, fs};
 use crate::{
     clause::*,
     heap::Heap,
-    parser::{parse_literals, tokenise},
+    parser::{parse_literals, tokenise, remove_comments},
     pred_module::get_module,
     program::Program,
     solver::Proof,
@@ -16,9 +16,6 @@ const DEBUG: bool = true;
 const HEAP_SIZE: usize = 2056;
 const MAX_DEPTH: usize = usize::MAX;
 
-static CONSTRAINT: &'static str = ":<c>-";
-static IMPLICATION: &'static str = ":-";
-
 #[derive(Clone, Copy)]
 pub struct Config {
     pub share_preds: bool,
@@ -26,10 +23,6 @@ pub struct Config {
     pub max_h_pred: usize,
     pub debug: bool,
     pub max_depth: usize,
-}
-
-pub struct ConfigBuilder {
-    config: Config,
 }
 
 pub struct State {
@@ -85,6 +78,8 @@ impl State {
         let mut prog = Program::new();
         let mut heap = Heap::new(HEAP_SIZE);
         prog.add_pred_module(crate::pred_module::CONFIG, &mut heap);
+        prog.add_pred_module(crate::pred_module::MATH, &mut heap);
+
         State { config, prog, heap }
     }
 
@@ -158,30 +153,6 @@ impl State {
         match get_module(&name.to_lowercase()) {
             Some(pred_module) => self.prog.add_pred_module(pred_module, &mut self.heap),
             None => println!("{name} is not a recognised module"),
-        }
-    }
-}
-
-fn remove_comments(file: &mut String) {
-    //Must ingore % if in string
-    let mut i = 0;
-    let mut comment = false;
-    loop {
-        let c = match file.chars().nth(i) {
-            Some(c) => c,
-            None => break,
-        };
-        if c == '%' {
-            let mut i2 = i;
-            loop {
-                i2 += 1;
-                if file.chars().nth(i2) == Some('\n') || file.chars().nth(i2) == None {
-                    file.replace_range(i..i2 + 1, "");
-                    break;
-                }
-            }
-        } else {
-            i += 1;
         }
     }
 }

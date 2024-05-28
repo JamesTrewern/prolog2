@@ -10,10 +10,10 @@ pub struct Choice {
 }
 
 impl Choice {
-    pub fn choose(&mut self, state: &mut State) -> Option<(Vec<usize>, bool)> {
+    pub fn choose(&mut self, state: &mut State) -> (Vec<usize>, bool) {
         // self.binding.undangle_const(&mut state.heap);
         if self.clause == Heap::CON_PTR{
-            return Some((vec![],false));
+            return (vec![],false);
         }
         let goals = self.build_goals(state);
         if state.config.debug{
@@ -28,7 +28,7 @@ impl Choice {
             let (pred_symbol,_) = new_clause.symbol_arity(&state.heap);
             match state
                 .prog
-                .add_h_clause(new_clause, &mut state.heap, &state.config)
+                .add_h_clause(new_clause, &mut state.heap)
             {
                 Some(invented_pred) => {
                     self.binding.push((pred_symbol, invented_pred));
@@ -45,7 +45,7 @@ impl Choice {
             println!("Bindings: {}, {:?}", self.binding.to_string(&state.heap), self.binding);
         }
 
-        Some((goals,invented_pred))
+        (goals,invented_pred)
         
     }
     pub fn build_goals(&mut self, state: &mut State) -> Vec<usize> {

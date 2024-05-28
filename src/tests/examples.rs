@@ -1,9 +1,6 @@
 //Broad test on example files to prove working state of application
-
-use std::{collections::HashMap, fs};
-
 use crate::{
-    clause::{self, ClauseTraits, ClauseType}, parser::{parse_goals, tokenise}, solver::Proof, state::Config, State
+     parser::{parse_goals, tokenise}, solver::Proof, state::Config, State
 };
 
 #[test]

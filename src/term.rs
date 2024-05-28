@@ -1,10 +1,8 @@
 use std::{collections::HashMap, fmt, mem};
-
 use fsize::fsize;
-
 use crate::{
     heap::{Cell, Tag},
-    symbol_db, Heap,
+    Heap,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -40,7 +38,6 @@ impl Term {
             Term::VARUQ(symbol) => symbol.to_string(),
             Term::CON(symbol) => symbol.to_string(),
             Term::LIS(terms, explicit_tail) => {
-                let len = terms.len();
                 format!(
                     "[{}]",
                     terms
@@ -190,10 +187,6 @@ impl Term {
             }
             Term::STR(terms) => Self::build_str(terms, heap, var_ref).1,
         }
-    }
-
-    pub fn build_from_heap(heap: &mut Heap, addr: usize) -> Term{
-        todo!()
     }
 
     pub fn meta(&self) -> bool {

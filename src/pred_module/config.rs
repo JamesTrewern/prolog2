@@ -1,7 +1,7 @@
 use std::mem;
 
 use crate::{heap::Tag, state::Config, Heap, Program};
-use super::PredModule;
+use super::{get_module, PredModule};
 
 fn body_pred(call: usize, heap: &mut Heap, _: &mut Config, prog: &mut Program) -> bool{
     let symbol = if let (Tag::CON, symbol) = heap[call+2]{
@@ -56,11 +56,22 @@ fn debug(call: usize, heap: &mut Heap, config: &mut Config, _: &mut Program) -> 
     true
 }
 
+pub fn load_module(call: usize, heap: &mut Heap, config: &mut Config, prog: &mut Program) -> bool {
+    let name = match heap[call+2] {
+        (Tag::CON, id) => heap.symbols.get_const(id),
+        _ => return false
+    };
+    match get_module(name) {
+        Some(pred_module) => {prog.add_pred_module(pred_module, heap); true},
+        None => {println!("{name} is not a recognised module"); false},
+    }
+}
+
 pub static CONFIG: PredModule = &[
     ("body_pred",2,body_pred),
     ("max_h_preds",1,max_h_preds),
     ("max_h_clause",1,max_h_clause),
     ("share_preds",1,share_preds),
     ("debug",1,debug),
-
+    ("load_module",1,load_module),
 ];

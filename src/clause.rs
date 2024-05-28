@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::{heap::{Cell, Heap, Tag}, parser::parse_literals};
+use crate::{heap::{Heap, Tag}, parser::parse_literals};
 
 pub type Clause = [usize];
 

@@ -55,7 +55,7 @@ fn build_goal_with_sub_str(){
 
     let mut binding: Binding = vec![(2,7),(3,8)];
 
-    let (new_goal, constant) = build_str(&mut binding, 4, &mut heap, &mut None);
+    let (new_goal, _) = build_str(&mut binding, 4, &mut heap, &mut None);
 
     assert_eq!(&heap[new_goal-4..], &[
         (Tag::STR, 2),
@@ -73,7 +73,7 @@ fn unfify_const_structs(){
     let p = Heap::CON_PTR;
     let a = Heap::CON_PTR+1;
     let b = Heap::CON_PTR+2;
-    let mut heap = Heap::from_slice(&[
+    let heap = Heap::from_slice(&[
         (Tag::STR, 2),
         (Tag::CON, p),
         (Tag::CON, a),
@@ -93,7 +93,7 @@ fn unfify_var_arguments_with_consts(){
     let p = Heap::CON_PTR;
     let a = Heap::CON_PTR+1;
     let b = Heap::CON_PTR+2;
-    let mut heap = Heap::from_slice(&[
+    let heap = Heap::from_slice(&[
         (Tag::STR, 2),
         (Tag::CON, p),
         (Tag::CON, a),
@@ -111,7 +111,7 @@ fn unfify_var_arguments_with_consts(){
 #[test]
 fn unfify_var_arguments_consts(){
     let p = Heap::CON_PTR;
-    let mut heap = Heap::from_slice(&[
+    let heap = Heap::from_slice(&[
         (Tag::STR, 2),
         (Tag::CON, p),
         (Tag::REFC, 2),
@@ -129,9 +129,7 @@ fn unfify_var_arguments_consts(){
 #[test]
 fn unfify_var_arguments_with_meta(){
     let p = Heap::CON_PTR;
-    let a = Heap::CON_PTR+1;
-    let b = Heap::CON_PTR+2;
-    let mut heap = Heap::from_slice(&[
+    let heap = Heap::from_slice(&[
         (Tag::STR, 2),
         (Tag::REF, 1),
         (Tag::REFA, 2),
@@ -151,7 +149,7 @@ fn unfify_const_arguments_with_meta(){
     let p = Heap::CON_PTR;
     let a = Heap::CON_PTR+1;
     let b = Heap::CON_PTR+2;
-    let mut heap = Heap::from_slice(&[
+    let heap = Heap::from_slice(&[
         (Tag::STR, 2),
         (Tag::REF, 1),
         (Tag::REFA, 2),
@@ -170,7 +168,7 @@ fn unfify_const_arguments_with_meta(){
 fn unfify_const_with_var_list(){
     let a = Heap::CON_PTR;
     let b = Heap::CON_PTR+1;
-    let mut heap = Heap::from_slice(&[
+    let heap = Heap::from_slice(&[
         (Tag::LIS,1),
         (Tag::CON, a),
         (Tag::LIS, 3),
@@ -191,7 +189,7 @@ fn unfify_const_with_var_list(){
 fn unfify_const_lists(){
     let a = Heap::CON_PTR;
     let b = Heap::CON_PTR+1;
-    let mut heap = Heap::from_slice(&[
+    let heap = Heap::from_slice(&[
         (Tag::LIS,1),
         (Tag::CON, a),
         (Tag::LIS, 3),
@@ -212,7 +210,7 @@ fn unfify_const_lists(){
 fn unfify_const_with_meta_list(){
     let a = Heap::CON_PTR;
     let b = Heap::CON_PTR+1;
-    let mut heap = Heap::from_slice(&[
+    let heap = Heap::from_slice(&[
         (Tag::LIS,1),
         (Tag::CON, a),
         (Tag::LIS, 3),
@@ -234,7 +232,7 @@ fn unify_ref_to_con_with_con(){
     let p = Heap::CON_PTR;
     let a = Heap::CON_PTR+1;
     let b = Heap::CON_PTR+2;
-    let mut heap = Heap::from_slice(&[
+    let heap = Heap::from_slice(&[
         (Tag::STR, 2),
         (Tag::CON, p),
         (Tag::CON, a),

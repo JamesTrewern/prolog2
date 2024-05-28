@@ -119,7 +119,8 @@ impl Program {
                 }
             };
             //TO DO use clause returned by iterator
-            for (i, (clause_type, clause)) in iterator {
+            for i in iterator {
+                let (clause_type, clause) = self.clauses.get(i);
                 if let Some(choice) = self.match_clause(i, clause_type, clause, goal_addr, heap) {
                     choices.push(choice);
                 }
@@ -148,7 +149,6 @@ impl Program {
         &mut self,
         clause: Box<Clause>,
         heap: &mut Heap,
-        config: &Config,
     ) -> Option<usize> {
         //Build contraints for new clause. This assumes that no unifcation should happen between variable predicate symbols 
         let mut constraints = Vec::<(usize,usize)>::new();
@@ -188,7 +188,7 @@ impl Program {
         }
     }
 
-    pub fn remove_h_clause(&mut self, invented: bool, heap: &Heap) {
+    pub fn remove_h_clause(&mut self, invented: bool) {
         self.h_size -= 1;
         if invented {
             self.invented_preds -= 1;
@@ -213,8 +213,8 @@ impl Program {
 
     pub fn symbolise_hypothesis(&self, heap: &mut Heap) {
         //TO DO could turn unbound refs in H into constants
-        for (i, (c_type, clause)) in self.clauses.iter(&[ClauseType::HYPOTHESIS]) {
-            clause.symbolise_vars(heap);
+        for i in self.clauses.iter(&[ClauseType::HYPOTHESIS]) {
+            self.clauses.get(i).1.symbolise_vars(heap);
         }
     }
 
