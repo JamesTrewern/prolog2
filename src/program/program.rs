@@ -1,17 +1,17 @@
-use super::{clause::{Clause, ClauseType}, clause_table::ClauseTable};
+use super::{clause::{Clause, ClauseType}, clause_table::{ClauseIterator, ClauseTable}};
 use crate::{heap::heap::{Heap, Tag}, interface::state::Config, pred_module::{PredModule, PredicateFN}, resolution::unification::Binding};
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
 const PRED_NAME: &'static str = "James";
 
 enum Predicate {
     Function(PredicateFN),
-    Clauses(Box<[usize]>),
+    Clauses(Range<usize>),
 }
 
 pub enum CallRes {
     Function(PredicateFN),
-    Clauses(Box<dyn Iterator<Item = usize>>),
+    Clauses(ClauseIterator),
 }
 pub struct Program {
     pub clauses: ClauseTable,
@@ -43,7 +43,7 @@ impl Program {
 
         match self.predicates.get(&(symbol, arity)) {
             Some(Predicate::Function(function)) => CallRes::Function(*function),
-            Some(Predicate::Clauses(clauses)) => CallRes::Clauses(Box::new(clauses[0]..clauses[0] + clauses.len())), //TO DO sort clause table so that this can be range
+            Some(Predicate::Clauses(range)) => CallRes::Clauses(ClauseIterator { ranges: [range.clone()].into()}), //TO DO sort clause table so that this can be range
             None => {
                 let iterator = if symbol < Heap::CON_PTR {
                     if self.h_size == config.max_h_clause
@@ -66,7 +66,7 @@ impl Program {
                             .iter(&[ClauseType::META, ClauseType::HYPOTHESIS])
                     }
                 };
-                CallRes::Clauses(Box::new(iterator))
+                CallRes::Clauses(iterator)
             }
         }
     }
@@ -75,8 +75,8 @@ impl Program {
         self.organise_clause_table(heap);
         self.body_preds.push((symbol, arity));
         if let Some(Predicate::Clauses(clauses)) = self.predicates.get(&(symbol, arity)) {
-            for clause in clauses.iter() {
-                self.clauses.set_body(*clause)
+            for clause in clauses.clone() {
+                self.clauses.set_body(clause)
             }
         }
         self.organise_clause_table(heap);
@@ -179,3 +179,4 @@ impl Program {
         )
     }
 }
+
