@@ -14,9 +14,9 @@ We define these universally quantified variables using curly braces like so:  `{
 ```prolog
 P(X,Y):- Q(X,Y) {X,Y}. %Identity
 
-P(X,Y):- Q(X,Z), R(Z,Y) {X,Y}. %Chain
+P(X,Y):- Q(X,Z), R(Z,Y) {X,Y,Z}. %Chain
 
-P(X,Y):- Q(X,Z), P(Z,Y) {X,Y}. %Tail Recursion
+P(X,Y):- Q(X,Z), P(Z,Y) {X,Y,Z}. %Tail Recursion
 ```
 
 
