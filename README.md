@@ -7,21 +7,37 @@ This project aims to allow for more complex formations of second-order clauses a
 
 # Defining second order clauses
 
+Traditional meta-rules can be written simply by making predicate symbols start with upper case letters. 
+We must define which variables will remain as variables when a new clause is created from this higher-order clause.
+We define these universally quantified variables using curly braces like so:  `{X,Y}` 
+
+```prolog
+P(X,Y):- Q(X,Y) {X,Y}. %Identity
+
+P(X,Y):- Q(X,Z), R(Z,Y) {X,Y}. %Chain
+
+P(X,Y):- Q(X,Z), P(Z,Y) {X,Y}. %Tail Recursion
+```
+
+
 With this more flexible notation many we can create many more interesting second-order clauses </br> 
-for example, we can introduce certain constant predicate symbols either in the head or body to allow us to have greater control over the clauses that will be learnt
+for example, we can introduce certain constant predicate symbols either in the head or body to allow us to have greater control over the clauses that will be learnt.
+We can also create second-order clauses with only constant predicate symbols but existentially and universally quantified variables to denote the introduction of some constants
 
 ``` prolog
-p(X,Y):- Q(X), R(Y)
+p(X,Y):- Q(X), R(Y) {X,Y}.
 
-P(X,Y):- q(X,Y), R(Y)
+P(X,Y):- q(X,Y), R(Y) {X,Y}.
+
+p(X,Y):- q(X,Z), R(Z,Y) {X,Y}. %matching with this clause will create a new clause where Z is a constant
 ```
 
 This can even be extended to using infix operators in second-order clauses
 
 ``` prolog
-P(X,Y):- X > Y, Q(Y).
+P(X,Y):- X > Y, Q(Y) {X,Y}.
 
-P(X,Y):- Z is X + Y, Q(Z).
+P(X,Y):- Z is X + Y, Q(Z) {X,Y,Z}.
 ```
 
 # Example usage
