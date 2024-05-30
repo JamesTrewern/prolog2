@@ -1,7 +1,9 @@
-use crate::{interface::{state::State, term::Term}, program::{clause::ClauseType, program::CallRes}};
+use crate::{
+    interface::{state::State, term::Term},
+    program::{clause::ClauseType, program::CallRes},
+};
 
 use super::{choice::Choice, unification::Binding};
-
 
 struct Env {
     goal: usize, // Pointer to heap literal
@@ -46,6 +48,127 @@ impl<'a> Proof<'a> {
             pointer: 0,
         }
     }
+
+    fn prove(&mut self) -> bool {
+        loop {
+            let (depth, goal) = match self.proof_stack.get_mut(self.pointer) {
+                Some(e) => (e.depth, e.goal),
+                None => {
+                    return true;
+                }
+            };
+            if depth == self.state.config.max_depth {
+                if !self.retry() {
+                    return false;
+                }
+            }
+            if self.state.config.debug {
+                println!("[{}]Try: {}", depth, self.state.heap.term_string(goal));
+            }
+            match self
+                .state
+                .prog
+                .call(goal, &mut self.state.heap, &mut self.state.config)
+            {
+                CallRes::Function(function) => {
+                    if function(goal, self.state) {
+                        self.pointer += 1
+                    } else {
+                        if !self.retry() {
+                            return false;
+                        }
+                    }
+                }
+                CallRes::Clauses(clauses) => {
+                    let mut choices: Vec<Choice> = clauses
+                        .filter_map(|ci| Choice::build_choice(goal, ci, self.state))
+                        .collect();
+                    if let Some(choice) = choices.pop() {
+                        self.apply_choice(choice);
+                        let env = self.proof_stack.get_mut(self.pointer).unwrap();
+                        env.choices = choices;
+                        self.pointer += 1;
+                    } else {
+                        if self.state.config.debug {
+                            println!("[{}]FAILED: {}", depth, self.state.heap.term_string(goal));
+                        }
+                        if !self.retry() {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn retry(&mut self) -> bool {
+        let n_children = self.proof_stack[self.pointer].children;
+        let children: Box<[Env]> = self
+            .proof_stack
+            .drain(self.pointer + 1..=self.pointer + n_children)
+            .rev()
+            .collect();
+        let env = &mut self.proof_stack[self.pointer];
+
+        if self.state.config.debug {
+            println!(
+                "[{}]UNDO: {},{}",
+                self.pointer,
+                self.state.heap.term_string(env.goal),
+                env.bindings.to_string(&self.state.heap)
+            );
+        }
+
+        self.state.heap.unbind(&env.bindings);
+        if env.new_clause == true {
+            self.state.prog.remove_h_clause(env.invent_pred);
+            env.new_clause = false;
+        }
+
+        for child in children.into_iter() {
+            self.state.heap.deallocate_above(child.goal);
+        }
+
+        //is pointer a choice point
+        if env.choices.is_empty() {
+            if self.pointer == 0 {
+                return false;
+            } else {
+                self.pointer -= 1;
+                return self.retry();
+            }
+        } else {
+            if self.state.config.debug {
+                println!(
+                    "[{}]RETRY: {}",
+                    env.depth,
+                    self.state.heap.term_string(env.goal)
+                );
+            }
+            let choice = env.choices.pop().unwrap();
+            self.apply_choice(choice);
+            self.pointer += 1;
+            return true;
+        }
+    }
+
+    fn apply_choice(&mut self, mut choice: Choice) {
+        let (goals, invented_pred) = choice.choose(self.state);
+        let env = self.proof_stack.get_mut(self.pointer).unwrap();
+        env.children = goals.len();
+        env.bindings = choice.binding;
+        env.new_clause = choice.clause.clause_type == ClauseType::META;
+        env.invent_pred = invented_pred;
+        let depth = env.depth + 1;
+        // state.heap.print_heap();
+
+        let mut i = 1;
+        for goal in goals {
+            self.proof_stack
+                .insert(self.pointer + i, Env::new(goal, depth));
+            i += 1;
+        }
+    }
 }
 
 impl<'a> Iterator for Proof<'a> {
@@ -54,15 +177,13 @@ impl<'a> Iterator for Proof<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         //If not first attempt at proof backtrack to last choice point
         if self.pointer != 0 {
-            match retry(&mut self.proof_stack, self.pointer - 1, &mut self.state) {
-                Some(p) => {
-                    self.pointer = p;
-                }
-                None => return None,
+            self.pointer -= 1;
+            if !self.retry() {
+                return None;
             }
         }
 
-        if prove(&mut self.pointer, &mut self.proof_stack, &mut self.state) {
+        if self.prove() {
             println!("TRUE");
 
             //Add symbols to hypothesis variables
@@ -93,136 +214,4 @@ impl<'a> Iterator for Proof<'a> {
             None
         }
     }
-}
-
-/**Proof loop
- * By
- */
-fn prove(pointer: &mut usize, proof_stack: &mut Vec<Env>, state: &mut State) -> bool {
-    loop {
-        let (depth, goal) = match proof_stack.get_mut(*pointer) {
-            Some(e) => (e.depth, e.goal),
-            None => {
-                return true;
-            }
-        };
-        if depth == state.config.max_depth {
-            match retry(proof_stack, *pointer, state) {
-                Some(p) => {
-                    *pointer = p;
-                }
-                None => return false,
-            }
-        }
-        if state.config.debug {
-            println!("[{}]Try: {}", depth, state.heap.term_string(goal));
-        }
-        match state.prog.call(goal, &mut state.heap, &mut state.config) {
-            CallRes::Function(function) => {
-                if function(goal, state) {
-                    *pointer += 1
-                } else {
-                    match retry(proof_stack, *pointer, state) {
-                        Some(p) => {
-                            *pointer = p;
-                        }
-                        None => return false,
-                    }
-                }
-            }
-            CallRes::Clauses(clauses) => {
-                let mut choices: Vec<Choice> = clauses
-                    .filter_map(|ci| Choice::build_choice(goal, ci, state))
-                    .collect();
-
-                loop {
-                    if let Some(choice) = choices.pop() {
-                        if apply_choice(proof_stack, *pointer, choice, state) {
-                            let env = proof_stack.get_mut(*pointer).unwrap();
-                            env.choices = choices;
-                            *pointer += 1;
-                            break;
-                        }
-                    } else {
-                        if state.config.debug {
-                            println!("[{}]FAILED: {}", depth, state.heap.term_string(goal));
-                        }
-                        match retry(proof_stack, *pointer, state) {
-                            Some(p) => {
-                                *pointer = p;
-                                break;
-                            }
-                            None => return false,
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn retry(proof_stack: &mut Vec<Env>, pointer: usize, state: &mut State) -> Option<usize> {
-    let n_children = proof_stack[pointer].children;
-    let children: Box<[Env]> = proof_stack
-        .drain(pointer + 1..=pointer + n_children)
-        .rev()
-        .collect();
-    let env = &mut proof_stack[pointer];
-
-    if state.config.debug {
-        println!(
-            "[{pointer}]UNDO: {},{}",
-            state.heap.term_string(env.goal),
-            env.bindings.to_string(&state.heap)
-        );
-    }
-
-    state.heap.unbind(&env.bindings);
-    if env.new_clause == true {
-        state.prog.remove_h_clause(env.invent_pred);
-        env.new_clause = false;
-    }
-
-    for child in children.into_iter() {
-        state.heap.deallocate_above(child.goal);
-    }
-
-    //is pointer a choice point
-    if env.choices.is_empty() {
-        if pointer == 0 {
-            return None;
-        } else {
-            return retry(proof_stack, pointer - 1, state);
-        }
-    } else {
-        if state.config.debug {
-            println!("[{}]RETRY: {}", env.depth, state.heap.term_string(env.goal));
-        }
-        let choice = env.choices.pop().unwrap();
-        apply_choice(proof_stack, pointer, choice, state);
-        return Some(pointer + 1);
-    }
-}
-
-fn apply_choice(
-    proof_stack: &mut Vec<Env>,
-    pointer: usize,
-    mut choice: Choice,
-    state: &mut State,
-) -> bool {
-    let (goals, invented_pred) = choice.choose(state);
-    let env = proof_stack.get_mut(pointer).unwrap();
-    env.children = goals.len();
-    env.bindings = choice.binding;
-    env.new_clause = choice.clause.clause_type == ClauseType::META;
-    env.invent_pred = invented_pred;
-    let depth = env.depth + 1;
-    // state.heap.print_heap();
-
-    let mut i = 1;
-    for goal in goals {
-        proof_stack.insert(pointer + i, Env::new(goal, depth));
-        i += 1;
-    }
-    true
 }

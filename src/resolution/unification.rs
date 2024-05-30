@@ -113,7 +113,7 @@ fn unify_list(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) ->
     unify_rec(addr1, addr2, heap, binding) && unify_rec(addr1 + 1, addr2 + 1, heap, binding)
 }
 
-pub fn unify_rec(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
+fn unify_rec(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> bool {
     let (addr1, addr2) = (heap.deref_addr(addr1), heap.deref_addr(addr2));
     match (heap[addr1].0, heap[addr2].0) {
         (Tag::REF | Tag::REFC | Tag::REFA, Tag::REF | Tag::REFC | Tag::REFA) => {

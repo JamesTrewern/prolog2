@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use super::heap::Heap;
+use std::collections::HashMap;
 
 const KNOWN_SYMBOLS: &[&str] = &["false", "true"];
 
@@ -12,7 +12,12 @@ pub struct SymbolDB {
 impl SymbolDB {
     pub fn new() -> SymbolDB {
         SymbolDB {
-            const_symbols: Vec::from(KNOWN_SYMBOLS.iter().map(|symbol| (*symbol).into()).collect::<Vec<Box<str>>>()),
+            const_symbols: Vec::from(
+                KNOWN_SYMBOLS
+                    .iter()
+                    .map(|symbol| (*symbol).into())
+                    .collect::<Vec<Box<str>>>(),
+            ),
             var_symbols: vec![],
             var_symbol_map: HashMap::new(),
         }
@@ -37,11 +42,9 @@ impl SymbolDB {
             }
         }
     }
-
     pub fn get_const(&self, id: usize) -> &str {
         &self.const_symbols[id - Heap::CON_PTR]
     }
-
     pub fn get_var(&self, addr: usize) -> Option<&str> {
         if let Some(i) = self.var_symbol_map.get(&addr) {
             Some(&self.var_symbols[*i])
@@ -49,7 +52,6 @@ impl SymbolDB {
             None
         }
     }
-
     pub fn get_symbol(&self, id: usize) -> String {
         if id >= (Heap::CON_PTR) {
             println!("{:?}", self.const_symbols);

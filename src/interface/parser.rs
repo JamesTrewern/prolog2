@@ -190,6 +190,7 @@ fn build_list(term_stack: &mut Vec<Term>, op_stack: &mut Vec<Term>) -> Result<()
     Ok(())
 }
 
+//TO DO use {X,Y} notation for Univerally Quantified vars
 fn get_uq_vars<'a>(tokens: &[&'a str]) -> Result<Vec<&'a str>, String> {
     match tokens.iter().position(|token| *token == "\\") {
         Some(i) => {

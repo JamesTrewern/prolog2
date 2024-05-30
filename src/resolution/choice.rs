@@ -65,7 +65,7 @@ impl Choice {
         (goals, invented_pred)
     }
 
-    pub fn build_goals(&mut self, state: &mut State) -> Vec<usize> {
+    fn build_goals(&mut self, state: &mut State) -> Vec<usize> {
         let mut goals: Vec<usize> = vec![];
         for body_literal in &self.clause[1..] {
             goals.push(
@@ -77,7 +77,7 @@ impl Choice {
         }
         goals
     }
-    pub fn build_clause(&mut self, state: &mut State) -> Clause {
+    fn build_clause(&mut self, state: &mut State) -> Clause {
         let mut uqvar_binding: Option<Binding> = Some(Binding::new());
         let mut new_literals: Box<[usize]> = vec![0; self.clause.len()].into_boxed_slice();
         for i in 0..self.clause.len() {

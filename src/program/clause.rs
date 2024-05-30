@@ -12,19 +12,12 @@ pub(crate) enum ClauseType {
     HYPOTHESIS,
 }
 
-pub(crate) struct Clause {
+pub struct Clause {
     pub clause_type: ClauseType,
     pub literals: ManuallyDrop<Box<[usize]>>,
 }
 
 impl Clause {
-    pub fn new(head: usize, body: &[usize], clause_type: ClauseType) -> Clause {
-        Clause {
-            clause_type,
-            literals:  ManuallyDrop::new([&[head], body].concat().into()),
-        }
-    }
-
     pub fn to_string(&self, heap: &Heap) -> String {
         if self.len() == 1 {
             let clause_str = heap.term_string(self[0]);
