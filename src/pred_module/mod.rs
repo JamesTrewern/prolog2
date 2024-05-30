@@ -10,6 +10,7 @@ pub use maths::MATH;
 pub fn get_module(name: &str) -> Option<PredModule>{
     match name {
         "config" => Some(CONFIG),
+        "maths" => Some(MATH),
         _ => None
     }
 }

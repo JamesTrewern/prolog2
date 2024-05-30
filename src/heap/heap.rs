@@ -36,6 +36,7 @@ pub(crate) struct Heap {
     cells: Vec<Cell>,
     pub symbols: SymbolDB,
     pub query_space: bool,
+    pub query_space_pointer: usize,
 }
 
 impl Heap {
@@ -49,6 +50,7 @@ impl Heap {
         Heap {
             cells: Vec::from(cells),
             query_space: true,
+            query_space_pointer: 0,
             symbols: SymbolDB::new(),
         }
     }
@@ -56,6 +58,7 @@ impl Heap {
     pub fn new(size: usize) -> Heap {
         Heap {
             cells: Vec::with_capacity(size),
+            query_space_pointer: 0,
             query_space: true,
             symbols: SymbolDB::new(),
         }
@@ -147,8 +150,10 @@ impl Heap {
 
     /**Dealocate all heap cells above a certain address */
     pub fn deallocate_above(&mut self, addr: usize){
-        self.cells.truncate(addr)
-        //Effect symbol db to remove vars above this point
+        if addr > self.query_space_pointer{
+            self.cells.truncate(addr)
+            //Effect symbol db to remove vars above this point
+        }
     }
 
     /**Debug function for printing formatted string of current heap state */

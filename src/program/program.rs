@@ -35,6 +35,7 @@ impl Program {
         }
     }
 
+    /** Takes goals and returns either a predicate function of an interator over clause indices */
     pub fn call(&mut self, goal_addr: usize, heap: &mut Heap, config: &mut Config) -> CallRes {
 
         if heap[goal_addr].0 == Tag::LIS{
@@ -58,7 +59,7 @@ impl Program {
                     } else {
                         self.clauses.iter(&[
                             ClauseType::BODY,
-                            ClauseType::META,
+                            ClauseType::HO,
                             ClauseType::HYPOTHESIS,
                         ])
                     }
@@ -67,7 +68,7 @@ impl Program {
                         self.clauses.iter(&[ClauseType::HYPOTHESIS])
                     } else {
                         self.clauses
-                            .iter(&[ClauseType::META, ClauseType::HYPOTHESIS])
+                            .iter(&[ClauseType::HO, ClauseType::HYPOTHESIS])
                     }
                 };
                 CallRes::Clauses(iterator)
@@ -75,6 +76,7 @@ impl Program {
         }
     }
 
+    /**Make a symbol and arity be allowed to match with variable predicate symbol goals */
     pub fn add_body_pred(&mut self, symbol: usize, arity: usize, heap: &Heap) {
         self.organise_clause_table(heap);
         self.body_preds.push((symbol, arity));
@@ -94,7 +96,7 @@ impl Program {
         self.clauses.add_clause(clause);
     }
 
-    //Add clause, If invented predicate symbol return true
+    /**Add clause to hypothesis, If invented predicate symbol return true*/
     pub fn add_h_clause(&mut self, clause: Clause, heap: &mut Heap) -> Option<usize> {
         //Build contraints for new clause. This assumes that no unifcation should happen between variable predicate symbols
         let mut constraints = Vec::<(usize, usize)>::new();
@@ -134,6 +136,7 @@ impl Program {
         }
     }
 
+    /**Remove clause from hypothesis */
     pub fn remove_h_clause(&mut self, invented: bool) {
         self.h_size -= 1;
         if invented {
@@ -143,6 +146,7 @@ impl Program {
         self.constraints.pop();
     }
 
+    /**Check if binding will unify variable predicate symbols inside a H clause */
     pub fn check_constraints(&self, binding: &Binding, heap: &Heap) -> bool {
         for cons in self.constraints.iter() {
             for con in cons.iter() {
@@ -157,6 +161,7 @@ impl Program {
         false
     }
 
+    /** Create symbols for all variables in the hypothesis*/
     pub fn symbolise_hypothesis(&self, heap: &mut Heap) {
         //TO DO could turn unbound refs in H into constants
         for i in self.clauses.iter(&[ClauseType::HYPOTHESIS]) {
@@ -164,6 +169,7 @@ impl Program {
         }
     }
 
+    /** Load a module with predicate functions */
     pub fn add_pred_module(&mut self, pred_module: PredModule, heap: &mut Heap) {
         for (symbol, arity, predfn) in pred_module {
             let symbol = heap.add_const_symbol(symbol);
@@ -172,6 +178,7 @@ impl Program {
         }
     }
 
+    //**Sort the clause table, find type flags, and build predicate map*/
     pub fn organise_clause_table(&mut self, heap: &Heap) {
         self.clauses.sort_clauses(heap);
         self.clauses.find_flags();

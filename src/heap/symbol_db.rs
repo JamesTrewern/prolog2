@@ -3,6 +3,10 @@ use std::collections::HashMap;
 
 const KNOWN_SYMBOLS: &[&str] = &["false", "true"];
 
+/**Stores all symbols from compiled terms
+ * The heap will use this to create term strings whilst allowing
+ * operations done with the heap to only handle usize values
+ */
 pub struct SymbolDB {
     const_symbols: Vec<Box<str>>,
     var_symbols: Vec<Box<str>>,
@@ -22,6 +26,7 @@ impl SymbolDB {
             var_symbol_map: HashMap::new(),
         }
     }
+
     pub fn set_const(&mut self, symbol: &str) -> usize {
         match self.const_symbols.iter().position(|e| *e == symbol.into()) {
             Some(i) => i + Heap::CON_PTR,
@@ -31,6 +36,7 @@ impl SymbolDB {
             }
         }
     }
+
     pub fn set_var(&mut self, symbol: &str, addr: usize) {
         match self.var_symbols.iter().position(|e| *e == symbol.into()) {
             Some(i) => {
@@ -42,9 +48,11 @@ impl SymbolDB {
             }
         }
     }
+
     pub fn get_const(&self, id: usize) -> &str {
         &self.const_symbols[id - Heap::CON_PTR]
     }
+
     pub fn get_var(&self, addr: usize) -> Option<&str> {
         if let Some(i) = self.var_symbol_map.get(&addr) {
             Some(&self.var_symbols[*i])
@@ -52,7 +60,10 @@ impl SymbolDB {
             None
         }
     }
+
+    /** Given either a ref addr or a const id this function will return the related symbol */
     pub fn get_symbol(&self, id: usize) -> String {
+        //If id >= usize:Max/2 then it is a constant id and not a heap ref addr
         if id >= (Heap::CON_PTR) {
             match self.const_symbols.get(id - Heap::CON_PTR) {
                 Some(symbol) => symbol.to_string(),

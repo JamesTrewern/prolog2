@@ -1,6 +1,6 @@
 use crate::{
     interface::{state::State, term::Term},
-    program::{clause::ClauseType, program::CallRes},
+    program::{clause::{self, ClauseType}, program::CallRes},
 };
 
 use super::{choice::Choice, unification::Binding};
@@ -157,7 +157,7 @@ impl<'a> Proof<'a> {
         let env = self.proof_stack.get_mut(self.pointer).unwrap();
         env.children = goals.len();
         env.bindings = choice.binding;
-        env.new_clause = choice.clause.clause_type == ClauseType::META;
+        env.new_clause = choice.clause.clause_type == ClauseType::HO;
         env.invent_pred = invented_pred;
         let depth = env.depth + 1;
         // state.heap.print_heap();
@@ -184,7 +184,7 @@ impl<'a> Iterator for Proof<'a> {
         }
 
         if self.prove() {
-            println!("TRUE");
+            println!("\nTRUE");
 
             //Add symbols to hypothesis variables
             self.state.prog.symbolise_hypothesis(&mut self.state.heap);
@@ -192,6 +192,11 @@ impl<'a> Iterator for Proof<'a> {
             //Print goals with query vairables substituted
             for goal in self.goals.iter() {
                 println!("{},", self.state.heap.term_string(*goal))
+            }
+
+            println!("Hypothesis: ");
+            for clause in self.state.prog.clauses.iter(&[ClauseType::HYPOTHESIS]){
+                println!("\t{}", self.state.prog.clauses.get(clause).to_string(&self.state.heap))
             }
 
             //For every clause in hypothesis convert into an array non heap terms

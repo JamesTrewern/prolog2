@@ -8,6 +8,10 @@ use std::{
     ptr::slice_from_raw_parts,
 };
 
+/**Stores clauses as a list of adresses to literals on the heap
+ * To prevent indirection and cache misses, the literal addresses are stored in a contigous block of memory
+ * TO DO sort literal_addrs to match the order of clauses after usign sort clauses
+ */
 pub struct ClauseTable {
     pub clauses: Vec<(ClauseType, usize, usize)>,
     literal_addrs: Vec<usize>,
@@ -29,14 +33,22 @@ impl<'a> ClauseTable {
         self.clauses.len()
     }
 
+    /**Converts Clause object into flat representation in the clause table */
     pub fn add_clause(&mut self, mut clause: Clause) {
         self.clauses
             .push((clause.clause_type, self.literal_addrs.len(), clause.len()));
 
+        //To allow Box to be dropped we must take out the inner value so it can fall out of scope and call destructor
         let literals = ManuallyDrop::into_inner(clause.literals);
         self.literal_addrs.extend_from_slice(&literals);
     }
 
+    /**Given 2 clauses returns order between them 
+     * @c1: 1st clause
+     * @c2: 2nd clause
+     * @literals: The clause table's list of literal addresses
+     * @heap: The heap
+    */
     fn order_clauses(
         c1: &(ClauseType, usize, usize),
         c2: &(ClauseType, usize, usize),
@@ -46,19 +58,21 @@ impl<'a> ClauseTable {
         let o1 = match c1.0 {
             ClauseType::CLAUSE => 1,
             ClauseType::BODY => 2,
-            ClauseType::META => 3,
+            ClauseType::HO => 3,
             ClauseType::HYPOTHESIS => 4,
         };
         let o2 = match c2.0 {
             ClauseType::CLAUSE => 1,
             ClauseType::BODY => 2,
-            ClauseType::META => 3,
+            ClauseType::HO => 3,
             ClauseType::HYPOTHESIS => 4,
         };
+        //Does the clause Type match, if so order by symbol
         match o1.cmp(&o2) {
             Ordering::Equal => {
                 let (symbol1, arity1) = heap.str_symbol_arity(literals[c1.1]);
                 let (symbol2, arity2) = heap.str_symbol_arity(literals[c2.1]);
+                //Are the symbols the same, if so order by arity
                 match symbol1.cmp(&symbol2) {
                     Ordering::Equal => arity1.cmp(&arity2),
                     v => v,
@@ -68,6 +82,7 @@ impl<'a> ClauseTable {
         }
     }
 
+    /**sort the clauses using the order clauses funtion */
     pub fn sort_clauses(&mut self, heap: &Heap) {
         self.clauses
             .sort_by(|c1, c2| Self::order_clauses(c1, c2, &self.literal_addrs, heap));
@@ -85,6 +100,9 @@ impl<'a> ClauseTable {
             .collect();
     }
 
+    /** Build a map from (symbol, arity) -> Range of indicies for clauses
+     * This works as long as we sort the clause table
+     */
     pub fn predicate_map(&self, heap: &Heap) -> HashMap<(usize, usize), Range<usize>> {
         let mut predicate_map = HashMap::<(usize, usize), (usize, usize)>::new();
 
@@ -105,6 +123,7 @@ impl<'a> ClauseTable {
             .collect()
     }
 
+    /**Find the positions in the clause table where the clause type changes */
     pub fn find_flags(&mut self) {
         self.type_flags = [self.clauses.len(); 4];
 
@@ -117,7 +136,7 @@ impl<'a> ClauseTable {
                 ClauseType::BODY => {
                     self.type_flags[1] = i;
                 }
-                ClauseType::META => {
+                ClauseType::HO => {
                     self.type_flags[2] = i;
                 }
                 ClauseType::HYPOTHESIS => {
@@ -133,6 +152,7 @@ impl<'a> ClauseTable {
         }
     }
 
+    /**Set a clause to have the type BODY */
     pub fn set_body(&mut self, i: usize) {
         if let Some((clause_type, _, _)) = self.clauses.get_mut(i) {
             *clause_type = ClauseType::BODY;
@@ -151,7 +171,7 @@ impl<'a> ClauseTable {
         if c_types.contains(&ClauseType::BODY) {
             ranges.push(self.type_flags[1]..self.type_flags[2]);
         }
-        if c_types.contains(&ClauseType::META) {
+        if c_types.contains(&ClauseType::HO) {
             ranges.push(self.type_flags[2]..self.type_flags[3]);
         }
         if c_types.contains(&ClauseType::HYPOTHESIS) {
@@ -164,11 +184,16 @@ impl<'a> ClauseTable {
     /**Create Boxed Sliced containing the heap addressses of the clause literals then constructs a new clause object using this */
     pub fn get(&self, index: usize) -> Clause {
         let (clause_type, literals_ptr, clause_literals_len) = self.clauses[index];
+        
+        //Construct a fat pointer to the slice holding the literal addresses
         let p = slice_from_raw_parts(
             unsafe { self.literal_addrs.as_ptr().add(literals_ptr) },
             clause_literals_len,
         ) as *mut [usize];
+
+        //Wrap in manually drop so the clause falling out of scope does not deallocate memory
         let literals = unsafe { ManuallyDrop::new(Box::from_raw(p)) };
+        
         Clause {
             clause_type,
             literals,
@@ -185,6 +210,7 @@ impl<'a> Index<usize> for ClauseTable {
     }
 }
 
+//TO DO rather than Vec of ranges make array[Option<Range>;4]
 pub struct ClauseIterator {
     pub ranges: Vec<Range<usize>>,
 }

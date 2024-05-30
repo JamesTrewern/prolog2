@@ -5,7 +5,7 @@ use std::{collections::HashMap, fs, io::{self, stdout, Write}};
 const MAX_H_SIZE: usize = 2; //Max number of clauses in H
 const MAX_INVENTED: usize = 0; //Max invented predicate symbols
 const SHARE_PREDS: bool = false; //Can program and H share pred symbols
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 const HEAP_SIZE: usize = 2056;
 const MAX_DEPTH: usize = usize::MAX;
 
@@ -81,6 +81,8 @@ impl State {
         if let Ok(mut file) = fs::read_to_string(format!("{path}.pl")){
             remove_comments(&mut file);
             self.parse_prog(file);
+            self.heap.query_space = true;
+            self.heap.query_space_pointer = self.heap.len();
             Ok(())
         }else{
             Err(format!("File not found at {path}"))

@@ -5,11 +5,11 @@ fn setup() -> (Heap, ClauseTable) {
     let mut clause_table = ClauseTable::new();
 
     let clauses = [
-        (ClauseType::META, "e(X,Y)"),
+        (ClauseType::HO, "e(X,Y)"),
         (ClauseType::CLAUSE, "a(X,Y)"),
         (ClauseType::HYPOTHESIS, "g(X,Y)"),
         (ClauseType::BODY, "c(X,Y)"),
-        (ClauseType::META, "f(X,Y)"),
+        (ClauseType::HO, "f(X,Y)"),
         (ClauseType::BODY, "d(X,Y)"),
         (ClauseType::CLAUSE, "b(X,Y)"),
     ];
@@ -61,7 +61,7 @@ fn iter_body_meta_hypothesis() {
     clause_table.sort_clauses(&heap);
     clause_table.find_flags();
     let expected = vec!["g(X,Y)".to_string(),"f(X,Y)".to_string(),"e(X,Y)".to_string(),"d(X,Y)".to_string(), "c(X,Y)".to_string()];
-    for i in clause_table.iter(&[ClauseType::BODY, ClauseType::META, ClauseType::HYPOTHESIS]) {
+    for i in clause_table.iter(&[ClauseType::BODY, ClauseType::HO, ClauseType::HYPOTHESIS]) {
         assert!(expected.contains(&heap.term_string(clause_table[i][0])));
     }
 }
@@ -72,7 +72,7 @@ fn iter_meta_hypothesis() {
     clause_table.sort_clauses(&heap);
     clause_table.find_flags();
     let expected = vec!["g(X,Y)".to_string(),"f(X,Y)".to_string(),"e(X,Y)".to_string()];
-    for i in clause_table.iter(&[ClauseType::META, ClauseType::HYPOTHESIS]) {
+    for i in clause_table.iter(&[ClauseType::HO, ClauseType::HYPOTHESIS]) {
         assert!(expected.contains(&heap.term_string(clause_table[i][0])));
     }
 }
@@ -108,11 +108,11 @@ fn complex_ordering(){
     let mut clause_table = ClauseTable::new();
 
     let clauses = [
-        (ClauseType::META, "e(X,Y)"),
+        (ClauseType::HO, "e(X,Y)"),
         (ClauseType::CLAUSE, "a(X,Y)"),
         (ClauseType::HYPOTHESIS, "g(X,Y)"),
         (ClauseType::BODY, "c(X,Y)"),
-        (ClauseType::META, "f(X,Y)"),
+        (ClauseType::HO, "f(X,Y)"),
         (ClauseType::BODY, "d(X,Y)"),
         (ClauseType::CLAUSE, "b(X,Y)"),
         (ClauseType::CLAUSE, "a(a,b,c)"),

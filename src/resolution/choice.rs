@@ -31,7 +31,7 @@ impl Choice {
             );
             println!("Goals: {goals:?}");
         }
-        let invented_pred = if self.clause.clause_type == ClauseType::META {
+        let invented_pred = if self.clause.clause_type == ClauseType::HO {
             let new_clause: Clause = self.build_clause(state); //Use binding to make new clause
             if state.config.debug {
                 println!(

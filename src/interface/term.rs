@@ -217,13 +217,13 @@ impl Term {
         }
     }
 
-    pub fn meta(&self) -> bool {
+    pub fn higher_order(&self) -> bool {
         match self {
             Term::FLT(_) | Term::INT(_) | Term::CON(_) | Term::VAR(_) => false,
             Term::VARUQ(_) => true,
-            Term::LIS(sub_terms, _) => sub_terms.iter().any(|t| t.meta()),
+            Term::LIS(sub_terms, _) => sub_terms.iter().any(|t| t.higher_order()),
             Term::STR(sub_terms) => {
-                matches!(sub_terms[0], Term::VAR(_)) || sub_terms.iter().any(|t| t.meta())
+                matches!(sub_terms[0], Term::VAR(_)) || sub_terms.iter().any(|t| t.higher_order())
             }
         }
     }
