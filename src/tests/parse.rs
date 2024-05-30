@@ -154,7 +154,7 @@ fn parse_meta_no_uq() {
 
 #[test]
 fn parse_meta_with_uq() {
-    let terms = parse_literals(&tokenise("P(X,Y):-Q(X,Y)\\X.")).unwrap();
+    let terms = parse_literals(&tokenise("P(X,Y):-Q(X,Y) {X}.")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR(
@@ -181,7 +181,7 @@ fn parse_meta_with_uq() {
 
 #[test]
 fn parse_meta_with_list() {
-    let terms = parse_literals(&tokenise("P(X,Y):-Q([X,Y])\\X.")).unwrap();
+    let terms = parse_literals(&tokenise("P(X,Y):-Q([X,Y]) {X}.")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR(
@@ -210,7 +210,7 @@ fn parse_meta_with_list() {
 
 #[test]
 fn parse_meta_with_list_explicit_uq_tail() {
-    let terms = parse_literals(&tokenise("P(X,Y):-Q([X,Y|Z])\\X,Z.")).unwrap();
+    let terms = parse_literals(&tokenise("P(X,Y):-Q([X,Y|Z]) {X,Z}.")).unwrap();
     assert_eq!(
         terms[0],
         Term::STR(
@@ -244,8 +244,8 @@ fn parse_meta_with_list_explicit_uq_tail() {
 
 #[test]
 fn parse_meta_with_infix() {
-    println!("{:?}", tokenise("p(X,Y,Z):- Z is X**2/Y**2\\X,Y,Z."));
-    let terms = parse_literals(&tokenise("p(X,Y,Z):- Z is X**2/Y**2\\X,Y,Z.")).unwrap();
+    println!("{:?}", tokenise("p(X,Y,Z):- Z is X**2/Y**2 {X,Y,Z}."));
+    let terms = parse_literals(&tokenise("p(X,Y,Z):- Z is X**2/Y**2 {X,Y,Z}.")).unwrap();
 
     for term in &terms {
         println!("{term:?}");

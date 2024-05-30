@@ -115,6 +115,8 @@ fn complex_ordering(){
         (ClauseType::META, "f(X,Y)"),
         (ClauseType::BODY, "d(X,Y)"),
         (ClauseType::CLAUSE, "b(X,Y)"),
+        (ClauseType::CLAUSE, "a(a,b,c)"),
+        (ClauseType::CLAUSE, "a(a,Z)"),
     ];
 
     for (clause_type, clause_string) in clauses {
@@ -122,5 +124,12 @@ fn complex_ordering(){
         clause.clause_type = clause_type;
         clause_table.add_clause(clause)
     }
-    todo!()
+    clause_table.sort_clauses(&heap);
+    let expected_order = [
+        "a(X,Y)", "a(a,Z)", "a(a,b,c)", "b(X,Y)", "c(X,Y)", "d(X,Y)", "e(X,Y)", "f(X,Y)", "g(X,Y)",
+    ];
+    for i in 0..clause_table.len() {
+        let clause_string = heap.term_string(clause_table[i][0]);
+        assert_eq!(clause_string, expected_order[i])
+    }
 }

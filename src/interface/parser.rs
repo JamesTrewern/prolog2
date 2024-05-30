@@ -1,8 +1,9 @@
-use std::collections::HashMap;
 use super::term::Term;
+use std::collections::HashMap;
 
 const DELIMINATORS: &[char] = &[
-    '(', ')', ',', '.', ' ', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|', '>', '<',
+    '(', ')', ',', '.', ' ', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|', '>',
+    '<', '{', '}',
 ];
 const KNOWN_SYMBOLS: &[&str] = &[":-", "==", "=/=", "/=", "=:=", "**", "<=", ">="];
 const INFIX_ORDER: &[&str] = &["**", "*", "/", "+", "-", "==", "=/=", "/=", "=:=", "is"];
@@ -192,12 +193,14 @@ fn build_list(term_stack: &mut Vec<Term>, op_stack: &mut Vec<Term>) -> Result<()
 
 //TO DO use {X,Y} notation for Univerally Quantified vars
 fn get_uq_vars<'a>(tokens: &[&'a str]) -> Result<Vec<&'a str>, String> {
-    match tokens.iter().position(|token| *token == "\\") {
+    match tokens.iter().position(|token| *token == "{") {
         Some(i) => {
             let mut uqvars = Vec::<&str>::new();
             for token in &tokens[i + 1..] {
                 if token.chars().next().unwrap().is_uppercase() {
                     uqvars.push(*token);
+                }else if *token == "}"{
+                    break;
                 } else if *token != "," && *token != "." {
                     return Err(format!(
                         "Universally quantified varibles incorrectly formatted: {}",
@@ -218,7 +221,7 @@ pub fn parse_literals(tokens: &[&str]) -> Result<Vec<Term>, String> {
     let uqvars = get_uq_vars(&tokens)?;
 
     for token in tokens {
-        if ["\\", "."].contains(&token) {
+        if ["{", "."].contains(&token) {
             resolve_infix(&mut term_stack, &mut op_stack, INFIX_ORDER.len());
             break;
         }
@@ -236,7 +239,7 @@ pub fn parse_literals(tokens: &[&str]) -> Result<Vec<Term>, String> {
         } else if INFIX_ORDER.contains(&token) {
             resolve_infix(&mut term_stack, &mut op_stack, infix_order(token));
             op_stack.push(parse_atom(token, &uqvars));
-        } else if *token != "\n"{
+        } else if *token != "\n" {
             term_stack.push(parse_atom(token, &uqvars));
         }
     }
