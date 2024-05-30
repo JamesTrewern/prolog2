@@ -1,5 +1,5 @@
-use std::mem;
-use crate::{heap::heap::{Heap, Tag}, interface::state::State};
+use std::{error, mem};
+use crate::{heap::{self, heap::{Heap, Tag}}, interface::state::State};
 
 use super::{get_module, PredModule};
 
@@ -65,6 +65,23 @@ pub fn load_module(call: usize, state: &mut State) -> bool {
     true
 }
 
+pub fn load_file(call: usize, state: &mut State) -> bool{
+    if let (Tag::LIS, addr) = state.heap[call]{
+        let file_path = state.heap.symbols.get_symbol(state.heap[addr].1);
+        println!("load: {file_path}");
+        match  state.load_file(&file_path){
+            Ok(_) => true,
+            Err(error) => {println!("{error}"); false},
+        }
+    }else{
+        let file_path = state.heap.symbols.get_symbol(state.heap[call+2].1);
+        match  state.load_file(&file_path){
+            Ok(_) => true,
+            Err(error) => {println!("{error}"); false},
+        }
+    }
+}
+
 pub static CONFIG: PredModule = &[
     ("body_pred",2,body_pred),
     ("max_h_preds",1,max_h_preds),
@@ -72,4 +89,5 @@ pub static CONFIG: PredModule = &[
     ("share_preds",1,share_preds),
     ("debug",1,debug),
     ("load_module",1,load_module),
+    ("load_file",1,load_file),
 ];

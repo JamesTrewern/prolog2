@@ -180,7 +180,9 @@ impl Term {
                 heap.set_const(id)
             }
             Term::LIS(terms, explicit_tail) => {
-                Self::build_lis(terms, *explicit_tail, heap, var_ref).1
+                let cell = Self::build_lis(terms, *explicit_tail, heap, var_ref);
+                heap.push(cell);
+                heap.len() - 1
             }
             Term::STR(terms) => Self::build_str(terms, heap, var_ref).1,
         }

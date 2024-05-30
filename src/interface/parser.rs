@@ -1,6 +1,6 @@
 use super::term::Term;
+use fsize::fsize;
 use std::collections::HashMap;
-
 const DELIMINATORS: &[char] = &[
     '(', ')', ',', '.', ' ', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|', '>',
     '<', '{', '}',
@@ -110,22 +110,25 @@ fn infix_order(operator: &str) -> usize {
 }
 
 fn parse_atom(token: &str, uqvars: &Vec<&str>) -> Term {
-    match token.parse::<isize>() {
-        Ok(num) => Term::INT(num),
-        Err(_) => match token.parse::<f64>() {
-            Ok(num) => Term::FLT(num),
-            Err(_) => {
-                if token.chars().next().unwrap().is_uppercase() {
-                    if uqvars.contains(&token) {
-                        Term::VARUQ(token.into())
-                    } else {
-                        Term::VAR(token.into())
-                    }
-                } else {
-                    Term::CON(token.into())
-                }
-            }
-        },
+    if let Ok(num) = token.parse::<isize>() {
+        return Term::INT(num);
+    }
+    if let Ok(num) = token.parse::<fsize>() {
+        return Term::FLT(num);
+    }
+
+    if token.chars().next().unwrap().is_uppercase() {
+        if uqvars.contains(&token) {
+            Term::VARUQ(token.into())
+        } else {
+            Term::VAR(token.into())
+        }
+    } else {
+        if token.chars().next() == Some('\'') && token.chars().last() == Some('\''){
+            Term::CON(token[1..token.len()-1].into())
+        }else{
+            Term::CON(token.into())
+        }
     }
 }
 
@@ -199,7 +202,7 @@ fn get_uq_vars<'a>(tokens: &[&'a str]) -> Result<Vec<&'a str>, String> {
             for token in &tokens[i + 1..] {
                 if token.chars().next().unwrap().is_uppercase() {
                     uqvars.push(*token);
-                }else if *token == "}"{
+                } else if *token == "}" {
                     break;
                 } else if *token != "," && *token != "." {
                     return Err(format!(

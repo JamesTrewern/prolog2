@@ -1,6 +1,6 @@
 use super::parser::{parse_literals, remove_comments, tokenise};
 use crate::{heap::heap::Heap, pred_module::get_module, program::{clause::Clause, program::Program}, resolution::solver::Proof};
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, io::{self, stdout, Write}};
 
 const MAX_H_SIZE: usize = 2; //Max number of clauses in H
 const MAX_INVENTED: usize = 0; //Max invented predicate symbols
@@ -76,11 +76,16 @@ impl State {
         State { config, prog, heap }
     }
 
-    pub fn load_file(&mut self, path: &str) {
+    pub fn load_file(&mut self, path: &str) -> Result<(),String>{
         self.heap.query_space = false;
-        let mut file = fs::read_to_string(format!("{path}.pl")).expect("Unable to read file");
-        remove_comments(&mut file);
-        self.parse_prog(file);
+        if let Ok(mut file) = fs::read_to_string(format!("{path}.pl")){
+            remove_comments(&mut file);
+            self.parse_prog(file);
+            Ok(())
+        }else{
+            Err(format!("File not found at {path}"))
+        }
+        
     }
 
     pub fn parse_prog(&mut self, file: String) {
@@ -147,6 +152,26 @@ impl State {
         match get_module(&name.to_lowercase()) {
             Some(pred_module) => self.prog.add_pred_module(pred_module, &mut self.heap),
             None => println!("{name} is not a recognised module"),
+        }
+    }
+
+    pub fn main_loop(&mut self){
+        let mut buffer = String::new();
+        loop{
+            if buffer.is_empty(){
+                print!("?-");
+                stdout().flush().unwrap();
+            }
+            match io::stdin().read_line(&mut buffer) {
+                Ok(_) => {
+                    let tokens = tokenise(&buffer);
+                    if tokens.contains(&"."){
+                        self.handle_directive(&tokens).unwrap();
+                        buffer.clear();
+                    }
+                }
+                Err(error) => println!("error: {error}"),
+            }
         }
     }
 }

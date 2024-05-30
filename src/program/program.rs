@@ -1,5 +1,5 @@
 use super::{clause::{Clause, ClauseType}, clause_table::{ClauseIterator, ClauseTable}};
-use crate::{heap::heap::{Heap, Tag}, interface::state::Config, pred_module::{PredModule, PredicateFN}, resolution::unification::Binding};
+use crate::{heap::heap::{Heap, Tag}, interface::state::Config, pred_module::{config, PredModule, PredicateFN}, resolution::unification::Binding};
 use std::{collections::HashMap, ops::Range};
 
 const PRED_NAME: &'static str = "James";
@@ -36,6 +36,10 @@ impl Program {
     }
 
     pub fn call(&mut self, goal_addr: usize, heap: &mut Heap, config: &mut Config) -> CallRes {
+
+        if heap[goal_addr].0 == Tag::LIS{
+            return CallRes::Function(config::load_file);
+        }
         let (mut symbol, arity) = heap.str_symbol_arity(goal_addr);
         if symbol < Heap::CON_PTR {
             symbol = heap[heap.deref_addr(symbol)].1;

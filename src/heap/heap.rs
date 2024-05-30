@@ -190,7 +190,6 @@ impl Heap {
     pub fn list_string(&self, addr: usize) -> String {
         let mut buffer = "[".to_string();
         let mut pointer = self[addr].1;
-        // println!("{pointer}");
         loop {
             buffer += &self.term_string(pointer);
             if self[pointer + 1].0 != Tag::LIS {
