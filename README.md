@@ -29,7 +29,7 @@ p(X,Y):- Q(X), R(Y) {X,Y}.
 
 P(X,Y):- q(X,Y), R(Y) {X,Y}.
 
-p(X,Y):- q(X,Z), R(Z,Y) {X,Y}. %matching with this clause will create a new clause where Z is a constant
+p(X,Y):- q(X,Z) {X,Y}. %matching with this clause will create a new clause where Z is a constant
 ```
 
 This can even be extended to using infix operators in second-order clauses
