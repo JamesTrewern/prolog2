@@ -4,13 +4,22 @@ use super::unification::{build_str, unify, Binding};
 
 pub struct Choice {
     pub clause: Clause, // index in program clause bank
-    pub binding: Binding,
+    pub binding: Binding, //Binding matching env goal to head of clause
 }
 
 impl Choice {
+    /**Attempt to build choice point from goal and clause
+     * @goal: heap address of goal literal
+     * @clause: clause table index
+     * @state: current state of program, including heap, prog, and config
+     */
     pub fn build_choice(goal: usize, clause: usize, state: &mut State) -> Option<Choice> {
+        //Get clause object from clause table
         let clause = state.prog.clauses.get(clause);
+
+        //Can a binding be found by unifiy head of clause with goal
         if let Some(binding) = unify(clause[0], goal, &state.heap) {
+            //Does this binding unify two variable predicate symbols in H?
             if !state.prog.check_constraints(&binding, &state.heap) {
                 Some(Choice { clause, binding})
             } else {
@@ -21,8 +30,8 @@ impl Choice {
         }
     }
 
+    /**Use clause and binding to make new goals, and if higher order create new clause */
     pub fn choose(&mut self, state: &mut State) -> (Vec<usize>, bool) {
-        // self.binding.undangle_const(&mut state.heap);
         let goals = self.build_goals(state);
         if state.config.debug {
             println!(
@@ -31,6 +40,8 @@ impl Choice {
             );
             println!("Goals: {goals:?}");
         }
+        //If clause is higher order build a new clause and add to program.
+        //If variable predicate symbol in head of new clause, invented_pred is true
         let invented_pred = if self.clause.clause_type == ClauseType::HO {
             let new_clause: Clause = self.build_clause(state); //Use binding to make new clause
             if state.config.debug {
@@ -44,6 +55,7 @@ impl Choice {
             let (pred_symbol, _) = new_clause.symbol_arity(&state.heap);
             match state.prog.add_h_clause(new_clause, &mut state.heap) {
                 Some(invented_pred) => {
+                    //If we invent a predicate add a binding from pred_symbol to invented pred
                     self.binding.push((pred_symbol, invented_pred));
                     true
                 }
@@ -53,6 +65,7 @@ impl Choice {
             false
         };
 
+        //Apply binding to the heap, update effected ref cells
         state.heap.bind(&self.binding);
         if state.config.debug {
             println!(
@@ -65,6 +78,7 @@ impl Choice {
         (goals, invented_pred)
     }
 
+    /**Build goals using binding and clause by applying binding to clause body */
     fn build_goals(&mut self, state: &mut State) -> Vec<usize> {
         let mut goals: Vec<usize> = vec![];
         for body_literal in &self.clause[1..] {
@@ -77,6 +91,8 @@ impl Choice {
         }
         goals
     }
+    
+    /**Build new clause using binding and clause */
     fn build_clause(&mut self, state: &mut State) -> Clause {
         let mut uqvar_binding: Option<Binding> = Some(Binding::new());
         let mut new_literals: Box<[usize]> = vec![0; self.clause.len()].into_boxed_slice();

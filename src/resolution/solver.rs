@@ -5,14 +5,20 @@ use crate::{
 
 use super::{choice::Choice, unification::Binding};
 
+/**The enviroment stored for each goal.
+ * When created each enviroment only needs a goal address and a depth
+ * Once the proof stack pointer reaches the enviroment a the goal is called.
+ * The rest of the envirmoment information is then created. 
+ * This allows back tracking to undo the effects of the enviroment
+ */
 struct Env {
     goal: usize, // Pointer to heap literal
     bindings: Binding,
-    choices: Vec<Choice>,
-    new_clause: bool,
-    invent_pred: bool,
-    children: usize,
-    depth: usize,
+    choices: Vec<Choice>, //Array of choices which have not been tried
+    new_clause: bool, //Was a new clause created by this enviroment
+    invent_pred: bool, //If there was a new clause was a ne predicate symbol invented
+    children: usize, //How many child goals were created
+    depth: usize,  
 }
 
 impl Env {
@@ -49,6 +55,12 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /**This is the proof loop.
+     * It takes the enviroment at the current pointer on the proof stack
+     * and dervies new goals, and possibly a new clause for the enviroment goal.
+     * These new goals spawn new enviroments. 
+     * This loop continues until the pointer matches the length of the proof stack
+     */
     fn prove(&mut self) -> bool {
         loop {
             let (depth, goal) = match self.proof_stack.get_mut(self.pointer) {
@@ -101,6 +113,7 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /**Decrement the poitner and undo enviroment changes until finding a choice point */
     fn retry(&mut self) -> bool {
         let n_children = self.proof_stack[self.pointer].children;
         let children: Box<[Env]> = self
@@ -129,7 +142,7 @@ impl<'a> Proof<'a> {
             self.state.heap.deallocate_above(child.goal);
         }
 
-        //is pointer a choice point
+        //is enviroment a choice point
         if env.choices.is_empty() {
             if self.pointer == 0 {
                 return false;
@@ -145,6 +158,7 @@ impl<'a> Proof<'a> {
                     self.state.heap.term_string(env.goal)
                 );
             }
+            //Use unchosen choice to retry goal
             let choice = env.choices.pop().unwrap();
             self.apply_choice(choice);
             self.pointer += 1;
@@ -152,6 +166,9 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /**Update enviroment fields with choice
+     * Build new goals, and new clause  
+     */ 
     fn apply_choice(&mut self, mut choice: Choice) {
         let (goals, invented_pred) = choice.choose(self.state);
         let env = self.proof_stack.get_mut(self.pointer).unwrap();
@@ -174,6 +191,7 @@ impl<'a> Proof<'a> {
 impl<'a> Iterator for Proof<'a> {
     type Item = Box<[Box<[Term]>]>;
 
+    /**Find the next possible proof tree, return None if there are no more possible proofs */
     fn next(&mut self) -> Option<Self::Item> {
         //If not first attempt at proof backtrack to last choice point
         if self.pointer != 0 {
