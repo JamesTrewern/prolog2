@@ -92,3 +92,17 @@ Hypothesis:
 :- load_file('examples/family'). %Load file at path
 :- ['examples/family'].
 ```
+# Step by Step Demonstration of New Clause Generation
+
+1. First, we define a higher-order clause in our program
+        `P(X,Y):-Q(X,Y) {X}`
+2. Next, the prover reaches some goal that can match with the higher-order clause
+        `p(a,b)`
+3. This creates the binding 
+        `{P/p, X/a, Y/b}`
+4. From this binding a new goal is generated, Q becomes an unbound variable
+        `_100(a,b)`
+5. Then, as this is a higher order clause, a new 1st order clause is created from the binding. The universally quantified variable X does not bind to a, but instead it transitions to an existentially quantified variable</br>
+`p(X,b):- _100(X,b) `
+6. Finally as the new clause has an unbound variable we add a constraint to our unification rules saying that _100 can not be bound to the value p
+
