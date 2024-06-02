@@ -1,83 +1,83 @@
 use std::{error, mem};
 use crate::{heap::{self, heap::{Heap, Tag}}, interface::state::State};
 
-use super::{get_module, PredModule};
+use super::{get_module, PredModule, PredReturn};
 
-fn body_pred(call: usize, state: &mut State) -> bool{
+fn body_pred(call: usize, state: &mut State) -> PredReturn{
     let symbol = if let (Tag::CON, symbol) = state.heap[call+2]{
         symbol
     }else{
-        return false;
+        return PredReturn::False;
     };
     let arity: isize = if let (Tag::INT, arity) = &state.heap[call+3]{
         unsafe { mem::transmute_copy(arity) }
     }else{
-        return false;
+        return PredReturn::False;
     };
     state.prog.add_body_pred(symbol, arity as usize, &state.heap);
-    true
+    PredReturn::True
 }
 
-fn max_h_preds(call: usize, state: &mut State) -> bool{
+fn max_h_preds(call: usize, state: &mut State) -> PredReturn{
     if let (Tag::INT, value) = state.heap[call+2]{
         state.config.max_h_pred = value;
-        true
+        PredReturn::True
     }else{
-        false
+        PredReturn::False
     }
 }
 
-fn max_h_clause(call: usize, state: &mut State) -> bool{
+fn max_h_clause(call: usize, state: &mut State) -> PredReturn{
     if let (Tag::INT, value) = state.heap[call+2]{
         state.config.max_h_clause = value;
-        true
+        PredReturn::True
     }else{
-        false
+        PredReturn::False
     }
 }
 
-fn share_preds(call: usize, state: &mut State) -> bool{
+fn share_preds(call: usize, state: &mut State) -> PredReturn{
     let value = match state.heap[call+2] {
         Heap::TRUE => true,
         Heap::FALSE => false,
-        _ => {println!("Value passed to share_preds wasn't true/false"); return false;}
+        _ => {println!("Value passed to share_preds wasn't true/false"); return PredReturn::False;}
     };
     state.config.share_preds = value;
-    true
+    PredReturn::True
 }
 
-fn debug(call: usize, state: &mut State) -> bool{
+fn debug(call: usize, state: &mut State) -> PredReturn{
     let value = match state.heap[call+2] {
         Heap::TRUE => true,
         Heap::FALSE => false,
-        _ => {println!("Value passed to debug wasn't true/false"); return false;}
+        _ => {println!("Value passed to debug wasn't true/false"); return PredReturn::False;}
     };
     state.config.debug = value;
-    true
+    PredReturn::True
 }
 
-pub fn load_module(call: usize, state: &mut State) -> bool {
+pub fn load_module(call: usize, state: &mut State) -> PredReturn {
     let name = match state.heap[call+2] {
         (Tag::CON, id) => state.heap.term_string(call+2),
-        _ => return false
+        _ => return PredReturn::False
     };
     state.load_module(&name);
-    true
+    PredReturn::True
 }
 
-pub fn load_file(call: usize, state: &mut State) -> bool{
+pub fn load_file(call: usize, state: &mut State) -> PredReturn{
     if let (Tag::LIS, addr) = state.heap[call]{
         let file_path = state.heap.symbols.get_symbol(state.heap[addr].1);
         println!("load: {file_path}");
         match  state.load_file(&file_path){
-            Ok(_) => true,
-            Err(error) => {println!("{error}"); false},
+            Ok(_) => PredReturn::True,
+            Err(error) => {println!("{error}"); PredReturn::False},
         }
     }else{
         let file_path = state.heap.symbols.get_symbol(state.heap[call+2].1);
         match  state.load_file(&file_path){
-            Ok(_) => true,
-            Err(error) => {println!("{error}"); false},
+            Ok(_) => PredReturn::True,
+            Err(error) => {println!("{error}"); PredReturn::False},
         }
     }
 }

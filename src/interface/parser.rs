@@ -6,7 +6,12 @@ const DELIMINATORS: &[char] = &[
     '<', '{', '}',
 ];
 const KNOWN_SYMBOLS: &[&str] = &[":-", "==", "=/=", "/=", "=:=", "**", "<=", ">="];
-const INFIX_ORDER: &[&str] = &["**", "*", "/", "+", "-", "==", "=/=", "/=", "=:=", "is"];
+const INFIX_ORDER: &[&[&str]] = &[
+    &["**"],
+    &["*", "/"],
+    &["+", "-"],
+    &["==", "=/=", "/=", "=:=", "is"],
+];
 
 pub fn remove_comments(file: &mut String) {
     //Must ingore % if in string
@@ -100,13 +105,28 @@ pub fn tokenise(text: &str) -> Vec<&str> {
         }
     }
 
+    i = 0;
+    while tokens.len() > i + 1 {
+        if tokens[i] == "-" && tokens[i + 1].chars().all(|c| c.is_numeric() || c == '.') {
+            let combined_value = [tokens[i], tokens[i + 1]].concat();
+            let text_i = text.find(&combined_value).unwrap();
+            tokens.remove(i + 1);
+            tokens.remove(i);
+            tokens.insert(i, &text[text_i..text_i + combined_value.len()]);
+        }
+        i += 1;
+    }
+
     tokens.retain(|token| ![" ", "\t", "\r"].contains(token));
 
     tokens
 }
 
 fn infix_order(operator: &str) -> usize {
-    INFIX_ORDER.iter().position(|op| *op == operator).unwrap()
+    INFIX_ORDER
+        .iter()
+        .position(|ops| ops.contains(&operator))
+        .unwrap()
 }
 
 fn parse_atom(token: &str, uqvars: &Vec<&str>) -> Term {
@@ -124,9 +144,9 @@ fn parse_atom(token: &str, uqvars: &Vec<&str>) -> Term {
             Term::VAR(token.into())
         }
     } else {
-        if token.chars().next() == Some('\'') && token.chars().last() == Some('\''){
-            Term::CON(token[1..token.len()-1].into())
-        }else{
+        if token.chars().next() == Some('\'') && token.chars().last() == Some('\'') {
+            Term::CON(token[1..token.len() - 1].into())
+        } else {
             Term::CON(token.into())
         }
     }
@@ -134,7 +154,9 @@ fn parse_atom(token: &str, uqvars: &Vec<&str>) -> Term {
 
 fn resolve_infix(term_stack: &mut Vec<Term>, op_stack: &mut Vec<Term>, max_prescendence: usize) {
     while !op_stack.is_empty()
-        && INFIX_ORDER.contains(&op_stack.last().unwrap().symbol())
+        && INFIX_ORDER
+            .iter()
+            .any(|ops| ops.contains(&op_stack.last().unwrap().symbol()))
         && infix_order(op_stack.last().unwrap().symbol()) <= max_prescendence
     {
         let op = op_stack.pop().unwrap();
@@ -239,7 +261,7 @@ pub fn parse_literals(tokens: &[&str]) -> Result<Vec<Term>, String> {
             op_stack.push(parse_atom(token, &uqvars));
         } else if *token == "]" {
             build_list(&mut term_stack, &mut op_stack)?
-        } else if INFIX_ORDER.contains(&token) {
+        } else if INFIX_ORDER.iter().any(|ops| ops.contains(&token)) {
             resolve_infix(&mut term_stack, &mut op_stack, infix_order(token));
             op_stack.push(parse_atom(token, &uqvars));
         } else if *token != "\n" {

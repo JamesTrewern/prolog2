@@ -4,7 +4,7 @@ use crate::heap::heap::{Heap, Tag};
 
 /**Array of pair of memory addresses, binding from left to right  */
 #[derive(Debug)]
-pub struct Binding(Vec<(usize, usize)>);
+pub struct Binding(pub Vec<(usize, usize)>);
 
 impl Binding {
     pub fn new() -> Binding {

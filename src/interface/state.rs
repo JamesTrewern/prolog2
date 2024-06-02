@@ -71,7 +71,7 @@ impl State {
         let mut prog = Program::new();
         let mut heap = Heap::new(HEAP_SIZE);
         prog.add_pred_module(crate::pred_module::CONFIG, &mut heap);
-        prog.add_pred_module(crate::pred_module::MATH, &mut heap);
+        prog.add_pred_module(crate::pred_module::MATHS, &mut heap);
 
         State { config, prog, heap }
     }
@@ -152,7 +152,7 @@ impl State {
 
     pub fn load_module(&mut self, name: &str) {
         match get_module(&name.to_lowercase()) {
-            Some(pred_module) => self.prog.add_pred_module(pred_module, &mut self.heap),
+            Some(pred_module) => {pred_module.1(self); self.prog.add_pred_module(pred_module.0, &mut self.heap)},
             None => println!("{name} is not a recognised module"),
         }
     }
