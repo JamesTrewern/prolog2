@@ -102,16 +102,29 @@ impl Heap {
     }
 
     /**Recursively dereference cell address until non ref or self ref cell */
-    pub fn deref_addr(&self, addr: usize) -> usize {
-        if let (Tag::REF | Tag::REFA | Tag::REFC | Tag::StrRef, pointer) = self[addr] {
-            if addr == pointer {
-                addr
-            } else {
-                self.deref_addr(self[addr].1)
+    pub fn deref_addr(&self, mut addr: usize) -> usize {
+
+        loop {
+            if let (Tag::REF | Tag::REFA | Tag::REFC | Tag::StrRef, pointer) = self[addr]{
+                if addr == pointer{
+                    return pointer;
+                }else{
+                    addr = pointer
+                }
+            }else{
+                return addr;
             }
-        } else {
-            addr
         }
+
+        // if let (Tag::REF | Tag::REFA | Tag::REFC | Tag::StrRef, pointer) = self[addr] {
+        //     if addr == pointer {
+        //         addr
+        //     } else {
+        //         self.deref_addr(self[addr].1)
+        //     }
+        // } else {
+        //     addr
+        // }
     }
 
     /**Add new constant symbol to symbol database and return ID*/
