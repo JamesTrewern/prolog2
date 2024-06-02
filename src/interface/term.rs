@@ -1,6 +1,6 @@
 use crate::heap::heap::{Cell, Heap, Tag};
 use fsize::fsize;
-use std::{collections::HashMap, fmt, mem};
+use std::{collections::HashMap, fmt, mem, ops::Deref};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Term {
@@ -232,5 +232,36 @@ impl Term {
 impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string())
+    }
+}
+
+pub struct TermClause{
+    pub literals: Vec<Term>
+}
+
+impl TermClause{
+    pub fn to_string(&self) -> String{
+        if self.literals.len() == 1 {
+            format!("{}.", self.literals[0])
+        }else{
+            let mut body = self.literals[1..].iter().map(|literal| format!("{literal},")).collect::<Vec<String>>().concat();
+            body.pop();
+            body += ".";
+            format!("{}:-{body}", self.literals[0])
+        }
+    }
+}
+
+impl fmt::Display for TermClause{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl Deref for TermClause{
+    type Target = [Term];
+
+    fn deref(&self) -> &Self::Target {
+        &self.literals
     }
 }

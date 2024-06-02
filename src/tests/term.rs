@@ -99,6 +99,7 @@ fn build_naked_list(){
         (Tag::LIS, 2),
         (Tag::REFC, 2),
         Heap::EMPTY_LIS,
+        (Tag::LIS, 0),
     ]);
 }
 
@@ -115,7 +116,8 @@ fn build_int_list(){
         (Tag::INT, unsafe {mem::transmute_copy(&(5 as isize))}),
         (Tag::LIS, 6),
         (Tag::INT, unsafe {mem::transmute_copy(&(10 as isize))}),
-        (Tag::LIS, Heap::CON_PTR),
+        Heap::EMPTY_LIS,
+        (Tag::LIS, 0),
     ]);
 }
 
@@ -132,7 +134,8 @@ fn build_flt_list(){
         (Tag::FLT, unsafe {mem::transmute_copy(&(5.0 as fsize))}),
         (Tag::LIS, 6),
         (Tag::FLT, unsafe {mem::transmute_copy(&(PI as fsize))}),
-        (Tag::LIS, Heap::CON_PTR),
+        Heap::EMPTY_LIS,
+        (Tag::LIS, 0),
     ]);
 }
 

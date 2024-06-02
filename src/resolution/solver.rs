@@ -1,5 +1,5 @@
 use crate::{
-    interface::{state::State, term::Term},
+    interface::{state::State, term::{Term, TermClause}},
     program::{clause::{self, ClauseType}, program::CallRes},
 };
 
@@ -189,7 +189,7 @@ impl<'a> Proof<'a> {
 }
 
 impl<'a> Iterator for Proof<'a> {
-    type Item = Box<[Box<[Term]>]>;
+    type Item = Box<[TermClause]>;
 
     /**Find the next possible proof tree, return None if there are no more possible proofs */
     fn next(&mut self) -> Option<Self::Item> {
@@ -227,8 +227,8 @@ impl<'a> Iterator for Proof<'a> {
                     self.state.prog.clauses[i]
                         .iter()
                         .map(|literal| Term::build_from_heap(*literal, &self.state.heap))
-                        .collect::<Box<[Term]>>()
-                })
+                        .collect::<Vec<Term>>()
+                }).map(|literals| TermClause{ literals})
                 .collect();
 
             Some(h)
