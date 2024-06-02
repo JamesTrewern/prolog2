@@ -1,6 +1,13 @@
 use crate::{
-    interface::{state::State, term::{Term, TermClause}},
-    program::{clause::{self, ClauseType}, program::CallRes},
+    interface::{
+        state::State,
+        term::{Term, TermClause},
+    },
+    pred_module::PredReturn,
+    program::{
+        clause::{self, ClauseType},
+        program::CallRes,
+    },
 };
 
 use super::{choice::Choice, unification::Binding};
@@ -8,17 +15,17 @@ use super::{choice::Choice, unification::Binding};
 /**The enviroment stored for each goal.
  * When created each enviroment only needs a goal address and a depth
  * Once the proof stack pointer reaches the enviroment a the goal is called.
- * The rest of the envirmoment information is then created. 
+ * The rest of the envirmoment information is then created.
  * This allows back tracking to undo the effects of the enviroment
  */
 struct Env {
     goal: usize, // Pointer to heap literal
     bindings: Binding,
     choices: Vec<Choice>, //Array of choices which have not been tried
-    new_clause: bool, //Was a new clause created by this enviroment
-    invent_pred: bool, //If there was a new clause was a ne predicate symbol invented
-    children: usize, //How many child goals were created
-    depth: usize,  
+    new_clause: bool,     //Was a new clause created by this enviroment
+    invent_pred: bool,    //If there was a new clause was a ne predicate symbol invented
+    children: usize,      //How many child goals were created
+    depth: usize,
 }
 
 impl Env {
@@ -39,6 +46,7 @@ pub(crate) struct Proof<'a> {
     proof_stack: Vec<Env>,
     state: &'a mut State,
     goals: Box<[usize]>,
+    goal_vars: Box<[usize]>,
     pointer: usize,
 }
 
@@ -47,10 +55,26 @@ impl<'a> Proof<'a> {
         let goals: Box<[usize]> = goals.into();
         let proof_stack: Vec<Env> = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
 
+        let mut goal_vars = Vec::<usize>::new();
+
+        for goal in goals.iter() {
+            goal_vars.append(
+                &mut state.heap
+                    .term_vars(*goal)
+                    .iter()
+                    .map(|(_, addr)|*addr)
+                    .collect(),
+            );
+        }
+
+        goal_vars.sort();
+        goal_vars.dedup();
+
         Proof {
             proof_stack,
             state,
             goals,
+            goal_vars: goal_vars.into(),
             pointer: 0,
         }
     }
@@ -58,7 +82,7 @@ impl<'a> Proof<'a> {
     /**This is the proof loop.
      * It takes the enviroment at the current pointer on the proof stack
      * and dervies new goals, and possibly a new clause for the enviroment goal.
-     * These new goals spawn new enviroments. 
+     * These new goals spawn new enviroments.
      * This loop continues until the pointer matches the length of the proof stack
      */
     fn prove(&mut self) -> bool {
@@ -82,15 +106,19 @@ impl<'a> Proof<'a> {
                 .prog
                 .call(goal, &mut self.state.heap, &mut self.state.config)
             {
-                CallRes::Function(function) => {
-                    if function(goal, self.state) {
-                        self.pointer += 1
-                    } else {
+                CallRes::Function(function) => match function(goal, self.state) {
+                    PredReturn::True => self.pointer += 1,
+                    PredReturn::False => {
                         if !self.retry() {
                             return false;
                         }
                     }
-                }
+                    PredReturn::Binding(binding) => {
+                        self.state.heap.bind(&binding);
+                        self.proof_stack[self.pointer].bindings = binding;
+                        self.pointer += 1
+                    }
+                },
                 CallRes::Clauses(clauses) => {
                     let mut choices: Vec<Choice> = clauses
                         .filter_map(|ci| Choice::build_choice(goal, ci, self.state))
@@ -168,7 +196,7 @@ impl<'a> Proof<'a> {
 
     /**Update enviroment fields with choice
      * Build new goals, and new clause  
-     */ 
+     */
     fn apply_choice(&mut self, mut choice: Choice) {
         let (goals, invented_pred) = choice.choose(self.state);
         let env = self.proof_stack.get_mut(self.pointer).unwrap();
@@ -212,9 +240,20 @@ impl<'a> Iterator for Proof<'a> {
                 println!("{},", self.state.heap.term_string(*goal))
             }
 
+            for var in self.goal_vars.iter(){
+                println!("{} = {}", self.state.heap.symbols.get_var(*var).unwrap(), self.state.heap.term_string(*var));
+            }
+
             println!("Hypothesis: ");
-            for clause in self.state.prog.clauses.iter(&[ClauseType::HYPOTHESIS]){
-                println!("\t{}", self.state.prog.clauses.get(clause).to_string(&self.state.heap))
+            for clause in self.state.prog.clauses.iter(&[ClauseType::HYPOTHESIS]) {
+                println!(
+                    "\t{}",
+                    self.state
+                        .prog
+                        .clauses
+                        .get(clause)
+                        .to_string(&self.state.heap)
+                )
             }
 
             //For every clause in hypothesis convert into an array non heap terms
@@ -228,7 +267,8 @@ impl<'a> Iterator for Proof<'a> {
                         .iter()
                         .map(|literal| Term::build_from_heap(*literal, &self.state.heap))
                         .collect::<Vec<Term>>()
-                }).map(|literals| TermClause{ literals})
+                })
+                .map(|literals| TermClause { literals })
                 .collect();
 
             Some(h)
