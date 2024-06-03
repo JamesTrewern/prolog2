@@ -1,4 +1,4 @@
-use super::parser::{parse_literals, remove_comments, tokenise};
+use super::parser::{parse_clause, remove_comments, tokenise, parse_goals};
 use crate::{heap::heap::Heap, pred_module::get_module, program::{clause::Clause, program::Program}, resolution::solver::Proof};
 use std::{collections::HashMap, fs, io::{self, stdout, Write}};
 
@@ -114,14 +114,14 @@ impl State {
                     return;
                 }
             } else {
-                let terms = match parse_literals(segment) {
-                    Ok(res) => res,
+                let clause = match parse_clause(segment) {
+                    Ok(res) => res.to_heap(&mut self.heap),
                     Err(msg) => {
                         println!("Error after ln[{line}]: {msg}");
                         return;
                     }
                 };
-                self.prog.add_clause(Clause::parse_clause(terms, &mut self.heap), &self.heap);
+                self.prog.add_clause(clause, &self.heap);
             }
 
             line += segment.iter().filter(|t| **t == "\n").count();
@@ -131,7 +131,7 @@ impl State {
     }
 
     pub fn handle_directive(&mut self, segment: &[&str]) -> Result<(), String> {
-        let goals = match parse_literals(segment) {
+        let goals = match parse_goals(segment) {
             Ok(res) => res,
             Err(error) => {
                 println!();

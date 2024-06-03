@@ -1,4 +1,4 @@
-use crate::{interface::{parser::{parse_literals, tokenise}, state::{Config, State}}, program::clause::{Clause, ClauseType}};
+use crate::{interface::{parser::{parse_goals, tokenise}, state::{Config, State}}, program::clause::{Clause, ClauseType}};
 
 
 
@@ -7,7 +7,7 @@ fn body_pred() {
     let mut state = State::new(None);
     state.heap.query_space = false;
     for clause in ["dad(adam,james)", "mum(tami,james)"] {
-        let clause = Clause::parse_clause(parse_literals(&tokenise(clause)).unwrap(), &mut state.heap);
+        let clause = Clause::parse_clause(parse_goals(&tokenise(clause)).unwrap(), &mut state.heap);
         state.prog.add_clause(clause, &state.heap)
     }
     state.heap.query_space = true;

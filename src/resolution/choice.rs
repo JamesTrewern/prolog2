@@ -42,7 +42,7 @@ impl Choice {
         }
         //If clause is higher order build a new clause and add to program.
         //If variable predicate symbol in head of new clause, invented_pred is true
-        let invented_pred = if self.clause.clause_type == ClauseType::HO {
+        let invented_pred = if self.clause.clause_type == ClauseType::META {
             let new_clause: Clause = self.build_clause(state); //Use binding to make new clause
             if state.config.debug {
                 println!(

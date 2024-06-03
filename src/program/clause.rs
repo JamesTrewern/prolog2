@@ -8,7 +8,7 @@ use std::{collections::HashMap, mem::ManuallyDrop, ops::Deref};
 pub(crate) enum ClauseType {
     CLAUSE,     //Simple 1st order clause
     BODY,       //1st order clause that can match with variable predicate symbol
-    HO,         //Higher-order clause
+    META,         //Higher-order clause
     HYPOTHESIS, //1st order clause that is generated during solving
 }
 
@@ -49,7 +49,7 @@ impl Clause {
     pub fn parse_clause(terms: Vec<Term>, heap: &mut Heap) -> Clause {
         //Is any literal higher order?
         let clause_type = if terms.iter().any(|t| t.higher_order()) {
-            ClauseType::HO
+            ClauseType::META
         } else {
             ClauseType::CLAUSE
         };

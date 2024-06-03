@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::{
     interface::{
-        parser::{parse_literals, tokenise},
+        parser::{parse_goals, tokenise},
         state::{Config, State},
     },
     resolution::solver::Proof,
@@ -19,7 +19,7 @@ fn ancestor() {
     state.load_file("./examples/family");
 
 
-    let goals: Vec<usize> = parse_literals(&tokenise("ancestor(ken,james), ancestor(christine,james)"))
+    let goals: Vec<usize> = parse_goals(&tokenise("ancestor(ken,james), ancestor(christine,james)"))
     .unwrap()
     .into_iter()
     .map(|t| t.build_on_heap(&mut state.heap, &mut HashMap::new()))

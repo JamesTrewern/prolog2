@@ -58,13 +58,13 @@ impl<'a> ClauseTable {
         let o1 = match c1.0 {
             ClauseType::CLAUSE => 1,
             ClauseType::BODY => 2,
-            ClauseType::HO => 3,
+            ClauseType::META => 3,
             ClauseType::HYPOTHESIS => 4,
         };
         let o2 = match c2.0 {
             ClauseType::CLAUSE => 1,
             ClauseType::BODY => 2,
-            ClauseType::HO => 3,
+            ClauseType::META => 3,
             ClauseType::HYPOTHESIS => 4,
         };
         //Does the clause Type match, if so order by symbol
@@ -136,7 +136,7 @@ impl<'a> ClauseTable {
                 ClauseType::BODY => {
                     self.type_flags[1] = i;
                 }
-                ClauseType::HO => {
+                ClauseType::META => {
                     self.type_flags[2] = i;
                 }
                 ClauseType::HYPOTHESIS => {
@@ -171,7 +171,7 @@ impl<'a> ClauseTable {
         if c_types.contains(&ClauseType::BODY) {
             ranges.push(self.type_flags[1]..self.type_flags[2]);
         }
-        if c_types.contains(&ClauseType::HO) {
+        if c_types.contains(&ClauseType::META) {
             ranges.push(self.type_flags[2]..self.type_flags[3]);
         }
         if c_types.contains(&ClauseType::HYPOTHESIS) {

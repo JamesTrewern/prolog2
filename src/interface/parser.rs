@@ -1,4 +1,4 @@
-use super::term::Term;
+use super::term::{Term, TermClause};
 use fsize::fsize;
 use std::collections::HashMap;
 const DELIMINATORS: &[char] = &[
@@ -217,7 +217,7 @@ fn build_list(term_stack: &mut Vec<Term>, op_stack: &mut Vec<Term>) -> Result<()
 }
 
 //TO DO use {X,Y} notation for Univerally Quantified vars
-fn get_uq_vars<'a>(tokens: &[&'a str]) -> Result<Vec<&'a str>, String> {
+fn get_uq_vars<'a>(tokens: &[&'a str]) -> Result<Option<Vec<&'a str>>, String> {
     match tokens.iter().position(|token| *token == "{") {
         Some(i) => {
             let mut uqvars = Vec::<&str>::new();
@@ -233,18 +233,35 @@ fn get_uq_vars<'a>(tokens: &[&'a str]) -> Result<Vec<&'a str>, String> {
                     ));
                 }
             }
-            Ok(uqvars)
+            Ok(Some(uqvars))
         }
-        None => Ok(Vec::new()),
+        None => Ok(None),
     }
 }
 
-pub fn parse_literals(tokens: &[&str]) -> Result<Vec<Term>, String> {
+pub fn parse_clause(mut tokens: &[&str]) -> Result<TermClause, String> {
+    let mut meta = false;
+    let uqvars = match get_uq_vars(&tokens)? {
+        Some(uqvars) => {
+            tokens = &tokens[0..tokens.iter().position(|t| *t == "{").unwrap()];
+            meta = true;
+            uqvars
+        }
+        None => Vec::new(),
+    };
+
+    let literals = parse_literals(tokens, &uqvars)?;
+
+    Ok(TermClause { literals, meta })
+}
+
+pub fn parse_goals(tokens: &[&str]) -> Result<Vec<Term>, String>{
+    parse_literals(tokens, & vec![])
+}
+
+fn parse_literals(tokens: &[&str], uqvars: &Vec<&str>) -> Result<Vec<Term>, String> {
     let mut term_stack: Vec<Term> = Vec::new();
     let mut op_stack: Vec<Term> = Vec::new();
-
-    let uqvars = get_uq_vars(&tokens)?;
-
     for token in tokens {
         if ["{", "."].contains(&token) {
             resolve_infix(&mut term_stack, &mut op_stack, INFIX_ORDER.len());
@@ -268,5 +285,6 @@ pub fn parse_literals(tokens: &[&str]) -> Result<Vec<Term>, String> {
             term_stack.push(parse_atom(token, &uqvars));
         }
     }
+    resolve_infix(&mut term_stack, &mut op_stack, INFIX_ORDER.len());
     Ok(term_stack)
 }

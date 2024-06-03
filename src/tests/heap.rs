@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     heap::heap::{Heap, Tag},
-    interface::parser::{parse_literals, tokenise},
+    interface::parser::{ parse_goals, tokenise},
     resolution::unification::Binding,
 };
 
@@ -52,14 +52,14 @@ fn should_not_update_refa() {
 fn should_not_panic_print_heap() {
     let mut heap = Heap::new(100);
     for term in [
-        "p(A,B)",
-        "X == [1,2,3]",
-        "P(Q([X,Y]))",
-        "Z is X**2/Y**2",
-        "R(Z)",
+        "p(A,B).",
+        "X == [1,2,3].",
+        "P(Q([X,Y])).",
+        "Z is X**2/Y**2.",
+        "R(Z).",
     ] {
         let tokens = tokenise(term);
-        let term = parse_literals(&tokens).unwrap().remove(0);
+        let term = parse_goals(&tokens).unwrap().remove(0);
         term.build_on_heap(&mut heap, &mut HashMap::new());
     }
 

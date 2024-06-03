@@ -59,7 +59,7 @@ impl Program {
                     } else {
                         self.clauses.iter(&[
                             ClauseType::BODY,
-                            ClauseType::HO,
+                            ClauseType::META,
                             ClauseType::HYPOTHESIS,
                         ])
                     }
@@ -68,7 +68,7 @@ impl Program {
                         self.clauses.iter(&[ClauseType::HYPOTHESIS])
                     } else {
                         self.clauses
-                            .iter(&[ClauseType::HO, ClauseType::HYPOTHESIS])
+                            .iter(&[ClauseType::META, ClauseType::HYPOTHESIS])
                     }
                 };
                 CallRes::Clauses(iterator)

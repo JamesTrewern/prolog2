@@ -1,6 +1,9 @@
-use crate::heap::heap::{Cell, Heap, Tag};
+use crate::{
+    heap::heap::{Cell, Heap, Tag},
+    program::clause::{self, Clause, ClauseType},
+};
 use fsize::fsize;
-use std::{collections::HashMap, fmt, mem, ops::Deref};
+use std::{collections::HashMap, fmt, mem::{self, ManuallyDrop}, ops::Deref};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Term {
@@ -235,30 +238,60 @@ impl fmt::Display for Term {
     }
 }
 
-pub struct TermClause{
-    pub literals: Vec<Term>
+pub struct TermClause {
+    pub literals: Vec<Term>,
+    pub meta: bool,
 }
 
-impl TermClause{
-    pub fn to_string(&self) -> String{
+impl TermClause {
+    pub fn to_string(&self) -> String {
         if self.literals.len() == 1 {
             format!("{}.", self.literals[0])
-        }else{
-            let mut body = self.literals[1..].iter().map(|literal| format!("{literal},")).collect::<Vec<String>>().concat();
+        } else {
+            let mut body = self.literals[1..]
+                .iter()
+                .map(|literal| format!("{literal},"))
+                .collect::<Vec<String>>()
+                .concat();
             body.pop();
             body += ".";
             format!("{}:-{body}", self.literals[0])
         }
     }
+
+    pub fn to_heap(&self, heap: &mut Heap) -> Clause {
+        let clause_type = if self.meta {
+            ClauseType::META
+        } else {
+            ClauseType::CLAUSE
+        };
+
+        //Stores symbols and their addresses on the heap.
+        //Each symbol will insert a new k,v pair when it's first seen for this clause
+        let mut var_ref = HashMap::new();
+
+        //Build each term on the heap then collect the addresses into a boxed slice
+        //Manually Drop is used because clauses built from the clause table are built from raw pointers
+        let literals: ManuallyDrop<Box<[usize]>> = ManuallyDrop::new(
+            self.literals
+                .iter()
+                .map(|t| t.build_on_heap(heap, &mut var_ref))
+                .collect::<Box<[usize]>>(),
+        );
+        Clause {
+            clause_type,
+            literals,
+        }
+    }
 }
 
-impl fmt::Display for TermClause{
+impl fmt::Display for TermClause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string())
     }
 }
 
-impl Deref for TermClause{
+impl Deref for TermClause {
     type Target = [Term];
 
     fn deref(&self) -> &Self::Target {

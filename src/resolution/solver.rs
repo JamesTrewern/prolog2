@@ -202,7 +202,7 @@ impl<'a> Proof<'a> {
         let env = self.proof_stack.get_mut(self.pointer).unwrap();
         env.children = goals.len();
         env.bindings = choice.binding;
-        env.new_clause = choice.clause.clause_type == ClauseType::HO;
+        env.new_clause = choice.clause.clause_type == ClauseType::META;
         env.invent_pred = invented_pred;
         let depth = env.depth + 1;
         // state.heap.print_heap();
@@ -268,7 +268,7 @@ impl<'a> Iterator for Proof<'a> {
                         .map(|literal| Term::build_from_heap(*literal, &self.state.heap))
                         .collect::<Vec<Term>>()
                 })
-                .map(|literals| TermClause { literals })
+                .map(|literals| TermClause { literals, meta: false })
                 .collect();
 
             Some(h)
