@@ -10,7 +10,7 @@ const KNOWN_SYMBOLS: &[&str] = &["false", "true"];
 pub struct SymbolDB {
     const_symbols: Vec<Box<str>>,
     var_symbols: Vec<Box<str>>,
-    var_symbol_map: HashMap<usize, usize>, //Key: Variable Ref addr, Value: index to var symbols vec
+    var_symbol_map: Vec<(usize, usize)>, //Key: Variable Ref addr, Value: index to var symbols vec
 }
 
 impl SymbolDB {
@@ -23,7 +23,7 @@ impl SymbolDB {
                     .collect::<Vec<Box<str>>>(),
             ),
             var_symbols: vec![],
-            var_symbol_map: HashMap::new(),
+            var_symbol_map: Vec::new(),
         }
     }
 
@@ -40,11 +40,11 @@ impl SymbolDB {
     pub fn set_var(&mut self, symbol: &str, addr: usize) {
         match self.var_symbols.iter().position(|e| *e == symbol.into()) {
             Some(i) => {
-                self.var_symbol_map.insert(addr, i);
+                self.var_symbol_map.push((addr, i));
             }
             None => {
                 self.var_symbols.push(symbol.into());
-                self.var_symbol_map.insert(addr, self.var_symbols.len() - 1);
+                self.var_symbol_map.push((addr, self.var_symbols.len() - 1));
             }
         }
     }
@@ -54,7 +54,7 @@ impl SymbolDB {
     }
 
     pub fn get_var(&self, addr: usize) -> Option<&str> {
-        if let Some(i) = self.var_symbol_map.get(&addr) {
+        if let Some((_,i)) = self.var_symbol_map.iter().find(|(heap_ref, _)| heap_ref == &addr) {
             Some(&self.var_symbols[*i])
         } else {
             None
