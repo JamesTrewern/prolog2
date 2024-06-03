@@ -80,6 +80,22 @@ Hypothesis:
         ancestor(A,B):-dad(A,C),ancestor(C,B)
         ancestor(A,B):-dad(A,B)
 ```
+## Map
+
+``` prolog
+map([],[], P).
+
+map([H1|T1], [H2|T2], P):-
+    P(H1,H2),
+    map(T1,T2,P).
+
+double(X,Y):-
+    Y is X + X.
+
+:- body_pred(double,2).
+
+```
+
 
 # Configuration Options
 ``` prolog
