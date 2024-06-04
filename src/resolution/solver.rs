@@ -245,7 +245,7 @@ impl<'a> Iterator for Proof<'a> {
             }
 
             println!("Hypothesis: ");
-            for clause in self.state.prog.clauses.iter(&[ClauseType::HYPOTHESIS]) {
+            for clause in self.state.prog.clauses.iter([false,false,false,true]) {
                 println!(
                     "\t{}",
                     self.state
@@ -261,7 +261,7 @@ impl<'a> Iterator for Proof<'a> {
                 .state
                 .prog
                 .clauses
-                .iter(&[ClauseType::HYPOTHESIS])
+                .iter([false,false,false,true])
                 .map(|i| {
                     self.state.prog.clauses[i]
                         .iter()

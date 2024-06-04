@@ -50,28 +50,25 @@ impl Program {
             Some(Predicate::Function(function)) => CallRes::Function(*function),
             Some(Predicate::Clauses(range)) => CallRes::Clauses(ClauseIterator { ranges: [range.clone()].into()}), //TO DO sort clause table so that this can be range
             None => {
-                let iterator = if symbol < Heap::CON_PTR {
+                let mut c_types = if symbol < Heap::CON_PTR {
                     if self.h_size == config.max_h_clause
                         || self.invented_preds == config.max_h_pred
                     {
-                        self.clauses
-                            .iter(&[ClauseType::BODY, ClauseType::HYPOTHESIS])
+                        [false, true, false, true]
                     } else {
-                        self.clauses.iter(&[
-                            ClauseType::BODY,
-                            ClauseType::META,
-                            ClauseType::HYPOTHESIS,
-                        ])
+                        [false, true, true, true]
                     }
                 } else {
                     if self.h_size == config.max_h_clause {
-                        self.clauses.iter(&[ClauseType::HYPOTHESIS])
+                        [false,false,false,true]
                     } else {
-                        self.clauses
-                            .iter(&[ClauseType::META, ClauseType::HYPOTHESIS])
+                        [false,false,true,true]
                     }
                 };
-                CallRes::Clauses(iterator)
+                if !config.learn{
+                    c_types[2] = false;
+                }
+                CallRes::Clauses(self.clauses.iter(c_types))
             }
         }
     }
@@ -164,7 +161,7 @@ impl Program {
     /** Create symbols for all variables in the hypothesis*/
     pub fn symbolise_hypothesis(&self, heap: &mut Heap) {
         //TO DO could turn unbound refs in H into constants
-        for i in self.clauses.iter(&[ClauseType::HYPOTHESIS]) {
+        for i in self.clauses.iter([false,false,false,true]) {
             self.clauses.get(i).symbolise_vars(heap);
         }
     }

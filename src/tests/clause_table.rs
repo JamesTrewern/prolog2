@@ -50,7 +50,7 @@ fn iter_clause_body() {
     clause_table.sort_clauses(&heap);
     clause_table.find_flags();
     let expected = vec!["d(X,Y)".to_string(), "c(X,Y)".to_string(), "b(X,Y)".to_string(), "a(X,Y)".to_string()];
-    for i in clause_table.iter(&[ClauseType::CLAUSE, ClauseType::BODY]) {
+    for i in clause_table.iter([true,true,false,false]) {
         assert!(expected.contains(&heap.term_string(clause_table[i][0])));
     }
 }
@@ -61,7 +61,7 @@ fn iter_body_meta_hypothesis() {
     clause_table.sort_clauses(&heap);
     clause_table.find_flags();
     let expected = vec!["g(X,Y)".to_string(),"f(X,Y)".to_string(),"e(X,Y)".to_string(),"d(X,Y)".to_string(), "c(X,Y)".to_string()];
-    for i in clause_table.iter(&[ClauseType::BODY, ClauseType::META, ClauseType::HYPOTHESIS]) {
+    for i in clause_table.iter([false, true, true, true]) {
         assert!(expected.contains(&heap.term_string(clause_table[i][0])));
     }
 }
@@ -72,7 +72,7 @@ fn iter_meta_hypothesis() {
     clause_table.sort_clauses(&heap);
     clause_table.find_flags();
     let expected = vec!["g(X,Y)".to_string(),"f(X,Y)".to_string(),"e(X,Y)".to_string()];
-    for i in clause_table.iter(&[ClauseType::META, ClauseType::HYPOTHESIS]) {
+    for i in clause_table.iter([false,false,true,true]) {
         assert!(expected.contains(&heap.term_string(clause_table[i][0])));
     }
 }

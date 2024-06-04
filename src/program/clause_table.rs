@@ -106,7 +106,7 @@ impl<'a> ClauseTable {
     pub fn predicate_map(&self, heap: &Heap) -> HashMap<(usize, usize), Range<usize>> {
         let mut predicate_map = HashMap::<(usize, usize), (usize, usize)>::new();
 
-        for idx in self.iter(&[ClauseType::CLAUSE, ClauseType::BODY]) {
+        for idx in self.iter([true,true,false,false]) {
             let clause = self.get(idx);
             let (symbol, arity) = heap.str_symbol_arity(clause[0]);
             match predicate_map.get_mut(&(symbol, arity)) {
@@ -160,21 +160,22 @@ impl<'a> ClauseTable {
     }
 
     /**Creates an iterator over the clause indices that have a type within c_types
-     * @c_types: array of the ClauseType enum determining which indices to iterate over
+     * @c_types: array of the bool enum determining which clause types to iterate over
+     *  [Clause, Body, Meta, Hypothesis]
      */
-    pub fn iter(&self, c_types: &[ClauseType]) -> ClauseIterator {
+    pub fn iter(&self, c_types: [bool;4]) -> ClauseIterator {
         let mut ranges = Vec::<Range<usize>>::new();
 
-        if c_types.contains(&ClauseType::CLAUSE) {
+        if c_types[0] {
             ranges.push(0..self.type_flags[1]);
         }
-        if c_types.contains(&ClauseType::BODY) {
+        if c_types[1] {
             ranges.push(self.type_flags[1]..self.type_flags[2]);
         }
-        if c_types.contains(&ClauseType::META) {
+        if c_types[2] {
             ranges.push(self.type_flags[2]..self.type_flags[3]);
         }
-        if c_types.contains(&ClauseType::HYPOTHESIS) {
+        if c_types[3] {
             ranges.push(self.type_flags[3]..self.len());
         }
 

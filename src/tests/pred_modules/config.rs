@@ -20,7 +20,7 @@ fn body_pred() {
     let body_clauses: Vec<String> = state
         .prog
         .clauses
-        .iter(&[ClauseType::BODY])
+        .iter([false,true,false,false])
         .map(|i| state.prog.clauses.get(i).to_string(&state.heap))
         .collect();
 
