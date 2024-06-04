@@ -1,5 +1,5 @@
 use super::{clause::{Clause, ClauseType}, clause_table::{ClauseIterator, ClauseTable}};
-use crate::{heap::heap::{Heap, Tag}, interface::state::Config, pred_module::{config, PredModule, PredicateFN}, resolution::unification::Binding};
+use crate::{heap::heap::{Heap, Tag}, interface::config::Config, pred_module::{config, PredModule, PredicateFN}, resolution::unification::Binding};
 use std::{collections::HashMap, ops::Range};
 
 const PRED_NAME: &'static str = "James";

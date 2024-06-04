@@ -4,8 +4,7 @@ use std::collections::HashMap;
 
 use crate::{
     interface::{
-        parser::{parse_goals, tokenise},
-        state::{Config, State},
+        config::Config, parser::{parse_goals, tokenise}, state::State
     },
     resolution::solver::Proof,
 };

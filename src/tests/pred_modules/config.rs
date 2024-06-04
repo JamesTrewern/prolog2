@@ -1,6 +1,9 @@
-use crate::{interface::{parser::{parse_goals, tokenise}, state::{Config, State}}, program::clause::{Clause, ClauseType}};
-
-
+use crate::{
+    interface::{
+        config::Config, parser::{parse_goals, tokenise}, state::State
+    },
+    program::clause::{Clause, ClauseType},
+};
 
 #[test]
 fn body_pred() {
@@ -11,7 +14,9 @@ fn body_pred() {
         state.prog.add_clause(clause, &state.heap)
     }
     state.heap.query_space = true;
-    state.handle_directive(&tokenise("body_pred(dad,2),body_pred(mum,2)")).unwrap();
+    state
+        .handle_directive(&tokenise("body_pred(dad,2),body_pred(mum,2)"))
+        .unwrap();
     let body_clauses: Vec<String> = state
         .prog
         .clauses
@@ -19,12 +24,14 @@ fn body_pred() {
         .map(|i| state.prog.clauses.get(i).to_string(&state.heap))
         .collect();
 
-    assert_eq!(body_clauses.len(),["mum(tami,james)", "dad(adam,james)"].len());
-    for bc in body_clauses{
+    assert_eq!(
+        body_clauses.len(),
+        ["mum(tami,james)", "dad(adam,james)"].len()
+    );
+    for bc in body_clauses {
         assert!(["mum(tami,james)".to_string(), "dad(adam,james)".to_string()].contains(&bc))
     }
 }
-
 
 #[test]
 fn max_h_pred() {

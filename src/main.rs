@@ -7,9 +7,7 @@ mod tests;
 
 use std::process::ExitCode;
 
-use interface::{parser::{self, tokenise}, state::{Config, State}};
-use resolution::solver::Proof;
-
+use interface::{config::Config, state::State};
 /*
 
 Remove terms from heap when no longer needed
