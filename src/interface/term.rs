@@ -100,7 +100,7 @@ impl Term {
         let addr = heap.len();
 
         if terms.len() == 0 {
-            heap.push(Heap::EMPTY_LIS)
+            return Heap::EMPTY_LIS;
         }
 
         let terms: Vec<CellTerm> = terms

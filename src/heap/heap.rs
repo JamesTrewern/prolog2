@@ -206,8 +206,14 @@ impl Heap {
 
     /**Create a string from a list */
     pub fn list_string(&self, addr: usize) -> String {
+
+        if self[addr] == Heap::EMPTY_LIS {
+            return "[]".to_string();
+        }
+
         let mut buffer = "[".to_string();
         let mut pointer = self[addr].1;
+
         loop {
             buffer += &self.term_string(pointer);
             if self[pointer + 1].0 != Tag::LIS {

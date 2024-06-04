@@ -38,7 +38,7 @@ impl Choice {
                 "Matched with: {}",
                 self.clause.to_string(&state.heap)
             );
-            println!("Goals: {goals:?}");
+            // println!("Goals: {goals:?}");
         }
         //If clause is higher order build a new clause and add to program.
         //If variable predicate symbol in head of new clause, invented_pred is true

@@ -141,17 +141,17 @@ fn unify_rec(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> 
         (Tag::CON | Tag::INT | Tag::FLT, Tag::CON | Tag::INT | Tag::FLT) => {
             heap[addr1] == heap[addr2]
         }
-        (Tag::CON | Tag::INT | Tag::FLT, _) => {
-            panic!(
-                "Undefined unifiction behaviour {addr1}:{:?}, {addr2}{:?}",
-                heap[addr1], heap[addr2]
-            )
-        }
-        (_, Tag::CON | Tag::INT | Tag::FLT) => panic!(
-            "Undefined unifiction behaviour {addr1}:{:?}, {addr2}:{:?}",
-            heap[addr1], heap[addr2]
-        ),
-        _ => panic!("Undefined unifiction behaviour"),
+        // (Tag::CON | Tag::INT | Tag::FLT, _) => {
+        //     panic!(
+        //         "Undefined unifiction behaviour {addr1}:{:?}, {addr2}{:?}",
+        //         heap[addr1], heap[addr2]
+        //     )
+        // }
+        // (_, Tag::CON | Tag::INT | Tag::FLT) => panic!(
+        //     "Undefined unifiction behaviour {addr1}:{:?}, {addr2}:{:?}",
+        //     heap[addr1], heap[addr2]
+        // ),
+        _ => false,
     }
 }
 
@@ -160,6 +160,7 @@ fn unify_rec(addr1: usize, addr2: usize, heap: &Heap, binding: &mut Binding) -> 
  * @addr2: Heap address to second term, normally a goal
 */
 pub fn unify(addr1: usize, addr2: usize, heap: &Heap) -> Option<Binding> {
+    // println!("Unify: {}\t{}", heap.term_string(addr1), heap.term_string(addr2));
     let mut binding = Binding::new();
     if unify_rec(addr1, addr2, heap, &mut binding) {
         Some(binding)
@@ -198,8 +199,6 @@ fn build_subterm(
                 //The source list was not constant
                 binding.push((sub_term, new_addr)); // This maps from the address containg the list tag to the address of the first element in the new list
                 return false;
-            } else {
-                println!("const list")
             }
         }
         _ => (),
@@ -262,8 +261,8 @@ fn add_term_binding(
                 heap.push((Tag::LIS, addr))
             }
         }
-        (Tag::CON, _) => heap.push(heap[term_addr]),
-        _ => panic!(),
+        (Tag::CON | Tag::INT | Tag::FLT, _) => heap.push(heap[term_addr]),
+        _ => panic!("{addr}, {:?}", heap[addr]),
     }
 }
 

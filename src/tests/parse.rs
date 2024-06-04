@@ -255,6 +255,8 @@ fn parse_meta_with_infix() {
 
     assert!(clause.meta);
 
+    println!("{:?}", clause.literals);
+
     assert_eq!(
         clause[0],
         Term::STR(

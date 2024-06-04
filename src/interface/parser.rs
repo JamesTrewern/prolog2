@@ -117,6 +117,18 @@ pub fn tokenise(text: &str) -> Vec<&str> {
         i += 1;
     }
 
+    i = 0;
+    while tokens.len() > i + 1 {
+        if tokens[i] == "[" && tokens[i + 1] == "]" {
+            let combined_value = [tokens[i], tokens[i + 1]].concat();
+            let text_i = text.find(&combined_value).unwrap();
+            tokens.remove(i + 1);
+            tokens.remove(i);
+            tokens.insert(i, &text[text_i..text_i + combined_value.len()]);
+        }
+        i += 1;
+    }
+
     tokens.retain(|token| ![" ", "\t", "\r"].contains(token));
 
     tokens
@@ -278,6 +290,8 @@ fn parse_literals(tokens: &[&str], uqvars: &Vec<&str>) -> Result<Vec<Term>, Stri
             op_stack.push(parse_atom(token, &uqvars));
         } else if *token == "]" {
             build_list(&mut term_stack, &mut op_stack)?
+        } else if *token == "[]" {
+            term_stack.push(Term::LIS(Vec::new(), false));
         } else if INFIX_ORDER.iter().any(|ops| ops.contains(&token)) {
             resolve_infix(&mut term_stack, &mut op_stack, infix_order(token));
             op_stack.push(parse_atom(token, &uqvars));
