@@ -93,9 +93,14 @@ impl<'a> Proof<'a> {
                     return true;
                 }
             };
-            if depth == self.state.config.max_depth {
+            if depth >= self.state.config.max_depth {
+                // if depth >= self.state.config.max_depth + 2{
+                //     return false;
+                // }
                 if !self.retry() {
                     return false;
+                }else{
+                    continue;
                 }
             }
             if self.state.config.debug {
@@ -166,9 +171,10 @@ impl<'a> Proof<'a> {
             env.new_clause = false;
         }
 
-        for child in children.into_iter() {
-            self.state.heap.deallocate_above(child.goal);
-        }
+
+        // for child in children.into_iter() {
+        //     self.state.heap.deallocate_above(child.goal);
+        // }
 
         //is enviroment a choice point
         if env.choices.is_empty() {
@@ -214,6 +220,12 @@ impl<'a> Proof<'a> {
             i += 1;
         }
     }
+
+    /** Idenftify loops in resolution and return to last choice point before looping pattern*/
+    fn detect_loops(&mut self){
+        todo!()
+    }
+
 }
 
 impl<'a> Iterator for Proof<'a> {

@@ -35,7 +35,7 @@ impl Choice {
         let goals = self.build_goals(state);
         if state.config.debug {
             println!(
-                "Matched with: {}",
+                "\tMatched with: {}",
                 self.clause.to_string(&state.heap)
             );
             // println!("Goals: {goals:?}");
@@ -46,7 +46,7 @@ impl Choice {
             let new_clause: Clause = self.build_clause(state); //Use binding to make new clause
             if state.config.debug {
                 println!(
-                    "New Clause: {}, {:?}, H size: {}",
+                    "\tNew Clause: {}, {:?}, H size: {}",
                     new_clause.to_string(&state.heap),
                     &new_clause[..],
                     state.prog.h_size
@@ -69,7 +69,7 @@ impl Choice {
         state.heap.bind(&self.binding);
         if state.config.debug {
             println!(
-                "Bindings: {}, {:?}",
+                "\tBindings: {}, {:?}",
                 self.binding.to_string(&state.heap),
                 self.binding
             );

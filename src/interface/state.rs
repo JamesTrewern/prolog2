@@ -1,6 +1,15 @@
-use super::{config::Config, parser::{parse_clause, parse_goals, remove_comments, tokenise}};
-use crate::{heap::heap::Heap, pred_module::get_module, program::program::Program, resolution::solver::Proof};
-use std::{collections::HashMap, fs, io::{self, stdout, Write}};
+use super::{
+    config::Config,
+    parser::{parse_clause, parse_goals, remove_comments, tokenise},
+};
+use crate::{
+    heap::heap::Heap, pred_module::get_module, program::program::Program, resolution::solver::Proof,
+};
+use std::{
+    collections::HashMap,
+    fs,
+    io::{self, stdout, Write},
+};
 
 const HEAP_SIZE: usize = 2056;
 
@@ -17,26 +26,28 @@ impl State {
         } else {
             Config::new()
         };
-        let mut prog = Program::new();
-        let mut heap = Heap::new(HEAP_SIZE);
-        prog.add_pred_module(crate::pred_module::CONFIG, &mut heap);
-        prog.add_pred_module(crate::pred_module::MATHS, &mut heap);
-
-        State { config, prog, heap }
+        let mut state = State {
+            config,
+            prog: Program::new(),
+            heap: Heap::new(HEAP_SIZE),
+        };
+        state.load_module("config");
+        state.load_module("maths");
+        state.load_module("meta_preds");
+        state
     }
 
-    pub fn load_file(&mut self, path: &str) -> Result<(),String>{
+    pub fn load_file(&mut self, path: &str) -> Result<(), String> {
         self.heap.query_space = false;
-        if let Ok(mut file) = fs::read_to_string(format!("{path}.pl")){
+        if let Ok(mut file) = fs::read_to_string(format!("{path}.pl")) {
             remove_comments(&mut file);
             self.parse_prog(file);
             self.heap.query_space = true;
             self.heap.query_space_pointer = self.heap.len();
             Ok(())
-        }else{
+        } else {
             Err(format!("File not found at {path}"))
         }
-        
     }
 
     pub fn parse_prog(&mut self, file: String) {
@@ -101,22 +112,25 @@ impl State {
 
     pub fn load_module(&mut self, name: &str) {
         match get_module(&name.to_lowercase()) {
-            Some(pred_module) => {pred_module.1(self); self.prog.add_pred_module(pred_module.0, &mut self.heap)},
+            Some(pred_module) => {
+                pred_module.1(self);
+                self.prog.add_pred_module(pred_module.0, &mut self.heap)
+            }
             None => println!("{name} is not a recognised module"),
         }
     }
 
-    pub fn main_loop(&mut self){
+    pub fn main_loop(&mut self) {
         let mut buffer = String::new();
-        loop{
-            if buffer.is_empty(){
+        loop {
+            if buffer.is_empty() {
                 print!("?-");
                 stdout().flush().unwrap();
             }
             match io::stdin().read_line(&mut buffer) {
                 Ok(_) => {
                     let tokens = tokenise(&buffer);
-                    if tokens.contains(&"."){
+                    if tokens.contains(&".") {
                         self.handle_directive(&tokens).unwrap();
                         buffer.clear();
                     }

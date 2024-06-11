@@ -5,7 +5,7 @@ use super::{PredModule, PredReturn};
 fn not(call: usize, state: &mut State) -> PredReturn{
     let old_learn = state.config.learn;
     state.config.learn = false;
-    let res = match Proof::new(&[call+1], state).next() {
+    let res = match Proof::new(&[call+2], state).next() {
         Some(_) => PredReturn::False,
         None => PredReturn::True,
     };
@@ -14,5 +14,5 @@ fn not(call: usize, state: &mut State) -> PredReturn{
 }
 
 pub const META_PREDICATES: PredModule = &[
-    ("not", 2, not)
+    ("not", 1, not)
 ];
