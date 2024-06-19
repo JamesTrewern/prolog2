@@ -91,3 +91,29 @@ fn even_odd(){
 
     assert!(proofs > 0);
 }
+
+#[test]
+fn move_up(){
+    let mut state = State::new(Some(
+        Config::new().max_h_clause(0).max_h_preds(0).debug(true).max_depth(10),
+    ));
+
+    state.load_file("./examples/move_up");
+
+    state.prog.print_prog(&state.heap);
+
+    let goals: Vec<usize> = parse_goals(&tokenise("move_up([1,5],[1,6])."))
+    .unwrap()
+    .into_iter()
+    .map(|t| t.build_on_heap(&mut state.heap, &mut HashMap::new()))
+    .collect();
+
+    let proof = Proof::new(&goals, &mut state);
+
+    let mut proofs = 0;
+    for branch in proof {
+        proofs += 1;
+    }
+
+    assert!(proofs > 0);
+}

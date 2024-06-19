@@ -6,6 +6,10 @@
 P(X):- Q(X) {X,Y}.
 P(X):- Q(X,Y), R(Y) {X,Y}.
 
+
+
+
+
 % Background Knowledge
 zero(0).
 

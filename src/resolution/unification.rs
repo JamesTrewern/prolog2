@@ -342,6 +342,7 @@ pub fn build_str(
     heap: &mut Heap,
     uqvar_binding: &mut Option<Binding>,
 ) -> (usize, bool) {
+
     let mut constant: bool = true;
     let arity = heap[src_str].1;
 

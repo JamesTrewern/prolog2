@@ -1,8 +1,8 @@
-use super::{clause::{Clause, ClauseType}, clause_table::{ClauseIterator, ClauseTable}};
+use super::{clause::{self, Clause, ClauseType}, clause_table::{ClauseIterator, ClauseTable}};
 use crate::{heap::heap::{Heap, Tag}, interface::config::Config, pred_module::{config, PredModule, PredicateFN}, resolution::unification::Binding};
 use std::{collections::HashMap, ops::Range};
 
-const PRED_NAME: &'static str = "pred";
+const PRED_NAME: &'static str = "odd";
 
 enum Predicate {
     Function(PredicateFN),
@@ -185,6 +185,12 @@ impl Program {
                 .into_iter()
                 .map(|(k, v)| (k, Predicate::Clauses(v))),
         )
+    }
+
+    pub fn print_prog(&self, heap: &Heap){
+        for i in 0 .. self.clauses.len(){
+            println!("{}", self.clauses.get(i).to_string(heap));
+        }
     }
 }
 
