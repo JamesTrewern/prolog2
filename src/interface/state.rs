@@ -19,7 +19,9 @@ pub fn start(config: Option<Config>) {
     if let Some(config) = config {
         Config::set_config(config);
     }
+    println!("load config");
     load_module("config");
+    println!("loaded config");
     load_module("maths");
     // load_module("meta_preds");
 }
@@ -37,6 +39,7 @@ pub fn load_file(path: &str) -> Result<(), String> {
 }
 
 pub fn parse_prog(file: String, store: &mut Store) {
+    println!("{file}");
     let mut line = 0;
     let tokens = tokenise(&file);
     'outer: for mut segment in tokens.split(|t| *t == ".") {
@@ -78,6 +81,9 @@ pub fn parse_prog(file: String, store: &mut Store) {
 }
 
 pub fn handle_directive(segment: &[&str]) -> Result<(), String> {
+    println!("directive: {segment:?}");
+
+
     let goals = match parse_goals(segment) {
         Ok(res) => res,
         Err(error) => {

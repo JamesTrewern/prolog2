@@ -29,6 +29,7 @@ fn ancestor() {
         "./examples/family",
         "ancestor(ken,james), ancestor(christine,james).",
     );
+    println!("proof");
     let mut proofs = 0;
     for _ in proof {
         proofs += 1;

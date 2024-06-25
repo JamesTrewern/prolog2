@@ -73,6 +73,15 @@ fn debug(call: usize, proof: &mut Proof) -> PredReturn {
     PredReturn::True
 }
 
+fn max_depth(call: usize, proof: &mut Proof) -> PredReturn{
+    if let (Tag::Int, value) = proof.store[call + 2] {
+        Config::set_max_depth(value);
+        PredReturn::True
+    } else {
+        PredReturn::False
+    }
+}
+
 pub fn load_module(call: usize, proof: &mut Proof) -> PredReturn {
     let name = match proof.store[call + 2] {
         (Tag::Con, _) => proof.store.term_string(call + 2),
@@ -117,6 +126,7 @@ pub static CONFIG_MOD: PredModule = &[
     ("max_h_clause", 2, max_h_clause),
     ("share_preds", 2, share_preds),
     ("debug", 2, debug),
+    ("max_depth",2,max_depth),
     ("load_module", 2, load_module),
     ("load_file", 2, load_file),
 ];

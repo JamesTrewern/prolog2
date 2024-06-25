@@ -22,31 +22,39 @@ use resolution::solver::Proof;
 Remove terms from heap when no longer needed
 New Clause rules: constraints, head can't be existing predicate
 */
+
+
+fn setup(file: &str, goal: &str) -> Proof {
+    state::start(None);
+    state::load_file(file).unwrap();
+    println!("loaded: {file}");
+    let mut store = Store::new();
+    let goals: Vec<usize> = parse_goals(&tokenise(goal))
+        .unwrap()
+        .into_iter()
+        .map(|t| t.build_to_heap(&mut store, &mut HashMap::new(), false))
+        .collect();
+    println!("{goals:?}");
+    Proof::new(&goals, store, DynamicProgram::new(None), None)
+}
+
+
+
 fn main() -> ExitCode {
-    // state::start(None);
-    // state::load_file("examples/odd_even");
+
+    let proof = setup(
+        "./examples/family",
+        "ancestor(ken,james), ancestor(christine,james).",
+    );
+    println!("proof");
+    let mut proofs = 0;
+    for _ in proof {
+        proofs += 1;
+    }
+    assert!(proofs > 0);
+
 
     state::start(None);
-    state::load_file("./examples/family").unwrap();
-    let mut store = Store::new();
-    Config::set_max_depth(5);
-    // let prog = PROGRAM.read().unwrap();
-    // for i in 0..prog.len(){
-    //     println!("{}",prog.get(i).to_string(&store))
-    // }
-
-    let goals: Vec<usize> =
-        parse_goals(&tokenise("ancestor(ken,james), ancestor(christine,james)"))
-            .unwrap()
-            .into_iter()
-            .map(|t| t.build_to_heap(&mut store, &mut HashMap::new(), false))
-            .collect();
-
-    let proof = Proof::new(&goals, store, DynamicProgram::new(None), None);
-
-    for _ in proof {
-    }
-
     state::main_loop();
 
 
