@@ -9,8 +9,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b19d411493e28de7c367187623f6cfea901e08fa4ed4a22685153c4fdb4ca42"
 
 [[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+
+[[package]]
+name = "pierce"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f73459f92516e404e51a33bfd7d5b0155269b2093628ad30847e21b295a50bf7"
+dependencies = [
+ "stable_deref_trait",
+]
+
+[[package]]
 name = "prolog2"
 version = "0.1.0"
 dependencies = [
  "fsize",
+ "lazy_static",
+ "pierce",
 ]
+
+[[package]]
+name = "stable_deref_trait"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"

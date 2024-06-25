@@ -1,7 +1,10 @@
-use super::heap::Heap;
-use std::collections::HashMap;
-
 const KNOWN_SYMBOLS: &[&str] = &["false", "true"];
+
+pub(super) static mut SYMBOLS: SymbolDB = SymbolDB {
+    const_symbols: Vec::new(),
+    var_symbols: Vec::new(),
+    var_symbol_map: Vec::new(),
+};
 
 /**Stores all symbols from compiled terms
  * The heap will use this to create term strings whilst allowing
@@ -14,65 +17,79 @@ pub struct SymbolDB {
 }
 
 impl SymbolDB {
-    pub fn new() -> SymbolDB {
-        SymbolDB {
-            const_symbols: Vec::from(
-                KNOWN_SYMBOLS
-                    .iter()
-                    .map(|symbol| (*symbol).into())
-                    .collect::<Vec<Box<str>>>(),
-            ),
-            var_symbols: vec![],
-            var_symbol_map: Vec::new(),
+    pub fn new() {
+        unsafe {
+            SYMBOLS.const_symbols = KNOWN_SYMBOLS
+                .iter()
+                .map(|symbol| (*symbol).into())
+                .collect::<Vec<Box<str>>>()
         }
     }
 
-    pub fn set_const(&mut self, symbol: &str) -> usize {
-        match self.const_symbols.iter().position(|e| *e == symbol.into()) {
-            Some(i) => i + Heap::CON_PTR,
-            None => {
-                self.const_symbols.push(symbol.into());
-                self.const_symbols.len() - 1 + Heap::CON_PTR
+    pub fn set_const(symbol: &str) -> usize {
+        unsafe {
+            match SYMBOLS
+                .const_symbols
+                .iter()
+                .position(|e| *e == symbol.into())
+            {
+                Some(i) => i + isize::MAX as usize,
+                None => {
+                    SYMBOLS.const_symbols.push(symbol.into());
+                    SYMBOLS.const_symbols.len() - 1 + isize::MAX as usize
+                }
             }
         }
     }
 
-    pub fn set_var(&mut self, symbol: &str, addr: usize) {
-        match self.var_symbols.iter().position(|e| *e == symbol.into()) {
-            Some(i) => {
-                self.var_symbol_map.push((addr, i));
-            }
-            None => {
-                self.var_symbols.push(symbol.into());
-                self.var_symbol_map.push((addr, self.var_symbols.len() - 1));
+    pub fn set_var(symbol: &str, addr: usize) {
+        unsafe {
+            match SYMBOLS.var_symbols.iter().position(|e| *e == symbol.into()) {
+                Some(i) => {
+                    SYMBOLS.var_symbol_map.push((addr, i));
+                }
+                None => {
+                    SYMBOLS.var_symbols.push(symbol.into());
+                    SYMBOLS
+                        .var_symbol_map
+                        .push((addr, SYMBOLS.var_symbols.len() - 1));
+                }
             }
         }
     }
 
-    pub fn get_const(&self, id: usize) -> &str {
-        &self.const_symbols[id - Heap::CON_PTR]
+    pub fn get_const(id: usize) -> &'static str {
+        unsafe { &SYMBOLS.const_symbols[id - isize::MAX as usize] }
     }
 
-    pub fn get_var(&self, addr: usize) -> Option<&str> {
-        if let Some((_,i)) = self.var_symbol_map.iter().find(|(heap_ref, _)| heap_ref == &addr) {
-            Some(&self.var_symbols[*i])
-        } else {
-            None
+    pub fn get_var(addr: usize) -> Option<&'static str> {
+        unsafe {
+            if let Some((_, i)) = SYMBOLS
+                .var_symbol_map
+                .iter()
+                .find(|(heap_ref, _)| heap_ref == &addr)
+            {
+                Some(&SYMBOLS.var_symbols[*i])
+            } else {
+                None
+            }
         }
     }
 
     /** Given either a ref addr or a const id this function will return the related symbol */
-    pub fn get_symbol(&self, id: usize) -> String {
+    pub fn get_symbol(id: usize) -> String {
         //If id >= usize:Max/2 then it is a constant id and not a heap ref addr
-        if id >= (Heap::CON_PTR) {
-            match self.const_symbols.get(id - Heap::CON_PTR) {
-                Some(symbol) => symbol.to_string(),
-                None => panic!("Unkown const id"),
-            }
-        } else {
-            match self.get_var(id) {
-                Some(symbol) => symbol.to_string(),
-                None => format!("_{id}"),
+        unsafe {
+            if id >= (isize::MAX as usize) {
+                match SYMBOLS.const_symbols.get(id - isize::MAX as usize) {
+                    Some(symbol) => symbol.to_string(),
+                    None => panic!("Unkown const id"),
+                }
+            } else {
+                match Self::get_var(id) {
+                    Some(symbol) => symbol.to_string(),
+                    None => format!("_{id}"),
+                }
             }
         }
     }

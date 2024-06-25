@@ -18,3 +18,4 @@ P(X,Y):-Q(X,Z),P(Z,Y) {X,Y,Z}. % Tail Recursion
 
 :-body_pred(mum,2).
 :-body_pred(dad,2).
+:- max_h_clause(4), max_h_preds(1).

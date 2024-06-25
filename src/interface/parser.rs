@@ -1,6 +1,5 @@
 use super::term::{Term, TermClause};
 use fsize::fsize;
-use std::collections::HashMap;
 const DELIMINATORS: &[char] = &[
     '(', ')', ',', '.', ' ', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|', '>',
     '<', '{', '}',

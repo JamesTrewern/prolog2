@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 fsize = "1.0.0"
-
+pierce = "0.3.0"
+lazy_static = "1.5.0"

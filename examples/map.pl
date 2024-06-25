@@ -1,6 +1,3 @@
-:- load_module(maths).
-
-
 map([],[], X).
 
 map([H1|T1], [H2|T2], P):-
