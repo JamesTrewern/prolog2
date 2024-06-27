@@ -27,7 +27,7 @@ impl Binding {
         let mut buffer = String::from("{");
         for binding in self.iter() {
             if let Some(symbol) = SymbolDB::get_var(binding.0) {
-                buffer += symbol;
+                buffer += &symbol;
             } else {
                 buffer += &format!("_{}", binding.0);
             }
@@ -35,7 +35,7 @@ impl Binding {
             if binding.1 < Store::CON_PTR {
                 buffer += &heap.term_string(binding.1)
             } else {
-                buffer += SymbolDB::get_const(binding.1)
+                buffer += &SymbolDB::get_const(binding.1)
             };
             buffer += ",";
         }

@@ -4,31 +4,42 @@ use std::collections::HashMap;
 
 use crate::{
     heap::store::Store,
-    interface::parser::{parse_goals, tokenise},
+    interface::{
+        parser::{parse_goals, tokenise},
+        state::State,
+    },
     program::program::DynamicProgram,
     resolution::solver::Proof,
 };
 
-use crate::interface::state;
-
-fn setup(file: &str, goal: &str) -> Proof {
-    state::start(None);
-    state::load_file(file).unwrap();
-    let mut store = Store::new();
+fn setup<'a>(file: &str, goal: &str) -> (State, Store<'a>, Vec<usize>) {
+    let mut state = State::new(None);
+    state.load_file(file).unwrap();
+    let mut store = Store::new(unsafe{&*state.heap.get()});
     let goals: Vec<usize> = parse_goals(&tokenise(goal))
         .unwrap()
         .into_iter()
         .map(|t| t.build_to_heap(&mut store, &mut HashMap::new(), false))
         .collect();
-    Proof::new(&goals, store, DynamicProgram::new(None), None)
+    (state,store,goals)
 }
 
 #[test]
 fn ancestor() {
-    let proof = setup(
+    let (state,store,goals) = setup(
         "./examples/family",
         "ancestor(ken,james), ancestor(christine,james).",
     );
+
+    let proof = Proof::new(
+        &goals,
+        store,
+        DynamicProgram::new(None, state.program.read().unwrap()),
+        None,
+        &state
+    );
+
+
     println!("proof");
     let mut proofs = 0;
     for _ in proof {
@@ -39,7 +50,15 @@ fn ancestor() {
 
 #[test]
 fn map() {
-    let proof = setup("./examples/map", "map([1,2,3],[2,4,6], X).");
+    let (state,store,goals) = setup("./examples/map", "map([1,2,3],[2,4,6], X).");
+    let proof = Proof::new(
+        &goals,
+        store,
+        DynamicProgram::new(None, state.program.read().unwrap()),
+        None,
+        &state
+    );
+    
     let mut proofs = 0;
     for _ in proof {
         proofs += 1;
@@ -49,7 +68,15 @@ fn map() {
 
 #[test]
 fn odd_even() {
-    let proof = setup("./examples/odd_even", "even(4), not(even(3)).");
+    let (state,store,goals) = setup("./examples/odd_even", "even(4), not(even(3)).");
+    let proof = Proof::new(
+        &goals,
+        store,
+        DynamicProgram::new(None, state.program.read().unwrap()),
+        None,
+        &state
+    );
+    
     let mut proofs = 0;
     for _ in proof {
         proofs += 1;

@@ -2,16 +2,25 @@
 
 use super::{PredModule, PredReturn};
 
-use crate::{interface::config::Config, resolution::solver::Proof};
+use crate::{
+    interface::config::Config, program::program::DynamicProgram, resolution::solver::Proof,
+};
 
 fn not(call: usize, proof: &mut Proof) -> PredReturn {
     let mut config = Config::get_config();
     config.learn = false;
+
+    let prog = DynamicProgram::new(
+        Some(proof.prog.hypothesis.clone()),
+        proof.state.program.read().unwrap(),
+    );
+
     let res = match Proof::new(
         &[call + 2],
         proof.store.clone(),
-        proof.prog.clone(),
+        prog,
         Some(config),
+        proof.state,
     )
     .next()
     {

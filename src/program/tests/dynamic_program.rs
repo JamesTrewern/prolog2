@@ -2,17 +2,18 @@ use std::collections::HashMap;
 
 use crate::{
     heap::store::Store,
-    interface::{config::Config, parser::{parse_clause, parse_goals, tokenise}},
+    interface::{config::Config, parser::{parse_clause, parse_goals, tokenise}, state::State},
     program::{
         clause::ClauseType,
         hypothesis::Hypothesis,
-        program::{CallRes, DynamicProgram, PROGRAM},
+        program::{CallRes, DynamicProgram},
     },
 };
 
-fn setup() -> (Store, DynamicProgram) {
-    let mut store = Store::new();
-    let mut prog = PROGRAM.write().unwrap();
+fn setup<'a>() -> (Store<'a>, DynamicProgram<'a>) {
+
+    let mut state = State::new(None);
+    let mut store = Store::new(&[]);
 
     let clauses = [
         (ClauseType::META, "e(X,Y)"),
@@ -28,11 +29,11 @@ fn setup() -> (Store, DynamicProgram) {
             .unwrap()
             .to_heap(&mut store);
         clause.clause_type = clause_type;
-        prog.add_clause(clause, &store)
+        state.program.write().unwrap().add_clause(clause, &store)
     }
 
-    store.to_prog();
-    prog.organise_clause_table(&store);
+    state.to_static_heap(&mut store);
+    state.program.write().unwrap().organise_clause_table(&store);
 
     let mut hypothesis = Hypothesis::new();
     for clause_string in [("g(X,Y)")] {
@@ -43,7 +44,7 @@ fn setup() -> (Store, DynamicProgram) {
         hypothesis.add_h_clause(clause, &mut store);
     }
 
-    (store, DynamicProgram::new(None))
+    (store, DynamicProgram::new(None, state.program.read().unwrap()))
 }
 
 #[test]
@@ -94,18 +95,16 @@ fn iter_meta_hypothesis() {
 
 #[test]
 fn call_meta_with_con() {
-    let mut store = Store::new();
-
-    let mut prog = PROGRAM.write().unwrap();
+    let mut state = State::new(None);
+    let mut store = Store::new(&[]);
     for clause in ["P(X,Y,Z):-Q(X,Y,Z)\\X,Y"] {
         let clause = parse_clause(&tokenise(clause)).unwrap().to_heap(&mut store);
-        prog.add_clause(clause, &store);
+        state.program.write().unwrap().add_clause(clause, &store);
     }
 
-    store.to_prog();
-    drop(prog);
+    state.to_static_heap(&mut store);
 
-    let mut prog = DynamicProgram::new(None);
+    let mut prog = DynamicProgram::new(None, state.program.read().unwrap());
 
     let goal = parse_goals(&tokenise("p(a,B,[c])")).unwrap()[0].build_to_heap(
         &mut store,

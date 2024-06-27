@@ -13,9 +13,9 @@ pub fn match_head(head: usize, goal: usize, store: &mut Store) -> Option<Binding
     }
 }
 
-fn match_rec(head: usize, mut goal: usize, store: &mut Store, binding: &mut Binding) -> bool {
+fn match_rec(mut head: usize, mut goal: usize, store: &mut Store, binding: &mut Binding) -> bool {
     goal = store.deref_addr(goal);
-
+    head = store.deref_addr(head);
     match (store[head], store[goal]) {
         ((Tag::Arg | Tag::ArgA, arg), _) => set_arg(arg, goal, store, binding),
         ((Tag::Func, _), (Tag::Func, _)) => match_funcs(head,goal,store,binding),

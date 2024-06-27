@@ -10,16 +10,16 @@ use std::{
     collections::HashMap,
     fmt,
     mem::{self, ManuallyDrop},
-    ops::Deref,
+    ops::Deref, sync::Arc,
 };
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Term {
     FLT(fsize),
     INT(isize),
-    VAR(Box<str>),        //Symbol starting with uppercase
-    VARUQ(Box<str>),      //Symbol starting with uppercase
-    CON(Box<str>),        //Symbol starting with lowercase
+    VAR(Arc<str>),        //Symbol starting with uppercase
+    VARUQ(Arc<str>),      //Symbol starting with uppercase
+    CON(Arc<str>),        //Symbol starting with lowercase
     LIS(Vec<Term>, bool), //Terms, explicit tail?
     STR(Box<[Term]>),     //0th element is functor/predicate symbol, rest are arguments
     Cell(Cell),

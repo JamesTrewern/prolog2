@@ -27,6 +27,16 @@ static CONFIG: RwLock<Config> = RwLock::new(Config {
 });
 
 impl Config {
+    pub fn new() -> Config {
+        Config {
+            share_preds: SHARE_PREDS, // Can H use known predicates
+            max_h_clause: MAX_H_SIZE, // Max clause size of H
+            max_h_pred: MAX_INVENTED, // Max number of invented predicate symbols
+            debug: DEBUG, //Print Debug statements during solving. TODO allow for step by step debugging
+            max_depth: MAX_DEPTH, //Maximum depth of SLD resolution
+            learn: LEARN, //Allow matching to meta clauses
+        }
+    }
     pub fn set_share_preds(share_preds: bool) {
         CONFIG.write().unwrap().share_preds = share_preds;
     }

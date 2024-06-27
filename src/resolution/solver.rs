@@ -1,8 +1,7 @@
 use crate::{
     heap::{store::Store, symbol_db::SymbolDB},
     interface::{
-        config::Config,
-        term::{Term, TermClause},
+        config::Config, state::State, term::{Term, TermClause}
     },
     pred_module::PredReturn,
     program::program::{CallRes, DynamicProgram},
@@ -10,26 +9,28 @@ use crate::{
 
 use super::proof_stack::{Env, ProofStack};
 
-pub(crate) struct Proof {
+pub(crate) struct Proof<'a> {
     proof_stack: ProofStack,
     goals: Box<[usize]>,
     goal_vars: Box<[usize]>,
     pointer: usize,
-    pub store: Store,
-    pub prog: DynamicProgram,
+    pub store: Store<'a>,
+    pub prog: DynamicProgram<'a>,
     pub config: Config,
+    pub state: &'a State
 }
 
-impl Proof {
+impl<'a> Proof<'a> {
     pub fn new(
         goals: &[usize],
-        store: Store,
-        prog: DynamicProgram,
+        store: Store<'a>,
+        prog: DynamicProgram<'a>,
         config: Option<Config>,
-    ) -> Proof {
+        state: &'a State
+    ) -> Proof<'a> {
         let config = match config {
             Some(config) => config,
-            None => Config::get_config(),
+            None => unsafe { *state.config.get() },
         };
 
         let mut goal_vars = Vec::<usize>::new();
@@ -50,9 +51,10 @@ impl Proof {
             goals: goals.into(),
             goal_vars: goal_vars.into(),
             pointer: 0,
-            store: store,
+            store,
             prog,
             config,
+            state,
         }
     }
 
@@ -78,7 +80,7 @@ impl Proof {
                 }
             }
             if self.config.debug {
-                println!("[{}]Try: {}", depth, self.store.term_string(goal));
+                println!("[{}] TRY: {}", depth, self.store.term_string(goal));
             }
             match self.prog.call(goal, &mut self.store, self.config) {
                 CallRes::Function(function) => match function(goal, self) {
@@ -123,7 +125,7 @@ impl Proof {
 
             if self.config.debug {
                 println!(
-                    "[{}]UNDO: {},{}",
+                    "[{}] UNDO: {},{}",
                     self.pointer,
                     self.store.term_string(env.goal),
                     env.bindings.to_string(&self.store)
@@ -132,7 +134,7 @@ impl Proof {
 
             self.store.unbind(&env.bindings);
             if env.new_clause == true {
-                self.prog.hypothesis.remove_h_clause(env.invent_pred);
+                self.prog.hypothesis.remove_h_clause(env.invent_pred, self.config.debug);
                 env.new_clause = false;
                 env.invent_pred = false;
             }
@@ -147,7 +149,7 @@ impl Proof {
                 }
             } else {
                 if self.config.debug {
-                    println!("[{}]RETRY: {}", env.depth, self.store.term_string(env.goal));
+                    println!("[{}] RETRY: {}", env.depth, self.store.term_string(env.goal));
                 }
                 if let Some(children) = env.try_choices(&mut self.prog, &mut self.store, self.config) {
                     self.proof_stack.insert(children, self.pointer);
@@ -170,7 +172,7 @@ impl Proof {
     }
 }
 
-impl Iterator for Proof {
+impl<'a> Iterator for Proof<'a> {
     type Item = Box<[TermClause]>;
 
     /**Find the next possible proof tree, return None if there are no more possible proofs */

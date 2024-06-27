@@ -9,25 +9,25 @@ use crate::{
     heap::store::Store,
     interface::{
         parser::{parse_clause, tokenise},
-        state,
+        state::{self, State},
     },
-    program::program::{DynamicProgram, PROGRAM},
+    program::program::DynamicProgram,
 };
 
 #[test]
 fn body_pred() {
-    state::start(None);
-    let mut store = Store::new();
-    let mut prog = PROGRAM.write().unwrap();
+    let mut state = State::new(None);
+    let mut store = Store::new(&[]);
+    let mut prog = state.program.write().unwrap();
     for clause in ["dad(adam,james)", "mum(tami,james)"] {
         let clause = parse_clause(&tokenise(clause)).unwrap();
         prog.add_clause(clause.to_heap(&mut store), &store);
     }
     prog.organise_clause_table(&store);
     drop(prog);
-    store.to_prog();
-    let prog = DynamicProgram::new(None);
-    state::handle_directive(&tokenise("body_pred(dad,2),body_pred(mum,2)")).unwrap();
+    state.to_static_heap(&mut store);
+    let prog = DynamicProgram::new(None, state.program.read().unwrap());
+    state.handle_directive(&tokenise("body_pred(dad,2),body_pred(mum,2)")).unwrap();
     let body_clauses: Vec<String> = prog
         .iter([false, true, false, false])
         .map(|i| prog.get(i).to_string(&store))

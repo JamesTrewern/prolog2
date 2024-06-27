@@ -269,13 +269,13 @@ fn is(call: usize, proof: &mut Proof) -> PredReturn {
 }
 
 pub static MATHS: PredModule = &[
-    ("=:=", 3, math_equal),
-    ("=/=", 3, math_not_equal),
-    (">", 3, greater_than),
-    (">=", 3, greater_than_or_equal),
-    ("<", 3, less_than),
-    ("<=", 3, less_than_or_equal),
-    ("is", 3, is),
+    ("=:=", 2, math_equal),
+    ("=/=", 2, math_not_equal),
+    (">", 2, greater_than),
+    (">=", 2, greater_than_or_equal),
+    ("<", 2, less_than),
+    ("<=", 2, less_than_or_equal),
+    ("is", 2, is),
 ];
 
 static FUNCTION_SYMBOLS: &[(&'static str, Funct)] = &[

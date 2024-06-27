@@ -11,7 +11,7 @@ use crate::{
 
 #[test]
 fn build_simple_term() {
-    let mut heap = Store::new();
+    let mut heap = Store::new(&[]);
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
@@ -35,7 +35,7 @@ fn build_simple_term() {
 
 #[test]
 fn build_simple_term_duplicate_var() {
-    let mut heap = Store::new();
+    let mut heap = Store::new(&[]);
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
@@ -60,7 +60,7 @@ fn build_simple_term_duplicate_var() {
 
 #[test]
 fn build_meta_term() {
-    let mut heap = Store::new();
+    let mut heap = Store::new(&[]);
     let term = Term::STR(
         [
             Term::VAR("P".into()),
@@ -83,7 +83,7 @@ fn build_meta_term() {
 
 #[test]
 fn build_term_with_substr() {
-    let mut heap = Store::new();
+    let mut heap = Store::new(&[]);
     let term = Term::STR(
         [
             Term::VAR("P".into()),
@@ -109,7 +109,7 @@ fn build_term_with_substr() {
 
 #[test]
 fn build_term_with_list() {
-    let mut heap = Store::new();
+    let mut heap = Store::new(&[]);
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
@@ -135,7 +135,7 @@ fn build_term_with_list() {
 
 #[test]
 fn build_term_with_list_explicit_tail() {
-    let mut heap = Store::new();
+    let mut heap = Store::new(&[]);
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
@@ -169,7 +169,7 @@ fn build_term_with_list_explicit_tail() {
 
 #[test]
 fn build_naked_list() {
-    let mut heap = Store::new();
+    let mut heap = Store::new(&[]);
     let term = Term::LIS([Term::VAR("X".into()), Term::VAR("Y".into())].into(), false);
     term.build_to_heap(&mut heap, &mut HashMap::new(), false);
     assert_eq!(
@@ -198,7 +198,7 @@ fn build_naked_list() {
 
 #[test]
 fn build_int_list() {
-    let mut heap = Store::new();
+    let mut heap = Store::new(&[]);
     let term = Term::LIS(
         [Term::INT(-1), Term::INT(-5), Term::INT(5), Term::INT(10)].into(),
         false,
@@ -222,7 +222,7 @@ fn build_int_list() {
 
 #[test]
 fn build_flt_list() {
-    let mut heap = Store::new();
+    let mut heap = Store::new(&[]);
     let term = Term::LIS(
         [
             Term::FLT(0.0),

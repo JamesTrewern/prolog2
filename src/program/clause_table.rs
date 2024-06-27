@@ -81,15 +81,21 @@ impl<'a> ClauseTable {
             .sort_by(|c1, c2| Self::order_clauses(c1, c2, &self.literal_addrs, heap));
     }
 
-    pub fn remove_clause(&mut self, i: usize) {
-        let (_, literals_ptr, clause_literals_len) = self.clauses.remove(i);
+    pub fn remove_clause(&mut self, i: usize) -> Clause {
+        let (clause_type, literals_ptr, clause_literals_len) = self.clauses.remove(i);
         assert!(
             self.literal_addrs.len() == literals_ptr + clause_literals_len,
             "Clause Not removed from top"
         );
-        let _ = self
-            .literal_addrs
-            .drain(literals_ptr..literals_ptr + clause_literals_len);
+        let literals = ManuallyDrop::new(
+            self.literal_addrs
+                .drain(literals_ptr..literals_ptr + clause_literals_len)
+                .collect::<Box<[usize]>>(),
+        );
+        Clause {
+            clause_type,
+            literals,
+        }
     }
 
     /**Find the positions in the clause table where the clause type changes */

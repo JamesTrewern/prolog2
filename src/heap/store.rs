@@ -1,6 +1,9 @@
+use crate::interface::state::State;
 use super::symbol_db::SymbolDB;
 use fsize::fsize;
+use manual_rwlock::SliceReadGaurd;
 use std::{
+    fmt::Debug,
     mem,
     ops::{Index, IndexMut, RangeInclusive},
 };
@@ -30,39 +33,26 @@ impl std::fmt::Display for Tag {
 
 pub type Cell = (Tag, usize);
 
-static mut PROG_HEAP: Vec<Cell> = Vec::new();
-
 #[derive(Clone)]
-pub(crate) struct Store {
+pub(crate) struct Store<'a> {
     pub arg_regs: [usize; ARG_REGS],
-    pub prog_cells: &'static [Cell],
+    pub prog_cells: SliceReadGaurd<'a, Cell>,
     pub cells: Vec<Cell>,
 }
 
-impl Store {
+impl<'a> Store<'a> {
     pub const CON_PTR: usize = isize::MAX as usize;
     pub const FALSE: Cell = (Tag::Con, Self::CON_PTR);
     pub const TRUE: Cell = (Tag::Con, Self::CON_PTR + 1);
     pub const EMPTY_LIS: Cell = (Tag::Lis, Self::CON_PTR);
 
-    pub fn new() -> Store {
+    pub fn new(prog_cells: SliceReadGaurd<'a, Cell>) -> Store {
         Store {
             arg_regs: [usize::MAX; 64],
             cells: Vec::with_capacity(HEAP_SIZE),
-            prog_cells: unsafe { &PROG_HEAP },
+            prog_cells,
         }
     }
-
-    #[allow(dead_code)]
-    /** Builds a new heap from a reference to a slice of cells, used for creating test instances */
-    pub fn from_slice(cells: &[Cell]) -> Store {
-        Store {
-            cells: Vec::from(cells),
-            arg_regs: [usize::MAX; 64],
-            prog_cells: unsafe { &PROG_HEAP },
-        }
-    }
-
     pub fn reset_args(&mut self) {
         self.arg_regs = [usize::MAX; ARG_REGS];
     }
@@ -74,7 +64,7 @@ impl Store {
     /**Recursively dereference cell address until non ref or self ref cell */
     pub fn deref_addr(&self, mut addr: usize) -> usize {
         loop {
-            if let (Tag::Ref, pointer) = self[addr] {
+            if let (Tag::Ref | Tag::Str, pointer) = self[addr] {
                 if addr == pointer {
                     return pointer;
                 } else {
@@ -124,7 +114,6 @@ impl Store {
         for (src, target) in binding {
             let pointer = &mut self[*src].1;
             if *pointer != *src {
-                self.print_heap();
                 panic!("Tried to reset bound ref: {} \n Binding: {binding:?}", src)
             }
             *pointer = *target;
@@ -140,17 +129,6 @@ impl Store {
                 *pointer = *src;
             }
         }
-    }
-
-    pub fn to_prog(&mut self) {
-        unsafe {
-            assert!(
-                PROG_HEAP.len() == self.prog_cells.len(),
-                "Another thread has mutated program heap",
-            );
-            PROG_HEAP.append(&mut self.cells);
-            self.prog_cells = &PROG_HEAP;
-        };
     }
 
     /**Debug function for printing formatted string of current heap state */
@@ -237,11 +215,11 @@ impl Store {
     pub fn term_string(&self, addr: usize) -> String {
         let addr = self.deref_addr(addr);
         match self[addr].0 {
-            Tag::Con => SymbolDB::get_const(self[addr].1).to_owned(),
+            Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
             Tag::Func => self.structure_string(addr),
             Tag::Lis => self.list_string(addr),
             Tag::Ref | Tag::Arg => match SymbolDB::get_var(self.deref_addr(addr)).to_owned() {
-                Some(symbol) => symbol.to_owned(),
+                Some(symbol) => symbol.to_string(),
                 None => format!("_{addr}"),
             },
             Tag::ArgA => {
@@ -303,7 +281,7 @@ impl Store {
     }
 }
 
-impl Index<usize> for Store {
+impl<'a> Index<usize> for Store<'a> {
     type Output = Cell;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -315,7 +293,7 @@ impl Index<usize> for Store {
     }
 }
 
-impl IndexMut<usize> for Store {
+impl<'a> IndexMut<usize> for Store<'a> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         if index < self.prog_cells.len() {
             panic!("Can't get mutable reference to program heap cell");

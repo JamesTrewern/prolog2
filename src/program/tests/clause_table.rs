@@ -4,8 +4,8 @@ use crate::{
     program::{clause::ClauseType, clause_table::ClauseTable},
 };
 
-fn setup() -> (Store, ClauseTable) {
-    let mut heap = Store::new();
+fn setup<'a>() -> (Store<'a>, ClauseTable) {
+    let mut heap = Store::new(&[]);
     let mut clause_table = ClauseTable::new();
 
     let clauses = [
@@ -47,7 +47,7 @@ fn test_type_flags() {
 
 #[test]
 fn complex_ordering() {
-    let mut heap = Store::new();
+    let mut heap = Store::new(&[]);
     let mut clause_table = ClauseTable::new();
 
     let clauses = [

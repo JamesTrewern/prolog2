@@ -11,11 +11,10 @@ use crate::{
     interface::config::Config,
     pred_module::{config_mod, PredModule, PredicateFN},
 };
-use lazy_static::lazy_static;
+use manual_rwlock::ReadGaurd;
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut, Range},
-    sync::RwLock,
 };
 
 enum Predicate {
@@ -55,10 +54,6 @@ pub struct Program {
     body_preds: Vec<(usize, usize)>,
 }
 
-lazy_static! {
-    pub static ref PROGRAM: RwLock<Program> = RwLock::new(Program::new());
-}
-
 impl Program {
     pub fn new() -> Program {
         Program {
@@ -95,7 +90,7 @@ impl Program {
         for (symbol, arity, predfn) in pred_module {
             let symbol = SymbolDB::set_const(symbol);
             self.predicates
-                .insert((symbol, *arity), Predicate::Function(*predfn));
+                .insert((symbol, *arity + 1), Predicate::Function(*predfn));
         }
     }
 
@@ -155,25 +150,24 @@ impl DerefMut for Program {
     }
 }
 
-#[derive(Clone)]
-pub struct DynamicProgram {
+pub struct DynamicProgram<'a> {
     pub hypothesis: Hypothesis,
+    pub prog: ReadGaurd<'a, Program>,
 }
 
-impl DynamicProgram {
-    pub fn new(hypothesis: Option<Hypothesis>) -> DynamicProgram {
+impl<'a> DynamicProgram<'a> {
+    pub fn new(hypothesis: Option<Hypothesis>, prog: ReadGaurd<'a, Program>) -> DynamicProgram {
         match hypothesis {
-            Some(hypothesis) => DynamicProgram { hypothesis },
+            Some(hypothesis) => DynamicProgram { hypothesis, prog },
             None => DynamicProgram {
                 hypothesis: Hypothesis::new(),
+                prog,
             },
         }
     }
 
     /** Takes goals and returns either a predicate function of an interator over clause indices */
     pub fn call(&mut self, goal_addr: usize, store: &Store, config: Config) -> CallRes {
-        let prog = PROGRAM.read().unwrap();
-
         if store[goal_addr].0 == Tag::Lis {
             return CallRes::Function(config_mod::load_file);
         }
@@ -181,7 +175,7 @@ impl DynamicProgram {
         if symbol < Store::CON_PTR {
             symbol = store[store.deref_addr(symbol)].1;
         }
-        match prog.predicates.get(&(symbol, arity)) {
+        match self.prog.predicates.get(&(symbol, arity)) {
             Some(Predicate::Function(function)) => CallRes::Function(*function),
             Some(Predicate::Clauses(range)) => CallRes::Clauses(ProgramIterator {
                 ranges: [Some(range.clone()), None, None, None].into(),
@@ -215,34 +209,32 @@ impl DynamicProgram {
      *  [Clause, Body, Meta, Hypothesis]
      */
     pub fn iter(&self, c_types: [bool; 4]) -> ProgramIterator {
-        let prog = PROGRAM.read().unwrap();
         const ARRAY_REPEAT_VALUE: Option<Range<usize>> = None;
         let mut ranges = [ARRAY_REPEAT_VALUE; 4];
         if c_types[0] {
-            ranges[0] = Some(0..prog.type_flags[1]);
+            ranges[0] = Some(0..self.prog.type_flags[1]);
         }
         if c_types[1] {
-            ranges[1] = Some(prog.type_flags[1]..prog.type_flags[2]);
+            ranges[1] = Some(self.prog.type_flags[1]..self.prog.type_flags[2]);
         }
         if c_types[2] {
-            ranges[2] = Some(prog.type_flags[2]..prog.type_flags[3]);
+            ranges[2] = Some(self.prog.type_flags[2]..self.prog.type_flags[3]);
         }
         if c_types[3] {
-            ranges[3] = Some(prog.type_flags[3]..self.len());
+            ranges[3] = Some(self.prog.type_flags[3]..self.len());
         }
         ProgramIterator { ranges }
     }
 
     pub fn len(&self) -> usize {
-        PROGRAM.read().unwrap().len() + self.hypothesis.len()
+        self.prog.len() + self.hypothesis.len()
     }
 
     pub fn get(&self, index: usize) -> Clause {
-        let prog = PROGRAM.read().unwrap();
-        if index < prog.len() {
-            prog.get(index)
+        if index < self.prog.len() {
+            self.prog.get(index)
         } else {
-            self.hypothesis.get(index - prog.len())
+            self.hypothesis.get(index - self.prog.len())
         }
     }
 }
