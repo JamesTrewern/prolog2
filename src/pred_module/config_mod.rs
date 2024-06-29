@@ -9,7 +9,7 @@ use std::{mem, sync::RwLock};
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 
 fn body_pred(call: usize, proof: &mut Proof) -> PredReturn {
-    drop(proof.prog.prog);
+    unsafe { proof.prog.prog.early_release() };
 
     let symbol = if let (Tag::Con, symbol) = proof.store[call + 2] {
         symbol
@@ -27,7 +27,7 @@ fn body_pred(call: usize, proof: &mut Proof) -> PredReturn {
         .write()
         .unwrap()
         .add_body_pred(symbol, (arity + 1) as usize, &proof.store);
-    proof.prog.prog = proof.state.program.read().unwrap();
+    unsafe { proof.prog.prog.reobtain() };
     PredReturn::True
 }
 

@@ -5,8 +5,10 @@
 //     program::clause::{Clause, ClauseType},
 // };
 
+use manual_rwlock::MrwLock;
+
 use crate::{
-    heap::store::Store,
+    heap::store::{Cell, Store},
     interface::{
         parser::{parse_clause, tokenise},
         state::{self, State},
@@ -16,8 +18,10 @@ use crate::{
 
 #[test]
 fn body_pred() {
+    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
+
     let mut state = State::new(None);
-    let mut store = Store::new(&[]);
+    let mut store = Store::new(EMPTY.read_slice().unwrap());
     let mut prog = state.program.write().unwrap();
     for clause in ["dad(adam,james)", "mum(tami,james)"] {
         let clause = parse_clause(&tokenise(clause)).unwrap();
@@ -27,7 +31,9 @@ fn body_pred() {
     drop(prog);
     state.to_static_heap(&mut store);
     let prog = DynamicProgram::new(None, state.program.read().unwrap());
-    state.handle_directive(&tokenise("body_pred(dad,2),body_pred(mum,2)")).unwrap();
+    state
+        .handle_directive(&tokenise("body_pred(dad,2),body_pred(mum,2)"))
+        .unwrap();
     let body_clauses: Vec<String> = prog
         .iter([false, true, false, false])
         .map(|i| prog.get(i).to_string(&store))

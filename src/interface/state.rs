@@ -56,7 +56,7 @@ impl State {
             Some(pred_module) => {
                 pred_module.1();
                 self.program
-                    .try_write()
+                    .write()
                     .unwrap()
                     .add_pred_module(pred_module.0);
             }
@@ -64,7 +64,7 @@ impl State {
         }
     }
 
-    pub fn main_loop(&mut self) {
+    pub fn main_loop(& self) {
         let mut buffer = String::new();
         loop {
             if buffer.is_empty() {
@@ -84,7 +84,7 @@ impl State {
         }
     }
 
-    pub fn handle_directive(&mut self, segment: &[&str]) -> Result<(), String> {
+    pub fn handle_directive(&self, segment: &[&str]) -> Result<(), String> {
         println!("directive: {segment:?}");
 
         let goals = match parse_goals(segment) {
@@ -113,7 +113,7 @@ impl State {
         Ok(())
     }
 
-    pub fn parse_prog(&mut self, file: String) {
+    pub fn parse_prog(&self, file: String) {
         let mut store = Store::new(self.heap.read_slice().unwrap());
         let mut prog = self.program.try_write().unwrap();
         let mut line = 0;
@@ -160,7 +160,7 @@ impl State {
         self.to_static_heap(&mut store);
     }
 
-    pub fn load_file(&mut self, path: &str) -> Result<(), String> {
+    pub fn load_file(& self, path: &str) -> Result<(), String> {
         if let Ok(mut file) = fs::read_to_string(format!("{path}.pl")) {
             remove_comments(&mut file);
             self.parse_prog(file);
@@ -170,7 +170,7 @@ impl State {
         }
     }
 
-    pub fn to_static_heap(&mut self, store: &mut Store) {
+    pub fn to_static_heap<'a>(&'a self, store: &mut Store<'a>) {
         unsafe { store.prog_cells.early_release() };
         let mut prog_heap = self.heap.try_write().unwrap();
         unsafe {

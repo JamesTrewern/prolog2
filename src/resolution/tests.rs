@@ -1,4 +1,6 @@
 mod build {
+    use manual_rwlock::MrwLock;
+
     use crate::heap::{
         store::{Store, Tag},
         symbol_db::SymbolDB,
@@ -13,7 +15,7 @@ mod build {
         let x = SymbolDB::set_const("x");
         let y = SymbolDB::set_const("y");
         // P(X,Y) {Y}
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Func, 3),
             (Tag::Arg, 0),
             (Tag::Arg, 1),
@@ -21,8 +23,8 @@ mod build {
             (Tag::Con, p),
             (Tag::Con, x),
             (Tag::Con, y),
-        ];
-        let mut store = Store::new(&binding);
+        ]);
+        let mut store = Store::new(binding.read_slice().unwrap());
 
         store.arg_regs[0] = 4;
         store.arg_regs[1] = 5;
@@ -43,7 +45,7 @@ mod build {
         let q = SymbolDB::set_const("q");
         let y = SymbolDB::set_const("y");
         // P(X,Q(Y)) {Y}
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Func, 2),
             (Tag::Arg, 0),
             (Tag::ArgA, 1),
@@ -55,8 +57,8 @@ mod build {
             (Tag::Con, x),
             (Tag::Con, q),
             (Tag::Con, y),
-        ];
-        let mut store = Store::new(&binding);
+        ]);
+        let mut store = Store::new(binding.read_slice().unwrap());
 
         store.arg_regs[2] = 7;
         store.arg_regs[3] = 8;
@@ -87,7 +89,7 @@ mod build {
         let y = SymbolDB::set_const("y");
 
         // p(q(X,Y))
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Func, 3),
             (Tag::Con, q),
             (Tag::Arg, 0),
@@ -97,8 +99,8 @@ mod build {
             (Tag::Str, 0),
             (Tag::Con, x),
             (Tag::Con, y),
-        ];
-        let mut store = Store::new(& binding);
+        ]);
+        let mut store = Store::new(binding.read_slice().unwrap());
 
         store.arg_regs[0] = 7;
         store.arg_regs[1] = 8;
@@ -120,6 +122,8 @@ mod build {
 }
 
 mod call {
+    use manual_rwlock::MrwLock;
+
     use super::super::call::match_head;
     use crate::heap::{
         store::{Store, Tag},
@@ -134,7 +138,7 @@ mod call {
         let p = SymbolDB::set_const("p");
         let a = SymbolDB::set_const("a");
         let b = SymbolDB::set_const("b");
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Func, 3),
             (Tag::Con, p),
             (Tag::Con, a),
@@ -143,8 +147,8 @@ mod call {
             (Tag::Con, p),
             (Tag::Ref, 6),
             (Tag::Con, b),
-        ];
-        let mut store = Store::new(&binding);
+        ]);
+        let mut store = Store::new(binding.read_slice().unwrap());
         let binding = match_head(0, 4, &mut store).unwrap();
         assert_eq!(binding[0], (6, 2));
         assert_eq!(store.arg_regs[0], 7);
@@ -156,7 +160,7 @@ mod call {
     #[test]
     fn call_with_refs() {
         let p = SymbolDB::set_const("p");
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Func, 3),
             (Tag::Con, p),
             (Tag::Arg, 0),
@@ -165,8 +169,8 @@ mod call {
             (Tag::Con, p),
             (Tag::Ref, 6),
             (Tag::Ref, 7),
-        ];
-        let mut store = Store::new(&binding);
+        ]);
+        let mut store = Store::new(binding.read_slice().unwrap());
 
         let binding = match_head(0, 4, &mut store).unwrap();
         assert_eq!(&binding[..], &[]);
@@ -179,7 +183,7 @@ mod call {
     #[test]
     fn call_meta_arguments_with_refs() {
         let p = SymbolDB::set_const("p");
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Func, 3),
             (Tag::Arg, 0),
             (Tag::ArgA, 1),
@@ -188,8 +192,8 @@ mod call {
             (Tag::Con, p),
             (Tag::Ref, 6),
             (Tag::Ref, 7),
-        ];
-        let mut store = Store::new(&binding);
+        ]);
+        let mut store = Store::new(binding.read_slice().unwrap());
         let binding = match_head(0, 4, &mut store).unwrap();
         assert_eq!(&binding[..], &[]);
         assert_eq!(&store.arg_regs[..3], &[5, 6, 7]);
@@ -203,7 +207,7 @@ mod call {
         let p = SymbolDB::set_const("p");
         let a = SymbolDB::set_const("a");
         let b = SymbolDB::set_const("b");
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Func, 3),
             (Tag::Arg, 0),
             (Tag::ArgA, 1),
@@ -212,8 +216,8 @@ mod call {
             (Tag::Con, p),
             (Tag::Con, a),
             (Tag::Con, b),
-        ];
-        let mut store = Store::new(&binding);
+        ]);
+        let mut store = Store::new(binding.read_slice().unwrap());
 
         let binding = match_head(0, 4, &mut store).unwrap();
         assert_eq!(&binding[..], &[]);
@@ -222,6 +226,8 @@ mod call {
 }
 
 mod unification {
+    use manual_rwlock::MrwLock;
+
     use super::super::unification::{unify, Binding};
     use crate::heap::store::{Store, Tag};
 
@@ -230,7 +236,7 @@ mod unification {
         let p = Store::CON_PTR;
         let a = Store::CON_PTR + 1;
         let b = Store::CON_PTR + 2;
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Func, 2),
             (Tag::Con, p),
             (Tag::Con, a),
@@ -239,8 +245,8 @@ mod unification {
             (Tag::Con, p),
             (Tag::Con, a),
             (Tag::Con, b),
-        ];
-        let store = Store::new(&binding);
+        ]);
+        let store = Store::new(binding.read_slice().unwrap());
 
         let mut binding = Binding::new();
         unify(0, 4, &store, &mut binding);
@@ -251,7 +257,7 @@ mod unification {
     fn unfify_const_with_var_list() {
         let a = Store::CON_PTR;
         let b = Store::CON_PTR + 1;
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Lis, 1),
             (Tag::Con, a),
             (Tag::Lis, 3),
@@ -262,8 +268,8 @@ mod unification {
             (Tag::Lis, 8),
             (Tag::Ref, 8),
             (Tag::Ref, 9),
-        ];
-        let store = Store::new(&binding);
+        ]);
+        let store = Store::new(binding.read_slice().unwrap());
 
         let mut binding = Binding::new();
         unify(0, 5, &store, &mut binding);
@@ -274,7 +280,7 @@ mod unification {
     fn unfify_const_lists() {
         let a = Store::CON_PTR;
         let b = Store::CON_PTR + 1;
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Lis, 1),
             (Tag::Con, a),
             (Tag::Lis, 3),
@@ -285,8 +291,8 @@ mod unification {
             (Tag::Lis, 8),
             (Tag::Con, b),
             Store::EMPTY_LIS,
-        ];
-        let store = Store::new(&binding);
+        ]);
+        let store = Store::new(binding.read_slice().unwrap());
 
         let mut binding = Binding::new();
         unify(0, 5, &store, &mut binding);
@@ -297,7 +303,7 @@ mod unification {
     fn unfify_const_with_meta_list() {
         let a = Store::CON_PTR;
         let b = Store::CON_PTR + 1;
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Lis, 1),
             (Tag::Con, a),
             (Tag::Lis, 3),
@@ -308,8 +314,8 @@ mod unification {
             (Tag::Lis, 8),
             (Tag::ArgA, 8),
             (Tag::ArgA, 9),
-        ];
-        let store = Store::new(&binding);
+        ]);
+        let store = Store::new(binding.read_slice().unwrap());
 
         let mut binding = Binding::new();
         unify(0, 5, &store, &mut binding);
@@ -321,7 +327,7 @@ mod unification {
         let p = Store::CON_PTR;
         let a = Store::CON_PTR + 1;
         let b = Store::CON_PTR + 2;
-        let binding = [
+        let binding = MrwLock::new([
             (Tag::Func, 2),
             (Tag::Con, p),
             (Tag::Con, a),
@@ -331,8 +337,8 @@ mod unification {
             (Tag::Ref, 4),
             (Tag::Con, a),
             (Tag::Ref, 8),
-        ];
-        let store = Store::new(&binding);
+        ]);
+        let store = Store::new(binding.read_slice().unwrap());
 
         let mut binding = Binding::new();
         unify(0, 5, &store, &mut binding);

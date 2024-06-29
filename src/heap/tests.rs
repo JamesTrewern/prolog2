@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 
+use manual_rwlock::MrwLock;
+
 use crate::{
     heap::store::{Store, Tag},
     interface::parser::{parse_goals, tokenise},
 };
+
+use super::store::Cell;
 
 // #[test]
 // #[should_panic]
@@ -18,7 +22,9 @@ use crate::{
 
 #[test]
 fn should_not_panic_print_heap() {
-    let mut heap = Store::new(&[]);
+    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
+
+    let mut heap = Store::new(EMPTY.read_slice().unwrap());
     for term in [
         "p(A,B).",
         "X == [1,2,3].",
@@ -36,7 +42,8 @@ fn should_not_panic_print_heap() {
 
 #[test]
 fn deref_addr() {
-    let mut heap = Store::new(&[]);
+    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
+    let mut heap = Store::new(EMPTY.read_slice().unwrap());
     heap.push((Tag::Ref, 1));
     heap.push((Tag::Ref, 2));
     heap.push((Tag::Ref, 3));
@@ -46,7 +53,8 @@ fn deref_addr() {
 
 #[test]
 fn deref_addr_con() {
-    let mut heap = Store::new(&[]);
+    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
+    let mut heap = Store::new(EMPTY.read_slice().unwrap());
     heap.push((Tag::Ref, 1));
     heap.push((Tag::Ref, 2));
     heap.push((Tag::Ref, 3));

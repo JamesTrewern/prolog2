@@ -1,11 +1,17 @@
+use std::io::Empty;
+
+use manual_rwlock::MrwLock;
+
 use crate::{
-    heap::store::Store,
+    heap::store::{Cell, Store},
     interface::parser::{parse_clause, tokenise},
     program::{clause::ClauseType, clause_table::ClauseTable},
 };
 
-fn setup<'a>() -> (Store<'a>, ClauseTable) {
-    let mut heap = Store::new(&[]);
+
+fn setup<'a>() -> (MrwLock<Vec<Cell>>, ClauseTable) {
+    let empty: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
+    let mut heap = Store::new(empty.read_slice().unwrap());
     let mut clause_table = ClauseTable::new();
 
     let clauses = [
@@ -26,12 +32,15 @@ fn setup<'a>() -> (Store<'a>, ClauseTable) {
     }
     clause_table.sort_clauses(&heap);
 
-    (heap, clause_table)
+    drop(heap);
+
+    (empty, clause_table)
 }
 
 #[test]
 fn test_ordering() {
-    let (heap, clause_table) = setup();
+    let (empty, clause_table) = setup();
+    let mut heap = Store::new(empty.read_slice().unwrap());
     let expected_order = ["a(X,Y)", "b(X,Y)", "c(X,Y)", "d(X,Y)", "e(X,Y)", "f(X,Y)"];
     for i in 0..clause_table.len() {
         let clause_string = heap.term_string(clause_table[i][0]);
@@ -41,13 +50,14 @@ fn test_ordering() {
 
 #[test]
 fn test_type_flags() {
-    let (_, mut clause_table) = setup();
+    let (empty,mut clause_table) = setup();
     assert_eq!(clause_table.find_flags(), [0, 2, 4, 6])
 }
 
 #[test]
 fn complex_ordering() {
-    let mut heap = Store::new(&[]);
+    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
+    let mut heap = Store::new(EMPTY.read_slice().unwrap());
     let mut clause_table = ClauseTable::new();
 
     let clauses = [

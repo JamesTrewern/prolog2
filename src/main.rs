@@ -23,22 +23,17 @@ New Clause rules: constraints, head can't be existing predicate
 */
 
 
-fn setup<'a>(file: &str, goal: &str) -> Proof<'a> {
-    let mut state = State::new(None);
-    state.load_file(file).unwrap();
-    let mut store = Store::new(&[]);
-    let goals: Vec<usize> = parse_goals(&tokenise(goal))
-        .unwrap()
-        .into_iter()
-        .map(|t| t.build_to_heap(&mut store, &mut HashMap::new(), false))
-        .collect();
-    Proof::new(
-        &goals,
-        store,
-        DynamicProgram::new(None, state.program.read().unwrap()),
-        None,
-        &state
-    )
+fn setup<'a>(file: &str, goal: &str) -> (State, Store<'a>, Vec<usize>) {
+    // let mut state = State::new(None);
+    // state.load_file(file).unwrap();
+    // let mut store = Store::new(state.heap.read_slice().unwrap());
+    // let goals: Vec<usize> = parse_goals(&tokenise(goal))
+    //     .unwrap()
+    //     .into_iter()
+    //     .map(|t| t.build_to_heap(&mut store, &mut HashMap::new(), false))
+    //     .collect();
+    // (state,store,goals)
+    todo!()
 }
 
 
@@ -46,12 +41,18 @@ fn setup<'a>(file: &str, goal: &str) -> Proof<'a> {
 
 fn main() -> ExitCode {
 
-    let proof = setup("./examples/odd_even", "even(4), not(even(3)).");
-    let mut proofs = 0;
-    for _ in proof {
-        proofs += 1;
-    }
-    assert!(proofs > 0);
+    // let (state,store,goals) = setup(
+    //     "./examples/family",
+    //     "ancestor(ken,james), ancestor(christine,james).",
+    // );
+
+    // let proof = Proof::new(
+    //     &goals,
+    //     store,
+    //     DynamicProgram::new(None, state.program.read().unwrap()),
+    //     None,
+    //     &state
+    // );
 
 
     let mut state = State::new(None);

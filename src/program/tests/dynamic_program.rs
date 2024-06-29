@@ -1,7 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, io::Empty};
+
+use manual_rwlock::MrwLock;
 
 use crate::{
-    heap::store::Store,
+    heap::store::{Cell, Store},
     interface::{config::Config, parser::{parse_clause, parse_goals, tokenise}, state::State},
     program::{
         clause::ClauseType,
@@ -10,10 +12,12 @@ use crate::{
     },
 };
 
-fn setup<'a>() -> (Store<'a>, DynamicProgram<'a>) {
+
+fn setup<'a>() -> State {
+    let empty: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
 
     let mut state = State::new(None);
-    let mut store = Store::new(&[]);
+    let mut store = Store::new(empty.read_slice().unwrap());
 
     let clauses = [
         (ClauseType::META, "e(X,Y)"),
@@ -44,12 +48,16 @@ fn setup<'a>() -> (Store<'a>, DynamicProgram<'a>) {
         hypothesis.add_h_clause(clause, &mut store);
     }
 
-    (store, DynamicProgram::new(None, state.program.read().unwrap()))
+    drop(store);
+
+    state
 }
 
 #[test]
 fn iter_clause_body() {
-    let (heap, prog) = setup();
+    let state = setup();
+    let store = Store::new(state.heap.read_slice().unwrap());
+    let prog = DynamicProgram::new(None, state.program.read().unwrap());
     let expected = vec![
         "d(X,Y)".to_string(),
         "c(X,Y)".to_string(),
@@ -57,13 +65,15 @@ fn iter_clause_body() {
         "a(X,Y)".to_string(),
     ];
     for i in prog.iter([true, true, false, false]) {
-        assert!(expected.contains(&heap.term_string(prog.get(i)[0])));
+        assert!(expected.contains(&store.term_string(prog.get(i)[0])));
     }
 }
 
 #[test]
 fn iter_body_meta_hypothesis() {
-    let (heap, prog) = setup();
+    let state = setup();
+    let store = Store::new(state.heap.read_slice().unwrap());
+    let prog = DynamicProgram::new(None, state.program.read().unwrap());
     let expected = vec![
         "g(X,Y)".to_string(),
         "f(X,Y)".to_string(),
@@ -73,30 +83,34 @@ fn iter_body_meta_hypothesis() {
     ];
     for i in prog.iter([false, true, true, true]) {
         assert!(
-            expected.contains(&heap.term_string(prog.get(i)[0])),
+            expected.contains(&store.term_string(prog.get(i)[0])),
             "failed on [{i}] {}",
-            heap.term_string(prog.get(i)[0])
+            store.term_string(prog.get(i)[0])
         );
     }
 }
 
 #[test]
 fn iter_meta_hypothesis() {
-    let (heap, clause_table) = setup();
+    let state = setup();
+    let store = Store::new(state.heap.read_slice().unwrap());
+    let prog = DynamicProgram::new(None, state.program.read().unwrap());
     let expected = vec![
         "g(X,Y)".to_string(),
         "f(X,Y)".to_string(),
         "e(X,Y)".to_string(),
     ];
-    for i in clause_table.iter([false, false, true, true]) {
-        assert!(expected.contains(&heap.term_string(clause_table.get(i)[0])));
+    for i in prog.iter([false, false, true, true]) {
+        assert!(expected.contains(&store.term_string(prog.get(i)[0])));
     }
 }
 
 #[test]
 fn call_meta_with_con() {
+    let empty: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
+
     let mut state = State::new(None);
-    let mut store = Store::new(&[]);
+    let mut store = Store::new(empty.read_slice().unwrap());
     for clause in ["P(X,Y,Z):-Q(X,Y,Z)\\X,Y"] {
         let clause = parse_clause(&tokenise(clause)).unwrap().to_heap(&mut store);
         state.program.write().unwrap().add_clause(clause, &store);

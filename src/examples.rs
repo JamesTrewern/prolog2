@@ -12,24 +12,27 @@ use crate::{
     resolution::solver::Proof,
 };
 
-fn setup<'a>(file: &str, goal: &str) -> (State, Store<'a>, Vec<usize>) {
+fn setup<'a>(file: &str, goal: &str) -> (State, Vec<usize>) {
     let mut state = State::new(None);
     state.load_file(file).unwrap();
-    let mut store = Store::new(unsafe{&*state.heap.get()});
+    let mut store = Store::new(state.heap.read_slice().unwrap());
     let goals: Vec<usize> = parse_goals(&tokenise(goal))
         .unwrap()
         .into_iter()
         .map(|t| t.build_to_heap(&mut store, &mut HashMap::new(), false))
         .collect();
-    (state,store,goals)
+    state.to_static_heap(&mut store);
+    drop(store);
+    (state,goals)
 }
 
 #[test]
 fn ancestor() {
-    let (state,store,goals) = setup(
+    let (state,goals) = setup(
         "./examples/family",
         "ancestor(ken,james), ancestor(christine,james).",
     );
+    let store = Store::new(state.heap.read_slice().unwrap());
 
     let proof = Proof::new(
         &goals,
@@ -50,7 +53,9 @@ fn ancestor() {
 
 #[test]
 fn map() {
-    let (state,store,goals) = setup("./examples/map", "map([1,2,3],[2,4,6], X).");
+    let (state,goals) = setup("./examples/map", "map([1,2,3],[2,4,6], X).");
+    let store = Store::new(state.heap.read_slice().unwrap());
+    
     let proof = Proof::new(
         &goals,
         store,
@@ -68,7 +73,9 @@ fn map() {
 
 #[test]
 fn odd_even() {
-    let (state,store,goals) = setup("./examples/odd_even", "even(4), not(even(3)).");
+    let (state,goals) = setup("./examples/odd_even", "even(4), not(even(3)).");
+    let store = Store::new(state.heap.read_slice().unwrap());
+
     let proof = Proof::new(
         &goals,
         store,
