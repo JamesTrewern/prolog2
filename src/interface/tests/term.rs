@@ -11,7 +11,7 @@ use crate::{
 
 #[test]
 fn build_simple_term() {
-let mut heap = Vec::new();
+    let mut heap = Vec::new();
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
@@ -35,7 +35,7 @@ let mut heap = Vec::new();
 
 #[test]
 fn build_simple_term_duplicate_var() {
-let mut heap = Vec::new();
+    let mut heap = Vec::new();
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
@@ -60,7 +60,7 @@ let mut heap = Vec::new();
 
 #[test]
 fn build_meta_term() {
-let mut heap = Vec::new();
+    let mut heap = Vec::new();
     let term = Term::STR(
         [
             Term::VAR("P".into()),
@@ -83,7 +83,7 @@ let mut heap = Vec::new();
 
 #[test]
 fn build_term_with_substr() {
-let mut heap = Vec::new();
+    let mut heap = Vec::new();
     let term = Term::STR(
         [
             Term::VAR("P".into()),
@@ -109,45 +109,14 @@ let mut heap = Vec::new();
 
 #[test]
 fn build_term_with_list() {
-let mut heap = Vec::new();
-    let p = SymbolDB::set_const("p");
-    let term = Term::STR(
-        [
-            Term::CON("p".into()),
-            Term::LIS([Term::VAR("X".into()), Term::VAR("Y".into())].into(), false),
-        ]
-        .into(),
-    );
-    term.build_to_heap(&mut heap, &mut HashMap::new(), true);
-    assert_eq!(
-        &heap,
-        &[
-            (Tag::Arg, 0),
-            (Tag::Lis, 2),
-            (Tag::Arg, 1),
-            Store::EMPTY_LIS,
-            (Tag::Func, 2),
-            (Tag::Con, p),
-            (Tag::Lis, 0),
-        ]
-    );
-}
-
-#[test]
-fn build_term_with_list_explicit_tail() {
-let mut heap = Vec::new();
+    let mut heap = Vec::new();
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
             Term::CON("p".into()),
             Term::LIS(
-                [
-                    Term::VAR("X".into()),
-                    Term::VAR("Y".into()),
-                    Term::VAR("Z".into()),
-                ]
-                .into(),
-                true,
+                Term::VAR("X".into()).into(),
+                Term::LIS(Term::VAR("Y".into()).into(), Term::EMPTY_LIS.into()).into(),
             ),
         ]
         .into(),
@@ -157,29 +126,61 @@ let mut heap = Vec::new();
         &heap,
         &[
             (Tag::Arg, 0),
-            (Tag::Lis, 2),
+            Store::EMPTY_LIS,
             (Tag::Arg, 1),
-            (Tag::Arg, 2),
+            (Tag::Lis, 0),
             (Tag::Func, 2),
             (Tag::Con, p),
+            (Tag::Lis, 2),
+        ]
+    );
+}
+
+#[test]
+fn build_term_with_list_explicit_tail() {
+    let mut heap = Vec::new();
+    let p = SymbolDB::set_const("p");
+    let term = Term::STR(
+        [
+            Term::CON("p".into()),
+            Term::LIS(
+                Term::VAR("X".into()).into(),
+                Term::LIS(Term::VAR("Y".into()).into(), Term::VAR("Z".into()).into()).into(),
+            ),
+        ]
+        .into(),
+    );
+    term.build_to_heap(&mut heap, &mut HashMap::new(), true);
+    assert_eq!(
+        &heap,
+        &[
+            (Tag::Arg, 0),
+            (Tag::Arg, 1),
+            (Tag::Arg, 2),
             (Tag::Lis, 0),
+            (Tag::Func, 2),
+            (Tag::Con, p),
+            (Tag::Lis, 2),
         ]
     );
 }
 
 #[test]
 fn build_naked_list() {
-let mut heap = Vec::new();
-    let term = Term::LIS([Term::VAR("X".into()), Term::VAR("Y".into())].into(), false);
+    let mut heap = Vec::new();
+    let term = Term::LIS(
+        Term::VAR("X".into()).into(),
+        Term::LIS(Term::VAR("Y".into()).into(), Term::EMPTY_LIS.into()).into(),
+    );
     term.build_to_heap(&mut heap, &mut HashMap::new(), false);
     assert_eq!(
         &heap,
         &[
             (Tag::Ref, 0),
-            (Tag::Lis, 2),
-            (Tag::Ref, 2),
             Store::EMPTY_LIS,
+            (Tag::Ref, 2),
             (Tag::Lis, 0),
+            (Tag::Lis, 2),
         ]
     );
 
@@ -188,34 +189,32 @@ let mut heap = Vec::new();
         &heap[5..],
         &[
             (Tag::Arg, 0),
-            (Tag::Lis, 7),
-            (Tag::Arg, 1),
             Store::EMPTY_LIS,
+            (Tag::Arg, 1),
             (Tag::Lis, 5),
+            (Tag::Lis, 7),
+
         ]
     );
 }
 
 #[test]
 fn build_int_list() {
-let mut heap = Vec::new();
-    let term = Term::LIS(
-        [Term::INT(-1), Term::INT(-5), Term::INT(5), Term::INT(10)].into(),
-        false,
-    );
+    let mut heap = Vec::new();
+    let term = Term::list_from_slice(&[Term::INT(-1), Term::INT(-5), Term::INT(5), Term::INT(10)]);
     term.build_to_heap(&mut heap, &mut HashMap::new(), true);
     assert_eq!(
         &heap,
         &[
-            (Tag::Int, unsafe { mem::transmute_copy(&(-1 as isize)) }),
-            (Tag::Lis, 2),
-            (Tag::Int, unsafe { mem::transmute_copy(&(-5 as isize)) }),
-            (Tag::Lis, 4),
-            (Tag::Int, unsafe { mem::transmute_copy(&(5 as isize)) }),
-            (Tag::Lis, 6),
             (Tag::Int, unsafe { mem::transmute_copy(&(10 as isize)) }),
             Store::EMPTY_LIS,
+            (Tag::Int, unsafe { mem::transmute_copy(&(5 as isize)) }),
             (Tag::Lis, 0),
+            (Tag::Int, unsafe { mem::transmute_copy(&(-5 as isize)) }),
+            (Tag::Lis, 2),
+            (Tag::Int, unsafe { mem::transmute_copy(&(-1 as isize)) }),
+            (Tag::Lis, 4),
+            (Tag::Lis, 6),
         ]
     );
 }
@@ -223,29 +222,25 @@ let mut heap = Vec::new();
 #[test]
 fn build_flt_list() {
     let mut heap = Vec::new();
-    let term = Term::LIS(
-        [
-            Term::FLT(0.0),
-            Term::FLT(-1.1),
-            Term::FLT(5.0),
-            Term::FLT(PI as fsize),
-        ]
-        .into(),
-        false,
-    );
+    let term = Term::list_from_slice(&[
+        Term::FLT(0.0),
+        Term::FLT(-1.1),
+        Term::FLT(5.0),
+        Term::FLT(PI as fsize),
+    ]);
     term.build_to_heap(&mut heap, &mut HashMap::new(), false);
     assert_eq!(
         &heap,
         &[
-            (Tag::Flt, unsafe { mem::transmute_copy(&(0.0 as fsize)) }),
-            (Tag::Lis, 2),
-            (Tag::Flt, unsafe { mem::transmute_copy(&(-1.1 as fsize)) }),
-            (Tag::Lis, 4),
-            (Tag::Flt, unsafe { mem::transmute_copy(&(5.0 as fsize)) }),
-            (Tag::Lis, 6),
             (Tag::Flt, unsafe { mem::transmute_copy(&(PI as fsize)) }),
             Store::EMPTY_LIS,
+            (Tag::Flt, unsafe { mem::transmute_copy(&(5.0 as fsize)) }),
             (Tag::Lis, 0),
+            (Tag::Flt, unsafe { mem::transmute_copy(&(-1.1 as fsize)) }),
+            (Tag::Lis, 2),
+            (Tag::Flt, unsafe { mem::transmute_copy(&(0.0 as fsize)) }),
+            (Tag::Lis, 4),
+            (Tag::Lis, 6),
         ]
     );
 }

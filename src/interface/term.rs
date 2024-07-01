@@ -1,6 +1,8 @@
 use crate::{
     heap::{
-        heap::Heap, store::{Cell, Store, Tag}, symbol_db::SymbolDB
+        heap::Heap,
+        store::{Cell, Store, Tag},
+        symbol_db::SymbolDB,
     },
     program::clause::{Clause, ClauseType},
 };
@@ -9,19 +11,21 @@ use std::{
     collections::HashMap,
     fmt,
     mem::{self, ManuallyDrop},
-    ops::Deref, sync::Arc,
+    ops::Deref,
+    sync::Arc,
 };
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Term {
     FLT(fsize),
     INT(isize),
-    VAR(Arc<str>),        //Symbol starting with uppercase
-    VARUQ(Arc<str>),      //Symbol starting with uppercase
-    CON(Arc<str>),        //Symbol starting with lowercase
-    LIS(Vec<Term>, bool), //Terms, explicit tail?
-    STR(Box<[Term]>),     //0th element is functor/predicate symbol, rest are arguments
+    VAR(Arc<str>),             //Symbol starting with uppercase
+    VARUQ(Arc<str>),           //Symbol starting with uppercase
+    CON(Arc<str>),             //Symbol starting with lowercase
+    LIS(Box<Term>, Box<Term>), //Terms, explicit tail?
+    STR(Box<[Term]>),          //0th element is functor/predicate symbol, rest are arguments
     Cell(Cell),
+    EMPTY_LIS,
 }
 
 impl Term {
@@ -40,23 +44,7 @@ impl Term {
             Term::VAR(symbol) => symbol.to_string(),
             Term::VARUQ(symbol) => symbol.to_string(),
             Term::CON(symbol) => symbol.to_string(),
-            Term::LIS(terms, explicit_tail) => {
-                format!(
-                    "[{}]",
-                    terms
-                        .iter()
-                        .enumerate()
-                        .map(|(i, t)| if i == terms.len() - 1 {
-                            format!("{t}")
-                        } else if i == terms.len() - 2 && *explicit_tail {
-                            format!("{t}| ")
-                        } else {
-                            format!("{t}, ")
-                        })
-                        .collect::<Vec<String>>()
-                        .concat()
-                )
-            }
+            Term::LIS(head, tail) => format!("[{head}, {tail}]"),
             Term::STR(terms) => {
                 let mut buf = String::new();
                 buf += &terms[0].to_string();
@@ -70,9 +58,10 @@ impl Term {
                 buf
             }
             Term::Cell(_) => todo!(),
+            Term::EMPTY_LIS => "[]".into(),
         }
     }
-    
+
     fn build_str(
         terms: &Box<[Term]>,
         heap: &mut impl Heap,
@@ -97,35 +86,19 @@ impl Term {
     }
 
     fn build_lis(
-        terms: &Vec<Term>,
-        explicit_tail: bool,
+        head: &Term,
+        tail: &Term,
         heap: &mut impl Heap,
         seen_vars: &mut HashMap<Box<str>, usize>,
         clause: bool,
     ) -> Cell {
+        let head = head.build_to_cell(heap, seen_vars, clause);
+        let tail = tail.build_to_cell(heap, seen_vars, clause);
+
         let addr = heap.heap_len();
 
-        if terms.len() == 0 {
-            return Store::EMPTY_LIS;
-        }
-
-        let terms: Vec<Term> = terms
-            .iter()
-            .map(|t| t.build_to_cell(heap, seen_vars, clause))
-            .collect();
-        for (i, term) in terms[..terms.len()].iter().enumerate() {
-            match term {
-                Term::Cell(cell) => heap.heap_push(*cell),
-                term => {
-                    term.build_to_heap(heap, seen_vars, clause);
-                }
-            }
-            if i == terms.len() - 1 && !explicit_tail {
-                heap.heap_push(Store::EMPTY_LIS)
-            } else if i < terms.len() - 2 || !explicit_tail {
-                heap.heap_push((Tag::Lis, heap.heap_len() + 1))
-            }
-        }
+        head.build_to_heap(heap, seen_vars, clause);
+        tail.build_to_heap(heap, seen_vars, clause);
 
         (Tag::Lis, addr)
     }
@@ -137,13 +110,9 @@ impl Term {
         clause: bool,
     ) -> Term {
         match self {
-            Term::LIS(terms, explicit_tail) => Term::Cell(Self::build_lis(
-                terms,
-                *explicit_tail,
-                heap,
-                seen_vars,
-                clause,
-            )),
+            Term::LIS(head, tail) => {
+                Term::Cell(Self::build_lis(head, tail, heap, seen_vars, clause))
+            }
             Term::STR(terms) => Term::Cell(Self::build_str(terms, heap, seen_vars, clause)),
             _ => self.clone(),
         }
@@ -201,14 +170,18 @@ impl Term {
                 let id = SymbolDB::set_const(symbol);
                 heap.set_const(id)
             }
-            Term::LIS(terms, explicit_tail) => {
-                let cell = Self::build_lis(terms, *explicit_tail, heap, seen_vars, clause);
+            Term::LIS(head, tail) => {
+                let cell = Self::build_lis(head, tail, heap, seen_vars, clause);
                 heap.heap_push(cell);
                 heap.heap_len() - 1
             }
             Term::STR(terms) => Self::build_str(terms, heap, seen_vars, clause).1,
             Term::Cell(cell) => {
                 heap.heap_push(*cell);
+                heap.heap_len() - 1
+            }
+            Term::EMPTY_LIS => {
+                heap.heap_push(Store::EMPTY_LIS);
                 heap.heap_len() - 1
             }
         }
@@ -228,7 +201,7 @@ impl Term {
                     .map(|addr: usize| Self::build_from_heap(addr, heap))
                     .collect(),
             ),
-            Tag::Lis => Term::LIS(todo!(), todo!()),
+            Tag::Lis => Term::LIS(Self::build_from_heap(heap[addr].1, heap).into(), Self::build_from_heap(heap[addr].1+1, heap).into()),
             Tag::Arg | Tag::Ref => Term::VAR(match SymbolDB::get_var(addr) {
                 Some(symbol) => symbol.into(),
                 None => format!("_{addr}").into(),
@@ -243,6 +216,13 @@ impl Term {
         }
     }
 
+    pub fn list_from_slice(terms: &[Term]) -> Term{
+        let mut tail = Term::EMPTY_LIS;
+        for term in terms.iter().rev(){
+            tail = Term::LIS(term.clone().into(), tail.into())
+        }
+        tail
+    }
 }
 
 impl fmt::Display for Term {

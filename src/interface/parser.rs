@@ -198,32 +198,28 @@ fn build_str(term_stack: &mut Vec<Term>, op_stack: &mut Vec<Term>) -> Result<(),
 
 fn build_list(term_stack: &mut Vec<Term>, op_stack: &mut Vec<Term>) -> Result<(), String> {
     resolve_infix(term_stack, op_stack, INFIX_ORDER.len());
-    let mut lis_terms = Vec::<Term>::new();
-    let mut explicit_tail = false;
+    let mut list_term: Term = if op_stack.pop().unwrap().symbol() == "|" {
+        term_stack.pop().unwrap()
+    } else {
+        Term::LIS(Box::new(term_stack.pop().unwrap()), Box::new(Term::EMPTY_LIS))
+        
+    };
+
     loop {
         let op = op_stack.pop().unwrap();
-        let term = term_stack.pop().unwrap();
-        lis_terms.push(term);
+
+        list_term = Term::LIS(Box::new(term_stack.pop().unwrap()), Box::new(list_term));
         if op.symbol() == "|" {
-            if lis_terms.len() > 1 {
-                return Err(format!(
-                    "List tail must be at most one term: [..|{}]",
-                    lis_terms
-                        .iter()
-                        .map(|t| t.to_string())
-                        .collect::<Vec<String>>()
-                        .concat()
-                ));
-            }
-            explicit_tail = true;
+            return Err(format!(
+                "List tail must be at most one term: [..|{list_term}]",
+            ));
         } else if op.symbol() == "[" {
             break;
         } else if op.symbol() != "," {
             return Err(format!("Incorrectly formatted list"));
         }
     }
-    lis_terms = lis_terms.into_iter().rev().collect();
-    term_stack.push(Term::LIS(lis_terms, explicit_tail));
+    term_stack.push(list_term);
     Ok(())
 }
 
@@ -266,8 +262,8 @@ pub fn parse_clause(mut tokens: &[&str]) -> Result<TermClause, String> {
     Ok(TermClause { literals, meta })
 }
 
-pub fn parse_goals(tokens: &[&str]) -> Result<Vec<Term>, String>{
-    parse_literals(tokens, & vec![])
+pub fn parse_goals(tokens: &[&str]) -> Result<Vec<Term>, String> {
+    parse_literals(tokens, &vec![])
 }
 
 fn parse_literals(tokens: &[&str], uqvars: &Vec<&str>) -> Result<Vec<Term>, String> {
@@ -290,7 +286,7 @@ fn parse_literals(tokens: &[&str], uqvars: &Vec<&str>) -> Result<Vec<Term>, Stri
         } else if *token == "]" {
             build_list(&mut term_stack, &mut op_stack)?
         } else if *token == "[]" {
-            term_stack.push(Term::LIS(Vec::new(), false));
+            term_stack.push(Term::EMPTY_LIS);
         } else if INFIX_ORDER.iter().any(|ops| ops.contains(&token)) {
             resolve_infix(&mut term_stack, &mut op_stack, infix_order(token));
             op_stack.push(parse_atom(token, &uqvars));

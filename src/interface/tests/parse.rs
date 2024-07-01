@@ -1,4 +1,7 @@
-use crate::interface::{parser::{parse_clause, parse_goals, tokenise}, term::Term};
+use crate::interface::{
+    parser::{parse_clause, parse_goals, tokenise},
+    term::Term,
+};
 
 #[test]
 fn parse_fact() {
@@ -62,7 +65,10 @@ fn parse_clause_with_list() {
         Term::STR(
             [
                 Term::CON("q".into()),
-                Term::LIS([Term::VAR("X".into()), Term::VAR("Y".into())].into(), false)
+                Term::LIS(
+                    Term::VAR("X".into()).into(),
+                    Term::LIS(Term::VAR("Y".into()).into(), Term::EMPTY_LIS.into()).into()
+                )
             ]
             .into()
         )
@@ -203,8 +209,8 @@ fn parse_meta_with_list() {
             [
                 Term::VAR("Q".into()),
                 Term::LIS(
-                    [Term::VARUQ("X".into()), Term::VAR("Y".into())].into(),
-                    false
+                    Term::VARUQ("X".into()).into(),
+                    Term::LIS(Term::VAR("Y".into()).into(), Term::EMPTY_LIS.into()).into(),
                 )
             ]
             .into()
@@ -235,13 +241,8 @@ fn parse_meta_with_list_explicit_uq_tail() {
             [
                 Term::VAR("Q".into()),
                 Term::LIS(
-                    [
-                        Term::VARUQ("X".into()),
-                        Term::VAR("Y".into()),
-                        Term::VARUQ("Z".into())
-                    ]
-                    .into(),
-                    true
+                    Term::VARUQ("X".into()).into(),
+                    Term::LIS(Term::VAR("Y".into()).into(), Term::VARUQ("Z".into()).into()).into()
                 )
             ]
             .into()
