@@ -1,7 +1,6 @@
 use crate::{
     heap::{
-        store::{Store, Tag},
-        symbol_db::SymbolDB,
+        heap::Heap, store::{Store, Tag}, symbol_db::SymbolDB
     },
     resolution::{solver::Proof, unification::Binding},
 };
@@ -252,14 +251,14 @@ fn is(call: usize, proof: &mut Proof) -> PredReturn {
             Number::Flt(value) => {
                 proof
                     .store
-                    .push((Tag::Flt, unsafe { mem::transmute(value) }));
-                PredReturn::Binding(Binding(vec![(lhs_addr, proof.store.len() - 1)]))
+                    .heap_push((Tag::Flt, unsafe { mem::transmute(value) }));
+                PredReturn::Binding(Binding(vec![(lhs_addr, proof.store.heap_len() - 1)]))
             }
             Number::Int(value) => {
                 proof
                     .store
-                    .push((Tag::Int, unsafe { mem::transmute(value) }));
-                PredReturn::Binding(Binding(vec![(lhs_addr, proof.store.len() - 1)]))
+                    .heap_push((Tag::Int, unsafe { mem::transmute(value) }));
+                PredReturn::Binding(Binding(vec![(lhs_addr, proof.store.heap_len() - 1)]))
             }
         }
     } else {

@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    heap::store::Store,
+    heap::{heap::Heap, store::Store},
     interface::config::Config,
     program::{
         clause::{Clause, ClauseType},

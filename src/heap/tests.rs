@@ -1,13 +1,9 @@
 use std::collections::HashMap;
 
-use manual_rwlock::MrwLock;
-
 use crate::{
-    heap::store::{Store, Tag},
+    heap::{heap::Heap, store::Tag},
     interface::parser::{parse_goals, tokenise},
 };
-
-use super::store::Cell;
 
 // #[test]
 // #[should_panic]
@@ -22,9 +18,7 @@ use super::store::Cell;
 
 #[test]
 fn should_not_panic_print_heap() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
+    let mut heap = Vec::new();
     for term in [
         "p(A,B).",
         "X == [1,2,3].",
@@ -42,22 +36,20 @@ fn should_not_panic_print_heap() {
 
 #[test]
 fn deref_addr() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
-    heap.push((Tag::Ref, 1));
-    heap.push((Tag::Ref, 2));
-    heap.push((Tag::Ref, 3));
-    heap.push((Tag::Ref, 3));
+    let mut heap = Vec::new();
+    heap.heap_push((Tag::Ref, 1));
+    heap.heap_push((Tag::Ref, 2));
+    heap.heap_push((Tag::Ref, 3));
+    heap.heap_push((Tag::Ref, 3));
     assert_eq!(heap.deref_addr(0), 3)
 }
 
 #[test]
 fn deref_addr_con() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
-    heap.push((Tag::Ref, 1));
-    heap.push((Tag::Ref, 2));
-    heap.push((Tag::Ref, 3));
-    heap.push((Tag::Con, 3));
+    let mut heap = Vec::new();
+    heap.heap_push((Tag::Ref, 1));
+    heap.heap_push((Tag::Ref, 2));
+    heap.heap_push((Tag::Ref, 3));
+    heap.heap_push((Tag::Con, 3));
     assert_eq!(heap.deref_addr(0), 3)
 }

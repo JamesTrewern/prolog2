@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use crate::heap::{store::{Store, Tag}, symbol_db::SymbolDB};
+use crate::heap::{heap::Heap, store::{Store, Tag}, symbol_db::SymbolDB};
 
 /**Array of pair of memory addresses, binding from left to right  */
 #[derive(Debug)]

@@ -1,10 +1,9 @@
 use fsize::fsize;
-use manual_rwlock::MrwLock;
 use std::{collections::HashMap, f64::consts::PI, mem};
 
 use crate::{
     heap::{
-        store::{Cell, Store, Tag},
+        store::{Store, Tag},
         symbol_db::SymbolDB,
     },
     interface::term::Term,
@@ -12,8 +11,7 @@ use crate::{
 
 #[test]
 fn build_simple_term() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
+let mut heap = Vec::new();
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
@@ -25,20 +23,19 @@ fn build_simple_term() {
     );
     term.build_to_heap(&mut heap, &mut HashMap::new(), false);
     assert_eq!(
-        &heap.cells[..],
+        &heap[..],
         &[(Tag::Func, 3), (Tag::Con, p), (Tag::Ref, 2), (Tag::Ref, 3),]
     );
     term.build_to_heap(&mut heap, &mut HashMap::new(), true);
     assert_eq!(
-        &heap.cells[4..],
+        &heap[4..],
         &[(Tag::Func, 3), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 1),]
     );
 }
 
 #[test]
 fn build_simple_term_duplicate_var() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
+let mut heap = Vec::new();
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
@@ -50,21 +47,20 @@ fn build_simple_term_duplicate_var() {
     );
     term.build_to_heap(&mut heap, &mut HashMap::new(), false);
     assert_eq!(
-        &heap.cells[..],
+        &heap[..],
         &[(Tag::Func, 3), (Tag::Con, p), (Tag::Ref, 2), (Tag::Ref, 2),]
     );
 
     term.build_to_heap(&mut heap, &mut HashMap::new(), true);
     assert_eq!(
-        &heap.cells[4..],
+        &heap[4..],
         &[(Tag::Func, 3), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 0),]
     );
 }
 
 #[test]
 fn build_meta_term() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
+let mut heap = Vec::new();
     let term = Term::STR(
         [
             Term::VAR("P".into()),
@@ -75,7 +71,7 @@ fn build_meta_term() {
     );
     term.build_to_heap(&mut heap, &mut HashMap::new(), true);
     assert_eq!(
-        &heap.cells[..],
+        &heap,
         &[
             (Tag::Func, 3),
             (Tag::Arg, 0),
@@ -87,8 +83,7 @@ fn build_meta_term() {
 
 #[test]
 fn build_term_with_substr() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
+let mut heap = Vec::new();
     let term = Term::STR(
         [
             Term::VAR("P".into()),
@@ -99,7 +94,7 @@ fn build_term_with_substr() {
     );
     term.build_to_heap(&mut heap, &mut HashMap::new(), true);
     assert_eq!(
-        &heap.cells[..],
+        &heap,
         &[
             (Tag::Func, 2),
             (Tag::Arg, 0),
@@ -114,8 +109,7 @@ fn build_term_with_substr() {
 
 #[test]
 fn build_term_with_list() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
+let mut heap = Vec::new();
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
@@ -126,7 +120,7 @@ fn build_term_with_list() {
     );
     term.build_to_heap(&mut heap, &mut HashMap::new(), true);
     assert_eq!(
-        &heap.cells[..],
+        &heap,
         &[
             (Tag::Arg, 0),
             (Tag::Lis, 2),
@@ -141,8 +135,7 @@ fn build_term_with_list() {
 
 #[test]
 fn build_term_with_list_explicit_tail() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
+let mut heap = Vec::new();
     let p = SymbolDB::set_const("p");
     let term = Term::STR(
         [
@@ -161,7 +154,7 @@ fn build_term_with_list_explicit_tail() {
     );
     term.build_to_heap(&mut heap, &mut HashMap::new(), true);
     assert_eq!(
-        &heap.cells[..],
+        &heap,
         &[
             (Tag::Arg, 0),
             (Tag::Lis, 2),
@@ -176,12 +169,11 @@ fn build_term_with_list_explicit_tail() {
 
 #[test]
 fn build_naked_list() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
+let mut heap = Vec::new();
     let term = Term::LIS([Term::VAR("X".into()), Term::VAR("Y".into())].into(), false);
     term.build_to_heap(&mut heap, &mut HashMap::new(), false);
     assert_eq!(
-        &heap.cells[..],
+        &heap,
         &[
             (Tag::Ref, 0),
             (Tag::Lis, 2),
@@ -193,7 +185,7 @@ fn build_naked_list() {
 
     term.build_to_heap(&mut heap, &mut HashMap::new(), true);
     assert_eq!(
-        &heap.cells[5..],
+        &heap[5..],
         &[
             (Tag::Arg, 0),
             (Tag::Lis, 7),
@@ -206,15 +198,14 @@ fn build_naked_list() {
 
 #[test]
 fn build_int_list() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
+let mut heap = Vec::new();
     let term = Term::LIS(
         [Term::INT(-1), Term::INT(-5), Term::INT(5), Term::INT(10)].into(),
         false,
     );
     term.build_to_heap(&mut heap, &mut HashMap::new(), true);
     assert_eq!(
-        &heap.cells[..],
+        &heap,
         &[
             (Tag::Int, unsafe { mem::transmute_copy(&(-1 as isize)) }),
             (Tag::Lis, 2),
@@ -231,9 +222,7 @@ fn build_int_list() {
 
 #[test]
 fn build_flt_list() {
-    let EMPTY: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
-
-    let mut heap = Store::new(EMPTY.read_slice().unwrap());
+    let mut heap = Vec::new();
     let term = Term::LIS(
         [
             Term::FLT(0.0),
@@ -246,7 +235,7 @@ fn build_flt_list() {
     );
     term.build_to_heap(&mut heap, &mut HashMap::new(), false);
     assert_eq!(
-        &heap.cells[..],
+        &heap,
         &[
             (Tag::Flt, unsafe { mem::transmute_copy(&(0.0 as fsize)) }),
             (Tag::Lis, 2),

@@ -1,7 +1,6 @@
 use crate::{
     heap::{
-        store::{Cell, Store, Tag},
-        symbol_db::SymbolDB,
+        heap::Heap, store::{Cell, Store, Tag}, symbol_db::SymbolDB
     },
     program::clause::{Clause, ClauseType},
 };
@@ -76,7 +75,7 @@ impl Term {
     
     fn build_str(
         terms: &Box<[Term]>,
-        heap: &mut Store,
+        heap: &mut impl Heap,
         seen_vars: &mut HashMap<Box<str>, usize>,
         clause: bool,
     ) -> Cell {
@@ -84,11 +83,11 @@ impl Term {
             .iter()
             .map(|t| t.build_to_cell(heap, seen_vars, clause))
             .collect();
-        let addr = heap.len();
-        heap.push((Tag::Func, terms.len()));
+        let addr = heap.heap_len();
+        heap.heap_push((Tag::Func, terms.len()));
         for term in terms {
             match term {
-                Term::Cell(cell) => heap.push(cell),
+                Term::Cell(cell) => heap.heap_push(cell),
                 term => {
                     term.build_to_heap(heap, seen_vars, clause);
                 }
@@ -100,11 +99,11 @@ impl Term {
     fn build_lis(
         terms: &Vec<Term>,
         explicit_tail: bool,
-        heap: &mut Store,
+        heap: &mut impl Heap,
         seen_vars: &mut HashMap<Box<str>, usize>,
         clause: bool,
     ) -> Cell {
-        let addr = heap.len();
+        let addr = heap.heap_len();
 
         if terms.len() == 0 {
             return Store::EMPTY_LIS;
@@ -116,15 +115,15 @@ impl Term {
             .collect();
         for (i, term) in terms[..terms.len()].iter().enumerate() {
             match term {
-                Term::Cell(cell) => heap.push(*cell),
+                Term::Cell(cell) => heap.heap_push(*cell),
                 term => {
                     term.build_to_heap(heap, seen_vars, clause);
                 }
             }
             if i == terms.len() - 1 && !explicit_tail {
-                heap.push(Store::EMPTY_LIS)
+                heap.heap_push(Store::EMPTY_LIS)
             } else if i < terms.len() - 2 || !explicit_tail {
-                heap.push((Tag::Lis, heap.len() + 1))
+                heap.heap_push((Tag::Lis, heap.heap_len() + 1))
             }
         }
 
@@ -133,7 +132,7 @@ impl Term {
 
     fn build_to_cell(
         &self,
-        heap: &mut Store,
+        heap: &mut impl Heap,
         seen_vars: &mut HashMap<Box<str>, usize>,
         clause: bool,
     ) -> Term {
@@ -152,7 +151,7 @@ impl Term {
 
     fn build_var(
         symbol: &str,
-        heap: &mut Store,
+        heap: &mut impl Heap,
         seen_vars: &mut HashMap<Box<str>, usize>,
         ho: bool,
         clause: bool,
@@ -183,18 +182,18 @@ impl Term {
 
     pub fn build_to_heap(
         &self,
-        heap: &mut Store,
+        heap: &mut impl Heap,
         seen_vars: &mut HashMap<Box<str>, usize>,
         clause: bool,
     ) -> usize {
         match self {
             Term::FLT(value) => {
-                heap.push((Tag::Flt, unsafe { mem::transmute_copy(value) }));
-                heap.len() - 1
+                heap.heap_push((Tag::Flt, unsafe { mem::transmute_copy(value) }));
+                heap.heap_len() - 1
             }
             Term::INT(value) => {
-                heap.push((Tag::Int, unsafe { mem::transmute_copy(value) }));
-                heap.len() - 1
+                heap.heap_push((Tag::Int, unsafe { mem::transmute_copy(value) }));
+                heap.heap_len() - 1
             }
             Term::VAR(symbol) => Self::build_var(symbol, heap, seen_vars, false, clause),
             Term::VARUQ(symbol) => Self::build_var(symbol, heap, seen_vars, true, clause),
@@ -204,13 +203,13 @@ impl Term {
             }
             Term::LIS(terms, explicit_tail) => {
                 let cell = Self::build_lis(terms, *explicit_tail, heap, seen_vars, clause);
-                heap.push(cell);
-                heap.len() - 1
+                heap.heap_push(cell);
+                heap.heap_len() - 1
             }
             Term::STR(terms) => Self::build_str(terms, heap, seen_vars, clause).1,
             Term::Cell(cell) => {
-                heap.push(*cell);
-                heap.len() - 1
+                heap.heap_push(*cell);
+                heap.heap_len() - 1
             }
         }
     }
@@ -273,7 +272,7 @@ impl TermClause {
         }
     }
 
-    pub fn to_heap(&self, heap: &mut Store) -> Clause {
+    pub fn to_heap(&self, heap: &mut impl Heap) -> Clause {
         let clause_type = if self.meta {
             ClauseType::META
         } else {

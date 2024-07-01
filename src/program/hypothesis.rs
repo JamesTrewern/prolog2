@@ -2,7 +2,8 @@ use std::usize;
 
 use crate::{
     heap::{
-        store::{self, Store, Tag},
+        heap::Heap,
+        store::{Store, Tag},
         symbol_db::SymbolDB,
     },
     resolution::unification::Binding,
@@ -75,11 +76,11 @@ impl Hypothesis {
         if invented {
             self.invented_preds -= 1;
         }
-        if debug { 
+        if debug {
             println!("Removed Clause");
         }
         self.clauses.remove_clause(self.clauses.len() - 1);
-        
+
         self.constraints.pop();
     }
 

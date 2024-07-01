@@ -2,8 +2,7 @@ mod build {
     use manual_rwlock::MrwLock;
 
     use crate::heap::{
-        store::{Store, Tag},
-        symbol_db::SymbolDB,
+        heap::Heap, store::{Store, Tag}, symbol_db::SymbolDB
     };
 
     use super::super::build::build;
@@ -32,8 +31,9 @@ mod build {
 
         let new_goal = build(0, &mut store, true);
 
+        store.print_heap();
         assert_eq!(
-            &store.cells[new_goal..],
+            &store.cells[new_goal-store.prog_cells.len()..],
             &[(Tag::Func, 3), (Tag::Con, p), (Tag::Con, x), (Tag::Arg, 2)]
         )
     }
@@ -68,7 +68,7 @@ mod build {
         let new_goal = build(3, &mut store, true);
 
         assert_eq!(
-            &store.cells[new_goal - 3..],
+            &store.cells[new_goal-store.prog_cells.len() - 3..],
             &[
                 (Tag::Func, 2),
                 (Tag::Con, q),
@@ -107,7 +107,7 @@ mod build {
 
         let new_goal = build(4, &mut store, false);
         assert_eq!(
-            &store.cells[new_goal - 4..],
+            &store.cells[new_goal-store.prog_cells.len() - 4..],
             &[
                 (Tag::Func, 3),
                 (Tag::Con, q),

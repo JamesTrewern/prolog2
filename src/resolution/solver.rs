@@ -1,5 +1,5 @@
 use crate::{
-    heap::{store::Store, symbol_db::SymbolDB},
+    heap::{heap::Heap, store::Store, symbol_db::SymbolDB},
     interface::{
         config::Config, state::State, term::{Term, TermClause}
     },
@@ -30,7 +30,7 @@ impl<'a> Proof<'a> {
     ) -> Proof<'a> {
         let config = match config {
             Some(config) => config,
-            None => unsafe { *state.config.get() },
+            None => *state.config.read().unwrap(),
         };
 
         let mut goal_vars = Vec::<usize>::new();

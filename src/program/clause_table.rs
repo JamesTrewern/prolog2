@@ -1,5 +1,5 @@
 use super::clause::{Clause, ClauseType};
-use crate::heap::store::Store;
+use crate::heap::heap::Heap;
 use std::{cmp::Ordering, mem::ManuallyDrop, ops::Index, ptr::slice_from_raw_parts};
 
 /**Stores clauses as a list of adresses to literals on the heap
@@ -46,7 +46,7 @@ impl<'a> ClauseTable {
         c1: &(ClauseType, usize, usize),
         c2: &(ClauseType, usize, usize),
         literals: &[usize],
-        heap: &Store,
+        heap: &impl Heap,
     ) -> Ordering {
         let o1 = match c1.0 {
             ClauseType::CLAUSE => 1,
@@ -76,7 +76,7 @@ impl<'a> ClauseTable {
     }
 
     /**sort the clauses using the order clauses funtion */
-    pub fn sort_clauses(&mut self, heap: &Store) {
+    pub fn sort_clauses(&mut self, heap: &impl Heap) {
         self.clauses
             .sort_by(|c1, c2| Self::order_clauses(c1, c2, &self.literal_addrs, heap));
     }

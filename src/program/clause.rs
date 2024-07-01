@@ -1,6 +1,5 @@
 use crate::heap::{
-    store::{Store, Tag},
-    symbol_db::SymbolDB,
+    heap::Heap, store::{Store, Tag}, symbol_db::SymbolDB
 };
 use std::{mem::ManuallyDrop, ops::Deref};
 
@@ -41,14 +40,14 @@ impl Clause {
     }
 
     /**Get the symbol and arity of the head literal */
-    pub fn symbol_arity(&self, heap: &Store) -> (usize, usize) {
+    pub fn symbol_arity(&self, heap: &impl Heap) -> (usize, usize) {
         heap.str_symbol_arity(self[0])
     }
 
     /**Create symbols for the vars found in the clause
      * Used to make hypothesis easier to read
      */
-    pub fn symbolise_vars(&self, heap: &mut Store) {
+    pub fn symbolise_vars(&self, heap: &mut impl Heap) {
         let mut vars = Vec::<usize>::new();
         for literal in self.iter() {
             vars.append(

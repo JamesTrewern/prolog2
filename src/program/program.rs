@@ -5,8 +5,7 @@ use super::{
 };
 use crate::{
     heap::{
-        store::{Store, Tag},
-        symbol_db::SymbolDB,
+        heap::Heap, store::{Store, Tag}, symbol_db::SymbolDB
     },
     interface::config::Config,
     pred_module::{config_mod, PredModule, PredicateFN},
@@ -65,7 +64,7 @@ impl Program {
     }
 
     /**Make a symbol and arity be allowed to match with variable predicate symbol goals */
-    pub fn add_body_pred(&mut self, symbol: usize, arity: usize, store: &Store) {
+    pub fn add_body_pred(&mut self, symbol: usize, arity: usize, store: &impl Heap) {
         self.organise_clause_table(store);
         self.body_preds.push((symbol, arity));
         if let Some(Predicate::Clauses(clauses)) = self.predicates.get(&(symbol, arity)) {
@@ -77,7 +76,7 @@ impl Program {
         self.organise_clause_table(store);
     }
 
-    pub fn add_clause(&mut self, mut clause: Clause, store: &Store) {
+    pub fn add_clause(&mut self, mut clause: Clause, store: &impl Heap) {
         let sym_arr = store.str_symbol_arity(clause[0]);
         if self.body_preds.contains(&sym_arr) {
             clause.clause_type = ClauseType::BODY;
@@ -97,7 +96,7 @@ impl Program {
     /** Build a map from (symbol, arity) -> Range of indicies for clauses
      * This works as long as we sort the clause table
      */
-    pub fn predicate_map(&self, store: &Store) -> HashMap<(usize, usize), Range<usize>> {
+    pub fn predicate_map(&self, store: &impl Heap) -> HashMap<(usize, usize), Range<usize>> {
         let mut predicate_map = HashMap::<(usize, usize), (usize, usize)>::new();
 
         for (i, clause) in self.clauses.iter().enumerate() {
@@ -117,7 +116,7 @@ impl Program {
     }
 
     //**Sort the clause table, find type flags, and build predicate map*/
-    pub fn organise_clause_table(&mut self, store: &Store) {
+    pub fn organise_clause_table(&mut self, store: &impl Heap) {
         self.clauses.sort_clauses(store);
         self.type_flags = self.clauses.find_flags();
         self.predicates.extend(
@@ -167,7 +166,7 @@ impl<'a> DynamicProgram<'a> {
     }
 
     /** Takes goals and returns either a predicate function of an interator over clause indices */
-    pub fn call(&mut self, goal_addr: usize, store: &Store, config: Config) -> CallRes {
+    pub fn call(&mut self, goal_addr: usize, store: &impl Heap, config: Config) -> CallRes {
         if store[goal_addr].0 == Tag::Lis {
             return CallRes::Function(config_mod::load_file);
         }

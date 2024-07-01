@@ -15,14 +15,14 @@ use crate::{
 };
 
 use std::{
-    cell::UnsafeCell,
     collections::HashMap,
     fs,
     io::{self, stdout, Write},
+    sync::RwLock,
 };
 
 pub struct State {
-    pub config: UnsafeCell<Config>,
+    pub config: RwLock<Config>,
     pub program: MrwLock<Program>,
     pub heap: MrwLock<Vec<Cell>>,
 }
@@ -31,14 +31,14 @@ impl State {
     pub fn new(config: Option<Config>) -> State {
         SymbolDB::new();
         let config = if let Some(config) = config {
-            UnsafeCell::new(config)
+            RwLock::new(config)
         } else {
-            UnsafeCell::new(Config::new())
+            RwLock::new(Config::new())
         };
         let program = MrwLock::new(Program::new());
         let heap = MrwLock::new(Vec::new());
 
-        let mut state = State {
+        let state = State {
             config,
             program,
             heap,
@@ -55,16 +55,13 @@ impl State {
         match get_module(&name.to_lowercase()) {
             Some(pred_module) => {
                 pred_module.1();
-                self.program
-                    .write()
-                    .unwrap()
-                    .add_pred_module(pred_module.0);
+                self.program.write().unwrap().add_pred_module(pred_module.0);
             }
             None => println!("{name} is not a recognised module"),
         }
     }
 
-    pub fn main_loop(& self) {
+    pub fn main_loop(&self) {
         let mut buffer = String::new();
         loop {
             if buffer.is_empty() {
@@ -98,7 +95,9 @@ impl State {
         let mut seen_vars = HashMap::new();
         let goals: Box<[usize]> = goals
             .into_iter()
-            .map(|t| t.build_to_heap(&mut store, &mut seen_vars, false))
+            .map(|t| {
+                t.build_to_heap(&mut store.cells, &mut seen_vars, false) + store.prog_cells.len()
+            })
             .collect();
         let mut proof = Proof::new(
             &goals,
@@ -114,8 +113,8 @@ impl State {
     }
 
     pub fn parse_prog(&self, file: String) {
-        let mut store = Store::new(self.heap.read_slice().unwrap());
         let mut prog = self.program.try_write().unwrap();
+        let mut heap = self.heap.try_write().unwrap();
         let mut line = 0;
         let tokens = tokenise(&file);
         'outer: for mut segment in tokens.split(|t| *t == ".") {
@@ -134,33 +133,36 @@ impl State {
             }
 
             if segment[0] == ":-" {
+                prog.organise_clause_table(&*heap);
                 drop(prog);
-                self.to_static_heap(&mut store);
+                drop(heap);
                 if let Err(msg) = self.handle_directive(segment) {
                     println!("Error after ln[{line}]: {msg}");
                     return;
                 }
-                prog = self.program.write().unwrap();
+                prog = self.program.try_write().unwrap();
+                heap = self.heap.try_write().unwrap();
+
+                prog.organise_clause_table(&*heap);
             } else {
                 let clause = match parse_clause(segment) {
-                    Ok(res) => res.to_heap(&mut store),
+                    Ok(res) => res.to_heap(&mut *heap),
                     Err(msg) => {
                         println!("Error after ln[{line}]: {msg}");
                         return;
                     }
                 };
-                prog.add_clause(clause, &mut store);
+                prog.add_clause(clause, &*heap);
             }
 
             line += segment.iter().filter(|t| **t == "\n").count();
         }
         // self.heap.query_space = true;
-        prog.organise_clause_table(&mut store);
+        prog.organise_clause_table(&*heap);
         drop(prog);
-        self.to_static_heap(&mut store);
     }
 
-    pub fn load_file(& self, path: &str) -> Result<(), String> {
+    pub fn load_file(&self, path: &str) -> Result<(), String> {
         if let Ok(mut file) = fs::read_to_string(format!("{path}.pl")) {
             remove_comments(&mut file);
             self.parse_prog(file);
@@ -168,19 +170,5 @@ impl State {
         } else {
             Err(format!("File not found at {path}"))
         }
-    }
-
-    pub fn to_static_heap<'a>(&'a self, store: &mut Store<'a>) {
-        unsafe { store.prog_cells.early_release() };
-        let mut prog_heap = self.heap.try_write().unwrap();
-        unsafe {
-            // TO DO drop reference to heap, ask for write lock on heap
-            assert!(
-                prog_heap.len() == store.prog_cells.len(),
-                "Another thread has mutated program heap",
-            );
-            prog_heap.append(&mut store.cells);
-            store.prog_cells = self.heap.read_slice().unwrap();
-        };
     }
 }

@@ -1,12 +1,13 @@
 use super::{get_module, PredModule, PredReturn};
 use crate::{
     heap::{
+        heap::Heap,
         store::{Store, Tag},
         symbol_db::SymbolDB,
-    }, interface::config::Config, program::program::Program, resolution::solver::Proof
+    },
+    resolution::solver::Proof,
 };
-use std::{mem, sync::RwLock};
-use std::sync::atomic::Ordering::{Acquire, Relaxed};
+use std::mem;
 
 fn body_pred(call: usize, proof: &mut Proof) -> PredReturn {
     unsafe { proof.prog.prog.early_release() };
@@ -21,19 +22,18 @@ fn body_pred(call: usize, proof: &mut Proof) -> PredReturn {
     } else {
         return PredReturn::False;
     };
-    proof
-        .state
-        .program
-        .write()
-        .unwrap()
-        .add_body_pred(symbol, (arity + 1) as usize, &proof.store);
-    unsafe { proof.prog.prog.reobtain() };
+    proof.state.program.write().unwrap().add_body_pred(
+        symbol,
+        (arity + 1) as usize,
+        &*proof.state.heap.try_read().unwrap(),
+    );
+    unsafe { proof.prog.prog.reobtain().unwrap() };
     PredReturn::True
 }
 
 fn max_h_preds(call: usize, proof: &mut Proof) -> PredReturn {
     if let (Tag::Int, value) = proof.store[call + 2] {
-        Config::set_max_h_pred(value);
+        proof.state.config.write().unwrap().max_h_pred = value;
         PredReturn::True
     } else {
         PredReturn::False
@@ -42,7 +42,7 @@ fn max_h_preds(call: usize, proof: &mut Proof) -> PredReturn {
 
 fn max_h_clause(call: usize, proof: &mut Proof) -> PredReturn {
     if let (Tag::Int, value) = proof.store[call + 2] {
-        Config::set_max_h_clause(value);
+        proof.state.config.write().unwrap().max_h_clause = value;
         PredReturn::True
     } else {
         PredReturn::False
@@ -58,7 +58,7 @@ fn share_preds(call: usize, proof: &mut Proof) -> PredReturn {
             return PredReturn::False;
         }
     };
-    Config::set_share_preds(value);
+    proof.state.config.write().unwrap().share_preds = value;
     PredReturn::True
 }
 
@@ -71,13 +71,13 @@ fn debug(call: usize, proof: &mut Proof) -> PredReturn {
             return PredReturn::False;
         }
     };
-    Config::set_debug(value);
+    proof.state.config.write().unwrap().debug = value;
     PredReturn::True
 }
 
 fn max_depth(call: usize, proof: &mut Proof) -> PredReturn {
     if let (Tag::Int, value) = proof.store[call + 2] {
-        Config::set_max_depth(value);
+        proof.state.config.write().unwrap().max_depth = value;
         PredReturn::True
     } else {
         PredReturn::False
@@ -104,7 +104,7 @@ pub fn load_module(call: usize, proof: &mut Proof) -> PredReturn {
         None => println!("{name} is not a recognised module"),
     }
 
-    unsafe { proof.prog.prog.reobtain() };
+    unsafe { proof.prog.prog.reobtain().unwrap() };
     PredReturn::True
 }
 
@@ -130,7 +130,7 @@ pub fn load_file(call: usize, proof: &mut Proof) -> PredReturn {
             }
         }
     };
-    unsafe { proof.prog.prog.reobtain() };
+    unsafe { proof.prog.prog.reobtain().unwrap() };
     res
 }
 

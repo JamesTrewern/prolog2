@@ -1,14 +1,14 @@
-use std::collections::HashMap;
+// use std::collections::HashMap;
 
-use crate::{
-    heap::store::Store,
-    interface::{
-        config::Config,
-        parser::{parse_clause, parse_goals, tokenise},
-        state::State,
-    },
-    program::program::{CallRes, DynamicProgram},
-};
+// use crate::{
+//     heap::store::Store,
+//     interface::{
+//         config::Config,
+//         parser::{parse_clause, parse_goals, tokenise},
+//         state::State,
+//     },
+//     program::program::{CallRes, DynamicProgram},
+// };
 
 // fn setup() -> (Store, DynamicProgram) {
 //     let mut store = Store::new();

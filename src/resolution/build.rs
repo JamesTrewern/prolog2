@@ -1,4 +1,4 @@
-use crate::heap::store::{Store, Tag};
+use crate::heap::{heap::Heap, store::{Store, Tag}};
 
 pub fn build_goals(body_literals: &[usize], store: &mut Store) -> Box<[usize]> {
     body_literals
@@ -61,17 +61,17 @@ fn build_complex_subterm(
  */
 fn build_subterm(sub_term: usize, store: &mut Store, clause: bool, update_addr: usize) {
     match store[sub_term] {
-        (Tag::ArgA, arg) if clause => store.push((Tag::Arg, arg)), //We are building a new clause and the cell is universally quantified
+        (Tag::ArgA, arg) if clause => store.heap_push((Tag::Arg, arg)), //We are building a new clause and the cell is universally quantified
         (Tag::Arg | Tag::ArgA, arg) => {
             if store.arg_regs[arg] == usize::MAX {
                 store.arg_regs[arg] = store.set_ref(None);
             } else {
-                store.push(store[store.arg_regs[arg]]);
+                store.heap_push(store[store.arg_regs[arg]]);
             }
         }
-        (Tag::Str, _) => store.push((Tag::Str, update_addr)),
-        (Tag::Lis, _) => store.push((Tag::Lis, update_addr)),
-        _ => store.push(store[sub_term]),
+        (Tag::Str, _) => store.heap_push((Tag::Str, update_addr)),
+        (Tag::Lis, _) => store.heap_push((Tag::Lis, update_addr)),
+        _ => store.heap_push(store[sub_term]),
     }
 }
 
@@ -97,7 +97,7 @@ fn build_list(src_lis: usize, store: &mut Store, clause: bool) -> (usize, bool) 
         return (src_lis, true);
     }
 
-    let new_lis = store.len();
+    let new_lis = store.heap_len();
     
     for i in 0..=1{
         build_subterm(pointer+i, store, clause, update_addrs[i]) 
@@ -129,8 +129,8 @@ pub fn build_str(func_addr: usize, store: &mut Store, clause: bool) -> (usize, b
         return (func_addr, true);
     }
 
-    let new_str = store.len();
-    store.push((Tag::Func, arity));
+    let new_str = store.heap_len();
+    store.heap_push((Tag::Func, arity));
 
     for (i, addr) in store.str_iterator(func_addr).enumerate() {
         build_subterm(addr, store, clause, update_addrs[i])

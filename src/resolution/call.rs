@@ -1,4 +1,4 @@
-use crate::heap::store::{Store, Tag};
+use crate::heap::{heap::Heap, store::{Store, Tag}};
 
 use super::{build::build, unification::*};
 
