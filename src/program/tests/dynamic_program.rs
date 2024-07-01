@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use crate::{
     heap::{heap::Heap, store::Store},
     interface::{
-        parser::{parse_clause, tokenise},
+        parser::{parse_clause, parse_goals, tokenise},
         state::State,
     },
-    program::{clause::ClauseType, hypothesis::Hypothesis, program::DynamicProgram},
+    program::{clause::ClauseType, hypothesis::Hypothesis, program::{CallRes, DynamicProgram}},
 };
 
 fn setup<'a>() -> State {
@@ -100,6 +102,28 @@ fn iter_meta_hypothesis() {
     let expected = ['g', 'f', 'e'];
     for i in prog.iter([false, false, true, true]) {
         assert!(expected.contains(&store.term_string(prog.get(i)[0]).chars().next().unwrap()));
+    }
+}
+
+#[test]
+fn call_arity_0_head(){
+    let state = setup();
+    let clause = parse_clause(&tokenise("test:-goal(a,b)"))
+    .unwrap()
+    .to_heap(&mut *state.heap.try_write().unwrap());
+    state.program.write().unwrap().add_clause(clause, &*state.heap.try_read().unwrap());
+    state.program.write().unwrap().organise_clause_table(&*state.heap.read().unwrap());
+    let mut store: Store = Store::new(state.heap.try_read_slice().unwrap());
+    let goal = parse_goals(&tokenise("test.")).unwrap()[0].build_to_heap(&mut store, &mut HashMap::new(), false);
+    let prog = DynamicProgram::new(None, state.program.try_read().unwrap());
+    let clauses = prog.call(goal, &store, *state.config.read().unwrap());
+
+    if let CallRes::Clauses(mut clauses) = clauses{
+        let clause = prog.get(clauses.next().unwrap());
+
+        assert_eq!(&clause.to_string(&store), "test:-goal(a,b)");
+    }else{
+        panic!()
     }
 }
 

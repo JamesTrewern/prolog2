@@ -41,9 +41,15 @@ pub trait Heap: IndexMut<usize, Output = Cell> {
         return self.heap_len() - 1;
     }
 
-    fn str_symbol_arity(&self, addr: usize) -> (usize, usize) {
-        let symbol = self[self.deref_addr(addr + 1)].1;
-        (symbol, self[addr].1)
+    fn str_symbol_arity(&self, mut addr: usize) -> (usize, usize) {
+        addr = self.deref_addr(addr);
+        if let (Tag::Func, arity) = self[addr]{
+            (self[self.deref_addr(addr + 1)].1, arity)
+        }else if let (Tag::Con, symbol) = self[addr]{
+            (symbol, 0)
+        }else{
+            panic!()
+        }
     }
 
     fn deref_addr(&self, mut addr: usize) -> usize {

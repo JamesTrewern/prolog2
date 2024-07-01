@@ -5,6 +5,8 @@ use crate::{
     interface::parser::{parse_goals, tokenise},
 };
 
+use super::symbol_db::SymbolDB;
+
 // #[test]
 // #[should_panic]
 // fn should_not_update_ref() {
@@ -52,4 +54,16 @@ fn deref_addr_con() {
     heap.heap_push((Tag::Ref, 3));
     heap.heap_push((Tag::Con, 3));
     assert_eq!(heap.deref_addr(0), 3)
+}
+
+#[test]
+fn str_symbol_arity(){
+    let p = SymbolDB::set_const("p");
+    let mut heap = Vec::new();
+    heap.push((Tag::Ref,1));
+    heap.push((Tag::Con,p));
+
+
+    assert_eq!(heap.str_symbol_arity(0), (p,0))
+
 }

@@ -166,7 +166,7 @@ impl<'a> DynamicProgram<'a> {
     }
 
     /** Takes goals and returns either a predicate function of an interator over clause indices */
-    pub fn call(&mut self, goal_addr: usize, store: &impl Heap, config: Config) -> CallRes {
+    pub fn call(&self, goal_addr: usize, store: &impl Heap, config: Config) -> CallRes {
         if store[goal_addr].0 == Tag::Lis {
             return CallRes::Function(config_mod::load_file);
         }
