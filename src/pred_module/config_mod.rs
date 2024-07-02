@@ -2,7 +2,7 @@ use super::{get_module, PredModule, PredReturn};
 use crate::{
     heap::{
         heap::Heap,
-        store::{Store, Tag},
+        store::{ListIter, Store, Tag},
         symbol_db::SymbolDB,
     },
     resolution::solver::Proof,
@@ -134,6 +134,34 @@ pub fn load_file(call: usize, proof: &mut Proof) -> PredReturn {
     res
 }
 
+fn background_knowledge(call: usize, proof: &mut Proof) -> PredReturn{
+    unsafe { proof.prog.prog.early_release() };
+    let slash = SymbolDB::set_const("/");
+    if let (Tag::Lis, _) =  proof.store[call+2]{
+        let mut list_iter = ListIter{ store: &proof.store, index: call+2 };
+        while let Some (((Tag::Str, pointer), false)) = list_iter.next(){
+            if let [
+                (Tag:: Func, 3),
+                (Tag::Con, s),
+                (Tag::Con, symbol),
+                (Tag::Int, arity),
+            ] = proof.store[pointer..pointer+4]{
+                if s == slash{
+                    proof.state.program.write().unwrap().add_body_pred(
+                        symbol,
+                        (arity + 1) as usize,
+                        &*proof.state.heap.try_read().unwrap(),
+                    );
+                }
+            }
+        }
+        unsafe { proof.prog.prog.reobtain().unwrap() };
+        PredReturn::True
+    }else{
+        PredReturn::False
+    }
+}
+
 pub static CONFIG_MOD: PredModule = &[
     ("body_pred", 2, body_pred),
     ("max_h_preds", 1, max_h_preds),
@@ -143,4 +171,5 @@ pub static CONFIG_MOD: PredModule = &[
     ("max_depth", 1, max_depth),
     ("load_module", 1, load_module),
     ("load_file", 1, load_file),
+    ("background_knowledge", 1, background_knowledge)
 ];
