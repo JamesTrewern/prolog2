@@ -40,11 +40,14 @@ fn specialise_thread(
         h.add_h_clause(clause, &mut store);
     }
 
+    let mut config = *state.config.read().unwrap();
+    config.learn = false;
+
     for goal in neg_ex.iter() {
         let mut store = store.clone();
         let goal = goal.build_to_heap(&mut store, &mut HashMap::new(), false);
 
-        if Proof::new(&[goal], store, ProgH::Static(&h), None, &state)
+        if Proof::new(&[goal], store, ProgH::Static(&h), Some(config), &state)
             .next()
             .is_some()
         {
