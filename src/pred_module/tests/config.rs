@@ -12,7 +12,7 @@ use crate::{
         parser::{parse_clause, tokenise},
         state::State,
     },
-    program::program::DynamicProgram,
+    program::program::{DynamicProgram, ProgH},
 };
 
 #[test]
@@ -34,7 +34,7 @@ fn body_pred() {
         .unwrap();
 
     let store = Store::new(state.heap.try_read_slice().unwrap());
-    let prog = DynamicProgram::new(None, state.program.read().unwrap());
+    let prog = DynamicProgram::new(ProgH::None, state.program.read().unwrap());
 
     let body_clauses: Vec<String> = prog
         .iter([false, true, false, false])

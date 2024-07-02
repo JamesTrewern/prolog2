@@ -8,7 +8,7 @@ use crate::{
         parser::{parse_goals, tokenise},
         state::State,
     },
-    program::program::DynamicProgram,
+    program::program::{DynamicProgram, ProgH},
     resolution::solver::Proof,
 };
 
@@ -35,7 +35,7 @@ fn ancestor() {
     let proof = Proof::new(
         &goals,
         store,
-        DynamicProgram::new(None, state.program.read().unwrap()),
+        ProgH::None,
         None,
         &state,
     );
@@ -56,7 +56,7 @@ fn map() {
     let proof = Proof::new(
         &goals,
         store,
-        DynamicProgram::new(None, state.program.read().unwrap()),
+        ProgH::None,
         None,
         &state,
     );
@@ -77,7 +77,28 @@ fn odd_even() {
     let proof = Proof::new(
         &goals,
         store,
-        DynamicProgram::new(None, state.program.read().unwrap()),
+        ProgH::None,
+        None,
+        &state,
+    );
+
+    let mut proofs = 0;
+    for _ in proof {
+        proofs += 1;
+    }
+    assert!(proofs > 0);
+}
+
+#[test]
+fn top_prog() {
+    let state = setup("./examples/top_prog");
+
+    let (goals, store) = make_goals(&state, "test.");
+
+    let proof = Proof::new(
+        &goals,
+        store,
+        ProgH::None,
         None,
         &state,
     );

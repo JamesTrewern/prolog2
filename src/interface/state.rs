@@ -10,7 +10,7 @@ use crate::{
         symbol_db::SymbolDB,
     },
     pred_module::get_module,
-    program::program::{DynamicProgram, Program},
+    program::program::{DynamicProgram, ProgH, Program},
     resolution::solver::Proof, //resolution::solver::Proof,
 };
 
@@ -18,13 +18,14 @@ use std::{
     collections::HashMap,
     fs,
     io::{self, stdout, Write},
-    sync::RwLock,
+    sync::{Arc, RwLock},
 };
 
+#[derive(Clone)]
 pub struct State {
-    pub config: RwLock<Config>,
-    pub program: MrwLock<Program>,
-    pub heap: MrwLock<Vec<Cell>>,
+    pub config: Arc<RwLock<Config>>,
+    pub program: Arc<MrwLock<Program>>,
+    pub heap: Arc<MrwLock<Vec<Cell>>>,
 }
 
 impl State {
@@ -39,9 +40,9 @@ impl State {
         let heap = MrwLock::new(Vec::new());
 
         let state = State {
-            config,
-            program,
-            heap,
+            config: config.into(),
+            program: program.into(),
+            heap: heap.into(),
         };
 
         state.load_module("config");
@@ -82,8 +83,6 @@ impl State {
     }
 
     pub fn handle_directive(&self, segment: &[&str]) -> Result<(), String> {
-        println!("directive: {segment:?}");
-
         let goals = match parse_goals(segment) {
             Ok(res) => res,
             Err(error) => {
@@ -102,7 +101,7 @@ impl State {
         let mut proof = Proof::new(
             &goals,
             store,
-            DynamicProgram::new(None, self.program.read().unwrap()),
+            ProgH::None,
             None,
             self,
         );
@@ -172,3 +171,6 @@ impl State {
         }
     }
 }
+
+unsafe impl Send for State {}
+unsafe impl Sync for State {}

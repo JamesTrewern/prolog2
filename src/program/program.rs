@@ -5,7 +5,9 @@ use super::{
 };
 use crate::{
     heap::{
-        heap::Heap, store::{Store, Tag}, symbol_db::SymbolDB
+        heap::Heap,
+        store::{Store, Tag},
+        symbol_db::SymbolDB,
     },
     interface::config::Config,
     pred_module::{config_mod, PredModule, PredicateFN},
@@ -149,17 +151,57 @@ impl DerefMut for Program {
     }
 }
 
+unsafe impl Send for Program {}
+unsafe impl Sync for Program {}
+
+pub enum ProgH<'a> {
+    Dynamic(Hypothesis),
+    Static(&'a Hypothesis),
+    None,
+}
+
+impl<'a> ProgH<'a> {
+    pub fn len(&self) -> usize {
+        match self {
+            ProgH::Dynamic(h) => h.len(),
+            ProgH::Static(h) => h.len(),
+            ProgH::None => 0,
+        }
+    }
+}
+
+impl<'a> Deref for ProgH<'a>{
+    type Target = Hypothesis;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ProgH::Dynamic(h) => h,
+            ProgH::Static(h) => h,
+            ProgH::None => panic!(),
+        }
+    }
+}
+
+impl <'a> DerefMut for ProgH<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        if let ProgH::Dynamic(h) = self{
+            h
+        }else{
+            panic!("can mutably access this hypothesis")
+        }
+    }
+}
 pub struct DynamicProgram<'a> {
-    pub hypothesis: Hypothesis,
+    pub hypothesis: ProgH<'a>,
     pub prog: ReadGaurd<'a, Program>,
 }
 
 impl<'a> DynamicProgram<'a> {
-    pub fn new(hypothesis: Option<Hypothesis>, prog: ReadGaurd<'a, Program>) -> DynamicProgram {
+    pub fn new(hypothesis: ProgH<'a>, prog: ReadGaurd<'a, Program>) -> DynamicProgram<'a> {
         match hypothesis {
-            Some(hypothesis) => DynamicProgram { hypothesis, prog },
-            None => DynamicProgram {
-                hypothesis: Hypothesis::new(),
+            ProgH::Static(_) => DynamicProgram { hypothesis, prog },
+            ProgH::Dynamic(_) => DynamicProgram { hypothesis, prog },
+            ProgH::None => DynamicProgram {
+                hypothesis: ProgH::Dynamic(Hypothesis::new()),
                 prog,
             },
         }

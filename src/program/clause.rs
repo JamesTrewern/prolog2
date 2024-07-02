@@ -47,10 +47,10 @@ impl Clause {
     /**Create symbols for the vars found in the clause
      * Used to make hypothesis easier to read
      */
-    pub fn symbolise_vars(&self, heap: &mut impl Heap) {
-        let mut vars = Vec::<usize>::new();
+    pub fn normalise(&self, heap: &mut impl Heap) {
+        let mut args = Vec::<usize>::new();
         for literal in self.iter() {
-            vars.append(
+            args.append(
                 &mut heap
                     .term_vars(*literal)
                     .iter()
@@ -58,13 +58,11 @@ impl Clause {
                     .collect(),
             );
         }
-        vars.sort();
-        vars.dedup();
+        args.sort();
+        args.dedup();
 
-        let mut alphabet = (b'A'..=b'Z').map(|c| String::from_utf8(vec![c]).unwrap());
-        for var in vars {
-            let symbol = alphabet.next().unwrap();
-            SymbolDB::set_var(&symbol, var);
+        for literal in self.iter(){
+            heap.normalise_args(*literal, &args)
         }
     }
 }

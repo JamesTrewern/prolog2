@@ -70,6 +70,7 @@ fn build_subterm(sub_term: usize, store: &mut Store, clause: bool, update_addr: 
             }
         }
         (Tag::Str, _) => store.heap_push((Tag::Str, update_addr)),
+        Store::EMPTY_LIS => store.heap_push(Store::EMPTY_LIS),
         (Tag::Lis, _) => store.heap_push((Tag::Lis, update_addr)),
         _ => store.heap_push(store[sub_term]),
     }
@@ -94,7 +95,7 @@ fn build_list(src_lis: usize, store: &mut Store, clause: bool) -> (usize, bool) 
     }
 
     if constant {
-        return (src_lis, true);
+        return (pointer, true);
     }
 
     let new_lis = store.heap_len();

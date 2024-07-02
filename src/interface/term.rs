@@ -8,12 +8,13 @@ use crate::{
 };
 use fsize::fsize;
 use std::{
-    collections::HashMap,
-    fmt,
-    mem::{self, ManuallyDrop},
-    ops::Deref,
-    sync::Arc,
+    collections::HashMap, fmt, hash::Hash, mem::{self, ManuallyDrop}, ops::Deref, sync::Arc
 };
+
+const VAR_SYMBOLS: [&str; 26] = [
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
+    "T", "U", "V", "W", "X", "Y", "Z",
+];
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Term {
@@ -201,24 +202,21 @@ impl Term {
                     .map(|addr: usize| Self::build_from_heap(addr, heap))
                     .collect(),
             ),
-            Tag::Lis => Term::LIS(Self::build_from_heap(heap[addr].1, heap).into(), Self::build_from_heap(heap[addr].1+1, heap).into()),
-            Tag::Arg | Tag::Ref => Term::VAR(match SymbolDB::get_var(addr) {
-                Some(symbol) => symbol.into(),
-                None => format!("_{addr}").into(),
-            }),
-            Tag::ArgA => Term::VARUQ(match SymbolDB::get_var(addr) {
-                Some(symbol) => symbol.into(),
-                None => format!("_{addr}").into(),
-            }),
+            Tag::Lis => Term::LIS(
+                Self::build_from_heap(heap[addr].1, heap).into(),
+                Self::build_from_heap(heap[addr].1 + 1, heap).into(),
+            ),
+            Tag::Arg | Tag::Ref => Term::VAR(VAR_SYMBOLS[heap[addr].1].into()),
+            Tag::ArgA => Term::VARUQ(VAR_SYMBOLS[heap[addr].1].into()),
             Tag::Int => Term::INT(unsafe { mem::transmute(heap[addr].1) }),
             Tag::Flt => Term::FLT(unsafe { mem::transmute(heap[addr].1) }),
             Tag::Con => Term::CON(SymbolDB::get_const(heap[addr].1).into()),
         }
     }
 
-    pub fn list_from_slice(terms: &[Term]) -> Term{
+    pub fn list_from_slice(terms: &[Term]) -> Term {
         let mut tail = Term::EMPTY_LIS;
-        for term in terms.iter().rev(){
+        for term in terms.iter().rev() {
             tail = Term::LIS(term.clone().into(), tail.into())
         }
         tail
@@ -230,7 +228,7 @@ impl fmt::Display for Term {
         write!(f, "{}", self.to_string())
     }
 }
-
+#[derive(PartialEq, Eq)]
 pub struct TermClause {
     pub literals: Vec<Term>,
     pub meta: bool,
@@ -291,3 +289,5 @@ impl Deref for TermClause {
         &self.literals
     }
 }
+
+impl Eq for Term{}

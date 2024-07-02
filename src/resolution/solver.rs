@@ -1,10 +1,17 @@
+use std::sync::Arc;
+
 use crate::{
     heap::{heap::Heap, store::Store, symbol_db::SymbolDB},
     interface::{
-        config::Config, state::State, term::{Term, TermClause}
+        config::Config,
+        state::State,
+        term::{Term, TermClause},
     },
     pred_module::PredReturn,
-    program::program::{CallRes, DynamicProgram},
+    program::{
+        hypothesis::{self, Hypothesis},
+        program::{CallRes, DynamicProgram, ProgH},
+    },
 };
 
 use super::proof_stack::{Env, ProofStack};
@@ -17,16 +24,16 @@ pub(crate) struct Proof<'a> {
     pub store: Store<'a>,
     pub prog: DynamicProgram<'a>,
     pub config: Config,
-    pub state: &'a State
+    pub state: State,
 }
 
 impl<'a> Proof<'a> {
     pub fn new(
         goals: &[usize],
         store: Store<'a>,
-        prog: DynamicProgram<'a>,
+        hypothesis: ProgH<'a>,
         config: Option<Config>,
-        state: &'a State
+        state: &'a State,
     ) -> Proof<'a> {
         let config = match config {
             Some(config) => config,
@@ -52,9 +59,9 @@ impl<'a> Proof<'a> {
             goal_vars: goal_vars.into(),
             pointer: 0,
             store,
-            prog,
+            prog: DynamicProgram::new(hypothesis, state.program.read().unwrap()),
             config,
-            state,
+            state: state.clone(),
         }
     }
 
@@ -99,7 +106,9 @@ impl<'a> Proof<'a> {
                 CallRes::Clauses(clauses) => {
                     let env = &mut self.proof_stack[self.pointer];
                     env.choices = Some(clauses);
-                    if let Some(children) = env.try_choices(&mut self.prog, &mut self.store, self.config) {
+                    if let Some(children) =
+                        env.try_choices(&mut self.prog, &mut self.store, self.config)
+                    {
                         self.proof_stack.insert(children, self.pointer);
                         self.pointer += 1;
                     } else {
@@ -134,7 +143,9 @@ impl<'a> Proof<'a> {
 
             self.store.unbind(&env.bindings);
             if env.new_clause == true {
-                self.prog.hypothesis.remove_h_clause(env.invent_pred, self.config.debug);
+                self.prog
+                    .hypothesis
+                    .remove_h_clause(env.invent_pred, self.config.debug);
                 env.new_clause = false;
                 env.invent_pred = false;
             }
@@ -149,9 +160,15 @@ impl<'a> Proof<'a> {
                 }
             } else {
                 if self.config.debug {
-                    println!("[{}] RETRY: {}", env.depth, self.store.term_string(env.goal));
+                    println!(
+                        "[{}] RETRY: {}",
+                        env.depth,
+                        self.store.term_string(env.goal)
+                    );
                 }
-                if let Some(children) = env.try_choices(&mut self.prog, &mut self.store, self.config) {
+                if let Some(children) =
+                    env.try_choices(&mut self.prog, &mut self.store, self.config)
+                {
                     self.proof_stack.insert(children, self.pointer);
                     self.pointer += 1;
                     return true;
@@ -186,27 +203,28 @@ impl<'a> Iterator for Proof<'a> {
         }
 
         if self.prove() {
-            println!("\nTRUE");
-
             //Add symbols to hypothesis variables
-            self.prog.hypothesis.symbolise_hypothesis(&mut self.store);
+            self.prog.hypothesis.normalise_hypothesis(&mut self.store);
+            if self.config.debug {
+                println!("TRUE");
 
-            //Print goals with query vairables substituted
-            for goal in self.goals.iter() {
-                println!("{},", self.store.term_string(*goal))
-            }
+                //Print goals with query vairables substituted
+                for goal in self.goals.iter() {
+                    println!("{},", self.store.term_string(*goal))
+                }
 
-            for var in self.goal_vars.iter() {
-                println!(
-                    "{} = {}",
-                    SymbolDB::get_var(*var).unwrap(),
-                    self.store.term_string(*var)
-                );
-            }
+                for var in self.goal_vars.iter() {
+                    println!(
+                        "{} = {}",
+                        SymbolDB::get_var(*var).unwrap(),
+                        self.store.term_string(*var)
+                    );
+                }
 
-            println!("Hypothesis: ");
-            for clause in self.prog.hypothesis.iter() {
-                println!("\t{}", clause.to_string(&self.store))
+                println!("Hypothesis: ");
+                for clause in self.prog.hypothesis.iter() {
+                    println!("\t{}", clause.to_string(&self.store))
+                }
             }
 
             //For every clause in hypothesis convert into an array non heap terms

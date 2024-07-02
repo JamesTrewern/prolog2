@@ -8,7 +8,7 @@ use std::{
 const HEAP_SIZE: usize = 2000;
 const ARG_REGS: usize = 64;
 /** Tag which describes cell type */
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub(crate) enum Tag {
     Ref,  //Query Variable

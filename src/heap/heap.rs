@@ -201,6 +201,23 @@ pub trait Heap: IndexMut<usize, Output = Cell> {
             Tag::Str => self.structure_string(self[addr].1),
         }
     }
+
+    fn normalise_args(&mut self, addr: usize, args: &[usize]) {
+        match self[addr] {
+            (Tag::Str, pointer) => self.normalise_args(pointer, args),
+            (Tag::Func, _) => {
+                for i in self.str_iterator(addr) {
+                    self.normalise_args(i, args)
+                }
+            }
+            (Tag::Lis, pointer) if pointer != Self::CON_PTR => {
+                self.normalise_args(pointer, args);
+                self.normalise_args(pointer + 1, args);
+            }
+            (Tag::Arg, value) => self[addr].1 = args.iter().position(|i| value == *i).unwrap(),
+            _ => (),
+        }
+    }
 }
 
 impl Heap for Vec<Cell> {

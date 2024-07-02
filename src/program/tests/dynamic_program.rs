@@ -6,7 +6,7 @@ use crate::{
         parser::{parse_clause, parse_goals, tokenise},
         state::State,
     },
-    program::{clause::ClauseType, hypothesis::Hypothesis, program::{CallRes, DynamicProgram}},
+    program::{clause::ClauseType, hypothesis::Hypothesis, program::{CallRes, DynamicProgram, ProgH}},
 };
 
 fn setup<'a>() -> State {
@@ -56,7 +56,7 @@ fn setup<'a>() -> State {
 fn iter_clause_body() {
     let state = setup();
     let store = Store::new(state.heap.try_read_slice().unwrap());
-    let prog = DynamicProgram::new(None, state.program.try_read().unwrap());
+    let prog = DynamicProgram::new(ProgH::None, state.program.try_read().unwrap());
     let expected = ['d', 'c', 'b', 'a'];
     for i in prog.iter([true, true, false, false]) {
         assert!(expected.contains(&store.term_string(prog.get(i)[0]).chars().next().unwrap()));
@@ -75,7 +75,7 @@ fn iter_body_meta_hypothesis() {
         clause.clause_type = ClauseType::HYPOTHESIS;
         hypothesis.add_h_clause(clause, &mut store);
     }
-    let prog = DynamicProgram::new(Some(hypothesis), state.program.read().unwrap());
+    let prog = DynamicProgram::new(ProgH::Dynamic(hypothesis), state.program.read().unwrap());
     let expected = ['g', 'f', 'e', 'd', 'c'];
     for i in prog.iter([false, true, true, true]) {
         assert!(
@@ -98,7 +98,7 @@ fn iter_meta_hypothesis() {
         clause.clause_type = ClauseType::HYPOTHESIS;
         hypothesis.add_h_clause(clause, &mut store);
     }
-    let prog = DynamicProgram::new(Some(hypothesis), state.program.read().unwrap());
+    let prog = DynamicProgram::new(ProgH::Dynamic(hypothesis), state.program.read().unwrap());
     let expected = ['g', 'f', 'e'];
     for i in prog.iter([false, false, true, true]) {
         assert!(expected.contains(&store.term_string(prog.get(i)[0]).chars().next().unwrap()));
@@ -115,7 +115,7 @@ fn call_arity_0_head(){
     state.program.write().unwrap().organise_clause_table(&*state.heap.read().unwrap());
     let mut store: Store = Store::new(state.heap.try_read_slice().unwrap());
     let goal = parse_goals(&tokenise("test.")).unwrap()[0].build_to_heap(&mut store, &mut HashMap::new(), false);
-    let prog = DynamicProgram::new(None, state.program.try_read().unwrap());
+    let prog = DynamicProgram::new(ProgH::None, state.program.try_read().unwrap());
     let clauses = prog.call(goal, &store, *state.config.read().unwrap());
 
     if let CallRes::Clauses(mut clauses) = clauses{

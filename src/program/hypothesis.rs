@@ -100,10 +100,10 @@ impl Hypothesis {
     }
 
     /** Create symbols for all variables in the hypothesis*/
-    pub fn symbolise_hypothesis(&self, heap: &mut Store) {
+    pub fn normalise_hypothesis(&self, heap: &mut Store) {
         //TO DO could turn unbound refs in H into constants
         for i in 0..self.clauses.len() {
-            self.clauses.get(i).symbolise_vars(heap);
+            self.clauses.get(i).normalise(heap);
         }
     }
 
