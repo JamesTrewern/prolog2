@@ -1,6 +1,6 @@
 use std::{
     mem,
-    ops::{IndexMut, RangeInclusive},
+    ops::{Index, IndexMut, Range, RangeInclusive},
 };
 
 use crate::heap::symbol_db::SymbolDB;
@@ -9,7 +9,7 @@ use super::store::{Cell, Tag};
 
 use fsize::fsize;
 
-pub trait Heap: IndexMut<usize, Output = Cell> {
+pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]> {
     const CON_PTR: usize = isize::MAX as usize;
     const FALSE: Cell = (Tag::Con, Self::CON_PTR);
     const TRUE: Cell = (Tag::Con, Self::CON_PTR + 1);
@@ -229,3 +229,4 @@ impl Heap for Vec<Cell> {
         self.len()
     }
 }
+

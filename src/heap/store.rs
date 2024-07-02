@@ -1,8 +1,6 @@
 use super::heap::Heap;
 use manual_rwlock::SliceReadGaurd;
-use std::{
-    fmt::Debug,
-    ops::{Index, IndexMut},
+use std::{ fmt::Debug, ops::{Index, IndexMut, Range}
 };
 
 const HEAP_SIZE: usize = 2000;
@@ -107,6 +105,43 @@ impl<'a> IndexMut<usize> for Store<'a> {
             panic!("Can't get mutable reference to program heap cell");
         } else {
             &mut self.cells[index - self.prog_cells.len()]
+        }
+    }
+}
+
+impl<'a> Index<Range<usize>> for Store<'a>{
+    type Output = [Cell];
+
+    fn index(&self, index: Range<usize>) -> &Self::Output {
+        let len = self.prog_cells.len();
+        if index.start < len && index.end < len{
+            &self.prog_cells[index]
+        }else if index.start > len {
+            &self.cells[index.start - len .. index.end - len]
+        }else{
+            panic!()
+        }
+    }
+}
+
+pub(crate) struct ListIter<'a> {
+    pub store: &'a Store<'a>,
+    pub index: usize 
+}
+
+impl<'a> Iterator for ListIter<'a> {
+    type Item = (Cell, bool);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let (Tag::Lis, pointer) = self.store[self.index]{
+            if pointer == Store::CON_PTR{
+                None
+            }else{
+                self.index = pointer + 1;
+                Some((self.store[pointer], false))
+            }
+        }else{
+            Some((self.store[self.index], true))
         }
     }
 }
