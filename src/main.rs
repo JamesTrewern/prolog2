@@ -39,11 +39,7 @@ fn main() -> ExitCode {
 
     let prog = DynamicProgram::new(ProgH::None, state.program.read().unwrap());
 
-    for clause in prog.iter([false,true,false,false]){
-        println!("{}", prog.get(clause).to_string(&Store::new(state.heap.read_slice().unwrap())));
-    }
-
-    let (goals, store) = make_goals(&state, "test.");
+    let (goals, store) = make_goals(&state, "ability([exile,target,creature],[]),");
 
     let proof = Proof::new(
         &goals,

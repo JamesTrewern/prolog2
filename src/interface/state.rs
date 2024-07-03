@@ -93,19 +93,11 @@ impl State {
         };
         let mut store = Store::new(self.heap.read_slice().unwrap());
 
-        for goal in goals.iter(){
-            println!("{goal}");
-        }
-
         let mut seen_vars = HashMap::new();
         let goals: Box<[usize]> = goals
             .into_iter()
-            .map(|t| {
-                t.build_to_heap(&mut store.cells, &mut seen_vars, false) + store.prog_cells.len()
-            })
+            .map(|t| t.build_to_heap(&mut store, &mut seen_vars, false))
             .collect();
-
-        store.print_heap();
 
         let mut proof = Proof::new(&goals, store, ProgH::None, None, self);
         proof.next();

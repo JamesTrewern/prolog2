@@ -93,8 +93,8 @@ impl Term {
         seen_vars: &mut HashMap<Box<str>, usize>,
         clause: bool,
     ) -> Cell {
-        let head = head.build_to_cell(heap, seen_vars, clause);
         let tail = tail.build_to_cell(heap, seen_vars, clause);
+        let head = head.build_to_cell(heap, seen_vars, clause);
 
         let addr = heap.heap_len();
 

@@ -1,4 +1,4 @@
-:- ['examples/datasets/mtg'].
+:- ['examples/datasets/mtg'|T],T).
 
 :- background_knowledge([
 	destroy_verb/2,
@@ -67,7 +67,7 @@
 ]).
 
 P(X,Y):- Q(X,Z), R(X,Y) {X,Y,Z}.
-:- max_h_clause(1), max_h_preds(0), max_depth(10).
+:- max_h_clause(1), max_h_preds(0), max_depth(10), debug(true).
 
 :- load_module(top_prog).
 
@@ -81,6 +81,61 @@ test:-
 
 %https://media.wizards.com/2018/downloads/MagicCompRules%2020180810.txt
 
+destroy_verb([destroy|T],T).
+exile_verb([exile|T],T).
+return_verb([return|T],T).
+
+target_permanent(A,B):- target(A,C), permanent_type(C,B).
+
+target([target|T],T).
+
+all_permanents_of_type(A,B):- all(A,C), permanent_types(C,B).
+
+target_artifact_type(A,B):- target(A,C), artifact_type(C,B).
+target_creature_type(A,B):- target(A,C), creature_type(C,B).
+target_enchantment_type(A,B):- target(A,C), enchantment_type(C,B).
+target_land_type(A,B):- target(A,C), land_type.
+target_basic_land_type(A,B):- target(A,C), basic_land_type(C,B).
+target_planeswalker_type(A,B):- target(A,C), planeswalker_type(C,B).
+
+all_of_artifact_type(A,B):- all(A,C), artifact_types(C,B).
+all_of_creature_type(A,B):- all(A,C), creature_types(C,B).
+all_of_enchantment_type(A,B):- all(A,C), enchantment_types(C,B).
+all_of_land_type(A,B):- all(A,C), land_types(C,B).
+all_of_basic_land_type(A,B):- all(A,C), basic_land_types(C,B).
+all_of_planeswalker_type(A,B):- all(A,C), planeswalker_types(C,B).
+
+all([all|T],T).
+
+a_permanent_type([an,artifact|T],T).
+a_permanent_type([a,creature|T],T).
+a_permanent_type([an,enchantment|T],T).
+a_permanent_type([a,land|T],T).
+a_permanent_type([a,planeswalker|T],T).
+
+permanent_type([artifact|T],T).
+permanent_type([creature|T],T).
+permanent_type([enchantment|T],T).
+permanent_type([land|T],T).
+permanent_type([planeswalker|T],T).
+
+permanent_types([artifacts|T],T).
+permanent_types([creatures|T],T).
+permanent_types([enchantments|T],T).
+permanent_types([lands|T],T).
+permanent_types([planeswalkers|T],T).
+
+target_from_battlefield_to_hand(A,B):- target_permanent(A,C), to_owners_hand(C,B).
+target_from_graveyard_to_hand(A,B):- target_permanent(A,C),from_graveyard(C,D),to_owners_hand(D,B).
+target_from_graveyard_to_battlefield(A,B):- target_permanent(A,C), from_graveyard(C,D), to_battlefield(D,B).
+
+from_battlefield_to_hand(A,B):- a_permanent_type(A,C), to_owners_hand(C,B).
+from_graveyard_to_hand(A,B):- a_permanent_type(A,C),from_graveyard(C,D),to_owners_hand(D,B).
+from_graveyard_to_battlefield(A,B):- a_permanent_type(A,C), from_graveyard(C,D), to_battlefield(D,B).
+
+all_from_battlefield_to_hand(A,B):- all,permanents(A,C),to_owners_hands(C,B).
+all_from_graveyard_to_hand(A,B):- all,permanents(A,C), from_graveyard(C,D),to_owners_hands(D,B).
+all_from_graveyard_to_battlefield(A,B):- all,permanents(A,C), from_graveyard(C,D), to_battlefield(D,B).
 
 % See rule 205.3g
 artifact_type (['Clue'|T],T).

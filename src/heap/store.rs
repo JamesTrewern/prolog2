@@ -117,10 +117,10 @@ impl<'a> Index<Range<usize>> for Store<'a>{
         let len = self.prog_cells.len();
         if index.start < len && index.end < len{
             &self.prog_cells[index]
-        }else if index.start > len {
+        }else if index.start >= len {
             &self.cells[index.start - len .. index.end - len]
         }else{
-            panic!()
+            panic!("Range splits static and mutable heap")
         }
     }
 }

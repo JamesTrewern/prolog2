@@ -144,15 +144,12 @@ pub fn load_file(call: usize, proof: &mut Proof) -> PredReturn {
 fn background_knowledge(call: usize, proof: &mut Proof) -> PredReturn {
     unsafe { proof.prog.prog.early_release() };
     let slash = SymbolDB::set_const("/");
-
-    println!("{}", proof.store.term_string(call));
     if let (Tag::Lis, _) = proof.store[call + 2] {
         let mut list_iter = ListIter {
             store: &proof.store,
             index: call + 2,
         };
         while let Some(((Tag::Str, pointer), false)) = list_iter.next() {
-            println!("{}", proof.store.term_string(pointer));
             if let [(Tag::Func, 3), (Tag::Con, s), (Tag::Con, symbol), (Tag::Int, arity)] =
                 proof.store[pointer..pointer + 4]
             {
