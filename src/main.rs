@@ -9,7 +9,7 @@ use std::{collections::HashMap, process::ExitCode};
 
 use heap::store::Store;
 use interface::{parser::{parse_goals, tokenise}, state::State};
-use program::program::ProgH;
+use program::program::{DynamicProgram, ProgH};
 use resolution::solver::Proof;
 // use resolution::solver::Proof;
 /*
@@ -35,7 +35,13 @@ fn make_goals<'a>(state: &'a State, goals: &str) -> (Vec<usize>, Store<'a>) {
 }
 
 fn main() -> ExitCode {
-    let state = setup("./examples/top_prog");
+    let state = setup("./examples/mtg_fragment");
+
+    let prog = DynamicProgram::new(ProgH::None, state.program.read().unwrap());
+
+    for clause in prog.iter([false,true,false,false]){
+        println!("{}", prog.get(clause).to_string(&Store::new(state.heap.read_slice().unwrap())));
+    }
 
     let (goals, store) = make_goals(&state, "test.");
 

@@ -202,6 +202,7 @@ impl Term {
                     .map(|addr: usize| Self::build_from_heap(addr, heap))
                     .collect(),
             ),
+            Tag::Lis if heap[addr] == Store::EMPTY_LIS => Term::EMPTY_LIS,
             Tag::Lis => Term::LIS(
                 Self::build_from_heap(heap[addr].1, heap).into(),
                 Self::build_from_heap(heap[addr].1 + 1, heap).into(),

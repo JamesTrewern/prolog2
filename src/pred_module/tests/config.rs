@@ -51,6 +51,41 @@ fn body_pred() {
 }
 
 #[test]
+fn background_knowledge() {
+    let state = State::new(None);
+    let mut prog = state.program.write().unwrap();
+    for clause in ["dad(adam,james)", "mum(tami,james)"] {
+        let clause = parse_clause(&tokenise(clause)).unwrap();
+        prog.add_clause(
+            clause.to_heap(&mut *state.heap.try_write().unwrap()),
+            &*state.heap.try_read().unwrap(),
+        );
+    }
+    prog.organise_clause_table(&*state.heap.try_read().unwrap());
+    drop(prog);
+
+    state
+        .handle_directive(&tokenise("background_knowledge([dad/2,mum/2])."))
+        .unwrap();
+
+    let store = Store::new(state.heap.try_read_slice().unwrap());
+    let prog = DynamicProgram::new(ProgH::None, state.program.read().unwrap());
+
+    let body_clauses: Vec<String> = prog
+        .iter([false, true, false, false])
+        .map(|i| prog.get(i).to_string(&store))
+        .collect();
+
+    assert_eq!(
+        body_clauses.len(),
+        ["mum(tami,james)", "dad(adam,james)"].len()
+    );
+    for bc in body_clauses {
+        assert!(["mum(tami,james)".to_string(), "dad(adam,james)".to_string()].contains(&bc))
+    }
+}
+
+#[test]
 fn max_h_pred() {
     let mut config = Config::new();
     config.max_h_pred = 0;

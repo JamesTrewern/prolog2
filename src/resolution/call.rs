@@ -27,7 +27,7 @@ fn match_rec(mut head: usize, mut goal: usize, store: &mut Store, binding: &mut 
             match_rec(addr1, addr2, store, binding)
                 && match_rec(addr1 + 1, addr2 + 1, store, binding)
         }
-        ((Tag::Lis| Tag::Str,_), (Tag::Ref,_)) => {binding.push((build(head, store, false), goal)); true},
+        ((Tag::Lis| Tag::Str,_), (Tag::Ref,_)) => {binding.push((goal, build(head, store, false))); true},
         (_, (Tag::Ref,_)) => {binding.push((goal,head)); true},
         (c1, c2) => c1 == c2,
     }

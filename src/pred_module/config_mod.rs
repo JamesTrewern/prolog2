@@ -2,7 +2,7 @@ use super::{get_module, PredModule, PredReturn};
 use crate::{
     heap::{
         heap::Heap,
-        store::{ListIter, Store, Tag},
+        store::{self, ListIter, Store, Tag},
         symbol_db::SymbolDB,
     },
     resolution::solver::Proof,
@@ -109,7 +109,10 @@ pub fn load_module(call: usize, proof: &mut Proof) -> PredReturn {
 }
 
 pub fn load_file(call: usize, proof: &mut Proof) -> PredReturn {
-    unsafe { proof.prog.prog.early_release() };
+    unsafe {
+        proof.prog.prog.early_release();
+        proof.store.prog_cells.early_release()
+    };
     let res = if let (Tag::Lis, addr) = proof.store[call] {
         let file_path = SymbolDB::get_symbol(proof.store[addr].1);
         println!("load: {file_path}");
@@ -130,23 +133,30 @@ pub fn load_file(call: usize, proof: &mut Proof) -> PredReturn {
             }
         }
     };
-    unsafe { proof.prog.prog.reobtain().unwrap() };
+    unsafe {
+        proof.prog.prog.reobtain().unwrap();
+        proof.store.prog_cells.reobtain().unwrap();
+    };
+
     res
 }
 
-fn background_knowledge(call: usize, proof: &mut Proof) -> PredReturn{
+fn background_knowledge(call: usize, proof: &mut Proof) -> PredReturn {
     unsafe { proof.prog.prog.early_release() };
     let slash = SymbolDB::set_const("/");
-    if let (Tag::Lis, _) =  proof.store[call+2]{
-        let mut list_iter = ListIter{ store: &proof.store, index: call+2 };
-        while let Some (((Tag::Str, pointer), false)) = list_iter.next(){
-            if let [
-                (Tag:: Func, 3),
-                (Tag::Con, s),
-                (Tag::Con, symbol),
-                (Tag::Int, arity),
-            ] = proof.store[pointer..pointer+4]{
-                if s == slash{
+
+    println!("{}", proof.store.term_string(call));
+    if let (Tag::Lis, _) = proof.store[call + 2] {
+        let mut list_iter = ListIter {
+            store: &proof.store,
+            index: call + 2,
+        };
+        while let Some(((Tag::Str, pointer), false)) = list_iter.next() {
+            println!("{}", proof.store.term_string(pointer));
+            if let [(Tag::Func, 3), (Tag::Con, s), (Tag::Con, symbol), (Tag::Int, arity)] =
+                proof.store[pointer..pointer + 4]
+            {
+                if s == slash {
                     proof.state.program.write().unwrap().add_body_pred(
                         symbol,
                         (arity + 1) as usize,
@@ -157,7 +167,7 @@ fn background_knowledge(call: usize, proof: &mut Proof) -> PredReturn{
         }
         unsafe { proof.prog.prog.reobtain().unwrap() };
         PredReturn::True
-    }else{
+    } else {
         PredReturn::False
     }
 }
@@ -171,5 +181,5 @@ pub static CONFIG_MOD: PredModule = &[
     ("max_depth", 1, max_depth),
     ("load_module", 1, load_module),
     ("load_file", 1, load_file),
-    ("background_knowledge", 1, background_knowledge)
+    ("background_knowledge", 1, background_knowledge),
 ];

@@ -10,3 +10,7 @@ fsize = "1.0.0"
 manual_rwlock = "0.3.0"
 lazy_static = "1.5.0"
 rayon = "1.10.0"
+
+[profile.dev]
+opt-level = 3
+RUST_BACKTRACE=1

@@ -303,3 +303,45 @@ fn parse_meta_with_infix() {
         )
     );
 }
+
+#[test]
+fn parse_dcg() {
+    let terms = parse_clause(&tokenise("p --> [the].")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::CON("p".into()),
+                Term::LIS(Term::CON("the".into()).into(), Term::VAR("A".into()).into()),
+                Term::VAR("A".into())
+            ]
+            .into()
+        )
+    );
+}
+
+#[test]
+fn test2() {
+    let terms = parse_goals(&tokenise("p([a/2,b/2]).")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::CON("p".into()),
+                Term::LIS(
+                    Term::STR([Term::CON("/".into()), Term::CON("a".into()), Term::INT(2)].into())
+                        .into(),
+                    Term::LIS(
+                        Term::STR(
+                            [Term::CON("/".into()), Term::CON("b".into()), Term::INT(2)].into()
+                        )
+                        .into(),
+                        Term::EMPTY_LIS.into()
+                    )
+                    .into()
+                )
+            ]
+            .into()
+        )
+    );
+}

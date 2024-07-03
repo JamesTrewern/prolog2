@@ -6,6 +6,7 @@ use super::{
 };
 use crate::{
     heap::{
+        heap::Heap,
         store::{Cell, Store},
         symbol_db::SymbolDB,
     },
@@ -91,6 +92,11 @@ impl State {
             }
         };
         let mut store = Store::new(self.heap.read_slice().unwrap());
+
+        for goal in goals.iter(){
+            println!("{goal}");
+        }
+
         let mut seen_vars = HashMap::new();
         let goals: Box<[usize]> = goals
             .into_iter()
@@ -98,13 +104,10 @@ impl State {
                 t.build_to_heap(&mut store.cells, &mut seen_vars, false) + store.prog_cells.len()
             })
             .collect();
-        let mut proof = Proof::new(
-            &goals,
-            store,
-            ProgH::None,
-            None,
-            self,
-        );
+
+        store.print_heap();
+
+        let mut proof = Proof::new(&goals, store, ProgH::None, None, self);
         proof.next();
 
         // self.heap.deallocate_above(*goals.first().unwrap());
@@ -133,14 +136,18 @@ impl State {
 
             if segment[0] == ":-" {
                 prog.organise_clause_table(&*heap);
-                drop(prog);
-                drop(heap);
+                unsafe {
+                    prog.early_release();
+                    heap.early_release();
+                }
                 if let Err(msg) = self.handle_directive(segment) {
                     println!("Error after ln[{line}]: {msg}");
                     return;
                 }
-                prog = self.program.try_write().unwrap();
-                heap = self.heap.try_write().unwrap();
+                unsafe {
+                    prog.try_reobtain().unwrap();
+                    heap.try_reobtain().unwrap();
+                }
 
                 prog.organise_clause_table(&*heap);
             } else {

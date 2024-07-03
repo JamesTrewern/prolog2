@@ -1,1088 +1,744 @@
-:-module(mtg_fragment, [background_knowledge/2
-		       ,metarules/2
-		       ,positive_example/2
-		       ,negative_example/2
+:- ['examples/datasets/mtg'].
+
+:- background_knowledge([
+	destroy_verb/2,
+	exile_verb/2,
+	return_verb/2,
+	target_permanent/2,
+	target/2,
+	target_artifact_type/2,
+	target_creature_type/2,
+	target_enchantment_type/2,
+	target_land_type/2,
+	target_basic_land_type/2,target_planeswalker_type/2,
+	all_permanents_of_type/2,
+	artifact_type/2,
+	creature_type/2,
+	enchantment_type/2,
+	land_type/2,
+	basic_land_type/2,
+	planeswalker_type/2,
+	all_of_artifact_type/2,
+	all_of_creature_type/2,
+	all_of_enchantment_type/2,
+	all_of_land_type/2,
+	all_of_basic_land_type/2,
+	all_of_planeswalker_type/2,
+	all/2,
+	artifact_types/2,
+	creature_types/2,
+	enchantment_types/2,
+	land_types/2,
+	basic_land_types/2,
+	planeswalker_types/2,
+	a_permanent_type/2,
+	permanent_type/2,
+	permanent_types/2,
+	target_from_battlefield_to_hand/2,
+	target_from_graveyard_to_hand/2,
+	target_from_graveyard_to_battlefield/2,
+	from_battlefield_to_hand/2,
+	from_graveyard_to_hand/2,
+	from_graveyard_to_battlefield/2,
+	all_from_battlefield_to_hand/2,
+	all_from_graveyard_to_hand/2,
+	all_from_graveyard_to_battlefield/2,
+	permanents/2,
+	all_of_type_from_battlefield_to_hand/2,
+	all_of_type_from_graveyard_to_hand/2,
+	all_of_type_from_graveyard_to_battlefield/2,
+	to_owners_hand/2,
+	to/2,
+	its/2,
+	owners_gen/2,
+	zone_hand/2,
+	to_owners_hands/2,
+	their/2,
+	owners_gen_plural/2,
+	hands/2,
+	from_graveyard/2,
+	from/2,
+	your/2,
+	a/2,
+	zone_graveyard/2,
+	to_battlefield/2,
+	the/2,
+	zone_battlefield/2
+]).
+
+P(X,Y):- Q(X,Z), R(X,Y) {X,Y,Z}.
+:- max_h_clause(1), max_h_preds(0), max_depth(10).
+
+:- load_module(top_prog).
+
+
+test:-
+	pos_examples(Pos),
+    learn(Pos,[],H).
+
+%Following rules are extracted from the Comprehensive Rules document effective
+%as of August 2018, online here:
+
+%https://media.wizards.com/2018/downloads/MagicCompRules%2020180810.txt
 
-		       ,destroy_verb/2
-		       ,exile_verb/2
-		       ,return_verb/2
-
-		       ,target_permanent/2
-
-		       ,target/2
-
-		       ,target_artifact_type/2
-		       ,target_creature_type/2
-		       ,target_enchantment_type/2
-		       ,target_land_type/2
-		       ,target_basic_land_type/2
-		       ,target_planeswalker_type/2
-
-		       ,all_permanents_of_type/2
-
-		       ,artifact_type/2
-		       ,creature_type/2
-		       ,enchantment_type/2
-		       ,land_type/2
-		       ,basic_land_type/2
-		       ,planeswalker_type/2
-
-		       ,all_of_artifact_type/2
-		       ,all_of_creature_type/2
-		       ,all_of_enchantment_type/2
-		       ,all_of_land_type/2
-		       ,all_of_basic_land_type/2
-		       ,all_of_planeswalker_type/2
-
-		       ,all/2
-
-		       ,artifact_types/2
-		       ,creature_types/2
-		       ,enchantment_types/2
-		       ,land_types/2
-		       ,basic_land_types/2
-		       ,planeswalker_types/2
-
-		       ,a_permanent_type/2
-		       ,permanent_type/2
-		       ,permanent_types/2
-
-		       ,target_from_battlefield_to_hand/2
-		       ,target_from_graveyard_to_hand/2
-		       ,target_from_graveyard_to_battlefield/2
-
-		       ,from_battlefield_to_hand/2
-		       ,from_graveyard_to_hand/2
-		       ,from_graveyard_to_battlefield/2
-
-		       ,all_from_battlefield_to_hand/2
-		       ,all_from_graveyard_to_hand/2
-		       ,all_from_graveyard_to_battlefield/2
-
-		       ,permanents/2
-
-		       ,all_of_type_from_battlefield_to_hand/2
-		       ,all_of_type_from_graveyard_to_hand/2
-		       ,all_of_type_from_graveyard_to_battlefield/2
-
-		       ,to_owners_hand/2
-		       ,to/2
-		       ,its/2
-		       ,owners_gen/2
-		       ,zone_hand/2
-		       ,to_owners_hands/2
-		       ,their/2
-		       ,owners_gen_plural/2
-		       ,hands/2
-
-		       ,from_graveyard/2
-		       ,from/2
-		       ,your/2
-		       ,a/2
-		       ,zone_graveyard/2
-
-		       ,to_battlefield/2
-		       ,the/2
-		       ,zone_battlefield/2
-		       ]).
-
-/** <module> Learning a fragment of the Magic: the Gathering grammar.
-
-Background predicates defined in this experiment file are non- and
-pre-terminals of a grammar of a subset of the M:tG language. The
-start symbol of the grammar is ability//0 and it is used to collect
-examples for the learning problem.
-
-__1. Conriguration__
-
-Make sure your configuration includes the options listed below:
-
-==
-?- _Options = [experiment_file/2, clause_limit/1, fetch_clauses/1, max_invented/1, max_error/2, reduction/1, resolutions/1], nl, list_options(_Options).
-
-experiment_file(data/examples/mtg_fragment.pl,mtg_fragment)
-clause_limit(0)
-fetch_clauses(all)
-max_invented(0)
-max_error(0,0)
-reduction(plotkins)
-resolutions(5000)
-true.
-==
-
-
-__2. List the MIL problem__
-
-There are more than three thousand examples of ability//0 and 64
-background predicates. In such cases it's better to use
-list_problem_statistics/1 instead of list_mil_problem/1, to avoid
-cluttering your screen with thousands of lines:
-
-==
-?- list_problem_statistics(ability/2).
-Positive examples:    1356
-Negative examples:    0
-Background knowledge: 64 [destroy_verb/2,exile_verb/2,return_verb/2,target_permanent/2,target/2,target_artifact_type/2,target_creature_type/2,target_enchantment_type/2,target_land_type/2,target_basic_land_type/2,target_planeswalker_type/2,all_permanents_of_type/2,artifact_type/2,creature_type/2,enchantment_type/2,land_type/2,basic_land_type/2,planeswalker_type/2,all_of_artifact_type/2,all_of_creature_type/2,all_of_enchantment_type/2,all_of_land_type/2,all_of_basic_land_type/2,all_of_planeswalker_type/2,all/2,artifact_types/2,creature_types/2,enchantment_types/2,land_types/2,basic_land_types/2,planeswalker_types/2,a_permanent_type/2,permanent_type/2,permanent_types/2,target_from_battlefield_to_hand/2,target_from_graveyard_to_hand/2,target_from_graveyard_to_battlefield/2,from_battlefield_to_hand/2,from_graveyard_to_hand/2,from_graveyard_to_battlefield/2,all_from_battlefield_to_hand/2,all_from_graveyard_to_hand/2,all_from_graveyard_to_battlefield/2,permanents/2,all_of_type_from_battlefield_to_hand/2,all_of_type_from_graveyard_to_hand/2,all_of_type_from_graveyard_to_battlefield/2,to_owners_hand/2,to/2,its/2,owners_gen/2,zone_hand/2,to_owners_hands/2,their/2,owners_gen_plural/2,hands/2,from_graveyard/2,from/2,your/2,a/2,zone_graveyard/2,to_battlefield/2,the/2,zone_battlefield/2]
-Metarules:            1 [chain]
-true.
-==
-
-__3. Learning query__
-
-Make a learning attempt. The result should look like this:
-
-==
-?- time(learn(ability/2,_Ps)), length(_Ps, N), print_clauses(_Ps).
-% 2,179,513 inferences, 2.109 CPU in 2.562 seconds (82% CPU, 1033251 Lips)
-ability(A,B):-destroy_verb(A,C),all_of_artifact_type(C,B).
-ability(A,B):-destroy_verb(A,C),all_of_basic_land_type(C,B).
-ability(A,B):-destroy_verb(A,C),all_of_creature_type(C,B).
-ability(A,B):-destroy_verb(A,C),all_of_enchantment_type(C,B).
-ability(A,B):-destroy_verb(A,C),all_of_land_type(C,B).
-ability(A,B):-destroy_verb(A,C),all_of_planeswalker_type(C,B).
-ability(A,B):-destroy_verb(A,C),all_permanents_of_type(C,B).
-ability(A,B):-destroy_verb(A,C),target_artifact_type(C,B).
-ability(A,B):-destroy_verb(A,C),target_basic_land_type(C,B).
-ability(A,B):-destroy_verb(A,C),target_creature_type(C,B).
-ability(A,B):-destroy_verb(A,C),target_enchantment_type(C,B).
-ability(A,B):-destroy_verb(A,C),target_land_type(C,B).
-ability(A,B):-destroy_verb(A,C),target_permanent(C,B).
-ability(A,B):-destroy_verb(A,C),target_planeswalker_type(C,B).
-ability(A,B):-exile_verb(A,C),all_of_artifact_type(C,B).
-ability(A,B):-exile_verb(A,C),all_of_basic_land_type(C,B).
-ability(A,B):-exile_verb(A,C),all_of_creature_type(C,B).
-ability(A,B):-exile_verb(A,C),all_of_enchantment_type(C,B).
-ability(A,B):-exile_verb(A,C),all_of_land_type(C,B).
-ability(A,B):-exile_verb(A,C),all_of_planeswalker_type(C,B).
-ability(A,B):-exile_verb(A,C),all_permanents_of_type(C,B).
-ability(A,B):-exile_verb(A,C),target_artifact_type(C,B).
-ability(A,B):-exile_verb(A,C),target_basic_land_type(C,B).
-ability(A,B):-exile_verb(A,C),target_creature_type(C,B).
-ability(A,B):-exile_verb(A,C),target_enchantment_type(C,B).
-ability(A,B):-exile_verb(A,C),target_land_type(C,B).
-ability(A,B):-exile_verb(A,C),target_permanent(C,B).
-ability(A,B):-exile_verb(A,C),target_planeswalker_type(C,B).
-ability(A,B):-return_verb(A,C),all_from_battlefield_to_hand(C,B).
-ability(A,B):-return_verb(A,C),all_from_graveyard_to_battlefield(C,B).
-ability(A,B):-return_verb(A,C),all_from_graveyard_to_hand(C,B).
-ability(A,B):-return_verb(A,C),all_of_type_from_battlefield_to_hand(C,B).
-ability(A,B):-return_verb(A,C),all_of_type_from_graveyard_to_battlefield(C,B).
-ability(A,B):-return_verb(A,C),all_of_type_from_graveyard_to_hand(C,B).
-ability(A,B):-return_verb(A,C),from_battlefield_to_hand(C,B).
-ability(A,B):-return_verb(A,C),from_graveyard_to_battlefield(C,B).
-ability(A,B):-return_verb(A,C),from_graveyard_to_hand(C,B).
-ability(A,B):-return_verb(A,C),target_from_battlefield_to_hand(C,B).
-ability(A,B):-return_verb(A,C),target_from_graveyard_to_battlefield(C,B).
-ability(A,B):-return_verb(A,C),target_from_graveyard_to_hand(C,B).
-N = 40.
-==
-
-*/
-
-background_knowledge(ability/2, [destroy_verb/2
-				,exile_verb/2
-				,return_verb/2
-
-				,target_permanent/2
-
-				,target/2
-
-				,target_artifact_type/2
-				,target_creature_type/2
-				,target_enchantment_type/2
-				,target_land_type/2
-				,target_basic_land_type/2
-				,target_planeswalker_type/2
-
-				,all_permanents_of_type/2
-
-				,artifact_type/2
-				,creature_type/2
-				,enchantment_type/2
-				,land_type/2
-				,basic_land_type/2
-				,planeswalker_type/2
-
-				,all_of_artifact_type/2
-				,all_of_creature_type/2
-				,all_of_enchantment_type/2
-				,all_of_land_type/2
-				,all_of_basic_land_type/2
-				,all_of_planeswalker_type/2
-
-				,all/2
-
-				,artifact_types/2
-				,creature_types/2
-				,enchantment_types/2
-				,land_types/2
-				,basic_land_types/2
-				,planeswalker_types/2
-
-				,a_permanent_type/2
-				,permanent_type/2
-				,permanent_types/2
-
-				,target_from_battlefield_to_hand/2
-				,target_from_graveyard_to_hand/2
-				,target_from_graveyard_to_battlefield/2
-
-				,from_battlefield_to_hand/2
-				,from_graveyard_to_hand/2
-				,from_graveyard_to_battlefield/2
-
-				,all_from_battlefield_to_hand/2
-				,all_from_graveyard_to_hand/2
-				,all_from_graveyard_to_battlefield/2
-
-				,permanents/2
-
-				,all_of_type_from_battlefield_to_hand/2
-				,all_of_type_from_graveyard_to_hand/2
-				,all_of_type_from_graveyard_to_battlefield/2
-
-				,to_owners_hand/2
-				,to/2
-				,its/2
-				,owners_gen/2
-				,zone_hand/2
-				,to_owners_hands/2
-				,their/2
-				,owners_gen_plural/2
-				,hands/2
-
-				,from_graveyard/2
-				,from/2
-				,your/2
-				,a/2
-				,zone_graveyard/2
-
-				,to_battlefield/2
-				,the/2
-				,zone_battlefield/2
-				]).
-
-/* Small fragment of the Magic: the Gathering ability text language grammar.
-Derived primarily from examples on published cards.
-
-*/
-
-
-metarules(ability/2,[chain]).
-
-positive_example(ability/2,ability(E, [])):-
-	phrase(ability, E).
-
-negative_example(ability/2,_):-
-	fail.
-
-
-% Target theory.
-ability --> destroy_verb, target_permanent.
-ability --> exile_verb, target_permanent.
-
-ability --> destroy_verb, all_permanents_of_type.
-ability --> exile_verb, all_permanents_of_type.
-
-ability --> destroy_verb, target_artifact_type.
-ability --> destroy_verb, target_creature_type.
-ability --> destroy_verb, target_enchantment_type.
-ability --> destroy_verb, target_land_type.
-ability --> destroy_verb, target_basic_land_type.
-ability --> destroy_verb, target_planeswalker_type.
-
-ability --> exile_verb, target_artifact_type.
-ability --> exile_verb, target_creature_type.
-ability --> exile_verb, target_enchantment_type.
-ability --> exile_verb, target_land_type.
-ability --> exile_verb, target_basic_land_type.
-ability --> exile_verb, target_planeswalker_type.
-
-ability --> destroy_verb, all_of_artifact_type.
-ability --> destroy_verb, all_of_creature_type.
-ability --> destroy_verb, all_of_enchantment_type.
-ability --> destroy_verb, all_of_land_type.
-ability --> destroy_verb, all_of_basic_land_type.
-ability --> destroy_verb, all_of_planeswalker_type.
-
-ability --> exile_verb, all_of_artifact_type.
-ability --> exile_verb, all_of_creature_type.
-ability --> exile_verb, all_of_enchantment_type.
-ability --> exile_verb, all_of_land_type.
-ability --> exile_verb, all_of_basic_land_type.
-ability --> exile_verb, all_of_planeswalker_type.
-
-ability --> return_verb, target_from_battlefield_to_hand.
-ability --> return_verb, target_from_graveyard_to_hand.
-ability --> return_verb, target_from_graveyard_to_battlefield.
-
-ability --> return_verb, from_battlefield_to_hand.
-ability --> return_verb, from_graveyard_to_hand.
-ability --> return_verb, from_graveyard_to_battlefield.
-
-ability --> return_verb, all_of_type_from_battlefield_to_hand.
-ability --> return_verb, all_of_type_from_graveyard_to_hand.
-ability --> return_verb, all_of_type_from_graveyard_to_battlefield.
-
-ability --> return_verb, all_from_battlefield_to_hand.
-ability --> return_verb, all_from_graveyard_to_hand.
-ability --> return_verb, all_from_graveyard_to_battlefield.
-
-destroy_verb --> [destroy].
-exile_verb --> [exile].
-return_verb --> [return].
-
-target_permanent --> target, permanent_type.
-
-target --> [target].
-
-all_permanents_of_type --> all, permanent_types.
-
-target_artifact_type --> target, artifact_type.
-target_creature_type --> target, creature_type.
-target_enchantment_type --> target, enchantment_type.
-target_land_type --> target, land_type.
-target_basic_land_type --> target, basic_land_type.
-target_planeswalker_type --> target, planeswalker_type.
-
-all_of_artifact_type --> all, artifact_types.
-all_of_creature_type --> all, creature_types.
-all_of_enchantment_type --> all, enchantment_types.
-all_of_land_type --> all, land_types.
-all_of_basic_land_type --> all, basic_land_types.
-all_of_planeswalker_type --> all, planeswalker_types.
-
-all --> [all].
-
-a_permanent_type --> [an,artifact].
-a_permanent_type --> [a,creature].
-a_permanent_type --> [an,enchantment].
-a_permanent_type --> [a,land].
-a_permanent_type --> [a,planeswalker].
-
-permanent_type --> [artifact].
-permanent_type --> [creature].
-permanent_type --> [enchantment].
-permanent_type --> [land].
-permanent_type --> [planeswalker].
-
-permanent_types --> [artifacts].
-permanent_types --> [creatures].
-permanent_types --> [enchantments].
-permanent_types --> [lands].
-permanent_types --> [planeswalkers].
-
-target_from_battlefield_to_hand --> target_permanent, to_owners_hand.
-target_from_graveyard_to_hand --> target_permanent,from_graveyard,to_owners_hand.
-target_from_graveyard_to_battlefield --> target_permanent, from_graveyard, to_battlefield.
-
-from_battlefield_to_hand --> a_permanent_type, to_owners_hand.
-from_graveyard_to_hand --> a_permanent_type,from_graveyard,to_owners_hand.
-from_graveyard_to_battlefield --> a_permanent_type, from_graveyard, to_battlefield.
-
-all_from_battlefield_to_hand --> all,permanents,to_owners_hands.
-all_from_graveyard_to_hand --> all,permanents, from_graveyard,to_owners_hands.
-all_from_graveyard_to_battlefield --> all,permanents, from_graveyard, to_battlefield.
-
-permanents --> [permanents].
-
-all_of_type_from_battlefield_to_hand --> all, permanent_types, to_owners_hands.
-all_of_type_from_graveyard_to_hand --> all, permanent_types, from_graveyard, to_owners_hands.
-all_of_type_from_graveyard_to_battlefield --> all, permanent_types, from_graveyard, to_battlefield.
-
-to_owners_hand --> to,its,owners_gen,zone_hand.
-
-to --> [to].
-
-its --> ['its\''].
-
-owners_gen --> ['owner\'s'].
-
-zone_hand --> [hand].
-
-to_owners_hands --> to,their,owners_gen_plural,hands.
-
-their --> [their].
-
-owners_gen_plural --> ['owners\''].
-
-hands --> [hands].
-
-from_graveyard --> from,your,zone_graveyard.
-from_graveyard --> from,a,zone_graveyard.
-from --> [from].
-your --> [your].
-a --> [a].
-zone_graveyard --> [graveyard].
-
-to_battlefield --> to,the,zone_battlefield.
-the --> [the].
-zone_battlefield --> [battlefield].
-
-
-/* Following rules are extracted from the Comprehensive Rules document effective
-as of August 2018, online here:
-
-https://media.wizards.com/2018/downloads/MagicCompRules%2020180810.txt
-*/
 
 % See rule 205.3g
-artifact_type --> ['Clue'].
-artifact_type --> ['Contraption'].
-artifact_type --> ['Equipment'].
-artifact_type --> ['Fortification'].
-artifact_type --> ['Treasure'].
-artifact_type --> ['Vehicle'].
+artifact_type (['Clue'|T],T).
+artifact_type (['Contraption'|T],T).
+artifact_type (['Equipment'|T],T).
+artifact_type (['Fortification'|T],T).
+artifact_type (['Treasure'|T],T).
+artifact_type (['Vehicle'|T],T).
 
 % Plural forms by me.
-artifact_types --> ['Clues'].
-artifact_types --> ['Contraptions'].
-artifact_types --> ['Equipments'].
-artifact_types --> ['Fortifications'].
-artifact_types --> ['Treasures'].
-artifact_types --> ['Vehicles'].
+artifact_types (['Clues'|T],T).
+artifact_types (['Contraptions'|T],T).
+artifact_types (['Equipments'|T],T).
+artifact_types (['Fortifications'|T],T).
+artifact_types (['Treasures'|T],T).
+artifact_types (['Vehicles'|T],T).
 
 % Creature subtypes are shared by tribal spells.
 % See rule 205.3m
-creature_type --> ['Advisor'].
-creature_type --> ['Aetherborn'].
-creature_type --> ['Ally'].
-creature_type --> ['Angel'].
-creature_type --> ['Antelope'].
-creature_type --> ['Ape'].
-creature_type --> ['Archer'].
-creature_type --> ['Archon'].
-creature_type --> ['Artificer'].
-creature_type --> ['Assassin'].
-creature_type --> ['Assembly-Worker'].
-creature_type --> ['Atog'].
-creature_type --> ['Aurochs'].
-creature_type --> ['Avatar'].
-creature_type --> ['Azra'].
-creature_type --> ['Badger'].
-creature_type --> ['Barbarian'].
-creature_type --> ['Basilisk'].
-creature_type --> ['Bat'].
-creature_type --> ['Bear'].
-creature_type --> ['Beast'].
-creature_type --> ['Beeble'].
-creature_type --> ['Berserker'].
-creature_type --> ['Bird'].
-creature_type --> ['Blinkmoth'].
-creature_type --> ['Boar'].
-creature_type --> ['Bringer'].
-creature_type --> ['Brushwagg'].
-creature_type --> ['Camarid'].
-creature_type --> ['Camel'].
-creature_type --> ['Caribou'].
-creature_type --> ['Carrier'].
-creature_type --> ['Cat'].
-creature_type --> ['Centaur'].
-creature_type --> ['Cephalid'].
-creature_type --> ['Chimera'].
-creature_type --> ['Citizen'].
-creature_type --> ['Cleric'].
-creature_type --> ['Cockatrice'].
-creature_type --> ['Construct'].
-creature_type --> ['Coward'].
-creature_type --> ['Crab'].
-creature_type --> ['Crocodile'].
-creature_type --> ['Cyclops'].
-creature_type --> ['Dauthi'].
-creature_type --> ['Demon'].
-creature_type --> ['Deserter'].
-creature_type --> ['Devil'].
-creature_type --> ['Dinosaur'].
-creature_type --> ['Djinn'].
-creature_type --> ['Dragon'].
-creature_type --> ['Drake'].
-creature_type --> ['Dreadnought'].
-creature_type --> ['Drone'].
-creature_type --> ['Druid'].
-creature_type --> ['Dryad'].
-creature_type --> ['Dwarf'].
-creature_type --> ['Efreet'].
-creature_type --> ['Egg'].
-creature_type --> ['Elder'].
-creature_type --> ['Eldrazi'].
-creature_type --> ['Elemental'].
-creature_type --> ['Elephant'].
-creature_type --> ['Elf'].
-creature_type --> ['Elk'].
-creature_type --> ['Eye'].
-creature_type --> ['Faerie'].
-creature_type --> ['Ferret'].
-creature_type --> ['Fish'].
-creature_type --> ['Flagbearer'].
-creature_type --> ['Fox'].
-creature_type --> ['Frog'].
-creature_type --> ['Fungus'].
-creature_type --> ['Gargoyle'].
-creature_type --> ['Germ'].
-creature_type --> ['Giant'].
-creature_type --> ['Gnome'].
-creature_type --> ['Goat'].
-creature_type --> ['Goblin'].
-creature_type --> ['God'].
-creature_type --> ['Golem'].
-creature_type --> ['Gorgon'].
-creature_type --> ['Graveborn'].
-creature_type --> ['Gremlin'].
-creature_type --> ['Griffin'].
-creature_type --> ['Hag'].
-creature_type --> ['Harpy'].
-creature_type --> ['Hellion'].
-creature_type --> ['Hippo'].
-creature_type --> ['Hippogriff'].
-creature_type --> ['Homarid'].
-creature_type --> ['Homunculus'].
-creature_type --> ['Horror'].
-creature_type --> ['Horse'].
-creature_type --> ['Hound'].
-creature_type --> ['Human'].
-creature_type --> ['Hydra'].
-creature_type --> ['Hyena'].
-creature_type --> ['Illusion'].
-creature_type --> ['Imp'].
-creature_type --> ['Incarnation'].
-creature_type --> ['Insect'].
-creature_type --> ['Jackal'].
-creature_type --> ['Jellyfish'].
-creature_type --> ['Juggernaut'].
-creature_type --> ['Kavu'].
-creature_type --> ['Kirin'].
-creature_type --> ['Kithkin'].
-creature_type --> ['Knight'].
-creature_type --> ['Kobold'].
-creature_type --> ['Kor'].
-creature_type --> ['Kraken'].
-creature_type --> ['Lamia'].
-creature_type --> ['Lammasu'].
-creature_type --> ['Leech'].
-creature_type --> ['Leviathan'].
-creature_type --> ['Lhurgoyf'].
-creature_type --> ['Licid'].
-creature_type --> ['Lizard'].
-creature_type --> ['Manticore'].
-creature_type --> ['Masticore'].
-creature_type --> ['Mercenary'].
-creature_type --> ['Merfolk'].
-creature_type --> ['Metathran'].
-creature_type --> ['Minion'].
-creature_type --> ['Minotaur'].
-creature_type --> ['Mole'].
-creature_type --> ['Monger'].
-creature_type --> ['Mongoose'].
-creature_type --> ['Monk'].
-creature_type --> ['Monkey'].
-creature_type --> ['Moonfolk'].
-creature_type --> ['Mutant'].
-creature_type --> ['Myr'].
-creature_type --> ['Mystic'].
-creature_type --> ['Naga'].
-creature_type --> ['Nautilus'].
-creature_type --> ['Nephilim'].
-creature_type --> ['Nightmare'].
-creature_type --> ['Nightstalker'].
-creature_type --> ['Ninja'].
-creature_type --> ['Noggle'].
-creature_type --> ['Nomad'].
-creature_type --> ['Nymph'].
-creature_type --> ['Octopus'].
-creature_type --> ['Ogre'].
-creature_type --> ['Ooze'].
-creature_type --> ['Orb'].
-creature_type --> ['Orc'].
-creature_type --> ['Orgg'].
-creature_type --> ['Ouphe'].
-creature_type --> ['Ox'].
-creature_type --> ['Oyster'].
-creature_type --> ['Pangolin'].
-creature_type --> ['Pegasus'].
-creature_type --> ['Pentavite'].
-creature_type --> ['Pest'].
-creature_type --> ['Phelddagrif'].
-creature_type --> ['Phoenix'].
-creature_type --> ['Pilot'].
-creature_type --> ['Pincher'].
-creature_type --> ['Pirate'].
-creature_type --> ['Plant'].
-creature_type --> ['Praetor'].
-creature_type --> ['Prism'].
-creature_type --> ['Processor'].
-creature_type --> ['Rabbit'].
-creature_type --> ['Rat'].
-creature_type --> ['Rebel'].
-creature_type --> ['Reflection'].
-creature_type --> ['Rhino'].
-creature_type --> ['Rigger'].
-creature_type --> ['Rogue'].
-creature_type --> ['Sable'].
-creature_type --> ['Salamander'].
-creature_type --> ['Samurai'].
-creature_type --> ['Sand'].
-creature_type --> ['Saproling'].
-creature_type --> ['Satyr'].
-creature_type --> ['Scarecrow'].
-creature_type --> ['Scion'].
-creature_type --> ['Scorpion'].
-creature_type --> ['Scout'].
-creature_type --> ['Serf'].
-creature_type --> ['Serpent'].
-creature_type --> ['Servo'].
-creature_type --> ['Shade'].
-creature_type --> ['Shaman'].
-creature_type --> ['Shapeshifter'].
-creature_type --> ['Sheep'].
-creature_type --> ['Siren'].
-creature_type --> ['Skeleton'].
-creature_type --> ['Slith'].
-creature_type --> ['Sliver'].
-creature_type --> ['Slug'].
-creature_type --> ['Snake'].
-creature_type --> ['Soldier'].
-creature_type --> ['Soltari'].
-creature_type --> ['Spawn'].
-creature_type --> ['Specter'].
-creature_type --> ['Spellshaper'].
-creature_type --> ['Sphinx'].
-creature_type --> ['Spider'].
-creature_type --> ['Spike'].
-creature_type --> ['Spirit'].
-creature_type --> ['Splinter'].
-creature_type --> ['Sponge'].
-creature_type --> ['Squid'].
-creature_type --> ['Squirrel'].
-creature_type --> ['Starfish'].
-creature_type --> ['Surrakar'].
-creature_type --> ['Survivor'].
-creature_type --> ['Tetravite'].
-creature_type --> ['Thalakos'].
-creature_type --> ['Thopter'].
-creature_type --> ['Thrull'].
-creature_type --> ['Treefolk'].
-creature_type --> ['Trilobite'].
-creature_type --> ['Triskelavite'].
-creature_type --> ['Troll'].
-creature_type --> ['Turtle'].
-creature_type --> ['Unicorn'].
-creature_type --> ['Vampire'].
-creature_type --> ['Vedalken'].
-creature_type --> ['Viashino'].
-creature_type --> ['Volver'].
-creature_type --> ['Wall'].
-creature_type --> ['Warrior'].
-creature_type --> ['Weird'].
-creature_type --> ['Werewolf'].
-creature_type --> ['Whale'].
-creature_type --> ['Wizard'].
-creature_type --> ['Wolf'].
-creature_type --> ['Wolverine'].
-creature_type --> ['Wombat'].
-creature_type --> ['Worm'].
-creature_type --> ['Wraith'].
-creature_type --> ['Wurm'].
-creature_type --> ['Yeti'].
-creature_type --> ['Zombie'].
-creature_type --> ['Zubera'].
+creature_type (['Advisor'|T],T).
+creature_type (['Aetherborn'|T],T).
+creature_type (['Ally'|T],T).
+creature_type (['Angel'|T],T).
+creature_type (['Antelope'|T],T).
+creature_type (['Ape'|T],T).
+creature_type (['Archer'|T],T).
+creature_type (['Archon'|T],T).
+creature_type (['Artificer'|T],T).
+creature_type (['Assassin'|T],T).
+creature_type (['Assembly-Worker'|T],T).
+creature_type (['Atog'|T],T).
+creature_type (['Aurochs'|T],T).
+creature_type (['Avatar'|T],T).
+creature_type (['Azra'|T],T).
+creature_type (['Badger'|T],T).
+creature_type (['Barbarian'|T],T).
+creature_type (['Basilisk'|T],T).
+creature_type (['Bat'|T],T).
+creature_type (['Bear'|T],T).
+creature_type (['Beast'|T],T).
+creature_type (['Beeble'|T],T).
+creature_type (['Berserker'|T],T).
+creature_type (['Bird'|T],T).
+creature_type (['Blinkmoth'|T],T).
+creature_type (['Boar'|T],T).
+creature_type (['Bringer'|T],T).
+creature_type (['Brushwagg'|T],T).
+creature_type (['Camarid'|T],T).
+creature_type (['Camel'|T],T).
+creature_type (['Caribou'|T],T).
+creature_type (['Carrier'|T],T).
+creature_type (['Cat'|T],T).
+creature_type (['Centaur'|T],T).
+creature_type (['Cephalid'|T],T).
+creature_type (['Chimera'|T],T).
+creature_type (['Citizen'|T],T).
+creature_type (['Cleric'|T],T).
+creature_type (['Cockatrice'|T],T).
+creature_type (['Construct'|T],T).
+creature_type (['Coward'|T],T).
+creature_type (['Crab'|T],T).
+creature_type (['Crocodile'|T],T).
+creature_type (['Cyclops'|T],T).
+creature_type (['Dauthi'|T],T).
+creature_type (['Demon'|T],T).
+creature_type (['Deserter'|T],T).
+creature_type (['Devil'|T],T).
+creature_type (['Dinosaur'|T],T).
+creature_type (['Djinn'|T],T).
+creature_type (['Dragon'|T],T).
+creature_type (['Drake'|T],T).
+creature_type (['Dreadnought'|T],T).
+creature_type (['Drone'|T],T).
+creature_type (['Druid'|T],T).
+creature_type (['Dryad'|T],T).
+creature_type (['Dwarf'|T],T).
+creature_type (['Efreet'|T],T).
+creature_type (['Egg'|T],T).
+creature_type (['Elder'|T],T).
+creature_type (['Eldrazi'|T],T).
+creature_type (['Elemental'|T],T).
+creature_type (['Elephant'|T],T).
+creature_type (['Elf'|T],T).
+creature_type (['Elk'|T],T).
+creature_type (['Eye'|T],T).
+creature_type (['Faerie'|T],T).
+creature_type (['Ferret'|T],T).
+creature_type (['Fish'|T],T).
+creature_type (['Flagbearer'|T],T).
+creature_type (['Fox'|T],T).
+creature_type (['Frog'|T],T).
+creature_type (['Fungus'|T],T).
+creature_type (['Gargoyle'|T],T).
+creature_type (['Germ'|T],T).
+creature_type (['Giant'|T],T).
+creature_type (['Gnome'|T],T).
+creature_type (['Goat'|T],T).
+creature_type (['Goblin'|T],T).
+creature_type (['God'|T],T).
+creature_type (['Golem'|T],T).
+creature_type (['Gorgon'|T],T).
+creature_type (['Graveborn'|T],T).
+creature_type (['Gremlin'|T],T).
+creature_type (['Griffin'|T],T).
+creature_type (['Hag'|T],T).
+creature_type (['Harpy'|T],T).
+creature_type (['Hellion'|T],T).
+creature_type (['Hippo'|T],T).
+creature_type (['Hippogriff'|T],T).
+creature_type (['Homarid'|T],T).
+creature_type (['Homunculus'|T],T).
+creature_type (['Horror'|T],T).
+creature_type (['Horse'|T],T).
+creature_type (['Hound'|T],T).
+creature_type (['Human'|T],T).
+creature_type (['Hydra'|T],T).
+creature_type (['Hyena'|T],T).
+creature_type (['Illusion'|T],T).
+creature_type (['Imp'|T],T).
+creature_type (['Incarnation'|T],T).
+creature_type (['Insect'|T],T).
+creature_type (['Jackal'|T],T).
+creature_type (['Jellyfish'|T],T).
+creature_type (['Juggernaut'|T],T).
+creature_type (['Kavu'|T],T).
+creature_type (['Kirin'|T],T).
+creature_type (['Kithkin'|T],T).
+creature_type (['Knight'|T],T).
+creature_type (['Kobold'|T],T).
+creature_type (['Kor'|T],T).
+creature_type (['Kraken'|T],T).
+creature_type (['Lamia'|T],T).
+creature_type (['Lammasu'|T],T).
+creature_type (['Leech'|T],T).
+creature_type (['Leviathan'|T],T).
+creature_type (['Lhurgoyf'|T],T).
+creature_type (['Licid'|T],T).
+creature_type (['Lizard'|T],T).
+creature_type (['Manticore'|T],T).
+creature_type (['Masticore'|T],T).
+creature_type (['Mercenary'|T],T).
+creature_type (['Merfolk'|T],T).
+creature_type (['Metathran'|T],T).
+creature_type (['Minion'|T],T).
+creature_type (['Minotaur'|T],T).
+creature_type (['Mole'|T],T).
+creature_type (['Monger'|T],T).
+creature_type (['Mongoose'|T],T).
+creature_type (['Monk'|T],T).
+creature_type (['Monkey'|T],T).
+creature_type (['Moonfolk'|T],T).
+creature_type (['Mutant'|T],T).
+creature_type (['Myr'|T],T).
+creature_type (['Mystic'|T],T).
+creature_type (['Naga'|T],T).
+creature_type (['Nautilus'|T],T).
+creature_type (['Nephilim'|T],T).
+creature_type (['Nightmare'|T],T).
+creature_type (['Nightstalker'|T],T).
+creature_type (['Ninja'|T],T).
+creature_type (['Noggle'|T],T).
+creature_type (['Nomad'|T],T).
+creature_type (['Nymph'|T],T).
+creature_type (['Octopus'|T],T).
+creature_type (['Ogre'|T],T).
+creature_type (['Ooze'|T],T).
+creature_type (['Orb'|T],T).
+creature_type (['Orc'|T],T).
+creature_type (['Orgg'|T],T).
+creature_type (['Ouphe'|T],T).
+creature_type (['Ox'|T],T).
+creature_type (['Oyster'|T],T).
+creature_type (['Pangolin'|T],T).
+creature_type (['Pegasus'|T],T).
+creature_type (['Pentavite'|T],T).
+creature_type (['Pest'|T],T).
+creature_type (['Phelddagrif'|T],T).
+creature_type (['Phoenix'|T],T).
+creature_type (['Pilot'|T],T).
+creature_type (['Pincher'|T],T).
+creature_type (['Pirate'|T],T).
+creature_type (['Plant'|T],T).
+creature_type (['Praetor'|T],T).
+creature_type (['Prism'|T],T).
+creature_type (['Processor'|T],T).
+creature_type (['Rabbit'|T],T).
+creature_type (['Rat'|T],T).
+creature_type (['Rebel'|T],T).
+creature_type (['Reflection'|T],T).
+creature_type (['Rhino'|T],T).
+creature_type (['Rigger'|T],T).
+creature_type (['Rogue'|T],T).
+creature_type (['Sable'|T],T).
+creature_type (['Salamander'|T],T).
+creature_type (['Samurai'|T],T).
+creature_type (['Sand'|T],T).
+creature_type (['Saproling'|T],T).
+creature_type (['Satyr'|T],T).
+creature_type (['Scarecrow'|T],T).
+creature_type (['Scion'|T],T).
+creature_type (['Scorpion'|T],T).
+creature_type (['Scout'|T],T).
+creature_type (['Serf'|T],T).
+creature_type (['Serpent'|T],T).
+creature_type (['Servo'|T],T).
+creature_type (['Shade'|T],T).
+creature_type (['Shaman'|T],T).
+creature_type (['Shapeshifter'|T],T).
+creature_type (['Sheep'|T],T).
+creature_type (['Siren'|T],T).
+creature_type (['Skeleton'|T],T).
+creature_type (['Slith'|T],T).
+creature_type (['Sliver'|T],T).
+creature_type (['Slug'|T],T).
+creature_type (['Snake'|T],T).
+creature_type (['Soldier'|T],T).
+creature_type (['Soltari'|T],T).
+creature_type (['Spawn'|T],T).
+creature_type (['Specter'|T],T).
+creature_type (['Spellshaper'|T],T).
+creature_type (['Sphinx'|T],T).
+creature_type (['Spider'|T],T).
+creature_type (['Spike'|T],T).
+creature_type (['Spirit'|T],T).
+creature_type (['Splinter'|T],T).
+creature_type (['Sponge'|T],T).
+creature_type (['Squid'|T],T).
+creature_type (['Squirrel'|T],T).
+creature_type (['Starfish'|T],T).
+creature_type (['Surrakar'|T],T).
+creature_type (['Survivor'|T],T).
+creature_type (['Tetravite'|T],T).
+creature_type (['Thalakos'|T],T).
+creature_type (['Thopter'|T],T).
+creature_type (['Thrull'|T],T).
+creature_type (['Treefolk'|T],T).
+creature_type (['Trilobite'|T],T).
+creature_type (['Triskelavite'|T],T).
+creature_type (['Troll'|T],T).
+creature_type (['Turtle'|T],T).
+creature_type (['Unicorn'|T],T).
+creature_type (['Vampire'|T],T).
+creature_type (['Vedalken'|T],T).
+creature_type (['Viashino'|T],T).
+creature_type (['Volver'|T],T).
+creature_type (['Wall'|T],T).
+creature_type (['Warrior'|T],T).
+creature_type (['Weird'|T],T).
+creature_type (['Werewolf'|T],T).
+creature_type (['Whale'|T],T).
+creature_type (['Wizard'|T],T).
+creature_type (['Wolf'|T],T).
+creature_type (['Wolverine'|T],T).
+creature_type (['Wombat'|T],T).
+creature_type (['Worm'|T],T).
+creature_type (['Wraith'|T],T).
+creature_type (['Wurm'|T],T).
+creature_type (['Yeti'|T],T).
+creature_type (['Zombie'|T],T).
+creature_type (['Zubera'|T],T).
 
 % Don't lose this. Can't always add "s" to end of words to make a plural
 % form so after an initial search-and-replace operation this needed
 % some hand-editing.
-creature_types --> ['Advisors'].
-creature_types --> ['Aetherborns'].
-creature_types --> ['Alles'].
-creature_types --> ['Angels'].
-creature_types --> ['Antelopes'].
-creature_types --> ['Apes'].
-creature_types --> ['Archers'].
-creature_types --> ['Archons'].
-creature_types --> ['Artificers'].
-creature_types --> ['Assassins'].
-creature_types --> ['Assembly-Workers'].
-creature_types --> ['Atogs'].
-creature_types --> ['Aurochs'].
-creature_types --> ['Avatars'].
-creature_types --> ['Azras'].
-creature_types --> ['Badgers'].
-creature_types --> ['Barbarians'].
-creature_types --> ['Basilisks'].
-creature_types --> ['Bats'].
-creature_types --> ['Bears'].
-creature_types --> ['Beasts'].
-creature_types --> ['Beebles'].
-creature_types --> ['Berserkers'].
-creature_types --> ['Birds'].
-creature_types --> ['Blinkmoths'].
-creature_types --> ['Boars'].
-creature_types --> ['Bringers'].
-creature_types --> ['Brushwaggs'].
-creature_types --> ['Camarids'].
-creature_types --> ['Camels'].
-creature_types --> ['Caribou'].
-creature_types --> ['Carriers'].
-creature_types --> ['Cats'].
-creature_types --> ['Centaurs'].
-creature_types --> ['Cephalids'].
-creature_types --> ['Chimeras'].
-creature_types --> ['Citizens'].
-creature_types --> ['Clerics'].
-creature_types --> ['Cockatrices'].
-creature_types --> ['Constructs'].
-creature_types --> ['Cowards'].
-creature_types --> ['Crabs'].
-creature_types --> ['Crocodiles'].
-creature_types --> ['Cyclopss'].
-creature_types --> ['Dauthis'].
-creature_types --> ['Demons'].
-creature_types --> ['Deserters'].
-creature_types --> ['Devils'].
-creature_types --> ['Dinosaurs'].
-creature_types --> ['Djinns'].
-creature_types --> ['Dragons'].
-creature_types --> ['Drakes'].
-creature_types --> ['Dreadnoughts'].
-creature_types --> ['Drones'].
-creature_types --> ['Druids'].
-creature_types --> ['Dryads'].
-creature_types --> ['Dwarfs'].
-creature_types --> ['Efreets'].
-creature_types --> ['Eggs'].
-creature_types --> ['Elders'].
-creature_types --> ['Eldrazis'].
-creature_types --> ['Elementals'].
-creature_types --> ['Elephants'].
-creature_types --> ['Elves'].
-creature_types --> ['Elks'].
-creature_types --> ['Eyes'].
-creature_types --> ['Faeries'].
-creature_types --> ['Ferrets'].
-creature_types --> ['Fish'].
-creature_types --> ['Flagbearers'].
-creature_types --> ['Foxes'].
-creature_types --> ['Frogs'].
-creature_types --> ['Fungi'].
-creature_types --> ['Gargoyles'].
-creature_types --> ['Germs'].
-creature_types --> ['Giants'].
-creature_types --> ['Gnomes'].
-creature_types --> ['Goats'].
-creature_types --> ['Goblins'].
-creature_types --> ['Gods'].
-creature_types --> ['Golems'].
-creature_types --> ['Gorgons'].
-creature_types --> ['Graveborns'].
-creature_types --> ['Gremlins'].
-creature_types --> ['Griffins'].
-creature_types --> ['Hags'].
-creature_types --> ['Harpies'].
-creature_types --> ['Hellions'].
-creature_types --> ['Hippos'].
-creature_types --> ['Hippogriffs'].
-creature_types --> ['Homarids'].
-creature_types --> ['Homunculuss'].
-creature_types --> ['Horrors'].
-creature_types --> ['Horses'].
-creature_types --> ['Hounds'].
-creature_types --> ['Humans'].
-creature_types --> ['Hydras'].
-creature_types --> ['Hyenas'].
-creature_types --> ['Illusions'].
-creature_types --> ['Imps'].
-creature_types --> ['Incarnations'].
-creature_types --> ['Insects'].
-creature_types --> ['Jackals'].
-creature_types --> ['Jellyfishs'].
-creature_types --> ['Juggernauts'].
-creature_types --> ['Kavu'].
-creature_types --> ['Kirins'].
-creature_types --> ['Kithkins'].
-creature_types --> ['Knights'].
-creature_types --> ['Kobolds'].
-creature_types --> ['Kors'].
-creature_types --> ['Krakens'].
-creature_types --> ['Lamias'].
-creature_types --> ['Lammasu'].
-creature_types --> ['Leeches'].
-creature_types --> ['Leviathans'].
-creature_types --> ['Lhurgoyfs'].
-creature_types --> ['Licids'].
-creature_types --> ['Lizards'].
-creature_types --> ['Manticores'].
-creature_types --> ['Masticores'].
-creature_types --> ['Mercenaries'].
-creature_types --> ['Merfolks'].
-creature_types --> ['Metathran'].
-creature_types --> ['Minions'].
-creature_types --> ['Minotaurs'].
-creature_types --> ['Moles'].
-creature_types --> ['Mongers'].
-creature_types --> ['Mongeese'].
-creature_types --> ['Monks'].
-creature_types --> ['Monkeys'].
-creature_types --> ['Moonfolks'].
-creature_types --> ['Mutants'].
-creature_types --> ['Myr'].
-creature_types --> ['Mystics'].
-creature_types --> ['Naga'].
-creature_types --> ['Nautili'].
-creature_types --> ['Nephilim'].
-creature_types --> ['Nightmares'].
-creature_types --> ['Nightstalkers'].
-creature_types --> ['Ninjas'].
-creature_types --> ['Noggles'].
-creature_types --> ['Nomads'].
-creature_types --> ['Nymphs'].
-creature_types --> ['Octopi'].
-creature_types --> ['Ogres'].
-creature_types --> ['Oozes'].
-creature_types --> ['Orbs'].
-creature_types --> ['Orcs'].
-creature_types --> ['Orggs'].
-creature_types --> ['Ouphes'].
-creature_types --> ['Oxen'].
-creature_types --> ['Oysters'].
-creature_types --> ['Pangolins'].
-creature_types --> ['Pegasi'].
-creature_types --> ['Pentavites'].
-creature_types --> ['Pests'].
-creature_types --> ['Phelddagrifs'].
-creature_types --> ['Phoenixes'].
-creature_types --> ['Pilots'].
-creature_types --> ['Pinchers'].
-creature_types --> ['Pirates'].
-creature_types --> ['Plants'].
-creature_types --> ['Praetors'].
-creature_types --> ['Prisms'].
-creature_types --> ['Processors'].
-creature_types --> ['Rabbits'].
-creature_types --> ['Rats'].
-creature_types --> ['Rebels'].
-creature_types --> ['Reflections'].
-creature_types --> ['Rhinos'].
-creature_types --> ['Riggers'].
-creature_types --> ['Rogues'].
-creature_types --> ['Sables'].
-creature_types --> ['Salamanders'].
-creature_types --> ['Samurais'].
-creature_types --> ['Sands'].
-creature_types --> ['Saprolings'].
-creature_types --> ['Satyrs'].
-creature_types --> ['Scarecrows'].
-creature_types --> ['Scions'].
-creature_types --> ['Scorpions'].
-creature_types --> ['Scouts'].
-creature_types --> ['Serfs'].
-creature_types --> ['Serpents'].
-creature_types --> ['Servos'].
-creature_types --> ['Shades'].
-creature_types --> ['Shamans'].
-creature_types --> ['Shapeshifters'].
-creature_types --> ['Sheeps'].
-creature_types --> ['Sirens'].
-creature_types --> ['Skeletons'].
-creature_types --> ['Sliths'].
-creature_types --> ['Slivers'].
-creature_types --> ['Slugs'].
-creature_types --> ['Snakes'].
-creature_types --> ['Soldiers'].
-creature_types --> ['Soltaris'].
-creature_types --> ['Spawns'].
-creature_types --> ['Specters'].
-creature_types --> ['Spellshapers'].
-creature_types --> ['Sphinxes'].
-creature_types --> ['Spiders'].
-creature_types --> ['Spikes'].
-creature_types --> ['Spirits'].
-creature_types --> ['Splinters'].
-creature_types --> ['Sponges'].
-creature_types --> ['Squids'].
-creature_types --> ['Squirrels'].
-creature_types --> ['Starfish'].
-creature_types --> ['Surrakars'].
-creature_types --> ['Survivors'].
-creature_types --> ['Tetravites'].
-creature_types --> ['Thalakoi'].
-creature_types --> ['Thopters'].
-creature_types --> ['Thrulls'].
-creature_types --> ['Treefolks'].
-creature_types --> ['Trilobites'].
-creature_types --> ['Triskelavites'].
-creature_types --> ['Trolls'].
-creature_types --> ['Turtles'].
-creature_types --> ['Unicorns'].
-creature_types --> ['Vampires'].
-creature_types --> ['Vedalkens'].
-creature_types --> ['Viashinos'].
-creature_types --> ['Volvers'].
-creature_types --> ['Walls'].
-creature_types --> ['Warriors'].
-creature_types --> ['Weirds'].
-creature_types --> ['Werewolves'].
-creature_types --> ['Whales'].
-creature_types --> ['Wizards'].
-creature_types --> ['Wolves'].
-creature_types --> ['Wolverines'].
-creature_types --> ['Wombats'].
-creature_types --> ['Worms'].
-creature_types --> ['Wraiths'].
-creature_types --> ['Wurms'].
-creature_types --> ['Yetis'].
-creature_types --> ['Zombies'].
-creature_types --> ['Zuberas'].
+creature_types (['Advisors'|T],T).
+creature_types (['Aetherborns'|T],T).
+creature_types (['Alles'|T],T).
+creature_types (['Angels'|T],T).
+creature_types (['Antelopes'|T],T).
+creature_types (['Apes'|T],T).
+creature_types (['Archers'|T],T).
+creature_types (['Archons'|T],T).
+creature_types (['Artificers'|T],T).
+creature_types (['Assassins'|T],T).
+creature_types (['Assembly-Workers'|T],T).
+creature_types (['Atogs'|T],T).
+creature_types (['Aurochs'|T],T).
+creature_types (['Avatars'|T],T).
+creature_types (['Azras'|T],T).
+creature_types (['Badgers'|T],T).
+creature_types (['Barbarians'|T],T).
+creature_types (['Basilisks'|T],T).
+creature_types (['Bats'|T],T).
+creature_types (['Bears'|T],T).
+creature_types (['Beasts'|T],T).
+creature_types (['Beebles'|T],T).
+creature_types (['Berserkers'|T],T).
+creature_types (['Birds'|T],T).
+creature_types (['Blinkmoths'|T],T).
+creature_types (['Boars'|T],T).
+creature_types (['Bringers'|T],T).
+creature_types (['Brushwaggs'|T],T).
+creature_types (['Camarids'|T],T).
+creature_types (['Camels'|T],T).
+creature_types (['Caribou'|T],T).
+creature_types (['Carriers'|T],T).
+creature_types (['Cats'|T],T).
+creature_types (['Centaurs'|T],T).
+creature_types (['Cephalids'|T],T).
+creature_types (['Chimeras'|T],T).
+creature_types (['Citizens'|T],T).
+creature_types (['Clerics'|T],T).
+creature_types (['Cockatrices'|T],T).
+creature_types (['Constructs'|T],T).
+creature_types (['Cowards'|T],T).
+creature_types (['Crabs'|T],T).
+creature_types (['Crocodiles'|T],T).
+creature_types (['Cyclopss'|T],T).
+creature_types (['Dauthis'|T],T).
+creature_types (['Demons'|T],T).
+creature_types (['Deserters'|T],T).
+creature_types (['Devils'|T],T).
+creature_types (['Dinosaurs'|T],T).
+creature_types (['Djinns'|T],T).
+creature_types (['Dragons'|T],T).
+creature_types (['Drakes'|T],T).
+creature_types (['Dreadnoughts'|T],T).
+creature_types (['Drones'|T],T).
+creature_types (['Druids'|T],T).
+creature_types (['Dryads'|T],T).
+creature_types (['Dwarfs'|T],T).
+creature_types (['Efreets'|T],T).
+creature_types (['Eggs'|T],T).
+creature_types (['Elders'|T],T).
+creature_types (['Eldrazis'|T],T).
+creature_types (['Elementals'|T],T).
+creature_types (['Elephants'|T],T).
+creature_types (['Elves'|T],T).
+creature_types (['Elks'|T],T).
+creature_types (['Eyes'|T],T).
+creature_types (['Faeries'|T],T).
+creature_types (['Ferrets'|T],T).
+creature_types (['Fish'|T],T).
+creature_types (['Flagbearers'|T],T).
+creature_types (['Foxes'|T],T).
+creature_types (['Frogs'|T],T).
+creature_types (['Fungi'|T],T).
+creature_types (['Gargoyles'|T],T).
+creature_types (['Germs'|T],T).
+creature_types (['Giants'|T],T).
+creature_types (['Gnomes'|T],T).
+creature_types (['Goats'|T],T).
+creature_types (['Goblins'|T],T).
+creature_types (['Gods'|T],T).
+creature_types (['Golems'|T],T).
+creature_types (['Gorgons'|T],T).
+creature_types (['Graveborns'|T],T).
+creature_types (['Gremlins'|T],T).
+creature_types (['Griffins'|T],T).
+creature_types (['Hags'|T],T).
+creature_types (['Harpies'|T],T).
+creature_types (['Hellions'|T],T).
+creature_types (['Hippos'|T],T).
+creature_types (['Hippogriffs'|T],T).
+creature_types (['Homarids'|T],T).
+creature_types (['Homunculuss'|T],T).
+creature_types (['Horrors'|T],T).
+creature_types (['Horses'|T],T).
+creature_types (['Hounds'|T],T).
+creature_types (['Humans'|T],T).
+creature_types (['Hydras'|T],T).
+creature_types (['Hyenas'|T],T).
+creature_types (['Illusions'|T],T).
+creature_types (['Imps'|T],T).
+creature_types (['Incarnations'|T],T).
+creature_types (['Insects'|T],T).
+creature_types (['Jackals'|T],T).
+creature_types (['Jellyfishs'|T],T).
+creature_types (['Juggernauts'|T],T).
+creature_types (['Kavu'|T],T).
+creature_types (['Kirins'|T],T).
+creature_types (['Kithkins'|T],T).
+creature_types (['Knights'|T],T).
+creature_types (['Kobolds'|T],T).
+creature_types (['Kors'|T],T).
+creature_types (['Krakens'|T],T).
+creature_types (['Lamias'|T],T).
+creature_types (['Lammasu'|T],T).
+creature_types (['Leeches'|T],T).
+creature_types (['Leviathans'|T],T).
+creature_types (['Lhurgoyfs'|T],T).
+creature_types (['Licids'|T],T).
+creature_types (['Lizards'|T],T).
+creature_types (['Manticores'|T],T).
+creature_types (['Masticores'|T],T).
+creature_types (['Mercenaries'|T],T).
+creature_types (['Merfolks'|T],T).
+creature_types (['Metathran'|T],T).
+creature_types (['Minions'|T],T).
+creature_types (['Minotaurs'|T],T).
+creature_types (['Moles'|T],T).
+creature_types (['Mongers'|T],T).
+creature_types (['Mongeese'|T],T).
+creature_types (['Monks'|T],T).
+creature_types (['Monkeys'|T],T).
+creature_types (['Moonfolks'|T],T).
+creature_types (['Mutants'|T],T).
+creature_types (['Myr'|T],T).
+creature_types (['Mystics'|T],T).
+creature_types (['Naga'|T],T).
+creature_types (['Nautili'|T],T).
+creature_types (['Nephilim'|T],T).
+creature_types (['Nightmares'|T],T).
+creature_types (['Nightstalkers'|T],T).
+creature_types (['Ninjas'|T],T).
+creature_types (['Noggles'|T],T).
+creature_types (['Nomads'|T],T).
+creature_types (['Nymphs'|T],T).
+creature_types (['Octopi'|T],T).
+creature_types (['Ogres'|T],T).
+creature_types (['Oozes'|T],T).
+creature_types (['Orbs'|T],T).
+creature_types (['Orcs'|T],T).
+creature_types (['Orggs'|T],T).
+creature_types (['Ouphes'|T],T).
+creature_types (['Oxen'|T],T).
+creature_types (['Oysters'|T],T).
+creature_types (['Pangolins'|T],T).
+creature_types (['Pegasi'|T],T).
+creature_types (['Pentavites'|T],T).
+creature_types (['Pests'|T],T).
+creature_types (['Phelddagrifs'|T],T).
+creature_types (['Phoenixes'|T],T).
+creature_types (['Pilots'|T],T).
+creature_types (['Pinchers'|T],T).
+creature_types (['Pirates'|T],T).
+creature_types (['Plants'|T],T).
+creature_types (['Praetors'|T],T).
+creature_types (['Prisms'|T],T).
+creature_types (['Processors'|T],T).
+creature_types (['Rabbits'|T],T).
+creature_types (['Rats'|T],T).
+creature_types (['Rebels'|T],T).
+creature_types (['Reflections'|T],T).
+creature_types (['Rhinos'|T],T).
+creature_types (['Riggers'|T],T).
+creature_types (['Rogues'|T],T).
+creature_types (['Sables'|T],T).
+creature_types (['Salamanders'|T],T).
+creature_types (['Samurais'|T],T).
+creature_types (['Sands'|T],T).
+creature_types (['Saprolings'|T],T).
+creature_types (['Satyrs'|T],T).
+creature_types (['Scarecrows'|T],T).
+creature_types (['Scions'|T],T).
+creature_types (['Scorpions'|T],T).
+creature_types (['Scouts'|T],T).
+creature_types (['Serfs'|T],T).
+creature_types (['Serpents'|T],T).
+creature_types (['Servos'|T],T).
+creature_types (['Shades'|T],T).
+creature_types (['Shamans'|T],T).
+creature_types (['Shapeshifters'|T],T).
+creature_types (['Sheeps'|T],T).
+creature_types (['Sirens'|T],T).
+creature_types (['Skeletons'|T],T).
+creature_types (['Sliths'|T],T).
+creature_types (['Slivers'|T],T).
+creature_types (['Slugs'|T],T).
+creature_types (['Snakes'|T],T).
+creature_types (['Soldiers'|T],T).
+creature_types (['Soltaris'|T],T).
+creature_types (['Spawns'|T],T).
+creature_types (['Specters'|T],T).
+creature_types (['Spellshapers'|T],T).
+creature_types (['Sphinxes'|T],T).
+creature_types (['Spiders'|T],T).
+creature_types (['Spikes'|T],T).
+creature_types (['Spirits'|T],T).
+creature_types (['Splinters'|T],T).
+creature_types (['Sponges'|T],T).
+creature_types (['Squids'|T],T).
+creature_types (['Squirrels'|T],T).
+creature_types (['Starfish'|T],T).
+creature_types (['Surrakars'|T],T).
+creature_types (['Survivors'|T],T).
+creature_types (['Tetravites'|T],T).
+creature_types (['Thalakoi'|T],T).
+creature_types (['Thopters'|T],T).
+creature_types (['Thrulls'|T],T).
+creature_types (['Treefolks'|T],T).
+creature_types (['Trilobites'|T],T).
+creature_types (['Triskelavites'|T],T).
+creature_types (['Trolls'|T],T).
+creature_types (['Turtles'|T],T).
+creature_types (['Unicorns'|T],T).
+creature_types (['Vampires'|T],T).
+creature_types (['Vedalkens'|T],T).
+creature_types (['Viashinos'|T],T).
+creature_types (['Volvers'|T],T).
+creature_types (['Walls'|T],T).
+creature_types (['Warriors'|T],T).
+creature_types (['Weirds'|T],T).
+creature_types (['Werewolves'|T],T).
+creature_types (['Whales'|T],T).
+creature_types (['Wizards'|T],T).
+creature_types (['Wolves'|T],T).
+creature_types (['Wolverines'|T],T).
+creature_types (['Wombats'|T],T).
+creature_types (['Worms'|T],T).
+creature_types (['Wraiths'|T],T).
+creature_types (['Wurms'|T],T).
+creature_types (['Yetis'|T],T).
+creature_types (['Zombies'|T],T).
+creature_types (['Zuberas'|T],T).
 
 % See rule 205.3h
-enchantment_type --> ['Aura'].
-enchantment_type --> ['Cartouche'].
-enchantment_type --> ['Curse'].
-enchantment_type --> ['Saga'].
-enchantment_type --> ['Shrine'].
+enchantment_type (['Aura'|T],T).
+enchantment_type (['Cartouche'|T],T).
+enchantment_type (['Curse'|T],T).
+enchantment_type (['Saga'|T],T).
+enchantment_type (['Shrine'|T],T).
 
 % My plurals.
-enchantment_types --> ['Auras'].
-enchantment_types --> ['Cartouches'].
-enchantment_types --> ['Curses'].
-enchantment_types --> ['Sagas'].
-enchantment_types --> ['Shrines'].
+enchantment_types (['Auras'|T],T).
+enchantment_types (['Cartouches'|T],T).
+enchantment_types (['Curses'|T],T).
+enchantment_types (['Sagas'|T],T).
+enchantment_types (['Shrines'|T],T).
 
 % See rule 205.3i
-land_type --> ['Desert'].
-land_type --> ['Forest'].
-land_type --> ['Gate'].
-land_type --> ['Island'].
-land_type --> ['Lair'].
-land_type --> ['Locus'].
-land_type --> ['Mine'].
-land_type --> ['Mountain'].
-land_type --> ['Plains'].
-land_type --> ['Power-Plant'].
-land_type --> ['Swamp'].
-land_type --> ['Tower'].
-land_type --> ['Urza�s'].
+land_type (['Desert'|T],T).
+land_type (['Forest'|T],T).
+land_type (['Gate'|T],T).
+land_type (['Island'|T],T).
+land_type (['Lair'|T],T).
+land_type (['Locus'|T],T).
+land_type (['Mine'|T],T).
+land_type (['Mountain'|T],T).
+land_type (['Plains'|T],T).
+land_type (['Power-Plant'|T],T).
+land_type (['Swamp'|T],T).
+land_type (['Tower'|T],T).
+land_type (['Urzas'|T],T).
 
 % My plurals
-land_types --> ['Deserts'].
-land_types --> ['Forests'].
-land_types --> ['Gates'].
-land_types --> ['Islands'].
-land_types --> ['Lairs'].
-land_types --> ['Loci'].
-land_types --> ['Mines'].
-land_types --> ['Mountains'].
-land_types --> ['Plains'].
-land_types --> ['Power-Plants'].
-land_types --> ['Swamps'].
-land_types --> ['Towers'].
-land_types --> ['Urza�s'].
+land_types (['Deserts'|T],T).
+land_types (['Forests'|T],T).
+land_types (['Gates'|T],T).
+land_types (['Islands'|T],T).
+land_types (['Lairs'|T],T).
+land_types (['Loci'|T],T).
+land_types (['Mines'|T],T).
+land_types (['Mountains'|T],T).
+land_types (['Plains'|T],T).
+land_types (['Power-Plants'|T],T).
+land_types (['Swamps'|T],T).
+land_types (['Towers'|T],T).
+land_types (['Urzas'|T],T).
 
 % See rule 205.3i
-basic_land_type --> ['Forest'].
-basic_land_type --> ['Island'].
-basic_land_type --> ['Mountain'].
-basic_land_type --> ['Plains'].
-basic_land_type --> ['Swamp'].
+basic_land_type (['Forest'|T],T).
+basic_land_type (['Island'|T],T).
+basic_land_type (['Mountain'|T],T).
+basic_land_type (['Plains'|T],T).
+basic_land_type (['Swamp'|T],T).
 
 % My plurals
-basic_land_types --> ['Forest'].
-basic_land_types --> ['Island'].
-basic_land_types --> ['Mountain'].
-basic_land_types --> ['Plains'].
-basic_land_types --> ['Swamp'].
+basic_land_types (['Forest'|T],T).
+basic_land_types (['Island'|T],T).
+basic_land_types (['Mountain'|T],T).
+basic_land_types (['Plains'|T],T).
+basic_land_types (['Swamp'|T],T).
 
 % See rule 205.3j
-planeswalker_type --> ['Ajani'].
-planeswalker_type --> ['Aminatou'].
-planeswalker_type --> ['Angrath'].
-planeswalker_type --> ['Arlinn'].
-planeswalker_type --> ['Ashiok'].
-planeswalker_type --> ['Bolas'].
-planeswalker_type --> ['Chandra'].
-planeswalker_type --> ['Dack'].
-planeswalker_type --> ['Daretti'].
-planeswalker_type --> ['Domri'].
-planeswalker_type --> ['Dovin'].
-planeswalker_type --> ['Elspeth'].
-planeswalker_type --> ['Estrid'].
-planeswalker_type --> ['Freyalise'].
-planeswalker_type --> ['Garruk'].
-planeswalker_type --> ['Gideon'].
-planeswalker_type --> ['Huatli'].
-planeswalker_type --> ['Jace'].
-planeswalker_type --> ['Jaya'].
-planeswalker_type --> ['Karn'].
-planeswalker_type --> ['Kaya'].
-planeswalker_type --> ['Kiora'].
-planeswalker_type --> ['Koth'].
-planeswalker_type --> ['Liliana'].
-planeswalker_type --> ['Nahiri'].
-planeswalker_type --> ['Narset'].
-planeswalker_type --> ['Nissa'].
-planeswalker_type --> ['Nixilis'].
-planeswalker_type --> ['Ral'].
-planeswalker_type --> ['Rowan'].
-planeswalker_type --> ['Saheeli'].
-planeswalker_type --> ['Samut'].
-planeswalker_type --> ['Sarkhan'].
-planeswalker_type --> ['Sorin'].
-planeswalker_type --> ['Tamiyo'].
-planeswalker_type --> ['Teferi'].
-planeswalker_type --> ['Tezzeret'].
-planeswalker_type --> ['Tibalt'].
-planeswalker_type --> ['Ugin'].
-planeswalker_type --> ['Venser'].
-planeswalker_type --> ['Vivien'].
-planeswalker_type --> ['Vraska'].
-planeswalker_type --> ['Will'].
-planeswalker_type --> ['Windgrace'].
-planeswalker_type --> ['Xenagos'].
-planeswalker_type --> ['Yanggu'].
-planeswalker_type --> ['Yanling'].
+planeswalker_type (['Ajani'|T],T).
+planeswalker_type (['Aminatou'|T],T).
+planeswalker_type (['Angrath'|T],T).
+planeswalker_type (['Arlinn'|T],T).
+planeswalker_type (['Ashiok'|T],T).
+planeswalker_type (['Bolas'|T],T).
+planeswalker_type (['Chandra'|T],T).
+planeswalker_type (['Dack'|T],T).
+planeswalker_type (['Daretti'|T],T).
+planeswalker_type (['Domri'|T],T).
+planeswalker_type (['Dovin'|T],T).
+planeswalker_type (['Elspeth'|T],T).
+planeswalker_type (['Estrid'|T],T).
+planeswalker_type (['Freyalise'|T],T).
+planeswalker_type (['Garruk'|T],T).
+planeswalker_type (['Gideon'|T],T).
+planeswalker_type (['Huatli'|T],T).
+planeswalker_type (['Jace'|T],T).
+planeswalker_type (['Jaya'|T],T).
+planeswalker_type (['Karn'|T],T).
+planeswalker_type (['Kaya'|T],T).
+planeswalker_type (['Kiora'|T],T).
+planeswalker_type (['Koth'|T],T).
+planeswalker_type (['Liliana'|T],T).
+planeswalker_type (['Nahiri'|T],T).
+planeswalker_type (['Narset'|T],T).
+planeswalker_type (['Nissa'|T],T).
+planeswalker_type (['Nixilis'|T],T).
+planeswalker_type (['Ral'|T],T).
+planeswalker_type (['Rowan'|T],T).
+planeswalker_type (['Saheeli'|T],T).
+planeswalker_type (['Samut'|T],T).
+planeswalker_type (['Sarkhan'|T],T).
+planeswalker_type (['Sorin'|T],T).
+planeswalker_type (['Tamiyo'|T],T).
+planeswalker_type (['Teferi'|T],T).
+planeswalker_type (['Tezzeret'|T],T).
+planeswalker_type (['Tibalt'|T],T).
+planeswalker_type (['Ugin'|T],T).
+planeswalker_type (['Venser'|T],T).
+planeswalker_type (['Vivien'|T],T).
+planeswalker_type (['Vraska'|T],T).
+planeswalker_type (['Will'|T],T).
+planeswalker_type (['Windgrace'|T],T).
+planeswalker_type (['Xenagos'|T],T).
+planeswalker_type (['Yanggu'|T],T).
+planeswalker_type (['Yanling'|T],T).
 
 % No idea whether these can be made plural
-planeswalker_types --> ['Ajani'].
-planeswalker_types --> ['Aminatou'].
-planeswalker_types --> ['Angrath'].
-planeswalker_types --> ['Arlinn'].
-planeswalker_types --> ['Ashiok'].
-planeswalker_types --> ['Bolas'].
-planeswalker_types --> ['Chandra'].
-planeswalker_types --> ['Dack'].
-planeswalker_types --> ['Daretti'].
-planeswalker_types --> ['Domri'].
-planeswalker_types --> ['Dovin'].
-planeswalker_types --> ['Elspeth'].
-planeswalker_types --> ['Estrid'].
-planeswalker_types --> ['Freyalise'].
-planeswalker_types --> ['Garruk'].
-planeswalker_types --> ['Gideon'].
-planeswalker_types --> ['Huatli'].
-planeswalker_types --> ['Jace'].
-planeswalker_types --> ['Jaya'].
-planeswalker_types --> ['Karn'].
-planeswalker_types --> ['Kaya'].
-planeswalker_types --> ['Kiora'].
-planeswalker_types --> ['Koth'].
-planeswalker_types --> ['Liliana'].
-planeswalker_types --> ['Nahiri'].
-planeswalker_types --> ['Narset'].
-planeswalker_types --> ['Nissa'].
-planeswalker_types --> ['Nixilis'].
-planeswalker_types --> ['Ral'].
-planeswalker_types --> ['Rowan'].
-planeswalker_types --> ['Saheeli'].
-planeswalker_types --> ['Samut'].
-planeswalker_types --> ['Sarkhan'].
-planeswalker_types --> ['Sorin'].
-planeswalker_types --> ['Tamiyo'].
-planeswalker_types --> ['Teferi'].
-planeswalker_types --> ['Tezzeret'].
-planeswalker_types --> ['Tibalt'].
-planeswalker_types --> ['Ugin'].
-planeswalker_types --> ['Venser'].
-planeswalker_types --> ['Vivien'].
-planeswalker_types --> ['Vraska'].
-planeswalker_types --> ['Will'].
-planeswalker_types --> ['Windgrace'].
-planeswalker_types --> ['Xenagos'].
-planeswalker_types --> ['Yanggu'].
-planeswalker_types --> ['Yanling'].
+planeswalker_types (['Ajani'|T],T).
+planeswalker_types (['Aminatou'|T],T).
+planeswalker_types (['Angrath'|T],T).
+planeswalker_types (['Arlinn'|T],T).
+planeswalker_types (['Ashiok'|T],T).
+planeswalker_types (['Bolas'|T],T).
+planeswalker_types (['Chandra'|T],T).
+planeswalker_types (['Dack'|T],T).
+planeswalker_types (['Daretti'|T],T).
+planeswalker_types (['Domri'|T],T).
+planeswalker_types (['Dovin'|T],T).
+planeswalker_types (['Elspeth'|T],T).
+planeswalker_types (['Estrid'|T],T).
+planeswalker_types (['Freyalise'|T],T).
+planeswalker_types (['Garruk'|T],T).
+planeswalker_types (['Gideon'|T],T).
+planeswalker_types (['Huatli'|T],T).
+planeswalker_types (['Jace'|T],T).
+planeswalker_types (['Jaya'|T],T).
+planeswalker_types (['Karn'|T],T).
+planeswalker_types (['Kaya'|T],T).
+planeswalker_types (['Kiora'|T],T).
+planeswalker_types (['Koth'|T],T).
+planeswalker_types (['Liliana'|T],T).
+planeswalker_types (['Nahiri'|T],T).
+planeswalker_types (['Narset'|T],T).
+planeswalker_types (['Nissa'|T],T).
+planeswalker_types (['Nixilis'|T],T).
+planeswalker_types (['Ral'|T],T).
+planeswalker_types (['Rowan'|T],T).
+planeswalker_types (['Saheeli'|T],T).
+planeswalker_types (['Samut'|T],T).
+planeswalker_types (['Sarkhan'|T],T).
+planeswalker_types (['Sorin'|T],T).
+planeswalker_types (['Tamiyo'|T],T).
+planeswalker_types (['Teferi'|T],T).
+planeswalker_types (['Tezzeret'|T],T).
+planeswalker_types (['Tibalt'|T],T).
+planeswalker_types (['Ugin'|T],T).
+planeswalker_types (['Venser'|T],T).
+planeswalker_types (['Vivien'|T],T).
+planeswalker_types (['Vraska'|T],T).
+planeswalker_types (['Will'|T],T).
+planeswalker_types (['Windgrace'|T],T).
+planeswalker_types (['Xenagos'|T],T).
+planeswalker_types (['Yanggu'|T],T).
+planeswalker_types (['Yanling'|T],T).

@@ -1,5 +1,6 @@
 use super::term::{Term, TermClause};
 use fsize::fsize;
+use rayon::vec;
 const DELIMINATORS: &[char] = &[
     '(', ')', ',', '.', ' ', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|', '>',
     '<', '{', '}',
@@ -38,7 +39,7 @@ pub fn remove_comments(file: &mut String) {
 pub fn tokenise(text: &str) -> Vec<&str> {
     let mut tokens = Vec::<&str>::new();
     let mut last_i = 0;
-    let mut iterator = text.chars().enumerate();
+    let mut iterator = text.char_indices();
 
     'outer: while let Some((i, c)) = iterator.next() {
         if c == '\'' {
@@ -47,6 +48,8 @@ pub fn tokenise(text: &str) -> Vec<&str> {
                     tokens.push(&text[last_i..=i]);
                     last_i = i + 1;
                     break;
+                }else if c == '\\'{
+                    iterator.next();
                 }
             }
             continue;
@@ -128,6 +131,15 @@ pub fn tokenise(text: &str) -> Vec<&str> {
         i += 1;
     }
 
+    i = 0;
+    while tokens.len() > i + 2 {
+        if tokens[i] == "-" && tokens[i + 1] == "-" && tokens[i + 2] == ">" {
+            tokens.drain(i..i + 3);
+            tokens.insert(i, "-->");
+        }
+        i += 1;
+    }
+
     tokens.retain(|token| ![" ", "\t", "\r"].contains(token));
 
     tokens
@@ -198,11 +210,18 @@ fn build_str(term_stack: &mut Vec<Term>, op_stack: &mut Vec<Term>) -> Result<(),
 
 fn build_list(term_stack: &mut Vec<Term>, op_stack: &mut Vec<Term>) -> Result<(), String> {
     resolve_infix(term_stack, op_stack, INFIX_ORDER.len());
-    let mut list_term: Term = if op_stack.pop().unwrap().symbol() == "|" {
+    let op = op_stack.pop().unwrap();
+    let mut list_term: Term = if op.symbol() == "|" {
         term_stack.pop().unwrap()
+    } else if op.symbol() == "[" {
+        let t = Term::LIS(term_stack.pop().unwrap().into(), Term::EMPTY_LIS.into());
+        term_stack.push(t);
+        return Ok(());
     } else {
-        Term::LIS(Box::new(term_stack.pop().unwrap()), Box::new(Term::EMPTY_LIS))
-        
+        Term::LIS(
+            Box::new(term_stack.pop().unwrap()),
+            Box::new(Term::EMPTY_LIS),
+        )
     };
 
     loop {
@@ -247,6 +266,10 @@ fn get_uq_vars<'a>(tokens: &[&'a str]) -> Result<Option<Vec<&'a str>>, String> {
 }
 
 pub fn parse_clause(mut tokens: &[&str]) -> Result<TermClause, String> {
+    if tokens.contains(&"-->") {
+        return Ok(parse_dcg(tokens));
+    }
+
     let mut meta = false;
     let uqvars = match get_uq_vars(&tokens)? {
         Some(uqvars) => {
@@ -270,6 +293,7 @@ fn parse_literals(tokens: &[&str], uqvars: &Vec<&str>) -> Result<Vec<Term>, Stri
     let mut term_stack: Vec<Term> = Vec::new();
     let mut op_stack: Vec<Term> = Vec::new();
     for token in tokens {
+
         if ["{", "."].contains(&token) {
             resolve_infix(&mut term_stack, &mut op_stack, INFIX_ORDER.len());
             break;
@@ -296,4 +320,27 @@ fn parse_literals(tokens: &[&str], uqvars: &Vec<&str>) -> Result<Vec<Term>, Stri
     }
     resolve_infix(&mut term_stack, &mut op_stack, INFIX_ORDER.len());
     Ok(term_stack)
+}
+
+fn parse_dcg(tokens: &[&str]) -> TermClause {
+    println!("{tokens:?}");
+    let symbol = Term::CON(tokens[0].into());
+    if let Some(Term::LIS(terminal, tail)) = parse_literals(&tokens[2..], &vec![]).unwrap().pop() {
+        return TermClause {
+            literals: [Term::STR(
+                [
+                    symbol,
+                    Term::LIS(terminal, Term::VAR("A".into()).into()),
+                    Term::VAR("A".into()),
+                ]
+                .into(),
+            )]
+            .into(),
+            meta: false,
+        };
+    } else {
+        panic!()
+    }
+
+    todo!()
 }

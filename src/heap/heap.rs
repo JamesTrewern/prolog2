@@ -48,7 +48,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         }else if let (Tag::Con, symbol) = self[addr]{
             (symbol, 0)
         }else{
-            panic!()
+            panic!("No str arity for {}", self.term_string(addr))
         }
     }
 

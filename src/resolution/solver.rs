@@ -246,7 +246,7 @@ impl<'a> Iterator for Proof<'a> {
 
             Some(h)
         } else {
-            println!("FALSE");
+            // println!("FALSE");
             None
         }
     }

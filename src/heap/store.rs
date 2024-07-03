@@ -67,6 +67,7 @@ impl<'a> Store<'a> {
      */
     pub fn bind(&mut self, binding: &[(usize, usize)]) {
         for (src, target) in binding {
+            println!("{}", self.term_string(*src));
             let pointer = &mut self[*src].1;
             if *pointer != *src {
                 panic!("Tried to reset bound ref: {} \n Binding: {binding:?}", src)

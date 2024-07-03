@@ -1,6 +1,6 @@
 use super::{PredModule, PredReturn};
 use crate::{
-    heap::store::{Store, Tag},
+    heap::{heap::Heap, store::{Store, Tag}},
     interface::{
         state::{self, State},
         term::{Term, TermClause},
@@ -10,15 +10,12 @@ use crate::{
 };
 use rayon::ThreadPool;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{
-        mpsc::{channel, Receiver, Sender},
+        mpsc::{channel, Sender},
         Arc,
     },
 };
-
-#[derive(Default)]
-struct GeneraliseWorker;
 
 fn generalise_thread(state: State, goal: Term, tx: Sender<Vec<Box<[TermClause]>>>) {
     let mut store = Store::new(state.heap.try_read_slice().unwrap());
@@ -60,6 +57,7 @@ fn specialise_thread(
 
 fn collect_examples(mut addr: usize, store: &Store) -> Box<[usize]> {
     let mut examples = Vec::new();
+    addr = store.deref_addr(addr);
     loop {
         match store[addr] {
             Store::EMPTY_LIS => return examples.into_boxed_slice(),
@@ -74,7 +72,7 @@ fn collect_examples(mut addr: usize, store: &Store) -> Box<[usize]> {
 
 fn top_prog(call: usize, proof: &mut Proof) -> PredReturn {
     let pos_ex = collect_examples(call + 2, &proof.store);
-    println!("Pos: {pos_ex:?}");
+    // println!("Pos: {pos_ex:?}");
 
     let top = generalise(pos_ex, proof);
 

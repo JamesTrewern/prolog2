@@ -16,7 +16,10 @@ pub fn build_clause(clause: &[usize], store: &mut Store) -> Box<[usize]> {
 
 pub fn build(src_addr: usize, store: &mut Store, clause: bool) -> usize {
     match store[src_addr] {
-        (Tag::Lis, _) => build_list(src_addr, store, clause).0,
+        (Tag::Lis, _) => {let (pointer, con) = build_list(src_addr, store, clause);
+            store.heap_push((Tag::Lis, pointer));
+            store.heap_len()-1
+        },
         (Tag::Func, _) => build_str(src_addr, store, clause).0,
         _ => panic!()
     }
