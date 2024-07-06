@@ -6,12 +6,11 @@ use super::{
 };
 use crate::{
     heap::{
-        heap::Heap,
         store::{Cell, Store},
         symbol_db::SymbolDB,
     },
     pred_module::get_module,
-    program::program::{DynamicProgram, ProgH, Program},
+    program::{dynamic_program::{DynamicProgram, Hypothesis}, program::Program},
     resolution::solver::Proof, //resolution::solver::Proof,
 };
 
@@ -99,7 +98,7 @@ impl State {
             .map(|t| t.build_to_heap(&mut store, &mut seen_vars, false))
             .collect();
 
-        let mut proof = Proof::new(&goals, store, ProgH::None, None, self);
+        let mut proof = Proof::new(&goals, store, Hypothesis::None, None, self);
         proof.next();
 
         // self.heap.deallocate_above(*goals.first().unwrap());

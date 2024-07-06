@@ -9,7 +9,8 @@ use crate::{
     interface::config::Config,
     program::{
         clause::{Clause, ClauseType},
-        program::{DynamicProgram, ProgramIterator},
+        dynamic_program::DynamicProgram,
+        program::ProgramIterator,
     },
 };
 
@@ -65,7 +66,7 @@ impl Env {
                             println!("[{}] Call {}", self.depth, clause.to_string(store));
                         }
 
-                        if prog.hypothesis.check_constraints(&binding, store) {
+                        if prog.check_constraints(&binding, store) {
                             continue;
                         }
                         let goals = build_goals(&clause[1..], store);
@@ -78,7 +79,7 @@ impl Env {
                                 literals,
                                 clause_type: ClauseType::HYPOTHESIS,
                             };
-                            if let Some(invented_pred) = prog.hypothesis.add_h_clause(clause, store)
+                            if let Some(invented_pred) = prog.add_h_clause(clause, store)
                             {
                                 let (var_pred, _) = store.str_symbol_arity(self.goal);
                                 binding.push((var_pred, invented_pred));

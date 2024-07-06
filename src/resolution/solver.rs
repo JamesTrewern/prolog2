@@ -9,7 +9,8 @@ use crate::{
     },
     pred_module::PredReturn,
     program::{
-        clause_table::ClauseTable, hypothesis::{self, Hypothesis}, program::{CallRes, DynamicProgram, ProgH}
+        clause_table::ClauseTable,
+        dynamic_program::{CallRes, DynamicProgram, Hypothesis},
     },
 };
 
@@ -30,7 +31,7 @@ impl<'a> Proof<'a> {
     pub fn new(
         goals: &[usize],
         store: Store<'a>,
-        hypothesis: ProgH<'a>,
+        hypothesis: Hypothesis<'a>,
         config: Option<Config>,
         state: &'a State,
     ) -> Proof<'a> {
@@ -143,7 +144,6 @@ impl<'a> Proof<'a> {
             self.store.unbind(&env.bindings);
             if env.new_clause == true {
                 self.prog
-                    .hypothesis
                     .remove_h_clause(env.invent_pred, self.config.debug);
                 env.new_clause = false;
                 env.invent_pred = false;
@@ -203,7 +203,7 @@ impl<'a> Iterator for Proof<'a> {
 
         if self.prove() {
             //Add symbols to hypothesis variables
-            self.prog.hypothesis.normalise_hypothesis(&mut self.store);
+            self.prog.normalise_hypothesis(&mut self.store);
             if self.config.debug {
                 println!("TRUE");
 
@@ -227,9 +227,8 @@ impl<'a> Iterator for Proof<'a> {
             }
 
             //For every clause in hypothesis convert into an array non heap terms
-            
 
-            Some(self.prog.hypothesis.clauses.clone())
+            Some(self.prog.hypothesis.clone())
         } else {
             // println!("FALSE");
             None

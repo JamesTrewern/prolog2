@@ -8,7 +8,7 @@ use crate::{
         parser::{parse_goals, tokenise},
         state::State,
     },
-    program::program::{DynamicProgram, ProgH},
+    program::dynamic_program::{DynamicProgram, Hypothesis},
     resolution::solver::Proof,
 };
 
@@ -35,7 +35,7 @@ fn ancestor() {
     let proof = Proof::new(
         &goals,
         store,
-        ProgH::None,
+        Hypothesis::None,
         None,
         &state,
     );
@@ -56,7 +56,7 @@ fn map() {
     let proof = Proof::new(
         &goals,
         store,
-        ProgH::None,
+        Hypothesis::None,
         None,
         &state,
     );
@@ -77,7 +77,7 @@ fn odd_even() {
     let proof = Proof::new(
         &goals,
         store,
-        ProgH::None,
+        Hypothesis::None,
         None,
         &state,
     );
@@ -98,7 +98,7 @@ fn top_prog() {
     let proof = Proof::new(
         &goals,
         store,
-        ProgH::None,
+        Hypothesis::None,
         None,
         &state,
     );

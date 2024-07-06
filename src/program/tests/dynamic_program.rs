@@ -6,7 +6,7 @@ use crate::{
         parser::{parse_clause, parse_goals, tokenise},
         state::State,
     },
-    program::{clause::ClauseType, hypothesis::Hypothesis, program::{CallRes, DynamicProgram, ProgH}},
+    program::{clause::ClauseType, clause_table::ClauseTable, dynamic_program::{CallRes, DynamicProgram, Hypothesis}},
 };
 
 fn setup<'a>() -> State {
@@ -56,7 +56,7 @@ fn setup<'a>() -> State {
 fn iter_clause_body() {
     let state = setup();
     let store = Store::new(state.heap.try_read().unwrap());
-    let prog = DynamicProgram::new(ProgH::None, state.program.try_read().unwrap());
+    let prog = DynamicProgram::new(Hypothesis::None, state.program.try_read().unwrap());
     let expected = ['d', 'c', 'b', 'a'];
     for i in prog.iter([true, true, false, false]) {
         assert!(expected.contains(&store.term_string(prog.get(i)[0]).chars().next().unwrap()));
@@ -67,15 +67,14 @@ fn iter_clause_body() {
 fn iter_body_meta_hypothesis() {
     let state = setup();
     let mut store = Store::new(state.heap.read().unwrap());
-    let mut hypothesis = Hypothesis::new();
+    let mut prog = DynamicProgram::new(Hypothesis::None, state.program.read().unwrap());
     for clause_string in [("g(X,Y)")] {
         let mut clause = parse_clause(&tokenise(&clause_string))
             .unwrap()
             .to_heap(&mut store.cells);
         clause.clause_type = ClauseType::HYPOTHESIS;
-        hypothesis.add_h_clause(clause, &mut store);
+        prog.add_h_clause(clause, &mut store);
     }
-    let prog = DynamicProgram::new(ProgH::Dynamic(hypothesis), state.program.read().unwrap());
     let expected = ['g', 'f', 'e', 'd', 'c'];
     for i in prog.iter([false, true, true, true]) {
         assert!(
@@ -90,15 +89,14 @@ fn iter_body_meta_hypothesis() {
 fn iter_meta_hypothesis() {
     let state = setup();
     let mut store = Store::new(state.heap.read().unwrap());
-    let mut hypothesis = Hypothesis::new();
+    let mut prog = DynamicProgram::new(Hypothesis::None, state.program.read().unwrap());
     for clause_string in [("g(X,Y)")] {
         let mut clause = parse_clause(&tokenise(&clause_string))
             .unwrap()
             .to_heap(&mut store.cells);
         clause.clause_type = ClauseType::HYPOTHESIS;
-        hypothesis.add_h_clause(clause, &mut store);
+        prog.add_h_clause(clause, &mut store);
     }
-    let prog = DynamicProgram::new(ProgH::Dynamic(hypothesis), state.program.read().unwrap());
     let expected = ['g', 'f', 'e'];
     for i in prog.iter([false, false, true, true]) {
         assert!(expected.contains(&store.term_string(prog.get(i)[0]).chars().next().unwrap()));
@@ -115,7 +113,7 @@ fn call_arity_0_head(){
     state.program.write().unwrap().organise_clause_table(&*state.heap.read().unwrap());
     let mut store: Store = Store::new(state.heap.try_read().unwrap());
     let goal = parse_goals(&tokenise("test.")).unwrap()[0].build_to_heap(&mut store, &mut HashMap::new(), false);
-    let prog = DynamicProgram::new(ProgH::None, state.program.try_read().unwrap());
+    let prog = DynamicProgram::new(Hypothesis::None, state.program.try_read().unwrap());
     let clauses = prog.call(goal, &store, *state.config.read().unwrap());
 
     if let CallRes::Clauses(mut clauses) = clauses{

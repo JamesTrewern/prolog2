@@ -5,7 +5,7 @@ use crate::{
         store::{Cell, Store, Tag},
     },
     interface::state::State,
-    program::{clause::Clause, clause_table::ClauseTable, hypothesis::Hypothesis, program::ProgH},
+    program::{clause::Clause, clause_table::ClauseTable, dynamic_program::Hypothesis},
     resolution::solver::Proof,
 };
 use lazy_static::lazy_static;
@@ -56,7 +56,7 @@ fn generalise_thread(
 ) {
     let store = Store::new(state.heap.try_read().unwrap());
     // let goal = goal.build_to_heap(&mut store, &mut HashMap::new(), false);
-    let mut proof = Proof::new(&[goal], store, ProgH::None, None, &state);
+    let mut proof = Proof::new(&[goal], store, Hypothesis::None, None, &state);
 
     //Iterate over proof tree leaf nodes and collect hypotheses
     let mut hs = Vec::<ClauseTable>::new();
@@ -102,10 +102,9 @@ fn specialise_thread(
     state: State,
     neg_ex: &[usize],
     hypothesis: ClauseTable,
-    tx: Sender<Option<Hypothesis>>,
+    tx: Sender<Option<ClauseTable>>,
 ) {
     let store = Store::new(state.heap.try_read().unwrap());
-    let hypothesis = Hypothesis::from_table(hypothesis);
 
     let mut config = *state.config.read().unwrap();
     config.learn = false;
@@ -115,7 +114,7 @@ fn specialise_thread(
         if Proof::new(
             &[*goal],
             store,
-            ProgH::Static(&hypothesis),
+            Hypothesis::Static(&hypothesis),
             Some(config),
             &state,
         )
