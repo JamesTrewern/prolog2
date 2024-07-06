@@ -9,8 +9,7 @@ use crate::{
     },
     pred_module::PredReturn,
     program::{
-        hypothesis::{self, Hypothesis},
-        program::{CallRes, DynamicProgram, ProgH},
+        clause_table::ClauseTable, hypothesis::{self, Hypothesis}, program::{CallRes, DynamicProgram, ProgH}
     },
 };
 
@@ -190,7 +189,7 @@ impl<'a> Proof<'a> {
 }
 
 impl<'a> Iterator for Proof<'a> {
-    type Item = Box<[TermClause]>;
+    type Item = ClauseTable;
 
     /**Find the next possible proof tree, return None if there are no more possible proofs */
     fn next(&mut self) -> Option<Self::Item> {
@@ -228,23 +227,9 @@ impl<'a> Iterator for Proof<'a> {
             }
 
             //For every clause in hypothesis convert into an array non heap terms
-            let h: Self::Item = self
-                .prog
-                .hypothesis
-                .iter()
-                .map(|clause| {
-                    clause
-                        .iter()
-                        .map(|literal| Term::build_from_heap(*literal, &self.store))
-                        .collect::<Vec<Term>>()
-                })
-                .map(|literals| TermClause {
-                    literals,
-                    meta: false,
-                })
-                .collect();
+            
 
-            Some(h)
+            Some(self.prog.hypothesis.clauses.clone())
         } else {
             // println!("FALSE");
             None

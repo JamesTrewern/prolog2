@@ -25,7 +25,7 @@ fn setup<'a>(file: &str) -> State {
 }
 
 fn make_goals<'a>(state: &'a State, goals: &str) -> (Vec<usize>, Store<'a>) {
-    let mut store = Store::new(state.heap.try_read_slice().unwrap());
+    let mut store = Store::new(state.heap.try_read().unwrap());
     let goals: Vec<usize> = parse_goals(&tokenise(goals))
         .unwrap()
         .into_iter()
@@ -39,7 +39,7 @@ fn main() -> ExitCode {
 
     let prog = DynamicProgram::new(ProgH::None, state.program.read().unwrap());
 
-    let (goals, store) = make_goals(&state, "ability([exile,target,creature],[]),");
+    let (goals, store) = make_goals(&state, "test.");
 
     let proof = Proof::new(
         &goals,

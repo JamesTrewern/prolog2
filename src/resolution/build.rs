@@ -21,7 +21,7 @@ pub fn build(src_addr: usize, store: &mut Store, clause: bool) -> usize {
             store.heap_len()-1
         },
         (Tag::Func, _) => build_str(src_addr, store, clause).0,
-        _ => panic!()
+        _ => {store.print_heap(); panic!("src_addr: {src_addr}, {}", store.term_string(src_addr))}
     }
 }
 

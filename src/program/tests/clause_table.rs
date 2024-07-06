@@ -37,7 +37,7 @@ fn setup<'a>() -> (MrwLock<Vec<Cell>>, ClauseTable) {
 #[test]
 fn test_ordering() {
     let (empty, clause_table) = setup();
-    let heap = Store::new(empty.read_slice().unwrap());
+    let heap = Store::new(empty.read().unwrap());
     let expected_order = ["a", "b", "c", "d", "e", "f"];
     for i in 0..clause_table.len() {
         let clause_string = &heap.term_string(clause_table[i][0])[..1];
@@ -80,7 +80,7 @@ fn complex_ordering() {
 
     let lock = MrwLock::new(heap);
 
-    let store = Store::new(lock.read_slice().unwrap());
+    let store = Store::new(lock.read().unwrap());
 
     for i in 0..clause_table.len() {
         let clause_string = &store.term_string(clause_table[i][0])[..1];

@@ -91,7 +91,7 @@ impl State {
                 return Err(error);
             }
         };
-        let mut store = Store::new(self.heap.read_slice().unwrap());
+        let mut store = Store::new(self.heap.read().unwrap());
 
         let mut seen_vars = HashMap::new();
         let goals: Box<[usize]> = goals

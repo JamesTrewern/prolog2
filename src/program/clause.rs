@@ -17,7 +17,7 @@ pub struct Clause {
 }
 
 impl Clause {
-    pub fn to_string(&self, heap: &Store) -> String {
+    pub fn to_string(&self, heap: &impl Heap) -> String {
         if self.len() == 1 {
             let clause_str = heap.term_string(self[0]);
             clause_str

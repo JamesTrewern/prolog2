@@ -18,7 +18,7 @@ const PRED_NAME: &'static str = "pred";
 
 #[derive(Clone)]
 pub struct Hypothesis {
-    clauses: ClauseTable,
+    pub clauses: ClauseTable,
     constraints: Vec<Box<[(usize, usize)]>>,
     pub invented_preds: usize,
 }
@@ -29,6 +29,14 @@ impl Hypothesis {
             clauses: ClauseTable::new(),
             invented_preds: 0,
             constraints: vec![],
+        }
+    }
+
+    pub fn from_table(clauses: ClauseTable) -> Hypothesis {
+        Hypothesis {
+            clauses,
+            invented_preds: 0,
+            constraints: Vec::new(),
         }
     }
 

@@ -1,4 +1,4 @@
-:- ['examples/datasets/mtg'|T],T).
+:- ['examples/datasets/mtg'].
 
 :- background_knowledge([
 	destroy_verb/2,
@@ -66,8 +66,8 @@
 	zone_battlefield/2
 ]).
 
-P(X,Y):- Q(X,Z), R(X,Y) {X,Y,Z}.
-:- max_h_clause(1), max_h_preds(0), max_depth(10), debug(true).
+P(X,Y):- Q(X,Z), R(Z,Y) {X,Y,Z}.
+:- max_h_clause(1), max_h_preds(0), max_depth(10), debug(false).
 
 :- load_module(top_prog).
 
@@ -94,7 +94,7 @@ all_permanents_of_type(A,B):- all(A,C), permanent_types(C,B).
 target_artifact_type(A,B):- target(A,C), artifact_type(C,B).
 target_creature_type(A,B):- target(A,C), creature_type(C,B).
 target_enchantment_type(A,B):- target(A,C), enchantment_type(C,B).
-target_land_type(A,B):- target(A,C), land_type.
+target_land_type(A,B):- target(A,C), land_type(C,B).
 target_basic_land_type(A,B):- target(A,C), basic_land_type(C,B).
 target_planeswalker_type(A,B):- target(A,C), planeswalker_type(C,B).
 
@@ -133,9 +133,9 @@ from_battlefield_to_hand(A,B):- a_permanent_type(A,C), to_owners_hand(C,B).
 from_graveyard_to_hand(A,B):- a_permanent_type(A,C),from_graveyard(C,D),to_owners_hand(D,B).
 from_graveyard_to_battlefield(A,B):- a_permanent_type(A,C), from_graveyard(C,D), to_battlefield(D,B).
 
-all_from_battlefield_to_hand(A,B):- all,permanents(A,C),to_owners_hands(C,B).
-all_from_graveyard_to_hand(A,B):- all,permanents(A,C), from_graveyard(C,D),to_owners_hands(D,B).
-all_from_graveyard_to_battlefield(A,B):- all,permanents(A,C), from_graveyard(C,D), to_battlefield(D,B).
+all_from_battlefield_to_hand(A,B):- all(A,C),permanents(C,D),to_owners_hands(D,B).
+all_from_graveyard_to_hand(A,B):- all(A,C),permanents(C,D), from_graveyard(D,E),to_owners_hands(E,B).
+all_from_graveyard_to_battlefield(A,B):- all(A,C),permanents(C,D), from_graveyard(D,E), to_battlefield(E,B).
 
 % See rule 205.3g
 artifact_type (['Clue'|T],T).

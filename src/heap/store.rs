@@ -1,5 +1,5 @@
 use super::heap::Heap;
-use manual_rwlock::SliceReadGaurd;
+use manual_rwlock::{ReadGaurd, SliceReadGaurd};
 use std::{ fmt::Debug, ops::{Index, IndexMut, Range}
 };
 
@@ -20,6 +20,7 @@ pub(crate) enum Tag {
     Str,  //Reference to Structure
 }
 
+
 impl std::fmt::Display for Tag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
@@ -31,7 +32,7 @@ pub type Cell = (Tag, usize);
 #[derive(Clone)]
 pub(crate) struct Store<'a> {
     pub arg_regs: [usize; ARG_REGS],
-    pub prog_cells: SliceReadGaurd<'a, Cell>,
+    pub prog_cells: ReadGaurd<'a, Vec<Cell>>,
     pub cells: Vec<Cell>,
 }
 
@@ -51,7 +52,7 @@ impl<'a> Store<'a> {
     pub const TRUE: Cell = (Tag::Con, Self::CON_PTR + 1);
     pub const EMPTY_LIS: Cell = (Tag::Lis, Self::CON_PTR);
 
-    pub fn new(prog_cells: SliceReadGaurd<'a, Cell>) -> Store {
+    pub fn new(prog_cells: ReadGaurd<Vec<Cell>>) -> Store {
         Store {
             arg_regs: [usize::MAX; 64],
             cells: Vec::with_capacity(HEAP_SIZE),
@@ -67,7 +68,7 @@ impl<'a> Store<'a> {
      */
     pub fn bind(&mut self, binding: &[(usize, usize)]) {
         for (src, target) in binding {
-            println!("{}", self.term_string(*src));
+            // println!("{}", self.term_string(*src));
             let pointer = &mut self[*src].1;
             if *pointer != *src {
                 panic!("Tried to reset bound ref: {} \n Binding: {binding:?}", src)

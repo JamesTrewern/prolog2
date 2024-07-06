@@ -62,7 +62,7 @@ impl Env {
                     // println!("[{}] Match {}", self.depth, clause.to_string(&store));
                     if let Some(mut binding) = match_head(clause[0], self.goal, store) {
                         if config.debug {
-                            println!("[{}] Call {}", self.depth, clause.to_string(&store));
+                            println!("[{}] Call {}", self.depth, clause.to_string(store));
                         }
 
                         if prog.hypothesis.check_constraints(&binding, store) {

@@ -19,7 +19,7 @@ fn setup<'a>(file: &str) -> State {
 }
 
 fn make_goals<'a>(state: &'a State, goals: &str) -> (Vec<usize>, Store<'a>) {
-    let mut store = Store::new(state.heap.try_read_slice().unwrap());
+    let mut store = Store::new(state.heap.try_read().unwrap());
     let goals: Vec<usize> = parse_goals(&tokenise(goals))
         .unwrap()
         .into_iter()

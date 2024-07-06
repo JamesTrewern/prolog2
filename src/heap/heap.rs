@@ -43,11 +43,11 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn str_symbol_arity(&self, mut addr: usize) -> (usize, usize) {
         addr = self.deref_addr(addr);
-        if let (Tag::Func, arity) = self[addr]{
+        if let (Tag::Func, arity) = self[addr] {
             (self[self.deref_addr(addr + 1)].1, arity)
-        }else if let (Tag::Con, symbol) = self[addr]{
+        } else if let (Tag::Con, symbol) = self[addr] {
             (symbol, 0)
-        }else{
+        } else {
             panic!("No str arity for {}", self.term_string(addr))
         }
     }
@@ -179,11 +179,13 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
             Tag::Func => self.structure_string(addr),
             Tag::Lis => self.list_string(addr),
+            Tag::Arg => format!("A{}", self[addr].1),
             Tag::Ref | Tag::Arg => match SymbolDB::get_var(self.deref_addr(addr)).to_owned() {
                 Some(symbol) => symbol.to_string(),
                 None => format!("_{addr}"),
             },
             Tag::ArgA => {
+                return format!("∀'{}", self[addr].1);
                 if let Some(symbol) = SymbolDB::get_var(self.deref_addr(addr)) {
                     format!("∀'{symbol}")
                 } else {
@@ -218,6 +220,59 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             _ => (),
         }
     }
+
+    fn copy_complex(&mut self, other: &impl Heap, addr: usize, update_addr: &mut usize) {
+        if let (Tag::Lis | Tag::Str, pointer) = other[addr] {
+            *update_addr = self.copy_term(other, addr);
+        }
+    }
+
+    fn copy_simple(&mut self, other: &impl Heap, addr: usize, update_addr: &usize) {
+        match other[addr] {
+            (Tag::Lis, _) => self.heap_push((Tag::Lis, *update_addr)),
+            (Tag::Str, _) => self.heap_push((Tag::Str, *update_addr)),
+            (_, _) => self.heap_push(other[addr]),
+        }
+    }
+
+    fn copy_term(&mut self, other: &impl Heap, addr: usize) -> usize {
+        //Assume common static heap
+        match other[addr] {
+            (Tag::Str, mut pointer) => {
+                pointer = self.copy_term(other, pointer);
+                self.heap_push((Tag::Str, pointer));
+                self.heap_len() - 1
+            }
+            (Tag::Func, arity) => {
+                let mut update_addr: Vec<usize> = vec![0; arity];
+                for (i, a) in other.str_iterator(addr).enumerate() {
+                    self.copy_complex(other, a, &mut update_addr[i])
+                }
+                let h = self.heap_len();
+                self.heap_push((Tag::Func, arity));
+                for  (i, a) in other.str_iterator(addr).enumerate() {
+                    self.copy_simple(other, a, &update_addr[i]);
+                }
+                h
+            }
+            (Tag::Lis, pointer) => {
+                let mut update_addr: Vec<usize> = vec![0; 2];
+                self.copy_complex(other, pointer, &mut update_addr[0]);
+                self.copy_complex(other, pointer + 1, &mut update_addr[1]);
+
+                
+                let h = self.heap_len();
+                self.copy_simple(other, pointer, &mut update_addr[0]);
+                self.copy_simple(other, pointer + 1, &mut update_addr[1]);
+                h
+            }
+            (Tag::Ref, pointer) => panic!(),
+            (Tag::Arg | Tag::ArgA | Tag::Con | Tag::Int | Tag::Flt, _) => {
+                self.heap_push(other[addr]);
+                self.heap_len() - 1
+            }
+        }
+    }
 }
 
 impl Heap for Vec<Cell> {
@@ -229,4 +284,3 @@ impl Heap for Vec<Cell> {
         self.len()
     }
 }
-

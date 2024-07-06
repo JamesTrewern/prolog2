@@ -33,7 +33,7 @@ fn body_pred() {
         .handle_directive(&tokenise("body_pred(dad,2),body_pred(mum,2)"))
         .unwrap();
 
-    let store = Store::new(state.heap.try_read_slice().unwrap());
+    let store = Store::new(state.heap.try_read().unwrap());
     let prog = DynamicProgram::new(ProgH::None, state.program.read().unwrap());
 
     let body_clauses: Vec<String> = prog
@@ -68,7 +68,7 @@ fn background_knowledge() {
         .handle_directive(&tokenise("background_knowledge([dad/2,mum/2])."))
         .unwrap();
 
-    let store = Store::new(state.heap.try_read_slice().unwrap());
+    let store = Store::new(state.heap.try_read().unwrap());
     let prog = DynamicProgram::new(ProgH::None, state.program.read().unwrap());
 
     let body_clauses: Vec<String> = prog

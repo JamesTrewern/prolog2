@@ -11,7 +11,7 @@ use crate::{
 
 fn setup<'a>() -> State {
     let state = State::new(None);
-    // let mut store = Store::new(empty.read_slice().unwrap());
+    // let mut store = Store::new(empty.read().unwrap());
 
     let clauses = [
         (ClauseType::META, "e(X,Y)"),
@@ -55,7 +55,7 @@ fn setup<'a>() -> State {
 #[test]
 fn iter_clause_body() {
     let state = setup();
-    let store = Store::new(state.heap.try_read_slice().unwrap());
+    let store = Store::new(state.heap.try_read().unwrap());
     let prog = DynamicProgram::new(ProgH::None, state.program.try_read().unwrap());
     let expected = ['d', 'c', 'b', 'a'];
     for i in prog.iter([true, true, false, false]) {
@@ -66,7 +66,7 @@ fn iter_clause_body() {
 #[test]
 fn iter_body_meta_hypothesis() {
     let state = setup();
-    let mut store = Store::new(state.heap.read_slice().unwrap());
+    let mut store = Store::new(state.heap.read().unwrap());
     let mut hypothesis = Hypothesis::new();
     for clause_string in [("g(X,Y)")] {
         let mut clause = parse_clause(&tokenise(&clause_string))
@@ -89,7 +89,7 @@ fn iter_body_meta_hypothesis() {
 #[test]
 fn iter_meta_hypothesis() {
     let state = setup();
-    let mut store = Store::new(state.heap.read_slice().unwrap());
+    let mut store = Store::new(state.heap.read().unwrap());
     let mut hypothesis = Hypothesis::new();
     for clause_string in [("g(X,Y)")] {
         let mut clause = parse_clause(&tokenise(&clause_string))
@@ -113,7 +113,7 @@ fn call_arity_0_head(){
     .to_heap(&mut *state.heap.try_write().unwrap());
     state.program.write().unwrap().add_clause(clause, &*state.heap.try_read().unwrap());
     state.program.write().unwrap().organise_clause_table(&*state.heap.read().unwrap());
-    let mut store: Store = Store::new(state.heap.try_read_slice().unwrap());
+    let mut store: Store = Store::new(state.heap.try_read().unwrap());
     let goal = parse_goals(&tokenise("test.")).unwrap()[0].build_to_heap(&mut store, &mut HashMap::new(), false);
     let prog = DynamicProgram::new(ProgH::None, state.program.try_read().unwrap());
     let clauses = prog.call(goal, &store, *state.config.read().unwrap());
@@ -132,7 +132,7 @@ fn call_arity_0_head(){
 //     let empty: MrwLock<Vec<Cell>> = MrwLock::new(Vec::new());
 
 //     let mut state = State::new(None);
-//     let mut store = Store::new(empty.read_slice().unwrap());
+//     let mut store = Store::new(empty.read().unwrap());
 //     for clause in ["P(X,Y,Z):-Q(X,Y,Z)\\X,Y"] {
 //         let clause = parse_clause(&tokenise(clause)).unwrap().to_heap(&mut store.cells);
 //         state.program.write().unwrap().add_clause(clause, &store);
