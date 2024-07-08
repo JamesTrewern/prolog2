@@ -226,7 +226,6 @@ impl<'a> Iterator for Proof<'a> {
                 }
             }
 
-
             //For every clause in hypothesis convert into an array non heap terms
 
             Some(self.prog.hypothesis.clone())

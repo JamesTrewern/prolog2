@@ -6,12 +6,7 @@ use crate::{
         store::{Cell, Store, Tag},
     },
     interface::state::State,
-    pred_module::top_prog,
-    program::{
-        clause::{Clause, ClauseType},
-        clause_table::ClauseTable,
-        dynamic_program::Hypothesis,
-    },
+    program::{clause::Clause, clause_table::ClauseTable, dynamic_program::Hypothesis},
     resolution::solver::Proof,
 };
 use lazy_static::lazy_static;
@@ -19,7 +14,7 @@ use std::{
     mem::ManuallyDrop,
     sync::{
         mpsc::{channel, Sender},
-        Arc, Mutex, MutexGuard,
+        Mutex,
     },
     time::Instant,
 };
@@ -28,67 +23,54 @@ lazy_static! {
     static ref CPU_COUNT: usize = num_cpus::get();
 }
 
-fn extract_h_terms(
-    src_heap: &Store,
-    hypothesis: ClauseTable,
-    other_heap: &mut impl Heap,
-) -> ClauseTable {
-    let mut new_hypothesis = ClauseTable::new();
-    for c in hypothesis.iter() {
-        {
-            let new_literals: Box<[usize]> = c
-                .iter()
-                .map(|l| other_heap.copy_term(src_heap, *l))
-                .collect();
-            new_hypothesis.add_clause(Clause {
-                clause_type: c.clause_type,
-                literals: ManuallyDrop::new(new_literals),
-            });
-        }
-    }
-    new_hypothesis
+fn extract_clause_terms(
+    main_heap: &mut Vec<Cell>,
+    sub_heap: &Store,
+    hypotheses: Vec<ClauseTable>,
+) -> Vec<ClauseTable> {
+    hypotheses
+        .into_iter()
+        .map(|h| {
+            let mut newh = ClauseTable::new();
+            for c in h.iter() {
+                {
+                    let new_literals: Box<[usize]> = c
+                        .iter()
+                        .map(|l| main_heap.copy_term(sub_heap, *l))
+                        .collect();
+                    newh.add_clause(Clause {
+                        clause_type: c.clause_type,
+                        literals: ManuallyDrop::new(new_literals),
+                    });
+                }
+            }
+            newh
+        })
+        .collect()
 }
 
-fn generalise_example2(
+fn generalise_thread(
     state: State,
-    main_heap: &Mutex<&mut Store>,
-    top_prog: &Mutex<Vec<ClauseTable>>,
+    main_heap: &Mutex<&mut Vec<Cell>>,
     goal: usize,
-    tx: Sender<bool>,
+    tx: Sender<Vec<ClauseTable>>,
 ) {
     let store = Store::new(state.heap.try_read().unwrap());
+    // let goal = goal.build_to_heap(&mut store, &mut HashMap::new(), false);
     let mut proof = Proof::new(&[goal], store, Hypothesis::None, None, &state);
-    //Iterate over proof tree leaf nodes and collect hypotheses
-    while let Some(hypothesis) = proof.next() {
-        let mut top_prog = top_prog.lock().unwrap();
-        let mut other_heap = main_heap.lock().unwrap();
 
-        //If hypothesis does not equal another hypothesis, add it to the top program and duplicate cells to main heap
-        if top_prog
-            .iter()
-            .all(|h| !hypothesis.equal(h, &proof.store, *other_heap))
-        {
-            top_prog.push(extract_h_terms(&proof.store, hypothesis, *other_heap))
-        }
-    }
-    tx.send(true).unwrap()
-}
-
-fn generalise_example(state: State, goal: usize, tx: Sender<(Vec<Cell>, Vec<ClauseTable>)>) {
-    let store = Store::new(state.heap.try_read().unwrap());
-    let mut proof = Proof::new(&[goal], store, Hypothesis::None, None, &state);
     //Iterate over proof tree leaf nodes and collect hypotheses
-    let mut h_cells: Vec<Cell> = Vec::new();
-    let mut hypotheses = Vec::<ClauseTable>::with_capacity(5);
+    let mut hs = Vec::<ClauseTable>::new();
     while let Some(hypothesis) = proof.next() {
-        if hypotheses
-            .iter()
-            .all(|h| !h.equal(&hypothesis, &h_cells, &proof.store))
-        {
-            hypotheses.push(extract_h_terms(&proof.store, hypothesis, &mut h_cells))
-        }
+        hs.push(hypothesis);
     }
-    tx.send((h_cells, hypotheses)).unwrap()
+
+    tx.send(extract_clause_terms(
+        &mut main_heap.try_lock().unwrap(),
+        &proof.store,
+        hs,
+    ))
+    .unwrap();
 }
 
 fn generalise(goals: Box<[usize]>, proof: &mut Proof) -> (Vec<ClauseTable>) {
@@ -98,40 +80,30 @@ fn generalise(goals: Box<[usize]>, proof: &mut Proof) -> (Vec<ClauseTable>) {
         .build()
         .unwrap();
 
-    let rx = {
-        let (tx, rx) = channel();
-        for goal in goals.into_vec() {
-            let state = proof.state.clone();
-            let tx = tx.clone();
-            pool.scope(|_| generalise_example(state, goal, tx))
-        }
-        rx
-    };
+    let (tx, rx) = channel();
 
-    let top_prog = Vec::<ClauseTable>::with_capacity(n_jobs);
-    for (mut h_cells, hypotheses) in rx.iter().take(n_jobs) {
-        let offset = proof.store.heap_len();
+    let main_heap = Mutex::new(&mut proof.store.cells);
 
-        for mut h1 in hypotheses.into_iter().filter(|h1| {
-            top_prog
-                .iter()
-                .all(|h2| !h1.equal(h2, &h_cells, &proof.store))
-        }) {
-            h1.add_offset(offset)
-        }
-
-        proof.store.cells.append(&mut h_cells);
+    for goal in goals.into_vec() {
+        let state = proof.state.clone();
+        let tx = tx.clone();
+        pool.scope(|_| generalise_thread(state, &main_heap, goal, tx))
     }
+
+    let mut res = Vec::new();
+    for mut h in rx.iter().take(n_jobs) {
+        res.append(&mut h);
+    }
+
     println!("After colect H");
-    top_prog
+    return res;
 }
 
 fn specialise_thread(
     state: State,
-    neg_ex: Arc<[usize]>,
-    hypothesis: &ClauseTable,
-    idx: usize,
-    tx: Sender<(usize, bool)>,
+    neg_ex: &[usize],
+    hypothesis: ClauseTable,
+    tx: Sender<Option<ClauseTable>>,
 ) {
     let store = Store::new(state.heap.try_read().unwrap());
 
@@ -143,53 +115,46 @@ fn specialise_thread(
         if Proof::new(
             &[*goal],
             store,
-            Hypothesis::Static(hypothesis),
+            Hypothesis::Static(&hypothesis),
             Some(config),
             &state,
         )
         .next()
         .is_some()
         {
-            tx.send((idx, false)).unwrap();
+            tx.send(None);
             return;
         }
     }
-    tx.send((idx, true)).unwrap();
+    tx.send(Some(hypothesis));
 }
 
-fn specialise(neg_ex: Arc<[usize]>, hypotheses: Vec<ClauseTable>, proof: &Proof) -> ClauseTable {
+fn specialise(neg_ex: Box<[usize]>, hypotheses: Vec<ClauseTable>, proof: &Proof) -> ClauseTable {
     let n_jobs = hypotheses.len();
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT)
         .build()
         .unwrap();
 
-    let rx = {
-        let (tx, rx) = channel();
-        for (idx, h) in hypotheses.iter().enumerate() {
-            let state = proof.state.clone();
-            let neg_ex = neg_ex.clone();
-            let tx = tx.clone();
-            pool.scope(|_| specialise_thread(state, neg_ex, h, idx, tx))
-        }
-        rx
-    };
+    // let neg_ex: Arc<[Term]> = neg_ex
+    //     .iter()
+    //     .map(|g| Term::build_from_heap(*g, &proof.store))
+    //     .collect();
 
-    let mut retain = vec![true; hypotheses.len()].into_boxed_slice();
-    while let Ok((idx, keep)) = rx.recv() {
-        retain[idx] = keep;
+    let (tx, rx) = channel();
+
+    for h in hypotheses {
+        let state = proof.state.clone();
+        let neg_ex = neg_ex.clone();
+        let tx = tx.clone();
+        pool.scope(|_| specialise_thread(state, &neg_ex, h, tx))
     }
 
-    let mut res = ClauseTable::new();
-
-    //Check for duplicate clauses before adding
-    for i in 0..hypotheses.len() {
-        if retain[i] {
-            for clause in hypotheses[i].iter() {
-                res.add_clause(Clause {
-                    clause_type: ClauseType::HYPOTHESIS,
-                    literals: clause.literals.clone(),
-                })
+    let mut res: ClauseTable = ClauseTable::new();
+    for hypothesis in rx.iter().take(n_jobs) {
+        if let Some(hypothesis) = hypothesis {
+            for clause in hypothesis.iter() {
+                res.add_clause(clause)
             }
         }
     }
@@ -214,6 +179,7 @@ fn collect_examples(mut addr: usize, store: &Store) -> Box<[usize]> {
 
 fn top_prog(call: usize, proof: &mut Proof) -> PredReturn {
     let now = Instant::now();
+
     //Drain current heap to static heap.
     unsafe {
         proof.store.prog_cells.early_release();
@@ -225,20 +191,18 @@ fn top_prog(call: usize, proof: &mut Proof) -> PredReturn {
         .unwrap()
         .append(&mut proof.store.cells);
     unsafe {
-        proof.store.prog_cells.reobtain().unwrap();
+        proof.store.prog_cells.reobtain();
     }
 
     let pos_ex = collect_examples(call + 2, &proof.store);
-
+    // println!("Pos: {pos_ex:?}");
     let top = generalise(pos_ex, proof);
 
-    let elapsed = now.elapsed();
-    println!("Generalise Time ms: {}", elapsed.as_millis());
 
-    for (i, h) in top.iter().enumerate() {
+    for (i,h) in top.iter().enumerate(){
         println!("Hypothesis [{i}]");
-        for c in h.iter() {
-            println!("\t{}", c.to_string(&proof.store))
+        for c in h.iter(){
+            println!("\t{}", c.to_string(&*proof.state.heap.read().unwrap()))
         }
     }
     //Drain current heap to static heap.
@@ -252,14 +216,13 @@ fn top_prog(call: usize, proof: &mut Proof) -> PredReturn {
         .unwrap()
         .append(&mut proof.store.cells);
     unsafe {
-        proof.store.prog_cells.reobtain().unwrap();
+        proof.store.prog_cells.reobtain();
     }
 
-    let neg_ex: Arc<[usize]> = collect_examples(call + 3, &proof.store).into();
+    let neg_ex = collect_examples(call + 3, &proof.store);
     // println!("Neg: {neg_ex:?}");
 
     let top = specialise(neg_ex, top, proof);
-    //Plotkin Reduce
 
     println!("Top Program:");
     for c in top.iter() {

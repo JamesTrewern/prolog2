@@ -71,14 +71,14 @@ impl Env {
                         }
                         let goals = build_goals(&clause[1..], store);
                         if clause.clause_type == ClauseType::META {
+                            if config.debug {
+                                println!("Add Clause: {}", clause.to_string(store));
+                            }
                             let literals = ManuallyDrop::new(build_clause(&clause, store));
                             let clause = Clause {
                                 literals,
                                 clause_type: ClauseType::HYPOTHESIS,
                             };
-                            if config.debug {
-                                println!("Add Clause: {}", clause.to_string(store));
-                            }
                             if let Some(invented_pred) = prog.add_h_clause(clause, store)
                             {
                                 let (var_pred, _) = store.str_symbol_arity(self.goal);

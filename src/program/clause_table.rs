@@ -1,5 +1,5 @@
 use super::clause::{Clause, ClauseType};
-use crate::heap::{self, heap::Heap};
+use crate::heap::heap::Heap;
 use std::{cmp::Ordering, mem::ManuallyDrop, ops::Index, ptr::slice_from_raw_parts};
 
 /**Stores clauses as a list of adresses to literals on the heap
@@ -156,24 +156,6 @@ impl<'a> ClauseTable {
         ClauseIterator {
             index: 0,
             clause_table: self,
-        }
-    }
-
-    pub fn equal(&self, other: &Self, self_heap: &impl Heap, other_heap: &impl Heap) -> bool {
-        if self.len() != other.len() {
-            return false;
-        }
-        for c1 in self.iter() {
-            if !other.iter().any(|c2| c1.equal(&c2, self_heap, other_heap)) {
-                return false;
-            }
-        }
-        true
-    }
-
-    pub fn add_offset(&mut self, offset: usize){
-        for literal_addr in self.literal_addrs.iter_mut(){
-            *literal_addr += offset;
         }
     }
 }

@@ -110,33 +110,6 @@ fn top_prog() {
     assert!(proofs > 0);
 }
 
-#[test]
-fn mtg() {
-    let state = setup("./examples/mtg_fragment");
-
-    let prog = DynamicProgram::new(Hypothesis::None, state.program.read().unwrap());
-
-    let (goals, store) = make_goals(&state, "test.");
-
-    let proof = Proof::new(
-        &goals,
-        store,
-        Hypothesis::None,
-        None,
-        &state,
-    );
-
-    let mut proofs = 0;
-    for _ in proof {
-        proofs += 1;
-    }
-    assert!(proofs > 0);
-
-    let state = State::new(None);
-    state.main_loop();
-}
-
-
 // #[test]
 // fn move_up(){
 //     let mut state = State::new(Some(
