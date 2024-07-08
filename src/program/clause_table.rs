@@ -170,6 +170,12 @@ impl<'a> ClauseTable {
         }
         true
     }
+
+    pub fn add_offset(&mut self, offset: usize){
+        for literal_addr in self.literal_addrs.iter_mut(){
+            *literal_addr += offset;
+        }
+    }
 }
 
 impl<'a> Index<usize> for ClauseTable {

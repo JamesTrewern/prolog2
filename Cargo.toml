@@ -15,6 +15,8 @@ num_cpus = "1.0"
 [profile.dev]
 opt-level = 3
 RUST_BACKTRACE=1
+debuginfo-level = 1
 
 [profile.release]
 debug = true
+debuginfo-level = 1

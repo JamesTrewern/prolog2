@@ -1,10 +1,12 @@
 use super::{PredModule, PredReturn};
 use crate::{
     heap::{
+        self,
         heap::Heap,
         store::{Cell, Store, Tag},
     },
     interface::state::State,
+    pred_module::top_prog,
     program::{
         clause::{Clause, ClauseType},
         clause_table::ClauseTable,
@@ -29,7 +31,7 @@ lazy_static! {
 fn extract_h_terms(
     src_heap: &Store,
     hypothesis: ClauseTable,
-    other_heap: &mut Store,
+    other_heap: &mut impl Heap,
 ) -> ClauseTable {
     let mut new_hypothesis = ClauseTable::new();
     for c in hypothesis.iter() {
@@ -47,7 +49,7 @@ fn extract_h_terms(
     new_hypothesis
 }
 
-fn generalise_example(
+fn generalise_example2(
     state: State,
     main_heap: &Mutex<&mut Store>,
     top_prog: &Mutex<Vec<ClauseTable>>,
@@ -72,27 +74,56 @@ fn generalise_example(
     tx.send(true).unwrap()
 }
 
+fn generalise_example(state: State, goal: usize, tx: Sender<(Vec<Cell>, Vec<ClauseTable>)>) {
+    let store = Store::new(state.heap.try_read().unwrap());
+    let mut proof = Proof::new(&[goal], store, Hypothesis::None, None, &state);
+    //Iterate over proof tree leaf nodes and collect hypotheses
+    let mut h_cells: Vec<Cell> = Vec::new();
+    let mut hypotheses = Vec::<ClauseTable>::with_capacity(5);
+    while let Some(hypothesis) = proof.next() {
+        if hypotheses
+            .iter()
+            .all(|h| !h.equal(&hypothesis, &h_cells, &proof.store))
+        {
+            hypotheses.push(extract_h_terms(&proof.store, hypothesis, &mut h_cells))
+        }
+    }
+    tx.send((h_cells, hypotheses)).unwrap()
+}
+
 fn generalise(goals: Box<[usize]>, proof: &mut Proof) -> (Vec<ClauseTable>) {
+    let n_jobs = goals.len();
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT)
         .build()
         .unwrap();
-
-    let top_prog = Mutex::new(Vec::<ClauseTable>::with_capacity(goals.len()));
-    let store = Mutex::new(&mut proof.store);
 
     let rx = {
         let (tx, rx) = channel();
         for goal in goals.into_vec() {
             let state = proof.state.clone();
             let tx = tx.clone();
-            pool.scope(|_| generalise_example(state, &store, &top_prog, goal, tx))
+            pool.scope(|_| generalise_example(state, goal, tx))
         }
         rx
     };
-    while let Ok(true) = rx.recv() {}
+
+    let top_prog = Vec::<ClauseTable>::with_capacity(n_jobs);
+    for (mut h_cells, hypotheses) in rx.iter().take(n_jobs) {
+        let offset = proof.store.heap_len();
+
+        for mut h1 in hypotheses.into_iter().filter(|h1| {
+            top_prog
+                .iter()
+                .all(|h2| !h1.equal(h2, &h_cells, &proof.store))
+        }) {
+            h1.add_offset(offset)
+        }
+
+        proof.store.cells.append(&mut h_cells);
+    }
     println!("After colect H");
-    return top_prog.into_inner().unwrap();
+    top_prog
 }
 
 fn specialise_thread(
@@ -200,6 +231,9 @@ fn top_prog(call: usize, proof: &mut Proof) -> PredReturn {
     let pos_ex = collect_examples(call + 2, &proof.store);
 
     let top = generalise(pos_ex, proof);
+
+    let elapsed = now.elapsed();
+    println!("Generalise Time ms: {}", elapsed.as_millis());
 
     for (i, h) in top.iter().enumerate() {
         println!("Hypothesis [{i}]");
