@@ -5,16 +5,14 @@ use std::{
 
 use crate::heap::symbol_db::SymbolDB;
 
-use super::store::{Cell, Tag};
+use super::store::{Cell, Store, Tag};
 
 use fsize::fsize;
-
+const CON_PTR: usize = isize::MAX as usize;
+const FALSE: Cell = (Tag::Con, CON_PTR);
+const TRUE: Cell = (Tag::Con, CON_PTR + 1);
+const EMPTY_LIS: Cell = (Tag::Lis, CON_PTR);
 pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]> {
-    const CON_PTR: usize = isize::MAX as usize;
-    const FALSE: Cell = (Tag::Con, Self::CON_PTR);
-    const TRUE: Cell = (Tag::Con, Self::CON_PTR + 1);
-    const EMPTY_LIS: Cell = (Tag::Lis, Self::CON_PTR);
-
     fn heap_push(&mut self, cell: Cell);
 
     fn heap_len(&self) -> usize;
@@ -73,7 +71,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         addr = self.deref_addr(addr);
         match self[addr].0 {
             Tag::Ref | Tag::Arg | Tag::ArgA => vec![self[addr]],
-            Tag::Lis if self[addr].1 != Self::CON_PTR => [
+            Tag::Lis if self[addr].1 != CON_PTR => [
                 self.term_vars(self[addr].1),
                 self.term_vars(self[addr].1 + 1),
             ]
@@ -102,7 +100,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     println!("[{i:3}]|{tag:w$}|{:w$}|", SymbolDB::get_const(value))
                 }
                 Tag::Lis => {
-                    if value == Self::CON_PTR {
+                    if value == CON_PTR {
                         println!("[{i:3}]|{tag:w$}|{:w$}|", "[]")
                     } else {
                         println!("[{i:3}]|{tag:w$}|{value:w$}|")
@@ -130,7 +128,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     /**Create a string from a list */
     fn list_string(&self, addr: usize) -> String {
-        if self[addr] == Self::EMPTY_LIS {
+        if self[addr] == EMPTY_LIS {
             return "[]".to_string();
         }
 
@@ -147,7 +145,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 buffer += ",";
             }
             pointer = self[pointer + 1].1;
-            if pointer == Self::CON_PTR {
+            if pointer == CON_PTR {
                 buffer.pop();
                 break;
             }
@@ -212,7 +210,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     self.normalise_args(i, args)
                 }
             }
-            (Tag::Lis, pointer) if pointer != Self::CON_PTR => {
+            (Tag::Lis, pointer) if pointer != CON_PTR => {
                 self.normalise_args(pointer, args);
                 self.normalise_args(pointer + 1, args);
             }
@@ -221,8 +219,13 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         }
     }
 
-    fn copy_complex(&mut self, other: &impl Heap, addr: usize, update_addr: &mut usize) {
-        if let (Tag::Lis | Tag::Str, pointer) = other[addr] {
+    fn copy_complex(
+        &mut self,
+        other: &impl Heap,
+        addr: usize,
+        update_addr: &mut usize,
+    ) {
+        if let (Tag::Lis | Tag::Str | Tag::Ref, pointer) = other[addr] {
             *update_addr = self.copy_term(other, addr);
         }
     }
@@ -231,6 +234,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         match other[addr] {
             (Tag::Lis, _) => self.heap_push((Tag::Lis, *update_addr)),
             (Tag::Str, _) => self.heap_push((Tag::Str, *update_addr)),
+            (Tag::Ref, _) => self.heap_push((Tag::Ref, *update_addr)),
             (_, _) => self.heap_push(other[addr]),
         }
     }
@@ -250,7 +254,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 }
                 let h = self.heap_len();
                 self.heap_push((Tag::Func, arity));
-                for  (i, a) in other.str_iterator(addr).enumerate() {
+                for (i, a) in other.str_iterator(addr).enumerate() {
                     self.copy_simple(other, a, &update_addr[i]);
                 }
                 h
@@ -260,17 +264,35 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.copy_complex(other, pointer, &mut update_addr[0]);
                 self.copy_complex(other, pointer + 1, &mut update_addr[1]);
 
-                
                 let h = self.heap_len();
                 self.copy_simple(other, pointer, &mut update_addr[0]);
                 self.copy_simple(other, pointer + 1, &mut update_addr[1]);
                 h
             }
-            (Tag::Ref, pointer) => panic!(),
+            (Tag::Ref, pointer) => self.copy_term(other, other.deref_addr(pointer)),
             (Tag::Arg | Tag::ArgA | Tag::Con | Tag::Int | Tag::Flt, _) => {
                 self.heap_push(other[addr]);
                 self.heap_len() - 1
             }
+        }
+    }
+
+    fn term_equal(&self, mut addr1: usize, mut addr2: usize, other: &impl Heap) -> bool {
+        addr1 = self.deref_addr(addr1);
+        addr2 = other.deref_addr(addr2);
+        match (self[addr1], other[addr2]) {
+            (EMPTY_LIS, EMPTY_LIS) => true,
+            (EMPTY_LIS, _) => false,
+            (_, EMPTY_LIS) => false,
+            ((Tag::Func, a1), (Tag::Func, a2)) if a1 == a2 => self
+                .str_iterator(addr1)
+                .zip(other.str_iterator(addr2))
+                .all(|(addr1, addr2)| self.term_equal(addr1, addr2, other)),
+            ((Tag::Lis, p1), (Tag::Lis, p2)) => {
+                self.term_equal(p1, p2, other) && self.term_equal(p1 + 1, p2 + 1, other)
+            }
+            ((Tag::Str, p1), (Tag::Str, p2)) => self.term_equal(p1, p2, other),
+            _ => self[addr1] == other[addr2],
         }
     }
 }
