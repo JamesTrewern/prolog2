@@ -1,4 +1,4 @@
-:- ['examples/datasets/mtg'].
+:- ['examples/mtg/examples'].
 
 :- background_knowledge([
 	destroy_verb/2,

@@ -35,7 +35,7 @@ fn make_goals<'a>(state: &'a State, goals: &str) -> (Vec<usize>, Store<'a>) {
 }
 
 fn main() -> ExitCode {
-    let state = setup("./examples/mtg_fragment");
+    let state = setup("./examples/robots/robots");
 
     let prog = DynamicProgram::new(Hypothesis::None, state.program.read().unwrap());
 

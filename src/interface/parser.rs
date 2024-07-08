@@ -265,7 +265,7 @@ fn get_uq_vars<'a>(tokens: &[&'a str]) -> Result<Option<Vec<&'a str>>, String> {
     }
 }
 
-pub fn parse_clause(mut tokens: &[&str]) -> Result<TermClause, String> {
+pub fn parse_clause(mut tokens: &[&str]) -> Result<TermClause, String> {    
     if tokens.contains(&"-->") {
         return Ok(parse_dcg(tokens));
     }

@@ -83,6 +83,8 @@ impl State {
     }
 
     pub fn handle_directive(&self, segment: &[&str]) -> Result<(), String> {
+        println!("Directive: {segment:?}");
+
         let goals = match parse_goals(segment) {
             Ok(res) => res,
             Err(error) => {
