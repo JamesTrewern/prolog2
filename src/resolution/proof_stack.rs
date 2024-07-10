@@ -60,7 +60,7 @@ impl Env {
             loop {
                 if let Some(clause) = choices.next().map(|i| prog.get(i)) {
                     store.reset_args();
-                    // println!("[{}] Match {}", self.depth, clause.to_string(&store));
+                    // println!("[{}] Match {}", self.depth, clause.to_string(store));
                     if let Some(mut binding) = match_head(clause[0], self.goal, store) {
                         if config.debug {
                             println!("[{}] Call {}", self.depth, clause.to_string(store));

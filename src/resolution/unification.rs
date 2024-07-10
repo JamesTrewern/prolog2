@@ -104,8 +104,8 @@ fn unify_struct(addr1: usize, addr2: usize, heap: &Store, binding: &mut Binding)
     }
 
     //iterate over struct terms including Pred/Func symbol
-    for i in 1..=a1 + 1 {
-        if !unify(addr1 + i, addr2 + i, heap, binding) {
+    for (addr1, addr2) in heap.str_iterator(addr1).zip(heap.str_iterator(addr2)) {
+        if !unify(addr1, addr2, heap, binding) {
             return false;
         }
     }
@@ -127,8 +127,10 @@ fn unify_list(addr1: usize, addr2: usize, heap: &Store, binding: &mut Binding) -
 
 /**Branching point for unification of two cells. Uses tag of each cell to determine how to unify */
 pub fn unify(addr1: usize, addr2: usize, heap: &Store, binding: &mut Binding) -> bool {
+
     //Firstly deref cells
     let (addr1, addr2) = (heap.deref_addr(addr1), heap.deref_addr(addr2));
+    // println!("[{addr1}]:{:?}, [{addr2}]:{:?}",heap[addr1], heap[addr2]);
     //TO DO check at this point if binding already exists as deref cell could have already been considered
     match (heap[addr1].0, heap[addr2].0) {
         (Tag::Ref | Tag::Arg | Tag::ArgA, Tag::Ref | Tag::Arg | Tag::ArgA) => {
@@ -137,6 +139,7 @@ pub fn unify(addr1: usize, addr2: usize, heap: &Store, binding: &mut Binding) ->
         (Tag::Ref | Tag::ArgA | Tag::Arg, _) => unify_ref(addr1, addr2, heap, binding),
         (_, Tag::Ref | Tag::ArgA | Tag::Arg) => unify_ref(addr2, addr1, heap, binding),
         (Tag::Func, Tag::Func) => unify_struct(addr1, addr2, heap, binding),
+        (Tag::Str, Tag::Str) => unify_struct(heap[addr1].1, heap[addr2].1, heap, binding),
         (Tag::Lis, Tag::Lis) => unify_list(heap[addr1].1, heap[addr2].1, heap, binding),
         (Tag::Con | Tag::Int | Tag::Flt, Tag::Con | Tag::Int | Tag::Flt) => {
             heap[addr1] == heap[addr2]

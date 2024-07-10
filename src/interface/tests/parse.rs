@@ -345,3 +345,33 @@ fn test2() {
         )
     );
 }
+
+#[test]
+fn str_lis_str() {
+    let terms = parse_goals(&tokenise("move_up([4/3,G,4 - 4],[4/4,G,4 - 4]).")).unwrap();
+    assert_eq!(
+        terms[0],
+        Term::STR(
+            [
+                Term::CON("move_up".into()),
+                Term::LIS(
+                    Term::STR([Term::CON("/".into()), Term::INT(4), Term::INT(3)].into()).into(),
+                    Term::LIS(
+                        Term::VAR("G".into()).into(),
+                        Term::LIS(Term::STR([Term::CON("-".into()), Term::INT(4), Term::INT(4)].into()).into(), Term::EMPTY_LIS.into()).into()
+                    )
+                    .into()
+                ),
+                Term::LIS(
+                    Term::STR([Term::CON("/".into()), Term::INT(4), Term::INT(4)].into()).into(),
+                    Term::LIS(
+                        Term::VAR("G".into()).into(),
+                        Term::LIS(Term::STR([Term::CON("-".into()), Term::INT(4), Term::INT(4)].into()).into(), Term::EMPTY_LIS.into()).into()
+                    )
+                    .into()
+                )
+            ]
+            .into()
+        )
+    );
+}

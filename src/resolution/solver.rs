@@ -201,6 +201,14 @@ impl<'a> Iterator for Proof<'a> {
             }
         }
 
+        for var in self.goal_vars.iter() {
+            println!(
+                "{} = {}",
+                SymbolDB::get_var(*var).unwrap(),
+                self.store.term_string(*var)
+            );
+        }
+
         if self.prove() {
             //Add symbols to hypothesis variables
             self.prog.normalise_hypothesis(&mut self.store);
@@ -212,21 +220,11 @@ impl<'a> Iterator for Proof<'a> {
                     println!("{},", self.store.term_string(*goal))
                 }
 
-                for var in self.goal_vars.iter() {
-                    println!(
-                        "{} = {}",
-                        SymbolDB::get_var(*var).unwrap(),
-                        self.store.term_string(*var)
-                    );
-                }
-
                 println!("Hypothesis: ");
                 for clause in self.prog.hypothesis.iter() {
                     println!("\t{}", clause.to_string(&self.store))
                 }
             }
-
-            //For every clause in hypothesis convert into an array non heap terms
 
             Some(self.prog.hypothesis.clone())
         } else {

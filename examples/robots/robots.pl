@@ -3,12 +3,15 @@
 P(X,Y):- Q(M,X,Z), R(Z,Y) {X,Y,Z}.
 P(X,Y):- Q(X,Z), R(M,Z,Y) {X,Y,Z}.
 P(X,Y):- Q(M,X,Z), R(N,Z,Y) {X,Y,Z}.
+P(X,Y):- Q(X,Z), R(Z,Y) {X,Y,Z}. 
+P(X,Y):- Q(M,X,Y) {X,Y}.
 
-:- max_h_clause(4), max_h_preds(2), debug(false).
+
+:- max_h_clause(1), max_h_preds(0), debug(false).
 
 :- load_module(top_prog).
 
-background_knowledge([
+:- background_knowledge([
 	move_right/2,
 	move_left/2,
 	move_up/2,

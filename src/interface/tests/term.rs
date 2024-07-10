@@ -3,8 +3,7 @@ use std::{collections::HashMap, f64::consts::PI, mem};
 
 use crate::{
     heap::{
-        store::{Store, Tag},
-        symbol_db::SymbolDB,
+        heap::Heap, store::{Store, Tag}, symbol_db::SymbolDB
     },
     interface::term::Term,
 };
@@ -193,7 +192,6 @@ fn build_naked_list() {
             (Tag::Arg, 1),
             (Tag::Lis, 5),
             (Tag::Lis, 7),
-
         ]
     );
 }
@@ -241,6 +239,68 @@ fn build_flt_list() {
             (Tag::Flt, unsafe { mem::transmute_copy(&(0.0 as fsize)) }),
             (Tag::Lis, 4),
             (Tag::Lis, 6),
+        ]
+    );
+}
+
+#[test]
+fn str_lis_str() {
+    let slash = SymbolDB::set_const("/");
+    let sub = SymbolDB::set_const("-");
+
+    let mut heap = Vec::new();
+    let term = Term::STR(
+        [
+            Term::CON("move_up".into()),
+            Term::LIS(
+                Term::STR([Term::CON("/".into()), Term::INT(4), Term::INT(3)].into()).into(),
+                Term::LIS(
+                    Term::VAR("G".into()).into(),
+                    Term::LIS(
+                        Term::STR([Term::CON("-".into()), Term::INT(4), Term::INT(4)].into())
+                            .into(),
+                        Term::EMPTY_LIS.into(),
+                    )
+                    .into(),
+                )
+                .into(),
+            ),
+            Term::LIS(
+                Term::STR([Term::CON("/".into()), Term::INT(4), Term::INT(4)].into()).into(),
+                Term::LIS(
+                    Term::VAR("G".into()).into(),
+                    Term::LIS(
+                        Term::STR([Term::CON("-".into()), Term::INT(4), Term::INT(4)].into())
+                            .into(),
+                        Term::EMPTY_LIS.into(),
+                    )
+                    .into(),
+                )
+                .into(),
+            ),
+        ]
+        .into(),
+    );
+
+    term.build_to_heap(&mut heap, &mut HashMap::new(), true);
+
+    heap.print_heap();
+
+    assert_eq!(
+        &heap[..12],
+        &[
+            (Tag::Func, 3),
+            (Tag::Con, sub),
+            (Tag::Int, 4),
+            (Tag::Int, 4),
+            (Tag::Str, 0),
+            Store::EMPTY_LIS,
+            (Tag::Func, 3),
+            (Tag::Con, slash),
+            (Tag::Int, 4),
+            (Tag::Int, 3),
+            (Tag::Str, 6),
+            (Tag::Lis, 4)
         ]
     );
 }

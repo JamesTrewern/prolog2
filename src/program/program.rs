@@ -124,6 +124,11 @@ impl Program {
     pub fn get(&self, index: usize) -> Clause {
         self.clauses.get(index)
     }
+    pub fn print_predicates(&self){
+        for (symbol, arity) in self.predicates.keys(){
+            println!("{}/{arity}",SymbolDB::get_symbol(*symbol));
+        }
+    }
 }
 
 impl Deref for Program {

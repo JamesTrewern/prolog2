@@ -34,14 +34,20 @@ fn extract_clause_terms(
             let mut newh = ClauseTable::new();
             for c in h.iter() {
                 {
+                    println!("Copy {}", c.to_string(sub_heap));
                     let new_literals: Box<[usize]> = c
                         .iter()
                         .map(|l| main_heap.copy_term(sub_heap, *l))
                         .collect();
-                    newh.add_clause(Clause {
+
+                    println!("{new_literals:?}");
+
+                    let new_c = Clause {
                         clause_type: c.clause_type,
                         literals: ManuallyDrop::new(new_literals),
-                    });
+                    };
+                    println!("Copied {}", new_c.to_string(main_heap));
+                    newh.add_clause(new_c);
                 }
             }
             newh
@@ -170,7 +176,11 @@ fn collect_examples(mut addr: usize, store: &Store) -> Box<[usize]> {
             Store::EMPTY_LIS => return examples.into_boxed_slice(),
             (Tag::Lis, pointer) => {
                 addr = pointer + 1;
-                examples.push(pointer)
+                if let (Tag::Str, p) = store[pointer] {
+                    examples.push(p)
+                } else {
+                    examples.push(pointer)
+                }
             }
             _ => panic!("Examples incorrectly formatted"),
         }
@@ -195,16 +205,17 @@ fn top_prog(call: usize, proof: &mut Proof) -> PredReturn {
     }
 
     let pos_ex = collect_examples(call + 2, &proof.store);
-    // println!("Pos: {pos_ex:?}");
+    // for (i, ex) in pos_ex.iter().enumerate() {
+    //     println!("{i}: {:?}", proof.store.term_string(*ex));
+    // }
     let top = generalise(pos_ex, proof);
 
-
-    for (i,h) in top.iter().enumerate(){
-        println!("Hypothesis [{i}]");
-        for c in h.iter(){
-            println!("\t{}", c.to_string(&*proof.state.heap.read().unwrap()))
-        }
-    }
+    // for (i, h) in top.iter().enumerate() {
+    //     println!("Hypothesis [{i}]");
+    //     for c in h.iter() {
+    //         println!("\t{}", c.to_string(&*proof.state.heap.read().unwrap()))
+    //     }
+    // }
     //Drain current heap to static heap.
     unsafe {
         proof.store.prog_cells.early_release();

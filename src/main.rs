@@ -37,9 +37,9 @@ fn make_goals<'a>(state: &'a State, goals: &str) -> (Vec<usize>, Store<'a>) {
 fn main() -> ExitCode {
     let state = setup("./examples/robots/robots");
 
-    let prog = DynamicProgram::new(Hypothesis::None, state.program.read().unwrap());
-
     let (goals, store) = make_goals(&state, "test.");
+    // let (goals, store) = make_goals(&state, "double_move(X,Y,Z).");
+
 
     let proof = Proof::new(
         &goals,

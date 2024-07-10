@@ -5,7 +5,7 @@ use std::{
 
 use crate::heap::symbol_db::SymbolDB;
 
-use super::store::{Cell, Tag};
+use super::store::{Cell, Store, Tag};
 
 use fsize::fsize;
 
@@ -43,18 +43,21 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn str_symbol_arity(&self, mut addr: usize) -> (usize, usize) {
         addr = self.deref_addr(addr);
+        if let (Tag::Str, pointer) = self[addr]{
+            addr = pointer
+        }
         if let (Tag::Func, arity) = self[addr] {
             (self[self.deref_addr(addr + 1)].1, arity)
         } else if let (Tag::Con, symbol) = self[addr] {
             (symbol, 0)
         } else {
-            panic!("No str arity for {}", self.term_string(addr))
+            panic!("No str arity for {}, {:?}", self.term_string(addr), self[addr])
         }
     }
 
     fn deref_addr(&self, mut addr: usize) -> usize {
         loop {
-            if let (Tag::Ref | Tag::Str, pointer) = self[addr] {
+            if let (Tag::Ref, pointer) = self[addr] {
                 if addr == pointer {
                     return pointer;
                 } else {
@@ -130,7 +133,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     /**Create a string from a list */
     fn list_string(&self, addr: usize) -> String {
-        if self[addr] == Self::EMPTY_LIS {
+
+        if self[addr] == Store::EMPTY_LIS {
             return "[]".to_string();
         }
 
@@ -147,7 +151,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 buffer += ",";
             }
             pointer = self[pointer + 1].1;
-            if pointer == Self::CON_PTR {
+            if pointer == Store::CON_PTR {
                 buffer.pop();
                 break;
             }
@@ -174,6 +178,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     /** Create String to represent cell, can be recursively used to format complex structures or list */
     fn term_string(&self, addr: usize) -> String {
+        // println!("[{addr}]:{:?}", self[addr]);
         let addr = self.deref_addr(addr);
         match self[addr].0 {
             Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
@@ -185,7 +190,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 None => format!("_{addr}"),
             },
             Tag::ArgA => {
-                return format!("∀'{}", self[addr].1);
+                return format!("∀{}", self[addr].1);
                 if let Some(symbol) = SymbolDB::get_var(self.deref_addr(addr)) {
                     format!("∀'{symbol}")
                 } else {

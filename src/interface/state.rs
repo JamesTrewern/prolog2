@@ -83,7 +83,7 @@ impl State {
     }
 
     pub fn handle_directive(&self, segment: &[&str]) -> Result<(), String> {
-        println!("Directive: {segment:?}");
+        // println!("Directive: {segment:?}");
 
         let goals = match parse_goals(segment) {
             Ok(res) => res,
@@ -144,6 +144,7 @@ impl State {
 
                 prog.organise_clause_table(&*heap);
             } else {
+                // println!("{segment:?}");
                 let clause = match parse_clause(segment) {
                     Ok(res) => res.to_heap(&mut *heap),
                     Err(msg) => {
@@ -151,6 +152,7 @@ impl State {
                         return;
                     }
                 };
+                // println!("{}", clause.to_string(&*heap));
                 prog.add_clause(clause, &*heap);
             }
 
@@ -164,6 +166,7 @@ impl State {
     pub fn load_file(&self, path: &str) -> Result<(), String> {
         if let Ok(mut file) = fs::read_to_string(format!("{path}.pl")) {
             remove_comments(&mut file);
+            // println!("{file}");
             self.parse_prog(file);
             Ok(())
         } else {
