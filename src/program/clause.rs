@@ -65,6 +65,10 @@ impl Clause {
             heap.normalise_args(*literal, &args)
         }
     }
+
+    pub fn equal(&self, other: &Self, heap: &impl Heap)-> bool{
+        self.iter().zip(other.iter()).all(|(addr1,addr2)| heap.term_equal(*addr1, *addr2))
+    }
 }
 
 impl Deref for Clause {

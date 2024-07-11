@@ -158,6 +158,28 @@ impl<'a> ClauseTable {
             clause_table: self,
         }
     }
+
+    pub fn equal(&self, other: &Self, heap: &impl Heap) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+        for c1 in self.iter() {
+            if !other.iter().any(|c2| c1.equal(&c2, heap)) {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn contains(&self, clause: &Clause, heap: &impl Heap) -> bool{
+        for clause2 in self.iter(){
+            if clause2.equal(clause, heap){
+                return true;
+            }
+        }
+        
+        false
+    }
 }
 
 impl<'a> Index<usize> for ClauseTable {

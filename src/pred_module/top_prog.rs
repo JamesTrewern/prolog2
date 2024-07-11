@@ -4,16 +4,23 @@ use crate::{
         self,
         heap::Heap,
         store::{Cell, Store, Tag},
+        symbol_db::SymbolDB,
     },
     interface::state::State,
-    program::{clause::{Clause, ClauseType}, clause_table::ClauseTable, dynamic_program::Hypothesis},
+    program::{
+        clause::{Clause, ClauseType},
+        clause_table::ClauseTable,
+        dynamic_program::Hypothesis,
+        program::Predicate,
+    },
     resolution::solver::Proof,
 };
 use lazy_static::lazy_static;
 use std::{
     mem::ManuallyDrop,
     sync::{
-        mpsc::{channel, Sender}, Arc, Mutex
+        mpsc::{channel, Sender},
+        Mutex,
     },
     time::Instant,
 };
@@ -48,23 +55,24 @@ fn extract_clause_terms(
 }
 
 fn generalise_thread(
-    state: State,
+    state: &State,
     main_heap: &Mutex<&mut Store>,
+    top_prog: &Mutex<Vec<ClauseTable>>,
     goal: usize,
-    tx: Sender<ClauseTable>,
+    tx: Sender<bool>,
 ) {
-    let store = Store::new(state.heap.try_read().unwrap());
-    // let goal = goal.build_to_heap(&mut store, &mut HashMap::new(), false);
+    let store = Store::new(state.heap.read().unwrap());
     let mut proof = Proof::new(&[goal], store, Hypothesis::None, None, &state);
-
     //Iterate over proof tree leaf nodes and collect hypotheses
     while let Some(hypothesis) = proof.next() {
-        tx.send(extract_clause_terms(
-            &mut main_heap.try_lock().unwrap(),
-            &proof.store,
-            hypothesis,
-        )).unwrap();
+        let mut main_heap = main_heap.lock().unwrap();
+        let mut top_prog = top_prog.lock().unwrap();
+        let hypothesis = extract_clause_terms(*main_heap, &proof.store, hypothesis);
+        if !top_prog.iter().any(|h2| hypothesis.equal(h2, *main_heap)) {
+            top_prog.push(hypothesis);
+        }
     }
+    tx.send(true).unwrap();
 }
 
 fn generalise(goals: Box<[usize]>, proof: &mut Proof) -> Vec<ClauseTable> {
@@ -74,26 +82,22 @@ fn generalise(goals: Box<[usize]>, proof: &mut Proof) -> Vec<ClauseTable> {
         .unwrap();
 
     let main_heap = Mutex::new(&mut proof.store);
+    let top_prog: Mutex<Vec<ClauseTable>> = Mutex::new(Vec::new());
 
     let rx = {
         let (tx, rx) = channel();
         for goal in goals.into_vec() {
-            let state = proof.state.clone();
-            let tx = tx.clone();
-            pool.scope(|_| generalise_thread(state, &main_heap, goal, tx))
+            pool.scope(|_| generalise_thread(&proof.state, &main_heap, &top_prog, goal, tx.clone()))
         }
         rx
     };
 
-    let mut res = Vec::new();
-    while let Ok(h) = rx.recv() {
-        res.push(h);
-    }
-    return res;
+    while let Ok(true) = rx.recv() {}
+    return top_prog.into_inner().unwrap();
 }
 
 fn specialise_thread(
-    state: State,
+    state: &State,
     neg_ex: &[usize],
     hypothesis: &ClauseTable,
     idx: usize,
@@ -111,7 +115,7 @@ fn specialise_thread(
             store,
             Hypothesis::Static(hypothesis),
             Some(config),
-            &state,
+            state,
         )
         .next()
         .is_some()
@@ -133,9 +137,7 @@ fn specialise(neg_ex: &[usize], hypotheses: Vec<ClauseTable>, proof: &Proof) -> 
     let rx = {
         let (tx, rx) = channel();
         for (idx, h) in hypotheses.iter().enumerate() {
-            let state = proof.state.clone();
-            let tx = tx.clone();
-            pool.scope(|_| specialise_thread(state, neg_ex, h, idx, tx))
+            pool.scope(|_| specialise_thread(&proof.state, neg_ex, h, idx, tx.clone()))
         }
         rx
     };
@@ -151,10 +153,12 @@ fn specialise(neg_ex: &[usize], hypotheses: Vec<ClauseTable>, proof: &Proof) -> 
     for i in 0..hypotheses.len() {
         if retain[i] {
             for clause in hypotheses[i].iter() {
-                res.add_clause(Clause {
-                    clause_type: ClauseType::HYPOTHESIS,
-                    literals: clause.literals.clone(),
-                })
+                if !res.contains(&clause, &proof.store) {
+                    res.add_clause(Clause {
+                        clause_type: ClauseType::HYPOTHESIS,
+                        literals: clause.literals.clone(),
+                    })
+                }
             }
         }
     }
@@ -181,27 +185,9 @@ fn collect_examples(mut addr: usize, store: &Store) -> Box<[usize]> {
     }
 }
 
-fn top_prog(call: usize, proof: &mut Proof) -> PredReturn {
+fn top_prog(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &mut Proof) -> PredReturn {
     let now = Instant::now();
 
-    //Drain current heap to static heap.
-    unsafe {
-        proof.store.prog_cells.early_release();
-    }
-    proof
-        .state
-        .heap
-        .write()
-        .unwrap()
-        .append(&mut proof.store.cells);
-    unsafe {
-        proof.store.prog_cells.reobtain();
-    }
-
-    let pos_ex = collect_examples(call + 2, &proof.store);
-    // for (i, ex) in pos_ex.iter().enumerate() {
-    //     println!("{i}: {:?}", proof.store.term_string(*ex));
-    // }
     let top = generalise(pos_ex, proof);
 
     // for (i, h) in top.iter().enumerate() {
@@ -224,18 +210,92 @@ fn top_prog(call: usize, proof: &mut Proof) -> PredReturn {
         proof.store.prog_cells.reobtain();
     }
 
-    let neg_ex = collect_examples(call + 3, &proof.store);
-    // println!("Neg: {neg_ex:?}");
-
     let top = specialise(&neg_ex, top, proof);
 
     println!("Top Program:");
+    let mut i = 0;
     for c in top.iter() {
+        i += 1;
         println!("\t{}", c.to_string(&proof.store));
     }
+
+    println!("{i}");
     let elapsed = now.elapsed();
     println!("Time ms: {}", elapsed.as_millis());
     PredReturn::True
 }
 
-pub static TOP_PROGRAM: PredModule = &[("learn", 3, top_prog)];
+fn top_prog_no_id(call: usize, proof: &mut Proof) -> PredReturn {
+    let pos_ex = if let Some(Predicate::Clauses(clauses)) = proof
+        .prog
+        .prog
+        .predicates
+        .get(&(SymbolDB::set_const("pos_examples"), 2))
+    {
+        let examples_list = proof.prog.get(clauses.clone().next().unwrap())[0] + 2;
+        collect_examples(examples_list, &proof.store)
+    } else {
+        return PredReturn::False;
+    };
+
+    let neg_ex = if let Some(Predicate::Clauses(clauses)) = proof
+        .prog
+        .prog
+        .predicates
+        .get(&(SymbolDB::set_const("neg_examples"), 2))
+    {
+        let examples_list = proof.prog.get(clauses.clone().next().unwrap())[0] + 2;
+        collect_examples(examples_list, &proof.store)
+    } else {
+        [].into()
+    };
+    top_prog(pos_ex, neg_ex, proof)
+}
+
+fn top_prog_id(call: usize, proof: &mut Proof) -> PredReturn {
+    println!("{}",proof.store.term_string(call));
+    let id = if let (Tag::Con, id) = proof.store[call + 2] {
+        id
+    } else {
+        return PredReturn::False;
+    };
+
+    let pos_ex = if let Some(Predicate::Clauses(clauses)) = proof
+        .prog
+        .prog
+        .predicates
+        .get(&(SymbolDB::set_const("pos_examples"), 3))
+    {
+        match clauses
+            .clone()
+            .map(|c| proof.prog.get(c))
+            .find(|clause| proof.store[clause[0] + 2] == (Tag::Con, id))
+        {
+            Some(clause) => collect_examples(clause[0] + 3, &proof.store),
+            None => return PredReturn::False,
+        }
+    } else {
+        return PredReturn::False;
+    };
+
+    let neg_ex = if let Some(Predicate::Clauses(clauses)) = proof
+        .prog
+        .prog
+        .predicates
+        .get(&(SymbolDB::set_const("neg_examples"), 3))
+    {
+        match clauses
+            .clone()
+            .map(|c| proof.prog.get(c))
+            .find(|clause| proof.store[clause[0] + 2] == (Tag::Con, id))
+        {
+            Some(clause) => collect_examples(clause[0] + 3, &proof.store),
+            None => return PredReturn::False,
+        }
+    } else {
+        return PredReturn::False;
+    };
+
+    top_prog(pos_ex, neg_ex, proof)
+}
+pub static TOP_PROGRAM: PredModule = &[("learn", 1, top_prog_no_id), ("learn", 2, top_prog_id)];
