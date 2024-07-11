@@ -114,7 +114,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 Tag::Ref | Tag::ArgA | Tag::Arg => {
                     println!(
                         "[{i:3}]|{tag:w$?}|{value:w$}|:({})",
-                        SymbolDB::get_symbol(self.deref_addr(i))
+                        SymbolDB::get_symbol(i)
                     )
                 }
                 Tag::Int => {
@@ -226,22 +226,26 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         }
     }
 
-    fn copy_complex(&mut self, other: &impl Heap, addr: usize, update_addr: &mut usize) {
+    fn copy_complex(&mut self, other: &impl Heap, mut addr: usize, update_addr: &mut usize) {
+        addr = other.deref_addr(addr);
         if let (Tag::Lis | Tag::Str, pointer) = other[addr] {
             *update_addr = self.copy_term(other, addr);
         }
     }
 
-    fn copy_simple(&mut self, other: &impl Heap, addr: usize, update_addr: &usize) {
+    fn copy_simple(&mut self, other: &impl Heap, mut addr: usize, update_addr: &usize) {
+        addr = other.deref_addr(addr);
         match other[addr] {
             (Tag::Lis, _) => self.heap_push((Tag::Lis, *update_addr)),
             (Tag::Str, _) => self.heap_push((Tag::Str, *update_addr)),
+            (Tag::Ref, _) => self.heap_push((Tag::Ref, self.heap_len())),
             (_, _) => self.heap_push(other[addr]),
         }
     }
 
-    fn copy_term(&mut self, other: &impl Heap, addr: usize) -> usize {
+    fn copy_term(&mut self, other: &impl Heap, mut addr: usize) -> usize {
         //Assume common static heap
+        let addr = other.deref_addr(addr);
         match other[addr] {
             (Tag::Str, mut pointer) => {
                 pointer = self.copy_term(other, pointer);

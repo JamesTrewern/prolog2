@@ -69,9 +69,9 @@ checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
 
 [[package]]
 name = "manual_rwlock"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "249f0c2911f66e8ee4c938094215b79a3ee02bbd246d8e09f43d917ad746c859"
+checksum = "508f2d6831678befdff27e0309ee0bc7e9cd9a84c8318272869d2783951aca46"
 dependencies = [
  "atomic-wait",
 ]
