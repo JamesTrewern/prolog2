@@ -51,7 +51,5 @@ fn main() -> ExitCode {
 
     assert!(proof.next().is_some());
 
-    let state = State::new(None);
-    state.main_loop();
     ExitCode::SUCCESS
 }

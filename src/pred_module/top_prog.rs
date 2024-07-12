@@ -18,10 +18,14 @@ use crate::{
 use lazy_static::lazy_static;
 use rayon::iter::Split;
 use std::{
-    fs, io::Write, mem::ManuallyDrop, sync::{
+    fs,
+    io::Write,
+    mem::ManuallyDrop,
+    sync::{
         mpsc::{channel, Sender},
         Mutex,
-    }, time::Instant
+    },
+    time::Instant,
 };
 
 use rand::seq::SliceRandom;
@@ -305,7 +309,13 @@ fn test_h(
     config.learn = false;
 
     for ex in pos_ex.iter() {
-        let mut proof = Proof::new(&[*ex], store.clone(), Hypothesis::Static(h), Some(config), state);
+        let mut proof = Proof::new(
+            &[*ex],
+            store.clone(),
+            Hypothesis::Static(h),
+            Some(config),
+            state,
+        );
         if proof.next().is_some() {
             correct += 1;
         }
@@ -321,13 +331,13 @@ fn test_h(
     correct as f64 / total
 }
 
-fn mean_std(values: &[f64]) -> (f64, f64) {
+fn mean_std_sterr(values: &[f64]) -> (f64, f64, f64) {
     let len = values.len() as f64;
     let avg = values.iter().sum::<f64>() / len;
 
-    let std = (values.iter().map(|v| (*v - avg).powi(2)).sum::<f64>() / len).sqrt();
+    let sd = (values.iter().map(|v| (*v - avg).powi(2)).sum::<f64>() / len).sqrt();
 
-    (avg, std)
+    (avg, sd, sd / len.sqrt())
 }
 
 fn top_prog_test(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &Proof) {
@@ -337,15 +347,23 @@ fn top_prog_test(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &Proof) {
 
     unsafe { proof.store.prog_cells.early_release() }
 
-    let (mut time_avg, mut time_std) = ([0.0; SPLITS.len()], [0.0; SPLITS.len()]);
-    let (mut acc_avg, mut acc_std) = ([0.0; SPLITS.len()], [0.0; SPLITS.len()]);
+    let (mut time_avg, mut time_std, mut time_std_err) = (
+        [0.0; SPLITS.len()],
+        [0.0; SPLITS.len()],
+        [0.0; SPLITS.len()],
+    );
+    let (mut acc_avg, mut acc_std, mut acc_sd_err) = (
+        [0.0; SPLITS.len()],
+        [0.0; SPLITS.len()],
+        [0.0; SPLITS.len()],
+    );
 
     for (i, split) in SPLITS.into_iter().enumerate() {
         println!("\nSplit: {split}\n----------------------------------");
         let mut times = [0.0; STEPS];
         let mut accuracies = [0.0; STEPS];
         for step in 0..STEPS {
-            print!("Step {}/{STEPS}", step+1);
+            print!("Step {}/{STEPS}", step + 1);
             let (mut train_pos, mut test_pos) = (Vec::new(), Vec::new());
             pos_ex
                 .iter()
@@ -381,22 +399,27 @@ fn top_prog_test(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &Proof) {
             let mut store = Store::new(proof.state.heap.read().unwrap());
             let now = Instant::now();
             let h = top_prog(train_pos, train_neg, &mut store, &proof.state);
-            times[step] = now.elapsed().as_millis() as f64;
+            times[step] = now.elapsed().as_millis() as f64 / 1000.0;
             accuracies[step] = test_h(test_pos, test_neg, &mut store, &proof.state, &h);
             println!("\tTime: {}, Accuracy: {}", times[step], accuracies[step]);
         }
 
-        (time_avg[i], time_std[i]) = mean_std(&times);
-        (acc_avg[i], acc_std[i]) = mean_std(&accuracies);
+        (time_avg[i], time_std[i], time_std_err[i]) = mean_std_sterr(&times);
+        (acc_avg[i], acc_std[i], acc_sd_err[i]) = mean_std_sterr(&accuracies);
 
         println!("mean time: {}, deviation: {}", time_avg[i], time_std[i]);
-        println!("mean accuracy: {}, deviation: {} \n", acc_avg[i], acc_std[i]);
-
+        println!(
+            "mean accuracy: {}, deviation: {} \n",
+            acc_avg[i], acc_std[i]
+        );
     }
 
-    let mut buf = String::from("split, mean_time, sd_time, mean_accuracy, sd_accuracy\n");
-    for (i,split) in SPLITS.iter().enumerate(){
-        buf += &format!("{split}, {}, {}, {}, {}\n", time_avg[i], time_std[i], acc_avg[i], acc_std[i]);
+    let mut buf = String::from("split, mean_time, sd_time, std_err_time, mean_accuracy, sd_accuracy, std_err_accuracy\n");
+    for (i, split) in SPLITS.iter().enumerate() {
+        buf += &format!(
+            "{split}, {}, {}, {}, {}, {}, {}\n",
+            time_avg[i], time_std[i], time_std_err[i], acc_avg[i], acc_std[i], acc_sd_err[i]
+        );
     }
     let mut file = fs::File::create(SAVE_FILE).unwrap();
     file.write_all(buf.as_bytes()).unwrap();
@@ -433,4 +456,8 @@ fn top_prog_no_id_test(call: usize, proof: &mut Proof) -> PredReturn {
     top_prog_test(pos_ex, neg_ex, &proof);
     PredReturn::True
 }
-pub static TOP_PROGRAM: PredModule = &[("learn", 1, top_prog_no_id), ("learn", 2, top_prog_id), ("test_learn", 1, top_prog_no_id_test)];
+pub static TOP_PROGRAM: PredModule = &[
+    ("learn", 1, top_prog_no_id),
+    ("learn", 2, top_prog_id),
+    ("test_learn", 1, top_prog_no_id_test),
+];
