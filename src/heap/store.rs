@@ -31,7 +31,6 @@ pub type Cell = (Tag, usize);
 
 #[derive(Clone)]
 pub(crate) struct Store<'a> {
-    pub arg_regs: [usize; ARG_REGS],
     pub prog_cells: ReadGaurd<'a, Vec<Cell>>,
     pub cells: Vec<Cell>,
 }
@@ -54,13 +53,9 @@ impl<'a> Store<'a> {
 
     pub fn new(prog_cells: ReadGaurd<Vec<Cell>>) -> Store {
         Store {
-            arg_regs: [usize::MAX; 64],
             cells: Vec::with_capacity(HEAP_SIZE),
             prog_cells,
         }
-    }
-    pub fn reset_args(&mut self) {
-        self.arg_regs = [usize::MAX; ARG_REGS];
     }
 
     /** Update address value of ref cells affected by binding

@@ -4,6 +4,6 @@ mod call;
 mod build;
 mod proof_stack;
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;
 

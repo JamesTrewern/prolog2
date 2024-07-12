@@ -1,27 +1,38 @@
-use crate::heap::{heap::Heap, store::{Store, Tag}};
+use crate::heap::{
+    heap::Heap,
+    store::{Store, Tag},
+};
 
-pub fn build_goals(body_literals: &[usize], store: &mut Store) -> Box<[usize]> {
+pub fn build_goals(
+    body_literals: &[usize],
+    store: &mut Store,
+    arg_regs: &mut[usize; 64],
+) -> Box<[usize]> {
     body_literals
         .iter()
-        .map(|l| build(*l, store, false))
+        .map(|l| build(*l, store, false, arg_regs))
         .collect::<Box<[usize]>>()
 }
 
-pub fn build_clause(clause: &[usize], store: &mut Store) -> Box<[usize]> {
+pub fn build_clause(clause: &[usize], store: &mut Store, arg_regs: &mut [usize; 64]) -> Box<[usize]> {
     clause
-    .iter()
-    .map(|l| build(*l, store, true))
-    .collect::<Box<[usize]>>()
+        .iter()
+        .map(|l| build(*l, store, true, arg_regs))
+        .collect::<Box<[usize]>>()
 }
 
-pub fn build(src_addr: usize, store: &mut Store, clause: bool) -> usize {
+pub fn build(src_addr: usize, store: &mut Store, clause: bool, arg_regs: &mut [usize; 64]) -> usize {
     match store[src_addr] {
-        (Tag::Lis, _) => {let (pointer, con) = build_list(src_addr, store, clause);
+        (Tag::Lis, _) => {
+            let (pointer, con) = build_list(src_addr, store, clause,arg_regs);
             store.heap_push((Tag::Lis, pointer));
-            store.heap_len()-1
-        },
-        (Tag::Func, _) => build_str(src_addr, store, clause).0,
-        _ => {store.print_heap(); panic!("src_addr: {src_addr}, {}", store.term_string(src_addr))}
+            store.heap_len() - 1
+        }
+        (Tag::Func, _) => build_str(src_addr, store, clause,arg_regs).0,
+        _ => {
+            store.print_heap();
+            panic!("src_addr: {src_addr}, {}", store.term_string(src_addr))
+        }
     }
 }
 
@@ -38,17 +49,18 @@ fn build_complex_subterm(
     store: &mut Store,
     clause: bool,
     update_addr: &mut usize,
+    arg_regs: &mut [usize; 64],
 ) -> bool {
     match store[sub_term] {
         (Tag::ArgA | Tag::Arg, _) => false, //If address points to ref this is not a constant value
         (Tag::Str, func_addr) => {
-            let (addr, constant) = build_str(func_addr, store, clause);
+            let (addr, constant) = build_str(func_addr, store, clause,arg_regs);
             *update_addr = addr;
             constant
         }
         Store::EMPTY_LIS => true,
         (Tag::Lis, _) => {
-            let (addr, constant) = build_list(sub_term, store, clause);
+            let (addr, constant) = build_list(sub_term, store, clause,arg_regs);
             *update_addr = addr;
             constant
         }
@@ -62,14 +74,14 @@ fn build_complex_subterm(
  * @heap: The heap
  * @uqvar_binding: Optional value that tracks the first instance of a uq var when it is added. If None we are building goal
  */
-fn build_subterm(sub_term: usize, store: &mut Store, clause: bool, update_addr: usize) {
+fn build_subterm(sub_term: usize, store: &mut Store, clause: bool, update_addr: usize, arg_regs: &mut [usize;64]) {
     match store[sub_term] {
         (Tag::ArgA, arg) if clause => store.heap_push((Tag::Arg, arg)), //We are building a new clause and the cell is universally quantified
         (Tag::Arg | Tag::ArgA, arg) => {
-            if store.arg_regs[arg] == usize::MAX {
-                store.arg_regs[arg] = store.set_ref(None);
+            if arg_regs[arg] == usize::MAX {
+                arg_regs[arg] = store.set_ref(None);
             } else {
-                store.heap_push(store[store.arg_regs[arg]]);
+                store.heap_push(store[arg_regs[arg]]);
             }
         }
         (Tag::Str, _) => store.heap_push((Tag::Str, update_addr)),
@@ -85,14 +97,14 @@ fn build_subterm(sub_term: usize, store: &mut Store, clause: bool, update_addr: 
  * @heap: The heap
  * @uqvar_binding: Optional value that tracks the first instance of a uq var when it is added. If None we are building goal
  */
-fn build_list(src_lis: usize, store: &mut Store, clause: bool) -> (usize, bool) {
+fn build_list(src_lis: usize, store: &mut Store, clause: bool, arg_regs: &mut [usize;64]) -> (usize, bool) {
     let pointer = store[src_lis].1;
     let mut constant = true;
 
-    let mut update_addrs = [usize::MAX;2];
+    let mut update_addrs = [usize::MAX; 2];
 
-    for i in 0..=1{
-        if !build_complex_subterm(pointer+i, store, clause, &mut update_addrs[i]) {
+    for i in 0..=1 {
+        if !build_complex_subterm(pointer + i, store, clause, &mut update_addrs[i],arg_regs) {
             constant = false
         }
     }
@@ -102,9 +114,9 @@ fn build_list(src_lis: usize, store: &mut Store, clause: bool) -> (usize, bool) 
     }
 
     let new_lis = store.heap_len();
-    
-    for i in 0..=1{
-        build_subterm(pointer+i, store, clause, update_addrs[i]) 
+
+    for i in 0..=1 {
+        build_subterm(pointer + i, store, clause, update_addrs[i],arg_regs)
     }
 
     (new_lis, false)
@@ -116,14 +128,14 @@ fn build_list(src_lis: usize, store: &mut Store, clause: bool) -> (usize, bool) 
  * @heap: The heap
  * @uqvar_binding: Optional value that tracks the first instance of a uq var when it is added. If None we are building goal
  */
-pub fn build_str(func_addr: usize, store: &mut Store, clause: bool) -> (usize, bool) {
+pub fn build_str(func_addr: usize, store: &mut Store, clause: bool, arg_regs: &mut [usize;64]) -> (usize, bool) {
     let mut constant: bool = true;
     let arity = store[func_addr].1;
 
     let mut update_addrs: Box<[usize]> = (0..arity).collect();
     //Iterate over structure subterms
     for (i, addr) in store.str_iterator(func_addr).enumerate() {
-        if !build_complex_subterm(addr, store, clause, &mut update_addrs[i]) {
+        if !build_complex_subterm(addr, store, clause, &mut update_addrs[i],arg_regs) {
             constant = false
         }
     }
@@ -137,7 +149,7 @@ pub fn build_str(func_addr: usize, store: &mut Store, clause: bool) -> (usize, b
     store.heap_push((Tag::Func, arity));
 
     for (i, addr) in store.str_iterator(func_addr).enumerate() {
-        build_subterm(addr, store, clause, update_addrs[i])
+        build_subterm(addr, store, clause, update_addrs[i],arg_regs)
     }
 
     (new_str, false)

@@ -59,9 +59,9 @@ impl Env {
         if let Some(choices) = &mut self.choices {
             loop {
                 if let Some(clause) = choices.next().map(|i| prog.get(i)) {
-                    store.reset_args();
+                    let mut arg_regs = [usize::MAX;64];
                     // println!("[{}] Match {}", self.depth, clause.to_string(store));
-                    if let Some(mut binding) = match_head(clause[0], self.goal, store) {
+                    if let Some(mut binding) = match_head(clause[0], self.goal, store,&mut arg_regs) {
                         if config.debug {
                             println!("[{}] Call {}", self.depth, clause.to_string(store));
                         }
@@ -69,12 +69,12 @@ impl Env {
                         if prog.check_constraints(&binding, store) {
                             continue;
                         }
-                        let goals = build_goals(&clause[1..], store);
+                        let goals = build_goals(&clause[1..], store,&mut arg_regs);
                         if clause.clause_type == ClauseType::META {
                             if config.debug {
                                 println!("Add Clause: {}", clause.to_string(store));
                             }
-                            let literals = ManuallyDrop::new(build_clause(&clause, store));
+                            let literals = ManuallyDrop::new(build_clause(&clause, store,&mut arg_regs));
                             let clause = Clause {
                                 literals,
                                 clause_type: ClauseType::HYPOTHESIS,
