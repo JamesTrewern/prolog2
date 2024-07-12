@@ -16,13 +16,12 @@ use crate::{
     resolution::solver::Proof,
 };
 use lazy_static::lazy_static;
+use rayon::iter::Split;
 use std::{
-    mem::ManuallyDrop,
-    sync::{
+    fs, io::Write, mem::ManuallyDrop, sync::{
         mpsc::{channel, Sender},
         Mutex,
-    },
-    time::Instant,
+    }, time::Instant
 };
 
 use rand::seq::SliceRandom;
@@ -102,13 +101,12 @@ fn generalise(goals: Box<[usize]>, store: &mut Store, state: &State) -> Vec<Clau
 
 fn specialise_thread(
     state: &State,
+    store: Store,
     neg_ex: &[usize],
     hypothesis: &ClauseTable,
     idx: usize,
     tx: Sender<(usize, bool)>,
 ) {
-    let store = Store::new(state.heap.try_read().unwrap());
-
     let mut config = *state.config.read().unwrap();
     config.learn = false;
     for goal in neg_ex.iter() {
@@ -145,7 +143,7 @@ fn specialise(
     let rx = {
         let (tx, rx) = channel();
         for (idx, h) in hypotheses.iter().enumerate() {
-            pool.scope(|_| specialise_thread(state, neg_ex, h, idx, tx.clone()))
+            pool.scope(|_| specialise_thread(state, store.clone(), neg_ex, h, idx, tx.clone()))
         }
         rx
     };
@@ -335,17 +333,19 @@ fn mean_std(values: &[f64]) -> (f64, f64) {
 fn top_prog_test(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &Proof) {
     const SPLITS: [f32; 9] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
     const STEPS: usize = 10;
+    const SAVE_FILE: &str = "results.csv";
+
     unsafe { proof.store.prog_cells.early_release() }
 
     let (mut time_avg, mut time_std) = ([0.0; SPLITS.len()], [0.0; SPLITS.len()]);
     let (mut acc_avg, mut acc_std) = ([0.0; SPLITS.len()], [0.0; SPLITS.len()]);
 
     for (i, split) in SPLITS.into_iter().enumerate() {
-        println!("Split: {split}");
+        println!("\nSplit: {split}\n----------------------------------");
         let mut times = [0.0; STEPS];
         let mut accuracies = [0.0; STEPS];
         for step in 0..STEPS {
-            println!("Step {}/{STEPS}", step+1);
+            print!("Step {}/{STEPS}", step+1);
             let (mut train_pos, mut test_pos) = (Vec::new(), Vec::new());
             pos_ex
                 .iter()
@@ -383,12 +383,23 @@ fn top_prog_test(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &Proof) {
             let h = top_prog(train_pos, train_neg, &mut store, &proof.state);
             times[step] = now.elapsed().as_millis() as f64;
             accuracies[step] = test_h(test_pos, test_neg, &mut store, &proof.state, &h);
-            println!("Time: {}, Accuracy: {}", times[step], accuracies[step]);
+            println!("\tTime: {}, Accuracy: {}", times[step], accuracies[step]);
         }
 
         (time_avg[i], time_std[i]) = mean_std(&times);
         (acc_avg[i], acc_std[i]) = mean_std(&accuracies);
+
+        println!("mean time: {}, deviation: {}", time_avg[i], time_std[i]);
+        println!("mean accuracy: {}, deviation: {} \n", acc_avg[i], acc_std[i]);
+
     }
+
+    let mut buf = String::from("split, mean_time, sd_time, mean_accuracy, sd_accuracy\n");
+    for (i,split) in SPLITS.iter().enumerate(){
+        buf += &format!("{split}, {}, {}, {}, {}\n", time_avg[i], time_std[i], acc_avg[i], acc_std[i]);
+    }
+    let mut file = fs::File::create(SAVE_FILE).unwrap();
+    file.write_all(buf.as_bytes()).unwrap();
 
     unsafe {
         proof.store.prog_cells.reobtain().unwrap();
