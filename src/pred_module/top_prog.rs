@@ -25,6 +25,10 @@ use std::{
     time::Instant,
 };
 
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+use rand_split::{train_test_split, PartsSplit};
+
 lazy_static! {
     static ref CPU_COUNT: usize = num_cpus::get();
 }
@@ -75,19 +79,19 @@ fn generalise_thread(
     tx.send(true).unwrap();
 }
 
-fn generalise(goals: Box<[usize]>, proof: &mut Proof) -> Vec<ClauseTable> {
+fn generalise(goals: Box<[usize]>, store: &mut Store, state: &State) -> Vec<ClauseTable> {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT)
         .build()
         .unwrap();
 
-    let main_heap = Mutex::new(&mut proof.store);
+    let main_heap = Mutex::new(store);
     let top_prog: Mutex<Vec<ClauseTable>> = Mutex::new(Vec::new());
 
     let rx = {
         let (tx, rx) = channel();
         for goal in goals.into_vec() {
-            pool.scope(|_| generalise_thread(&proof.state, &main_heap, &top_prog, goal, tx.clone()))
+            pool.scope(|_| generalise_thread(state, &main_heap, &top_prog, goal, tx.clone()))
         }
         rx
     };
@@ -107,7 +111,6 @@ fn specialise_thread(
 
     let mut config = *state.config.read().unwrap();
     config.learn = false;
-
     for goal in neg_ex.iter() {
         let store = store.clone();
         if Proof::new(
@@ -127,7 +130,12 @@ fn specialise_thread(
     tx.send((idx, true)).unwrap();
 }
 
-fn specialise(neg_ex: &[usize], hypotheses: Vec<ClauseTable>, proof: &Proof) -> ClauseTable {
+fn specialise(
+    neg_ex: &[usize],
+    hypotheses: Vec<ClauseTable>,
+    store: &mut Store,
+    state: &State,
+) -> ClauseTable {
     let n_jobs = hypotheses.len();
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT)
@@ -137,7 +145,7 @@ fn specialise(neg_ex: &[usize], hypotheses: Vec<ClauseTable>, proof: &Proof) -> 
     let rx = {
         let (tx, rx) = channel();
         for (idx, h) in hypotheses.iter().enumerate() {
-            pool.scope(|_| specialise_thread(&proof.state, neg_ex, h, idx, tx.clone()))
+            pool.scope(|_| specialise_thread(state, neg_ex, h, idx, tx.clone()))
         }
         rx
     };
@@ -153,7 +161,7 @@ fn specialise(neg_ex: &[usize], hypotheses: Vec<ClauseTable>, proof: &Proof) -> 
     for i in 0..hypotheses.len() {
         if retain[i] {
             for clause in hypotheses[i].iter() {
-                if !res.contains(&clause, &proof.store) {
+                if !res.contains(&clause, store) {
                     res.add_clause(Clause {
                         clause_type: ClauseType::HYPOTHESIS,
                         literals: clause.literals.clone(),
@@ -185,10 +193,13 @@ fn collect_examples(mut addr: usize, store: &Store) -> Box<[usize]> {
     }
 }
 
-fn top_prog(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &mut Proof) -> PredReturn {
-    let now = Instant::now();
-
-    let top = generalise(pos_ex, proof);
+fn top_prog(
+    pos_ex: Box<[usize]>,
+    neg_ex: Box<[usize]>,
+    store: &mut Store,
+    state: &State,
+) -> ClauseTable {
+    let top = generalise(pos_ex, store, state);
 
     // for (i, h) in top.iter().enumerate() {
     //     println!("Hypothesis [{i}]");
@@ -197,32 +208,14 @@ fn top_prog(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &mut Proof) -> Pr
     //     }
     // }
     //Drain current heap to static heap.
-    unsafe {
-        proof.store.prog_cells.early_release();
-    }
-    proof
-        .state
-        .heap
-        .write()
-        .unwrap()
-        .append(&mut proof.store.cells);
-    unsafe {
-        proof.store.prog_cells.reobtain();
-    }
 
-    let top = specialise(&neg_ex, top, proof);
+    let top = specialise(&neg_ex, top, store, state);
 
-    println!("Top Program:");
-    let mut i = 0;
-    for c in top.iter() {
-        i += 1;
-        println!("\t{}", c.to_string(&proof.store));
-    }
-
-    println!("{i}");
-    let elapsed = now.elapsed();
-    println!("Time ms: {}", elapsed.as_millis());
-    PredReturn::True
+    // println!("Top Program:");
+    // for c in top.iter() {
+    //     println!("\t{}", c.to_string(store));
+    // }
+    top
 }
 
 fn top_prog_no_id(call: usize, proof: &mut Proof) -> PredReturn {
@@ -249,11 +242,12 @@ fn top_prog_no_id(call: usize, proof: &mut Proof) -> PredReturn {
     } else {
         [].into()
     };
-    top_prog(pos_ex, neg_ex, proof)
+    top_prog(pos_ex, neg_ex, &mut proof.store, &proof.state);
+    PredReturn::True
 }
 
 fn top_prog_id(call: usize, proof: &mut Proof) -> PredReturn {
-    println!("{}",proof.store.term_string(call));
+    println!("{}", proof.store.term_string(call));
     let id = if let (Tag::Con, id) = proof.store[call + 2] {
         id
     } else {
@@ -296,6 +290,136 @@ fn top_prog_id(call: usize, proof: &mut Proof) -> PredReturn {
         return PredReturn::False;
     };
 
-    top_prog(pos_ex, neg_ex, proof)
+    top_prog(pos_ex, neg_ex, &mut proof.store, &proof.state);
+    PredReturn::True
 }
-pub static TOP_PROGRAM: PredModule = &[("learn", 1, top_prog_no_id), ("learn", 2, top_prog_id)];
+
+fn test_h(
+    pos_ex: Box<[usize]>,
+    neg_ex: Box<[usize]>,
+    store: &mut Store,
+    state: &State,
+    h: &ClauseTable,
+) -> f64 {
+    let mut correct: usize = 0;
+    let total = (pos_ex.len() + neg_ex.len()) as f64;
+    let mut config = state.config.read().unwrap().clone();
+    config.learn = false;
+
+    for ex in pos_ex.iter() {
+        let mut proof = Proof::new(&[*ex], store.clone(), Hypothesis::Static(h), Some(config), state);
+        if proof.next().is_some() {
+            correct += 1;
+        }
+    }
+
+    for ex in neg_ex.iter() {
+        let mut proof = Proof::new(&[*ex], store.clone(), Hypothesis::Static(h), None, state);
+        if proof.next().is_none() {
+            correct += 1;
+        }
+    }
+
+    correct as f64 / total
+}
+
+fn mean_std(values: &[f64]) -> (f64, f64) {
+    let len = values.len() as f64;
+    let avg = values.iter().sum::<f64>() / len;
+
+    let std = (values.iter().map(|v| (*v - avg).powi(2)).sum::<f64>() / len).sqrt();
+
+    (avg, std)
+}
+
+fn top_prog_test(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &Proof) {
+    const SPLITS: [f32; 9] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+    const STEPS: usize = 10;
+    unsafe { proof.store.prog_cells.early_release() }
+
+    let (mut time_avg, mut time_std) = ([0.0; SPLITS.len()], [0.0; SPLITS.len()]);
+    let (mut acc_avg, mut acc_std) = ([0.0; SPLITS.len()], [0.0; SPLITS.len()]);
+
+    for (i, split) in SPLITS.into_iter().enumerate() {
+        println!("Split: {split}");
+        let mut times = [0.0; STEPS];
+        let mut accuracies = [0.0; STEPS];
+        for step in 0..STEPS {
+            println!("Step {}/{STEPS}", step+1);
+            let (mut train_pos, mut test_pos) = (Vec::new(), Vec::new());
+            pos_ex
+                .iter()
+                .split_parts(&[split, 1.0 - split])
+                .for_each(|sp| {
+                    if let Some(ex) = sp[0] {
+                        train_pos.push(*ex)
+                    }
+                    if let Some(ex) = sp[1] {
+                        test_pos.push(*ex)
+                    }
+                });
+            let (mut train_neg, mut test_neg) = (Vec::new(), Vec::new());
+            neg_ex
+                .iter()
+                .split_parts(&[split, 1.0 - split])
+                .for_each(|sp| {
+                    if let Some(ex) = sp[0] {
+                        train_neg.push(*ex)
+                    }
+                    if let Some(ex) = sp[1] {
+                        test_neg.push(*ex)
+                    }
+                });
+
+            let [train_pos, train_neg, test_pos, test_neg]: [Box<[usize]>; 4] = [
+                train_pos.into(),
+                train_neg.into(),
+                test_pos.into(),
+                test_neg.into(),
+            ];
+
+            let mut store = Store::new(proof.state.heap.read().unwrap());
+            let now = Instant::now();
+            let h = top_prog(train_pos, train_neg, &mut store, &proof.state);
+            times[step] = now.elapsed().as_millis() as f64;
+            accuracies[step] = test_h(test_pos, test_neg, &mut store, &proof.state, &h);
+            println!("Time: {}, Accuracy: {}", times[step], accuracies[step]);
+        }
+
+        (time_avg[i], time_std[i]) = mean_std(&times);
+        (acc_avg[i], acc_std[i]) = mean_std(&accuracies);
+    }
+
+    unsafe {
+        proof.store.prog_cells.reobtain().unwrap();
+    }
+}
+
+fn top_prog_no_id_test(call: usize, proof: &mut Proof) -> PredReturn {
+    let pos_ex = if let Some(Predicate::Clauses(clauses)) = proof
+        .prog
+        .prog
+        .predicates
+        .get(&(SymbolDB::set_const("pos_examples"), 2))
+    {
+        let examples_list = proof.prog.get(clauses.clone().next().unwrap())[0] + 2;
+        collect_examples(examples_list, &proof.store)
+    } else {
+        return PredReturn::False;
+    };
+
+    let neg_ex = if let Some(Predicate::Clauses(clauses)) = proof
+        .prog
+        .prog
+        .predicates
+        .get(&(SymbolDB::set_const("neg_examples"), 2))
+    {
+        let examples_list = proof.prog.get(clauses.clone().next().unwrap())[0] + 2;
+        collect_examples(examples_list, &proof.store)
+    } else {
+        [].into()
+    };
+    top_prog_test(pos_ex, neg_ex, &proof);
+    PredReturn::True
+}
+pub static TOP_PROGRAM: PredModule = &[("learn", 1, top_prog_no_id), ("learn", 2, top_prog_id), ("test_learn", 1, top_prog_no_id_test)];
