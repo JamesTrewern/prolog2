@@ -407,14 +407,19 @@ fn top_prog_test(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &Proof) {
         (time_avg[i], time_std[i], time_std_err[i]) = mean_std_sterr(&times);
         (acc_avg[i], acc_std[i], acc_sd_err[i]) = mean_std_sterr(&accuracies);
 
-        println!("mean time: {}, deviation: {}", time_avg[i], time_std[i]);
         println!(
-            "mean accuracy: {}, deviation: {} \n",
-            acc_avg[i], acc_std[i]
+            "mean time: {}, deviation: {}, error: {}",
+            time_avg[i], time_std[i], time_std_err[i]
+        );
+        println!(
+            "mean accuracy: {}, deviation: {}, error: {} \n",
+            acc_avg[i], acc_std[i], time_std_err[i]
         );
     }
 
-    let mut buf = String::from("split, mean_time, sd_time, std_err_time, mean_accuracy, sd_accuracy, std_err_accuracy\n");
+    let mut buf = String::from(
+        "split, mean_time, sd_time, std_err_time, mean_accuracy, sd_accuracy, std_err_accuracy\n",
+    );
     for (i, split) in SPLITS.iter().enumerate() {
         buf += &format!(
             "{split}, {}, {}, {}, {}, {}, {}\n",
