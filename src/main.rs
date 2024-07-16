@@ -8,7 +8,10 @@ mod resolution;
 use std::{collections::HashMap, process::ExitCode};
 
 use heap::store::Store;
-use interface::{parser::{parse_goals, tokenise}, state::State};
+use interface::{
+    parser::{parse_goals, tokenise},
+    state::State,
+};
 use program::dynamic_program::{DynamicProgram, Hypothesis};
 use resolution::solver::Proof;
 // use resolution::solver::Proof;
@@ -34,22 +37,36 @@ fn make_goals<'a>(state: &'a State, goals: &str) -> (Vec<usize>, Store<'a>) {
     (goals, store)
 }
 
-fn main() -> ExitCode {
-    let state = setup("./examples/robots/robots");
+fn test_coloured_graph(){
+    // let state = setup("./examples/robots/robots");
+    let state = setup("./examples/coloured_graph/main");
 
-    let (goals, store) = make_goals(&state, "test_learn(H).");
+    let (goals, store) = make_goals(&state,
+         "test_learn(ambiguities, H), test_learn(no_noise, H),test_learn(false_positives, H), test_learn(false_negatives, H)."
+        );
     // let (goals, store) = make_goals(&state, "double_move(X,Y,Z).");
 
-
-    let mut proof = Proof::new(
-        &goals,
-        store,
-        Hypothesis::None,
-        None,
-        &state,
-    );
+    let mut proof = Proof::new(&goals, store, Hypothesis::None, None, &state);
 
     assert!(proof.next().is_some());
+}
 
+fn test_grid_world(){
+    // let state = setup("./examples/robots/robots");
+    let state = setup("./examples/robots/robots");
+
+    let (goals, store) = make_goals(&state,
+         "test_learn(H)."
+        );
+    // let (goals, store) = make_goals(&state, "double_move(X,Y,Z).");
+
+    let mut proof = Proof::new(&goals, store, Hypothesis::None, None, &state);
+
+    assert!(proof.next().is_some());
+}
+
+fn main() -> ExitCode {
+    test_grid_world();
+    test_coloured_graph();
     ExitCode::SUCCESS
 }

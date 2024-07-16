@@ -322,7 +322,7 @@ fn test_h(
     }
 
     for ex in neg_ex.iter() {
-        let mut proof = Proof::new(&[*ex], store.clone(), Hypothesis::Static(h), None, state);
+        let mut proof = Proof::new(&[*ex], store.clone(), Hypothesis::Static(h), Some(config), state);
         if proof.next().is_none() {
             correct += 1;
         }
@@ -340,10 +340,14 @@ fn mean_std_sterr(values: &[f64]) -> (f64, f64, f64) {
     (avg, sd, sd / len.sqrt())
 }
 
-fn top_prog_test(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &Proof) {
+fn top_prog_test(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &Proof, file_name:String ) {
     const SPLITS: [f32; 9] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
     const STEPS: usize = 10;
-    const SAVE_FILE: &str = "results.csv";
+    const RESULTS_DIR: &str =  "./Results/";
+
+    if !std::path::Path::new(RESULTS_DIR).exists() {
+        std::fs::create_dir(RESULTS_DIR).unwrap();
+    }
 
     unsafe { proof.store.prog_cells.early_release() }
 
@@ -426,7 +430,7 @@ fn top_prog_test(pos_ex: Box<[usize]>, neg_ex: Box<[usize]>, proof: &Proof) {
             time_avg[i], time_std[i], time_std_err[i], acc_avg[i], acc_std[i], acc_sd_err[i]
         );
     }
-    let mut file = fs::File::create(SAVE_FILE).unwrap();
+    let mut file = fs::File::create(format!("{RESULTS_DIR}{file_name}.csv")).unwrap();
     file.write_all(buf.as_bytes()).unwrap();
 
     unsafe {
@@ -458,11 +462,61 @@ fn top_prog_no_id_test(call: usize, proof: &mut Proof) -> PredReturn {
     } else {
         [].into()
     };
-    top_prog_test(pos_ex, neg_ex, &proof);
+    top_prog_test(pos_ex, neg_ex, &proof, "grid_world.csv".into());
     PredReturn::True
 }
+
+fn top_prog_id_test(call: usize, proof: &mut Proof) -> PredReturn {
+    let id = if let (Tag::Con, id) = proof.store[call + 2] {
+        id
+    } else {
+        return PredReturn::False;
+    };
+
+    let pos_ex = if let Some(Predicate::Clauses(clauses)) = proof
+        .prog
+        .prog
+        .predicates
+        .get(&(SymbolDB::set_const("pos_examples"), 3))
+    {
+        match clauses
+            .clone()
+            .map(|c| proof.prog.get(c))
+            .find(|clause| proof.store[clause[0] + 2] == (Tag::Con, id))
+        {
+            Some(clause) => collect_examples(clause[0] + 3, &proof.store),
+            None => return PredReturn::False,
+        }
+    } else {
+        return PredReturn::False;
+    };
+
+    let neg_ex = if let Some(Predicate::Clauses(clauses)) = proof
+        .prog
+        .prog
+        .predicates
+        .get(&(SymbolDB::set_const("neg_examples"), 3))
+    {
+        match clauses
+            .clone()
+            .map(|c| proof.prog.get(c))
+            .find(|clause| proof.store[clause[0] + 2] == (Tag::Con, id))
+        {
+            Some(clause) => collect_examples(clause[0] + 3, &proof.store),
+            None => return PredReturn::False,
+        }
+    } else {
+        return PredReturn::False;
+    };
+
+
+    top_prog_test(pos_ex, neg_ex, &proof, SymbolDB::get_symbol(id));
+    PredReturn::True
+}
+
 pub static TOP_PROGRAM: PredModule = &[
     ("learn", 1, top_prog_no_id),
     ("learn", 2, top_prog_id),
     ("test_learn", 1, top_prog_no_id_test),
+    ("test_learn", 2, top_prog_id_test),
 ];
