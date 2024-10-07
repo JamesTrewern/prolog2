@@ -35,21 +35,21 @@ fn make_goals<'a>(state: &'a State, goals: &str) -> (Vec<usize>, Store<'a>) {
 }
 
 fn main() -> ExitCode {
-    let state = setup("./examples/robots/robots");
+    // let state = setup("./examples/robots/robots");
 
-    let (goals, store) = make_goals(&state, "test_learn(H).");
-    // let (goals, store) = make_goals(&state, "double_move(X,Y,Z).");
+    // let (goals, store) = make_goals(&state, "test_learn(H).");
+    // // let (goals, store) = make_goals(&state, "double_move(X,Y,Z).");
 
 
-    let mut proof = Proof::new(
-        &goals,
-        store,
-        Hypothesis::None,
-        None,
-        &state,
-    );
+    // let mut proof = Proof::new(
+    //     &goals,
+    //     store,
+    //     Hypothesis::None,
+    //     None,
+    //     &state,
+    // );
 
-    assert!(proof.next().is_some());
+    // assert!(proof.next().is_some());
 
     let state = State::new(None);
     state.main_loop();
