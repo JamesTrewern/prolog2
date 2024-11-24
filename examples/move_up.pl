@@ -14,3 +14,6 @@ P([A,B],[A,C]):-
 
 
 :- body_pred(succ,1), body_pred(add,3), body_pred(sub,3), max_h_clause(1).
+
+/*
+*/

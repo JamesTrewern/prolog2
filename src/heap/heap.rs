@@ -5,30 +5,62 @@ use std::{
 
 use crate::heap::symbol_db::SymbolDB;
 
-use super::store::{Cell, Store, Tag};
+/** Tag which describes cell type */
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub(crate) enum Tag {
+    Ref,  //Query Variable
+    Arg,  //Clause Variable
+    ArgA, //Universally Quantified variable
+    Func, //Structure
+    Lis,  //List
+    Con,  //Constant
+    Int,  //Integer
+    Flt,  //Float
+    Str,  //Reference to Structure
+}
+
+
+impl std::fmt::Display for Tag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+pub type Cell = (Tag, usize);
 
 use fsize::fsize;
-const CON_PTR: usize = isize::MAX as usize;
-const FALSE: Cell = (Tag::Con, CON_PTR);
-const TRUE: Cell = (Tag::Con, CON_PTR + 1);
-const EMPTY_LIS: Cell = (Tag::Lis, CON_PTR);
+pub const CON_PTR: usize = isize::MAX as usize;
+pub const FALSE: Cell = (Tag::Con, CON_PTR);
+pub const TRUE: Cell = (Tag::Con, CON_PTR + 1);
+pub const EMPTY_LIS: Cell = (Tag::Lis, CON_PTR);
 pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]> {
     fn heap_push(&mut self, cell: Cell);
 
     fn heap_len(&self) -> usize;
 
+    /**Creat new argument cell
+     * @value: the order in which this variable first appears in the clause
+     * @ho: higher order?
+     */
     fn set_arg(&mut self, value: usize, ho: bool) -> usize {
         //If no address provided set addr to current heap len
         self.heap_push((if ho { Tag::ArgA } else { Tag::Arg }, value));
         return self.heap_len() - 1;
     }
 
+    /**Create new constant cell
+     * @id: symbol id for constant
+     */
     fn set_const(&mut self, id: usize) -> usize {
         let h = self.heap_len();
         self.heap_push((Tag::Con, id));
         h
     }
 
+    /**Create new reference cell
+     * @ref_addr: optional value for reference to point to, if None a self ref is created
+     */
     fn set_ref(&mut self, ref_addr: Option<usize>) -> usize {
         //If no address provided set addr to current heap len
         let addr = match ref_addr {
@@ -39,6 +71,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         return self.heap_len() - 1;
     }
 
+    /**Return symbol and arity for structure found at this memory address */
     fn str_symbol_arity(&self, mut addr: usize) -> (usize, usize) {
         addr = self.deref_addr(addr);
         if let (Tag::Str, pointer) = self[addr]{
@@ -132,7 +165,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     /**Create a string from a list */
     fn list_string(&self, addr: usize) -> String {
 
-        if self[addr] == Store::EMPTY_LIS {
+        if self[addr] == EMPTY_LIS {
             return "[]".to_string();
         }
 
@@ -149,7 +182,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 buffer += ",";
             }
             pointer = self[pointer + 1].1;
-            if pointer == Store::CON_PTR {
+            if pointer == CON_PTR {
                 buffer.pop();
                 break;
             }
@@ -183,17 +216,12 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             Tag::Func => self.structure_string(addr),
             Tag::Lis => self.list_string(addr),
             Tag::Arg => format!("A{}", self[addr].1),
-            Tag::Ref | Tag::Arg => match SymbolDB::get_var(self.deref_addr(addr)).to_owned() {
+            Tag::Ref => match SymbolDB::get_var(self.deref_addr(addr)).to_owned() {
                 Some(symbol) => symbol.to_string(),
                 None => format!("_{addr}"),
             },
             Tag::ArgA => {
                 return format!("∀{}", self[addr].1);
-                if let Some(symbol) = SymbolDB::get_var(self.deref_addr(addr)) {
-                    format!("∀'{symbol}")
-                } else {
-                    format!("∀'_{addr}")
-                }
             }
             Tag::Int => {
                 let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
@@ -244,7 +272,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         }
     }
 
-    fn copy_term(&mut self, other: &impl Heap, mut addr: usize) -> usize {
+    fn copy_term(&mut self, other: &impl Heap, addr: usize) -> usize {
         //Assume common static heap
         let addr = other.deref_addr(addr);
         match other[addr] {
