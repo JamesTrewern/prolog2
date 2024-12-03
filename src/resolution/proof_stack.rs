@@ -59,6 +59,9 @@ impl Env {
         if let Some(choices) = &mut self.choices {
             loop {
                 if let Some(clause) = choices.next().map(|i| prog.get(i)) {
+                    if config.max_depth == self.depth && clause.len() > 1{
+                        continue;
+                    }
                     let mut arg_regs = [usize::MAX;64];
                     // println!("[{}] Match {}", self.depth, clause.to_string(store));
                     if let Some(mut binding) = match_head(clause[0], self.goal, store,&mut arg_regs) {

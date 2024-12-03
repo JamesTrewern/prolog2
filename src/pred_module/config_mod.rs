@@ -9,6 +9,7 @@ use crate::{
 };
 use std::mem;
 
+//TODO accept list formated [p/n,q/m]
 fn body_pred(call: usize, proof: &mut Proof) -> PredReturn {
     unsafe { proof.prog.prog.early_release() };
 

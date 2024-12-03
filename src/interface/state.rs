@@ -1,5 +1,5 @@
 use manual_rwlock::MrwLock;
-
+use console::Term;
 use super::{
     config::Config,
     parser::{parse_clause, parse_goals, remove_comments, tokenise},
@@ -73,7 +73,7 @@ impl State {
                 Ok(_) => {
                     let tokens = tokenise(&buffer);
                     if tokens.contains(&".") {
-                        self.handle_directive(&tokens).unwrap();
+                        self.handle_goal(&tokens).unwrap();
                         buffer.clear();
                     }
                 }
@@ -101,6 +101,48 @@ impl State {
             .collect();
 
         let mut proof = Proof::new(&goals, store, Hypothesis::None, None, self);
+        proof.next();
+
+        // self.heap.deallocate_above(*goals.first().unwrap());
+        Ok(())
+    }
+
+    pub fn handle_goal(&self, segment: &[&str]) -> Result<(), String> {
+        // println!("Directive: {segment:?}");
+
+        let goals = match parse_goals(segment) {
+            Ok(res) => res,
+            Err(error) => {
+                println!();
+                return Err(error);
+            }
+        };
+        let mut store = Store::new(self.heap.read().unwrap());
+
+        let mut seen_vars = HashMap::new();
+        let goals: Box<[usize]> = goals
+            .into_iter()
+            .map(|t| t.build_to_heap(&mut store, &mut seen_vars, false))
+            .collect();
+
+        let mut proof = Proof::new(&goals, store, Hypothesis::None, None, self);
+        
+        loop {
+            if let Some(h) = proof.next(){
+                if h.len() != 0{
+                    println!("Hypothesis:");
+                    for clause in h.iter(){
+                        println!("\t{}",clause.to_string(&proof.store))
+                    }
+                }
+                if !continue_proof(){
+                    break;
+                }
+            }else{
+                break;
+            }
+        }
+        
         proof.next();
 
         // self.heap.deallocate_above(*goals.first().unwrap());
@@ -177,3 +219,14 @@ impl State {
 
 unsafe impl Send for State {}
 unsafe impl Sync for State {}
+
+fn continue_proof() -> bool{
+    let term = Term::stderr();
+    loop {
+        match term.read_key_raw().unwrap() {
+            console::Key::Enter |  console::Key::Backspace | console::Key::Char('.') => return false,
+            console::Key::Char(' '|';') | console::Key::Tab => return true,
+            _ => (),
+        }
+    }
+}

@@ -79,13 +79,16 @@ impl<'a> Proof<'a> {
                     return true;
                 }
             };
-            if depth >= self.config.max_depth {
-                if !self.retry() {
-                    return false;
-                } else {
-                    continue;
-                }
+            if depth > self.config.max_depth{
+                return false;
             }
+            // if depth >= self.config.max_depth {
+            //     if !self.retry() {
+            //         return false;
+            //     } else {
+            //         continue;
+            //     }
+            // }
             if self.config.debug {
                 println!("[{}] TRY: {}", depth, self.store.term_string(goal));
             }
@@ -135,7 +138,7 @@ impl<'a> Proof<'a> {
             if self.config.debug {
                 println!(
                     "[{}] UNDO: {},{}",
-                    self.pointer,
+                    env.depth,
                     self.store.term_string(env.goal),
                     env.bindings.to_string(&self.store)
                 );
@@ -219,12 +222,12 @@ impl<'a> Iterator for Proof<'a> {
                 for goal in self.goals.iter() {
                     println!("{},", self.store.term_string(*goal))
                 }
-
-                println!("Hypothesis: ");
-                for clause in self.prog.hypothesis.iter() {
-                    println!("\t{}", clause.to_string(&self.store))
-                }
             }
+
+            // println!("Hypothesis: ");
+            // for clause in self.prog.hypothesis.iter() {
+            //     println!("\t{}", clause.to_string(&self.store))
+            // }
 
             Some(self.prog.hypothesis.clone())
         } else {
