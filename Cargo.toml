@@ -13,6 +13,7 @@ rayon = "1.10.0"
 num_cpus = "1.0"
 rand = "0.8.5"
 rand_split = "0.2.1"
+console = "0.15.8"
 
 [profile.dev]
 opt-level = 3
