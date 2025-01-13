@@ -5,6 +5,7 @@ mod interface;
 mod pred_module;
 mod program;
 mod resolution;
+mod parser;
 use std::{collections::HashMap, process::ExitCode};
 
 use heap::store::Store;
