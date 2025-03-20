@@ -3,23 +3,46 @@ use std::{
     ops::{Index, IndexMut, Range, RangeInclusive},
 };
 
-use crate::heap::symbol_db::SymbolDB;
+use super::symbol_db::SymbolDB;
 
-use super::store::{Cell, Store, Tag};
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub(crate) enum Tag {
+    Ref,  //Query Variable
+    Arg,  //Clause Variable
+    Func, //Functor + tuple
+    Tup,  //Tuple
+    Set,  //Set
+    Lis,  //List
+    Con,  //Constant
+    Int,  //Integer
+    Flt,  //Float
+    Str,  //Reference to Structure
+    Stri, //String
+}
+
+impl std::fmt::Display for Tag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+pub type Cell = (Tag, usize);
 
 use fsize::fsize;
 const CON_PTR: usize = isize::MAX as usize;
 const FALSE: Cell = (Tag::Con, CON_PTR);
 const TRUE: Cell = (Tag::Con, CON_PTR + 1);
 const EMPTY_LIS: Cell = (Tag::Lis, CON_PTR);
+
 pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]> {
     fn heap_push(&mut self, cell: Cell);
 
     fn heap_len(&self) -> usize;
 
-    fn set_arg(&mut self, value: usize, ho: bool) -> usize {
+    fn set_arg(&mut self, value: usize) -> usize {
         //If no address provided set addr to current heap len
-        self.heap_push((if ho { Tag::ArgA } else { Tag::Arg }, value));
+        self.heap_push((Tag::Arg, value));
         return self.heap_len() - 1;
     }
 
@@ -41,7 +64,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn str_symbol_arity(&self, mut addr: usize) -> (usize, usize) {
         addr = self.deref_addr(addr);
-        if let (Tag::Str, pointer) = self[addr]{
+        if let (Tag::Str, pointer) = self[addr] {
             addr = pointer
         }
         if let (Tag::Func, arity) = self[addr] {
@@ -49,7 +72,11 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         } else if let (Tag::Con, symbol) = self[addr] {
             (symbol, 0)
         } else {
-            panic!("No str arity for {}, {:?}", self.term_string(addr), self[addr])
+            panic!(
+                "No str arity for {}, {:?}",
+                self.term_string(addr),
+                self[addr]
+            )
         }
     }
 
@@ -67,13 +94,13 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         }
     }
 
-    /**Collect all REF, REFC, and REFA cells in structure or referenced by structure
+    /**Collect all REF, cells in structure or referenced by structure
      * If cell at addr is a reference return that cell  
      */
     fn term_vars(&self, mut addr: usize) -> Vec<Cell> {
         addr = self.deref_addr(addr);
         match self[addr].0 {
-            Tag::Ref | Tag::Arg | Tag::ArgA => vec![self[addr]],
+            Tag::Ref | Tag::Arg => vec![self[addr]],
             Tag::Lis if self[addr].1 != CON_PTR => [
                 self.term_vars(self[addr].1),
                 self.term_vars(self[addr].1 + 1),
@@ -91,120 +118,6 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     /** Given address to a str cell create an operator over the sub terms addresses, including functor/predicate */
     fn str_iterator(&self, addr: usize) -> RangeInclusive<usize> {
         addr + 1..=addr + self[addr].1
-    }
-
-    /**Debug function for printing formatted string of current heap state */
-    fn print_heap(&self) {
-        let w = 6;
-        for i in 0..self.heap_len() {
-            let (tag, value) = self[i];
-            match tag {
-                Tag::Con => {
-                    println!("[{i:3}]|{tag:w$}|{:w$}|", SymbolDB::get_const(value))
-                }
-                Tag::Lis => {
-                    if value == CON_PTR {
-                        println!("[{i:3}]|{tag:w$}|{:w$}|", "[]")
-                    } else {
-                        println!("[{i:3}]|{tag:w$}|{value:w$}|")
-                    }
-                }
-                Tag::Ref | Tag::ArgA | Tag::Arg => {
-                    println!(
-                        "[{i:3}]|{tag:w$?}|{value:w$}|:({})",
-                        SymbolDB::get_symbol(i)
-                    )
-                }
-                Tag::Int => {
-                    let value: isize = unsafe { mem::transmute_copy(&value) };
-                    println!("[{i:3}]|{tag:w$?}|{value:w$}|")
-                }
-                Tag::Flt => {
-                    let value: fsize = unsafe { mem::transmute_copy(&value) };
-                    println!("[{i:3}]|{tag:w$?}|{value:w$}|")
-                }
-                _ => println!("[{i:3}]|{tag:w$?}|{value:w$}|"),
-            };
-            println!("{:-<w$}--------{:-<w$}", "", "");
-        }
-    }
-
-    /**Create a string from a list */
-    fn list_string(&self, addr: usize) -> String {
-
-        if self[addr] == Store::EMPTY_LIS {
-            return "[]".to_string();
-        }
-
-        let mut buffer = "[".to_string();
-        let mut pointer = self[addr].1;
-
-        loop {
-            buffer += &self.term_string(pointer);
-            if self[pointer + 1].0 != Tag::Lis {
-                buffer += "|";
-                buffer += &self.term_string(pointer + 1);
-                break;
-            } else {
-                buffer += ",";
-            }
-            pointer = self[pointer + 1].1;
-            if pointer == Store::CON_PTR {
-                buffer.pop();
-                break;
-            }
-        }
-        buffer += "]";
-        buffer
-    }
-
-    /**Create a string for a structure */
-    fn structure_string(&self, addr: usize) -> String {
-        let mut buf = "".to_string();
-        let mut first = true;
-        for i in self.str_iterator(addr) {
-            buf += &self.term_string(i);
-            buf += if first { "(" } else { "," };
-            if first {
-                first = false
-            }
-        }
-        buf.pop();
-        buf += ")";
-        buf
-    }
-
-    /** Create String to represent cell, can be recursively used to format complex structures or list */
-    fn term_string(&self, addr: usize) -> String {
-        // println!("[{addr}]:{:?}", self[addr]);
-        let addr = self.deref_addr(addr);
-        match self[addr].0 {
-            Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
-            Tag::Func => self.structure_string(addr),
-            Tag::Lis => self.list_string(addr),
-            Tag::Arg => format!("A{}", self[addr].1),
-            Tag::Ref | Tag::Arg => match SymbolDB::get_var(self.deref_addr(addr)).to_owned() {
-                Some(symbol) => symbol.to_string(),
-                None => format!("_{addr}"),
-            },
-            Tag::ArgA => {
-                return format!("∀{}", self[addr].1);
-                if let Some(symbol) = SymbolDB::get_var(self.deref_addr(addr)) {
-                    format!("∀'{symbol}")
-                } else {
-                    format!("∀'_{addr}")
-                }
-            }
-            Tag::Int => {
-                let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
-                format!("{value}")
-            }
-            Tag::Flt => {
-                let value: fsize = unsafe { mem::transmute_copy(&self[addr].1) };
-                format!("{value}")
-            }
-            Tag::Str => self.structure_string(self[addr].1),
-        }
     }
 
     fn normalise_args(&mut self, addr: usize, args: &[usize]) {
@@ -230,7 +143,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             EMPTY_LIS => *update_addr = CON_PTR,
             (Tag::Str, pointer) => *update_addr = self.copy_term(other, pointer),
             (Tag::Lis, _) => *update_addr = self.copy_term(other, addr),
-            _ => ()
+            _ => (),
         }
     }
 
@@ -260,7 +173,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 }
                 let h = self.heap_len();
                 self.heap_push((Tag::Func, arity));
-                for  (i, a) in other.str_iterator(addr).enumerate() {
+                for (i, a) in other.str_iterator(addr).enumerate() {
                     self.copy_simple(other, a, &update_addr[i]);
                 }
                 h
@@ -270,14 +183,15 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.copy_complex(other, pointer, &mut update_addr[0]);
                 self.copy_complex(other, pointer + 1, &mut update_addr[1]);
 
-                
                 let h = self.heap_len();
                 self.copy_simple(other, pointer, &mut update_addr[0]);
                 self.copy_simple(other, pointer + 1, &mut update_addr[1]);
                 h
             }
+            (Tag::Tup, len) => todo!(),
+            (Tag::Set, len) => todo!(),
             (Tag::Ref, pointer) => panic!(),
-            (Tag::Arg | Tag::ArgA | Tag::Con | Tag::Int | Tag::Flt, _) => {
+            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt|Tag::Stri,_) => {
                 self.heap_push(other[addr]);
                 self.heap_len() - 1
             }
@@ -299,10 +213,148 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.term_equal(p1, p2) && self.term_equal(p1 + 1, p2 + 1)
             }
             ((Tag::Str, p1), (Tag::Str, p2)) => self.term_equal(p1, p2),
+            ((Tag::Tup, len1), (Tag::Tup, len2)) => todo!(),
+            ((Tag::Set, len1), (Tag::Set, len2)) => todo!(),
+            ((Tag::Stri, i1), (Tag::Stri, i2)) =>SymbolDB::get_string(i1) == SymbolDB::get_string(i2),
+            
             _ => self[addr1] == self[addr2],
         }
     }
 
+    /**Debug function for printing formatted string of current heap state */
+    fn print_heap(&self) {
+        let w = 6;
+        for i in 0..self.heap_len() {
+            let (tag, value) = self[i];
+            match tag {
+                Tag::Con => {
+                    println!("[{i:3}]|{tag:w$}|{:w$}|", SymbolDB::get_const(value))
+                }
+                Tag::Lis => {
+                    if value == CON_PTR {
+                        println!("[{i:3}]|{tag:w$}|{:w$}|", "[]")
+                    } else {
+                        println!("[{i:3}]|{tag:w$}|{value:w$}|")
+                    }
+                }
+                Tag::Ref | Tag::Arg => {
+                    println!(
+                        "[{i:3}]|{tag:w$?}|{value:w$}|:({})",
+                        SymbolDB::get_symbol(i)
+                    )
+                }
+                Tag::Int => {
+                    let value: isize = unsafe { mem::transmute_copy(&value) };
+                    println!("[{i:3}]|{tag:w$?}|{value:w$}|")
+                }
+                Tag::Flt => {
+                    let value: fsize = unsafe { mem::transmute_copy(&value) };
+                    println!("[{i:3}]|{tag:w$?}|{value:w$}|")
+                }
+                Tag::Tup => todo!(),
+                Tag::Set => todo!(),
+                Tag::Stri => todo!(),
+                _ => println!("[{i:3}]|{tag:w$?}|{value:w$}|"),
+            };
+            println!("{:-<w$}--------{:-<w$}", "", "");
+        }
+    }
+
+    /**Create a string from a list */
+    fn list_string(&self, addr: usize) -> String {
+        if self[addr] == EMPTY_LIS {
+            return "[]".to_string();
+        }
+
+        let mut buffer = "[".to_string();
+        let mut pointer = self[addr].1;
+
+        loop {
+            buffer += &self.term_string(pointer);
+            if self[pointer + 1].0 != Tag::Lis {
+                buffer += "|";
+                buffer += &self.term_string(pointer + 1);
+                break;
+            } else {
+                buffer += ",";
+            }
+            pointer = self[pointer + 1].1;
+            if pointer == CON_PTR {
+                buffer.pop();
+                break;
+            }
+        }
+        buffer += "]";
+        buffer
+    }
+
+    /**Create a string for a functor structure */
+    fn func_string(&self, addr: usize) -> String {
+        let mut buf = "".to_string();
+        let mut first = true;
+        for i in self.str_iterator(addr) {
+            buf += &self.term_string(i);
+            buf += if first { "(" } else { "," };
+            if first {
+                first = false
+            }
+        }
+        buf.pop();
+        buf += ")";
+        buf
+    }
+
+    /**Create a string for a tuple*/
+    fn tuple_string(&self, addr: usize) -> String {
+        let mut buf = String::from("(");
+        for i in 1..self[addr].1+1 {
+            buf += &self.term_string(addr+i);
+            buf += ",";
+        }
+        buf.pop();
+        buf += ")";
+        buf
+    }
+
+    /**Create a string for a set*/
+    fn set_string(&self, addr: usize) -> String {
+            let mut buf = String::from("{");
+            for i in 1..self[addr].1+1 {
+                buf += &self.term_string(addr+i);
+                buf += ",";
+            }
+            buf.pop();
+            buf += "}";
+            buf
+    }
+
+    /** Create String to represent cell, can be recursively used to format complex structures or list */
+    fn term_string(&self, addr: usize) -> String {
+        // println!("[{addr}]:{:?}", self[addr]);
+        let addr = self.deref_addr(addr);
+        match self[addr].0 {
+            Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
+            Tag::Func => self.func_string(addr),
+            Tag::Lis => self.list_string(addr),
+            Tag::Arg => format!("A{}", self[addr].1),
+            Tag::Ref => match SymbolDB::get_var(self.deref_addr(addr)).to_owned() {
+                Some(symbol) => symbol.to_string(),
+                None => format!("_{addr}"),
+            },
+            Tag::Int => {
+                let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
+                format!("{value}")
+            }
+            Tag::Flt => {
+                let value: fsize = unsafe { mem::transmute_copy(&self[addr].1) };
+                format!("{value}")
+            }
+            Tag::Tup => self.tuple_string(addr),
+            Tag::Set => self.set_string(addr),
+            Tag::Str => self.func_string(self[addr].1),
+            Tag::Stri => SymbolDB::get_string(self[addr].1)
+        }
+    }
 }
 
 impl Heap for Vec<Cell> {

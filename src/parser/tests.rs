@@ -233,8 +233,6 @@ mod tokenizer {
 }
 
 mod syntax_tree {
-    use crate::program::clause;
-
     use super::super::{
         syntax_tree::{Clause, Term, TokenStream, Unit},
         tokeniser::tokenise,

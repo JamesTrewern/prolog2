@@ -6,7 +6,6 @@ static SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
     const_symbols: Vec::new(),
     var_symbols: Vec::new(),
     var_symbol_map: Vec::new(),
-    strings: Vec::new()
 });
 
 /**Stores all symbols from compiled terms
@@ -17,7 +16,6 @@ pub struct SymbolDB {
     const_symbols: Vec<Arc<str>>,
     var_symbols: Vec<Arc<str>>,
     var_symbol_map: Vec<(usize, usize)>, //Key: Variable Ref addr, Value: index to var symbols vec
-    strings: Vec<String>
 }
 
 impl SymbolDB {
@@ -91,16 +89,4 @@ impl SymbolDB {
             }
         }
     }
-
-    pub fn get_string(index: usize) -> String{
-        //TO DO make this much more effecient
-        SYMBOLS.read().unwrap().strings.get(index).unwrap().clone()
-    }
-
-    pub fn set_string(value: String) -> usize{
-        let mut write_gaurd = SYMBOLS.write().unwrap();
-        write_gaurd.strings.push(value);
-        write_gaurd.strings.len()
-    }
-
 }
