@@ -1,5 +1,5 @@
-use std::str::CharIndices;
 use fsize::fsize;
+use std::str::CharIndices;
 
 enum ParseError {
     CommentError(String, usize),         //Message, line
@@ -23,59 +23,148 @@ const INFIX_ORDER: &[&[&str]] = &[
 // Tokenise File
 // --------------------------------------------------------------------------------------
 
-pub fn remove_comments(file: &mut String) {
+pub fn remove_comments(mut file: String) -> Result<String, String> {
     //TODO Must ingore % if in string
     let mut i = 0;
-    loop {
-        let c = match file.chars().nth(i) {
-            Some(c) => c,
-            None => break,
-        };
-        if c == '%' {
-            let mut i2 = i;
-            loop {
-                i2 += 1;
-                if file.chars().nth(i2) == Some('\n') || file.chars().nth(i2) == None {
-                    file.replace_range(i..i2 + 1, "");
-                    break;
-                }
-            }
-        } else {
-            i += 1;
-        }
-    }
+    Ok(file)
 }
 
 fn form_empty_list_token(tokens: &mut Vec<String>) {
     let mut i = 0;
-    while tokens.len() > i + 2 {
+    while tokens.len() > i + 1 {
         if tokens[i] == "[" {
-            let mut j = i+1;
+            let mut j = i + 1;
+            let mut new_lines = 0;
             loop {
-                if tokens[j].chars().all(|c| c.is_whitespace()){
-                    j+=1;
-                }else if tokens[j] == "]" {
-                    tokens.drain(i..j+1);
-                    tokens.insert(i, "[]".into());
-                    break;
-                }else{
-                    break
+                match tokens[j].as_str() {
+                    " " | "\t" => j += 1,
+                    "\n" => {
+                        new_lines += 1;
+                        j += 1;
+                    }
+                    "]" => {
+                        tokens.drain(i..j + 1);
+                        tokens.insert(i, "[]".into());
+                        for _ in 0..new_lines {
+                            tokens.insert(i + 1, "\n".into());
+                        }
+                        break;
+                    }
+                    _ => break,
                 }
             }
         }
         i += 1;
     }
-
-
 }
 
-fn walk_string(iterator: &mut CharIndices, mark: char) -> Result<usize, ()> {
-    while let Some((i, c)) = iterator.next() {
-        if c == mark {
-            return Ok(i);
-        } else if c == '\\' {
-            iterator.next();
+fn form_empty_set_token(tokens: &mut Vec<String>) {
+    let mut i = 0;
+    while tokens.len() > i + 1 {
+        if tokens[i] == "{" {
+            let mut j = i + 1;
+            let mut new_lines = 0;
+            loop {
+                match tokens[j].as_str() {
+                    " " | "\t" => j += 1,
+                    "\n" => {
+                        new_lines += 1;
+                        j += 1;
+                    }
+                    "}" => {
+                        tokens.drain(i..j + 1);
+                        tokens.insert(i, "{}".into());
+                        for _ in 0..new_lines {
+                            tokens.insert(i + 1, "\n".into());
+                        }
+                        break;
+                    }
+                    _ => break,
+                }
+            }
         }
+        i += 1;
+    }
+}
+
+fn form_empty_tuple_token(tokens: &mut Vec<String>) {
+    let mut i = 0;
+    while tokens.len() > i + 1 {
+        if tokens[i] == "(" {
+            let mut j = i + 1;
+            let mut new_lines = 0;
+            loop {
+                match tokens[j].as_str() {
+                    " " | "\t" => j += 1,
+                    "\n" => {
+                        new_lines += 1;
+                        j += 1;
+                    }
+                    ")" => {
+                        tokens.drain(i..j + 1);
+                        tokens.insert(i, "()".into());
+                        for _ in 0..new_lines {
+                            tokens.insert(i + 1, "\n".into());
+                        }
+                        break;
+                    }
+                    _ => break,
+                }
+            }
+        }
+        i += 1;
+    }
+}
+
+
+fn walk_string(characters: &Vec<char>, mut i: usize, mark: char) -> Result<(String,usize), String> {
+    //TODO more complex escape character processing
+    let mut str = vec![mark];
+    while let Some(&c) = characters.get(i) {
+        match c {
+            c if c == mark => {
+                str.push(c);
+                return Ok((str.iter().collect(),i+1));
+            }
+            '\\' => {
+                match characters.get(i+1) {
+                    Some('n') => str.push('\n'),
+                    Some('t') => str.push('\t'),
+                    Some('\\') => str.push('\\'), 
+                    Some('"') => str.push('"'),
+                    Some('\'') => str.push('\''),
+                    Some(_) => return Err("'\\' used without proper escape character".into()),
+                    None => break
+                }
+                i+=2
+            }  
+            _ => {str.push(c);i += 1;},
+        }
+    }
+    Err(format!("Unexpected end of file, missing closing {mark}"))
+}
+
+fn walk_multi_line_comment(characters: &Vec<char>, mut i: usize) -> Result<(usize, usize), String> {
+    let mut newlines = 0;
+    while i <= characters.len() - 2 {
+        if characters[i] == '\n' {
+            newlines += 1
+        }
+        if &characters[i..i + 2] == ['*', '/'] {
+            return Ok((i + 2, newlines));
+        }
+        i += 1;
+    }
+    Err("Unclosed multi line comment".into())
+}
+
+fn walk_single_line_comment(characters: &Vec<char>, mut i: usize) -> Result<usize, ()> {
+    //TODO more complex escape character processing
+    while let Some(&c) = characters.get(i) {
+        if c == '\n' {
+            return Ok(i+1);
+        }
+        i += 1;
     }
     Err(())
 }
@@ -108,7 +197,7 @@ fn join_decimal_nums(tokens: &mut Vec<String>) {
 */
 fn form_negative_nums(tokens: &mut Vec<String>) {
     let mut i = 0;
-    while tokens.len() > i + 2 {
+    while tokens.len() > i + 1 {
         if tokens[i] == "-" && tokens[i + 1].chars().all(|c| c.is_numeric() || c == '.') {
             let combined_value = [tokens[i].as_str(), tokens[i + 1].as_str()].concat();
             tokens.remove(i + 1);
@@ -121,12 +210,12 @@ fn form_negative_nums(tokens: &mut Vec<String>) {
 
 fn form_known_symbols(tokens: &mut Vec<String>) {
     let mut i = 0;
-    while i < tokens.len()-1{
+    while i < tokens.len() - 1 {
         if DELIMINATORS.contains(&tokens[i].chars().next().unwrap()) {
-            for &symbol in KNOWN_SYMBOLS{
-                if symbol.len() <= tokens.len()-i{
-                    if symbol == tokens[i..i+symbol.len()].concat(){
-                        tokens.drain(i..i+symbol.len());
+            for &symbol in KNOWN_SYMBOLS {
+                if symbol.len() <= tokens.len() - i {
+                    if symbol == tokens[i..i + symbol.len()].concat() {
+                        tokens.drain(i..i + symbol.len());
                         tokens.insert(i, symbol.into());
                     }
                 }
@@ -136,35 +225,66 @@ fn form_known_symbols(tokens: &mut Vec<String>) {
     }
 }
 
-pub fn tokenise(text: &str) -> Vec<String> {
+pub fn tokenise(text: String) -> Result<Vec<String>, String> {
     let mut tokens = Vec::<String>::new();
     let mut last_i = 0;
-    let mut iterator = text.trim().char_indices();
+    let characters: Vec<char> = text.chars().collect();
+    let mut i = 0;
 
-    while let Some((i, c)) = iterator.next() {
-        if c == '\'' || c == '"' {
-            match walk_string(&mut iterator, c) {
-                Ok(i2) => {
-                    tokens.push(text[i..i2].into());
-                    last_i = i2 + 1
-                }
-                Err(_) => todo!(),
+    while i < characters.len() {
+        // println!("{tokens:?}");
+        let c = characters[i];
+        match c {
+            '\'' | '"' => {
+                let (token,i2) = walk_string(&characters, i+1, c)?;
+                tokens.push(token);
+                i = i2;
+                last_i = i;
             }
-        }
-
-        if DELIMINATORS.contains(&c) {
-            tokens.push(text[last_i..i].into());
-            tokens.push(c.into());
-            last_i = i + 1;
+            '%' => match walk_single_line_comment(&characters, i+1) {
+                Ok(i2) => {
+                    i = i2;
+                    last_i = i;
+                    tokens.push("\n".into());
+                }
+                Err(_) => {
+                    i = characters.len();
+                    last_i = i;
+                    break;
+                }
+            },
+            '/' => {
+                if characters[i + 1] == '*' {
+                    let (i2, newlines) = walk_multi_line_comment(&characters, i + 1)?;
+                    i = i2;
+                    last_i = i;
+                    for _ in 0..newlines {
+                        tokens.push("\n".into());
+                    }
+                }else{
+                    tokens.push(text[last_i..i].into());
+                    tokens.push(c.into());
+                    i += 1;
+                    last_i = i;
+                }
+            }
+            c if DELIMINATORS.contains(&c) => {
+                tokens.push(text[last_i..i].into());
+                tokens.push(c.into());
+                i += 1;
+                last_i = i;
+            }
+            _ => i += 1,
         }
     }
     tokens.push(text[last_i..].into());
     tokens.retain(|token| "" != *token);
-
+    form_known_symbols(&mut tokens);
     join_decimal_nums(&mut tokens);
     form_negative_nums(&mut tokens);
-    form_known_symbols(&mut tokens);
     form_empty_list_token(&mut tokens);
+    form_empty_set_token(&mut tokens);
+    form_empty_tuple_token(&mut tokens);
     tokens.retain(|t1| !["\t", " "].iter().any(|t2| t1 == t2));
-    tokens
+    Ok(tokens)
 }
