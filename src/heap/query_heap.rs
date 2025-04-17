@@ -1,0 +1,88 @@
+use std::{ops::{Index, IndexMut, Range}, sync::{PoisonError, RwLock, RwLockReadGuard}};
+
+use super::heap::{Cell, Heap, Tag, PROG_HEAP};
+
+pub(crate) struct QueryHeap<'a> {
+    id: usize,
+    arg_regs: [Cell; 64],
+    cells: Vec<Cell>,
+    prog_cells: RwLockReadGuard<'a, Vec<Cell>>,
+    //TODO handle branching query heap multi-threading
+    root: Option<RwLockReadGuard<'a, QueryHeap<'a>>>,
+}
+
+impl<'a> QueryHeap<'a> {
+    pub fn new(
+        root: Option<RwLockReadGuard<'a, QueryHeap<'a>>>, id: usize
+    ) -> Result<QueryHeap<'a>, String> {
+        Ok(QueryHeap {
+            id,
+            arg_regs: [(Tag::Ref, 0); 64],
+            cells: Vec::new(),
+            prog_cells: PROG_HEAP.read().map_err(|_| "Cannot aquire read on program heap".to_string())?,
+            root,
+        })
+    }
+}
+
+impl<'a> Heap for QueryHeap<'a> {
+    fn heap_push(&mut self, cell: Cell) -> usize{
+        let i = self.cells.len();
+        self.cells.push(cell);
+        i
+    }
+
+    fn heap_len(&self) -> usize {
+        match &self.root {
+            Some(root) => self.prog_cells.len() + root.heap_len() + self.cells.len(),
+            None => self.prog_cells.len() + self.cells.len(),
+        }
+        
+    }
+
+    fn get_id(&self) -> usize {
+        self.id
+    }
+}
+
+impl<'a> Index<usize> for QueryHeap<'a> {
+    type Output = Cell;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if index < self.prog_cells.len() {
+            &self.prog_cells[index]
+        } else if self.root.is_none() {
+            &self.cells[index - self.prog_cells.len()]
+        } else{
+            todo!("Handle Branching heap")
+        }
+    }
+}
+
+impl<'a> IndexMut<usize> for QueryHeap<'a> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        if index < self.prog_cells.len() {
+            panic!("Can't get mutable reference to program heap cell");
+        } else if self.root.is_none(){
+            &mut self.cells[index - self.prog_cells.len()]
+        } else{
+            todo!("Handle Branching heap")
+        }
+    }
+}
+
+impl<'a> Index<Range<usize>> for QueryHeap<'a>{
+    type Output = [Cell];
+
+    fn index(&self, index: Range<usize>) -> &Self::Output {
+        let len = self.prog_cells.len();
+        
+        if index.start < len && index.end < len{
+            &self.prog_cells[index]
+        }else if index.start >= len && self.root.is_none(){
+            &self.cells[index.start - len .. index.end - len]
+        }else{
+            panic!("Range splits static and mutable heap")
+        }
+    }
+}

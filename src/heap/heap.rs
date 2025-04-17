@@ -1,6 +1,6 @@
 use std::{
     mem,
-    ops::{Index, IndexMut, Range, RangeInclusive},
+    ops::{Index, IndexMut, Range, RangeInclusive}, sync::RwLock,
 };
 
 use super::symbol_db::SymbolDB;
@@ -30,15 +30,19 @@ impl std::fmt::Display for Tag {
 pub type Cell = (Tag, usize);
 
 use fsize::fsize;
-const CON_PTR: usize = isize::MAX as usize;
-const FALSE: Cell = (Tag::Con, CON_PTR);
-const TRUE: Cell = (Tag::Con, CON_PTR + 1);
-const EMPTY_LIS: Cell = (Tag::Lis, CON_PTR);
+pub const CON_PTR: usize = isize::MAX as usize;
+pub const FALSE: Cell = (Tag::Con, CON_PTR);
+pub const TRUE: Cell = (Tag::Con, CON_PTR + 1);
+pub const EMPTY_LIS: Cell = (Tag::Lis, CON_PTR);
 
 pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]> {
-    fn heap_push(&mut self, cell: Cell);
+    fn heap_push(&mut self, cell: Cell) -> usize;
 
     fn heap_len(&self) -> usize;
+
+    fn get_id(&self) -> usize{
+        0
+    }
 
     fn set_arg(&mut self, value: usize) -> usize {
         //If no address provided set addr to current heap len
@@ -62,6 +66,46 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         return self.heap_len() - 1;
     }
 
+    fn deref_addr(&self, mut addr: usize) -> usize {
+        loop {
+            if let (Tag::Ref, pointer) = self[addr] {
+                if addr == pointer {
+                    return pointer;
+                } else {
+                    addr = pointer
+                }
+            } else {
+                return addr;
+            }
+        }
+    }
+
+    /** Update address value of ref cells affected by binding
+     * @binding: List of (usize, usize) tuples representing heap indexes, left -> right
+     */
+    fn bind(&mut self, binding: &[(usize, usize)]) {
+        for (src, target) in binding {
+            // println!("{}", self.term_string(*src));
+            let pointer = &mut self[*src].1;
+            if *pointer != *src {
+                panic!("Tried to reset bound ref: {} \n Binding: {binding:?}", src)
+            }
+            *pointer = *target;
+        }
+    }
+
+    /** Reset Ref cells affected by binding to self references
+     * @binding: List of (usize, usize) tuples representing heap indexes, left -> right
+     */
+    fn unbind(&mut self, binding: &[(usize, usize)]) {
+        for (src, _target) in binding {
+            if let (Tag::Ref, pointer) = &mut self[*src] {
+                *pointer = *src;
+            }
+        }
+    }
+
+    /**Get the symbol id and arity of functor structure */
     fn str_symbol_arity(&self, mut addr: usize) -> (usize, usize) {
         addr = self.deref_addr(addr);
         if let (Tag::Str, pointer) = self[addr] {
@@ -77,20 +121,6 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.term_string(addr),
                 self[addr]
             )
-        }
-    }
-
-    fn deref_addr(&self, mut addr: usize) -> usize {
-        loop {
-            if let (Tag::Ref, pointer) = self[addr] {
-                if addr == pointer {
-                    return pointer;
-                } else {
-                    addr = pointer
-                }
-            } else {
-                return addr;
-            }
         }
     }
 
@@ -154,7 +184,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             (Tag::Str, _) => self.heap_push((Tag::Str, *update_addr)),
             (Tag::Ref, _) => self.heap_push((Tag::Ref, self.heap_len())),
             (_, _) => self.heap_push(other[addr]),
-        }
+        };
     }
 
     fn copy_term(&mut self, other: &impl Heap, mut addr: usize) -> usize {
@@ -240,7 +270,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 Tag::Ref | Tag::Arg => {
                     println!(
                         "[{i:3}]|{tag:w$?}|{value:w$}|:({})",
-                        SymbolDB::get_symbol(i)
+                        self.term_string(i)
                     )
                 }
                 Tag::Int => {
@@ -336,10 +366,13 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
             Tag::Func => self.func_string(addr),
             Tag::Lis => self.list_string(addr),
-            Tag::Arg => format!("A{}", self[addr].1),
-            Tag::Ref => match SymbolDB::get_var(self.deref_addr(addr)).to_owned() {
+            Tag::Arg => match SymbolDB::get_var(addr, self.get_id()){
                 Some(symbol) => symbol.to_string(),
-                None => format!("_{addr}"),
+                None => format!("Arg_{}",self[addr].1),
+            }
+            Tag::Ref => match SymbolDB::get_var(self.deref_addr(addr),self.get_id()).to_owned() {
+                Some(symbol) => symbol.to_string(),
+                None => format!("Ref_{}",self[addr].1),
             },
             Tag::Int => {
                 let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
@@ -351,18 +384,22 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             }
             Tag::Tup => self.tuple_string(addr),
             Tag::Set => self.set_string(addr),
-            Tag::Str => self.func_string(self[addr].1),
-            Tag::Stri => SymbolDB::get_string(self[addr].1)
+            Tag::Str => self.term_string(self[addr].1),
+            Tag::Stri => SymbolDB::get_string(self[addr].1).to_string()
         }
     }
 }
 
 impl Heap for Vec<Cell> {
-    fn heap_push(&mut self, cell: Cell) {
-        self.push(cell)
+    fn heap_push(&mut self, cell: Cell) -> usize{
+        let i = self.len();
+        self.push(cell);
+        i
     }
 
     fn heap_len(&self) -> usize {
         self.len()
     }
 }
+
+pub (crate) static PROG_HEAP: RwLock<Vec<Cell>> = RwLock::new(Vec::new());
