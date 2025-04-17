@@ -1,8 +1,3 @@
-use super::{
-    syntax_tree::{Clause, Term, TokenStream, Unit},
-    tokeniser::tokenise,
-};
-
 mod tokenizer {
     use crate::parser::tokeniser::{remove_comments, tokenise};
 
@@ -908,5 +903,46 @@ mod syntax_tree {
             Box::new(Term::EmptyList),
         );
         assert_eq!(clauses[3], Clause::Directive(vec![body, body2]));
+    }
+}
+
+mod encode{
+    use std::collections::HashMap;
+
+    use crate::heap::heap::{Cell, Heap};
+    use super::super::{syntax_tree::{Clause,Term,Unit},execute_tree};
+
+    #[test]
+    fn endcode_unit(){
+        let mut heap = Vec::<Cell>::new();
+
+        let unit = Unit::Constant("a".into());
+        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
+        assert_eq!(heap.term_string(addr),"a");
+
+        let unit = Unit::Variable("A".into());
+        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
+        assert_eq!(heap.term_string(addr),"A");
+
+        let unit = Unit::Variable("A".into());
+        let addr = unit.encode(&mut heap, &mut HashMap::new(), true);
+        assert_eq!(heap.term_string(addr),"A");
+    
+        let unit = Unit::Int(10);
+        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
+        assert_eq!(heap.term_string(addr),"10");
+        
+        let unit = Unit::Int(-10);
+        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
+        assert_eq!(heap.term_string(addr),"-10");
+        
+        let unit = Unit::Float(1.1);
+        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
+        assert_eq!(heap.term_string(addr),"10");
+        
+        let unit = Unit::Float(-1.1);
+        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
+        assert_eq!(heap.term_string(addr),"-10");
+    
     }
 }
