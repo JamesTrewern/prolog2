@@ -23,6 +23,11 @@ impl<'a> QueryHeap<'a> {
             root,
         })
     }
+
+    //Get cells as vector, allow root readguard to be dropped
+    pub fn get_cells(self) -> Vec<Cell>{
+        self.cells
+    }
 }
 
 impl<'a> Heap for QueryHeap<'a> {
