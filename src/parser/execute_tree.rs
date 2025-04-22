@@ -18,6 +18,35 @@ pub(crate) fn execute_tree(syntax_tree: Vec<Clause>) {
 }
 
 impl Unit {
+    fn encode_var(
+        symbol: &String,
+        heap: &mut Vec<Cell>,
+        var_values: &mut HashMap<String, usize>,
+        query: bool,
+    ) -> usize {
+        match var_values.get(symbol) {
+            Some(ref_addr) if query => heap.heap_push((Tag::Ref, *ref_addr)),
+            Some(arg) => {
+                let addr = heap.heap_push((Tag::Arg, *arg));
+                SymbolDB::set_var(symbol.clone(), addr, heap.get_id());
+                addr
+            }
+            None if query => {
+                let addr = heap.set_ref(None);
+                var_values.insert(symbol.clone(), addr);
+                SymbolDB::set_var(symbol.clone(), addr, heap.get_id());
+                addr
+            }
+            None => {
+                let v = var_values.len();
+                var_values.insert(symbol.clone(), v);
+                let addr = heap.heap_push((Tag::Arg, v));
+                SymbolDB::set_var(symbol.clone(), addr, heap.get_id());
+                addr
+            }
+        }
+    }
+
     pub fn encode(
         &self,
         heap: &mut Vec<Cell>,
@@ -29,12 +58,7 @@ impl Unit {
                 let id = SymbolDB::set_const(symbol.clone());
                 heap.heap_push((Tag::Con, id))
             }
-            Unit::Variable(symbol) => match var_values.get(symbol) {
-                Some(ref_addr) if query => heap.heap_push((Tag::Ref, *ref_addr)),
-                Some(arg) => heap.heap_push((Tag::Arg, *arg)),
-                None if query => heap.set_ref(None),
-                None => heap.heap_push((Tag::Arg, var_values.len())),
-            },
+            Unit::Variable(symbol) => Self::encode_var(symbol, heap, var_values, query),
             Unit::Int(value) => heap.heap_push((Tag::Int, unsafe { mem::transmute_copy(value) })),
             Unit::Float(value) => heap.heap_push((Tag::Flt, unsafe { mem::transmute_copy(value) })),
             Unit::String(text) => {
@@ -50,7 +74,7 @@ impl Term {
         matches!(self, Term::Unit(_) | Term::EmptyList)
     }
 
-    fn encode(
+    pub fn encode(
         &self,
         heap: &mut Vec<Cell>,
         var_values: &mut HashMap<String, usize>,
@@ -71,7 +95,7 @@ impl Term {
         heap: &mut Vec<Cell>,
         var_values: &mut HashMap<String, usize>,
         query: bool,
-    ) -> Option<Cell>{
+    ) -> Option<Cell> {
         if self.unit() {
             None
         } else {
@@ -90,7 +114,10 @@ impl Term {
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> Vec<Option<Cell>> {
-        let complex_terms = terms.iter().map(|term| term.pre_encode_complex(heap, var_values, query)).collect();
+        let complex_terms = terms
+            .iter()
+            .map(|term| term.pre_encode_complex(heap, var_values, query))
+            .collect();
 
         complex_terms
     }
@@ -101,7 +128,10 @@ impl Term {
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
-        let complex_terms: Vec<Option<Cell>> = terms.iter().map(|term| term.pre_encode_complex(heap, var_values, query)).collect();
+        let complex_terms: Vec<Option<Cell>> = terms
+            .iter()
+            .map(|term| term.pre_encode_complex(heap, var_values, query))
+            .collect();
 
         let addr = heap.heap_push((Tag::Tup, terms.len()));
 
@@ -128,8 +158,10 @@ impl Term {
             }
         }
 
-        let complex_terms: Vec<Option<Cell>> = terms_set.iter().map(|term| term.pre_encode_complex(heap, var_values, query)).collect();
-
+        let complex_terms: Vec<Option<Cell>> = terms_set
+            .iter()
+            .map(|term| term.pre_encode_complex(heap, var_values, query))
+            .collect();
 
         let addr = heap.heap_push((Tag::Set, terms_set.len()));
 
@@ -150,7 +182,10 @@ impl Term {
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
-        let complex_terms: Vec<Option<Cell>> = terms.iter().map(|term| term.pre_encode_complex(heap, var_values, query)).collect();
+        let complex_terms: Vec<Option<Cell>> = terms
+            .iter()
+            .map(|term| term.pre_encode_complex(heap, var_values, query))
+            .collect();
         let addr = heap.heap_push((Tag::Func, terms.len() + 1));
         unit.encode(heap, var_values, query);
         for (complex, term) in complex_terms.iter().zip(terms.iter()) {
@@ -170,9 +205,12 @@ impl Term {
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
-        let complex_terms: Vec<Option<Cell>> = head.iter().map(|term| term.pre_encode_complex(heap, var_values, query)).collect();
+        let complex_terms: Vec<Option<Cell>> = head
+            .iter()
+            .map(|term| term.pre_encode_complex(heap, var_values, query))
+            .collect();
         let complex_tail = tail.pre_encode_complex(heap, var_values, query);
-        
+
         let addr = heap.heap_len();
 
         for (complex, term) in complex_terms.iter().zip(head.iter()).rev().skip(1).rev() {
@@ -180,10 +218,10 @@ impl Term {
                 Some(cell) => heap.heap_push(*cell),
                 None => term.encode(heap, var_values, query),
             };
-            heap.push((Tag::Lis,heap.len()));
+            heap.push((Tag::Lis, heap.len()+1));
         }
 
-        let (complex, term) = (complex_terms.last().unwrap(),head.last().unwrap());
+        let (complex, term) = (complex_terms.last().unwrap(), head.last().unwrap());
         match complex {
             Some(cell) => heap.heap_push(*cell),
             None => term.encode(heap, var_values, query),

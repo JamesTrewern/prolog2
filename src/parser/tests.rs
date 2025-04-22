@@ -847,8 +847,10 @@ mod syntax_tree {
     }
 
     #[test]
-    fn parse_all_clauses(){
-        let text = "gt1(X):-X>1.\nman(plato).\nP(X,Y):-\n\tQ(X,Y),\n\t{P,Q}.\n:-test(a),['file/path'].".to_string();
+    fn parse_all_clauses() {
+        let text =
+            "gt1(X):-X>1.\nman(plato).\nP(X,Y):-\n\tQ(X,Y),\n\t{P,Q}.\n:-test(a),['file/path']."
+                .to_string();
         let mut token_stream = TokenStream::new(tokenise(text).unwrap());
         let mut clauses = token_stream.parse_all().unwrap();
 
@@ -865,13 +867,11 @@ mod syntax_tree {
         );
         assert_eq!(clauses[0], Clause::Rule(head, vec![body]));
 
-
         let head = Term::Atom(
             Unit::Constant("man".into()),
             vec![Term::Unit(Unit::Constant("plato".into()))],
         );
         assert_eq!(clauses[1], Clause::Fact(head));
-
 
         let head = Term::Atom(
             Unit::Variable("P".into()),
@@ -893,7 +893,6 @@ mod syntax_tree {
         ]);
         assert_eq!(clauses[2], Clause::MetaRule(head, vec![body, meta_data]));
 
-
         let body = Term::Atom(
             Unit::Constant("test".into()),
             vec![Term::Unit(Unit::Constant("a".into()))],
@@ -906,43 +905,1116 @@ mod syntax_tree {
     }
 }
 
-mod encode{
-    use std::collections::HashMap;
+mod encode {
+    use std::{collections::HashMap, mem};
 
-    use crate::heap::heap::{Cell, Heap};
-    use super::super::{syntax_tree::{Clause,Term,Unit},execute_tree};
+    use super::super::{
+        execute_tree,
+        syntax_tree::{Clause, Term, Unit},
+    };
+    use crate::heap::{
+        query_heap::QueryHeap,
+        heap::{self, Cell, Heap, Tag, EMPTY_LIS},
+        symbol_db::SymbolDB,
+    };
+
+    use fsize::fsize;
 
     #[test]
-    fn endcode_unit(){
-        let mut heap = Vec::<Cell>::new();
+    fn encode_argument() {
+        let mut heap = QueryHeap::new(None).unwrap();
+        let mut var_values = HashMap::new();
+        let x = Unit::Variable("X".into());
+        let y = Unit::Variable("Y".into());
+        x.encode(&mut heap.cells, &mut var_values, false);
+        y.encode(&mut heap.cells, &mut var_values, false);
+        x.encode(&mut heap.cells, &mut var_values, false);
+        y.encode(&mut heap.cells, &mut var_values, false);
+
+        assert_eq!(
+            heap.cells,
+            [(Tag::Arg, 0), (Tag::Arg, 1), (Tag::Arg, 0), (Tag::Arg, 1),]
+        );
+
+        heap.cells = vec![];
+        drop(heap.cells);
+
+    }
+
+    #[test]
+    fn encode_ref() {
+        let mut heap = QueryHeap::new(None).unwrap();
+        heap.cells = vec![];
+        let mut var_values = HashMap::new();
+        let x = Unit::Variable("X".into());
+        let y = Unit::Variable("Y".into());
+        x.encode(&mut heap.cells, &mut var_values, true);
+        y.encode(&mut heap.cells, &mut var_values, true);
+        x.encode(&mut heap.cells, &mut var_values, true);
+        y.encode(&mut heap.cells, &mut var_values, true);
+
+        assert_eq!(
+            heap.cells,
+            [(Tag::Ref, 0), (Tag::Ref, 1), (Tag::Ref, 0), (Tag::Ref, 1),]
+        );
+
+        heap.cells = vec![];
+        drop(heap.cells);
+
+    }
+
+    #[test]
+    fn endcode_unit() {
+        let mut heap = QueryHeap::new(None).unwrap();
+        heap.cells = vec![];
+        let a = SymbolDB::set_const("a".into());
 
         let unit = Unit::Constant("a".into());
-        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr),"a");
+        let addr = unit.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "a");
+        assert_eq!(heap.cells, [(Tag::Con, a)]);
 
-        let unit = Unit::Variable("A".into());
-        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr),"A");
-
-        let unit = Unit::Variable("A".into());
-        let addr = unit.encode(&mut heap, &mut HashMap::new(), true);
-        assert_eq!(heap.term_string(addr),"A");
-    
+        heap.cells = vec![];
         let unit = Unit::Int(10);
-        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr),"10");
-        
-        let unit = Unit::Int(-10);
-        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr),"-10");
-        
-        let unit = Unit::Float(1.1);
-        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr),"10");
-        
-        let unit = Unit::Float(-1.1);
-        let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr),"-10");
-    
+        let addr = unit.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "10");
+        assert_eq!(heap.cells, [(Tag::Int, 10)]);
+
+        heap.cells = vec![];
+        let value: isize = -10;
+        let unit = Unit::Int(value);
+        let addr = unit.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "-10");
+        assert_eq!(heap.cells, [(Tag::Int, unsafe { mem::transmute(value) })]);
+
+        heap.cells = vec![];
+        let value: fsize = 1.1;
+        let unit = Unit::Float(value);
+        let addr = unit.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "1.1");
+        assert_eq!(heap.cells, [(Tag::Flt, unsafe { mem::transmute(value) })]);
+
+        heap.cells = vec![];
+        let value: fsize = -1.1;
+        let unit = Unit::Float(value);
+        let addr = unit.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "-1.1");
+        assert_eq!(heap.cells, [(Tag::Flt, unsafe { mem::transmute(value) })]);
+
+        heap.cells = vec![];
+        drop(heap.cells);
+
     }
+
+    #[test]
+    fn program_encode_functor() {
+        let mut heap = QueryHeap::new(None).unwrap();
+
+        let p_id = SymbolDB::set_const("p".into());
+        let a_id = SymbolDB::set_const("a".into());
+        let f_id = SymbolDB::set_const("f".into());
+
+        let p = Unit::Constant("p".into());
+        let q = Unit::Variable("Q".into());
+        let x = Unit::Variable("X".into());
+        let y = Unit::Variable("Y".into());
+        let a = Unit::Constant("a".into());
+        let f = Unit::Constant("f".into());
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            p.clone(),
+            vec![Term::Unit(x.clone()), Term::Unit(a.clone())],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        SymbolDB::see_var_map();
+        assert_eq!(heap.cells.term_string(addr), "p(X,a)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Func, 3),
+                (Tag::Con, p_id),
+                (Tag::Arg, 0),
+                (Tag::Con, a_id),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            q.clone(),
+            vec![Term::Unit(a.clone()), Term::Unit(q.clone())],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "Q(a,Q)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Func, 3),
+                (Tag::Arg, 0),
+                (Tag::Con, a_id),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            p.clone(),
+            vec![
+                Term::Atom(f.clone(), vec![Term::Unit(x.clone())]),
+                Term::Unit(x.clone()),
+            ],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "p(f(X),X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Func, 2),
+                (Tag::Con, f_id),
+                (Tag::Arg, 0),
+                (Tag::Func, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            p.clone(),
+            vec![
+                Term::Tuple(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+                Term::Unit(x.clone()),
+            ],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "p((f,X),X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Tup, 2),
+                (Tag::Con, f_id),
+                (Tag::Arg, 0),
+                (Tag::Func, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            p.clone(),
+            vec![
+                Term::Set(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+                Term::Unit(x.clone()),
+            ],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "p({f,X},X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Set, 2),
+                (Tag::Con, f_id),
+                (Tag::Arg, 0),
+                (Tag::Func, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            p.clone(),
+            vec![
+                Term::List(
+                    vec![Term::Unit(f.clone()), Term::Unit(x.clone())],
+                    Box::new(Term::EmptyList),
+                ),
+                Term::Unit(x.clone()),
+            ],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "p([f,X],X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Con, f_id),
+                (Tag::Lis, 2),
+                (Tag::Arg, 0),
+                EMPTY_LIS,
+                (Tag::Func, 3),
+                (Tag::Con, p_id),
+                (Tag::Lis, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+        drop(heap.cells);
+
+    }
+
+    #[test]
+    fn query_encode_functor() {
+        let mut heap = QueryHeap::new(None).unwrap();
+
+        let p_id = SymbolDB::set_const("p".into());
+        let a_id = SymbolDB::set_const("a".into());
+        let f_id = SymbolDB::set_const("f".into());
+
+        let p = Unit::Constant("p".into());
+        let q = Unit::Variable("Q".into());
+        let x = Unit::Variable("X".into());
+        let y = Unit::Variable("Y".into());
+        let a = Unit::Constant("a".into());
+        let f = Unit::Constant("f".into());
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            p.clone(),
+            vec![Term::Unit(x.clone()), Term::Unit(a.clone())],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "p(X,a)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Func, 3),
+                (Tag::Con, p_id),
+                (Tag::Ref, 2),
+                (Tag::Con, a_id),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            q.clone(),
+            vec![Term::Unit(a.clone()), Term::Unit(q.clone())],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "Q(a,Q)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Func, 3),
+                (Tag::Ref, 1),
+                (Tag::Con, a_id),
+                (Tag::Ref, 1),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            p.clone(),
+            vec![
+                Term::Atom(f.clone(), vec![Term::Unit(x.clone())]),
+                Term::Unit(x.clone()),
+            ],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "p(f(X),X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Func, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 2),
+                (Tag::Func, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            p.clone(),
+            vec![
+                Term::Tuple(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+                Term::Unit(x.clone()),
+            ],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "p((f,X),X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Tup, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 2),
+                (Tag::Func, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            p.clone(),
+            vec![
+                Term::Set(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+                Term::Unit(x.clone()),
+            ],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "p({f,X},X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Set, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 2),
+                (Tag::Func, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Atom(
+            p.clone(),
+            vec![
+                Term::List(
+                    vec![Term::Unit(f.clone()), Term::Unit(x.clone())],
+                    Box::new(Term::EmptyList),
+                ),
+                Term::Unit(x.clone()),
+            ],
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "p([f,X],X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Con, f_id),
+                (Tag::Lis, 2),
+                (Tag::Ref, 2),
+                EMPTY_LIS,
+                (Tag::Func, 3),
+                (Tag::Con, p_id),
+                (Tag::Lis, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+        drop(heap.cells);
+    }
+
+    #[test]
+    fn program_encode_tuple() {
+        let mut heap = QueryHeap::new(None).unwrap();
+
+        let p_id = SymbolDB::set_const("p".into());
+        let a_id = SymbolDB::set_const("a".into());
+        let f_id = SymbolDB::set_const("f".into());
+
+        let p = Unit::Constant("p".into());
+        let q = Unit::Variable("Q".into());
+        let x = Unit::Variable("X".into());
+        let y = Unit::Variable("Y".into());
+        let a = Unit::Constant("a".into());
+        let f = Unit::Constant("f".into());
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(p.clone()),
+            Term::Unit(x.clone()),
+            Term::Unit(a.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "(p,X,a)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
+                (Tag::Arg, 0),
+                (Tag::Con, a_id),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(q.clone()),
+            Term::Unit(a.clone()),
+            Term::Unit(q.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "(Q,a,Q)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Tup, 3),
+                (Tag::Arg, 0),
+                (Tag::Con, a_id),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(p.clone()),
+            Term::Atom(f.clone(), vec![Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "(p,f(X),X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Func, 2),
+                (Tag::Con, f_id),
+                (Tag::Arg, 0),
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(p.clone()),
+            Term::Tuple(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "(p,(f,X),X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Tup, 2),
+                (Tag::Con, f_id),
+                (Tag::Arg, 0),
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(p.clone()),
+            Term::Set(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "(p,{f,X},X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Set, 2),
+                (Tag::Con, f_id),
+                (Tag::Arg, 0),
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(p.clone()),
+            Term::List(
+                vec![Term::Unit(f.clone()), Term::Unit(x.clone())],
+                Box::new(Term::EmptyList),
+            ),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "(p,[f,X],X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Con, f_id),
+                (Tag::Lis, 2),
+                (Tag::Arg, 0),
+                EMPTY_LIS,
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
+                (Tag::Lis, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+        drop(heap.cells);
+
+    }
+
+    #[test]
+    fn query_encode_tuple() {
+        let mut heap = QueryHeap::new(None).unwrap();
+
+        let p_id = SymbolDB::set_const("p".into());
+        let a_id = SymbolDB::set_const("a".into());
+        let f_id = SymbolDB::set_const("f".into());
+
+        let p = Unit::Constant("p".into());
+        let q = Unit::Variable("Q".into());
+        let x = Unit::Variable("X".into());
+        let y = Unit::Variable("Y".into());
+        let a = Unit::Constant("a".into());
+        let f = Unit::Constant("f".into());
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(p.clone()),
+            Term::Unit(x.clone()),
+            Term::Unit(a.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "(p,X,a)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
+                (Tag::Ref, 2),
+                (Tag::Con, a_id),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(q.clone()),
+            Term::Unit(a.clone()),
+            Term::Unit(q.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "(Q,a,Q)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Tup, 3),
+                (Tag::Ref, 1),
+                (Tag::Con, a_id),
+                (Tag::Ref, 1),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(p.clone()),
+            Term::Atom(f.clone(), vec![Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "(p,f(X),X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Func, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 2),
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(p.clone()),
+            Term::Tuple(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "(p,(f,X),X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Tup, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 2),
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(p.clone()),
+            Term::Set(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "(p,{f,X},X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Set, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 2),
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Tuple(vec![
+            Term::Unit(p.clone()),
+            Term::List(
+                vec![Term::Unit(f.clone()), Term::Unit(x.clone())],
+                Box::new(Term::EmptyList),
+            ),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "(p,[f,X],X)");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Con, f_id),
+                (Tag::Lis, 2),
+                (Tag::Ref, 2),
+                EMPTY_LIS,
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
+                (Tag::Lis, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+        drop(heap.cells);
+    }
+
+    #[test]
+    fn program_encode_set() {
+        let mut heap = QueryHeap::new(None).unwrap();
+
+        let p_id = SymbolDB::set_const("p".into());
+        let a_id = SymbolDB::set_const("a".into());
+        let f_id = SymbolDB::set_const("f".into());
+
+        let p = Unit::Constant("p".into());
+        let q = Unit::Variable("Q".into());
+        let x = Unit::Variable("X".into());
+        let y = Unit::Variable("Y".into());
+        let a = Unit::Constant("a".into());
+        let f = Unit::Constant("f".into());
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(a.clone()),
+            Term::Unit(x.clone()),
+            Term::Unit(a.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "{a,X}");
+        assert_eq!(heap.cells, [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Arg, 0),]);
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(q.clone()),
+            Term::Unit(a.clone()),
+            Term::Unit(q.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "{Q,a}");
+        assert_eq!(heap.cells, [(Tag::Set, 2), (Tag::Arg, 0), (Tag::Con, a_id),]);
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(p.clone()),
+            Term::Atom(f.clone(), vec![Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "{p,f(X),X}");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Func, 2),
+                (Tag::Con, f_id),
+                (Tag::Arg, 0),
+                (Tag::Set, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(p.clone()),
+            Term::Tuple(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "{p,(f,X),X}");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Tup, 2),
+                (Tag::Con, f_id),
+                (Tag::Arg, 0),
+                (Tag::Set, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(p.clone()),
+            Term::Set(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "{p,{f,X},X}");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Set, 2),
+                (Tag::Con, f_id),
+                (Tag::Arg, 0),
+                (Tag::Set, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(p.clone()),
+            Term::List(
+                vec![Term::Unit(f.clone()), Term::Unit(x.clone())],
+                Box::new(Term::EmptyList),
+            ),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        assert_eq!(heap.cells.term_string(addr), "{p,[f,X],X}");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Con, f_id),
+                (Tag::Lis, 2),
+                (Tag::Arg, 0),
+                EMPTY_LIS,
+                (Tag::Set, 3),
+                (Tag::Con, p_id),
+                (Tag::Lis, 0),
+                (Tag::Arg, 0),
+            ]
+        );
+    }
+
+    #[test]
+    fn query_encode_set() {
+        let mut heap = QueryHeap::new(None).unwrap();
+
+        let p_id = SymbolDB::set_const("p".into());
+        let a_id = SymbolDB::set_const("a".into());
+        let f_id = SymbolDB::set_const("f".into());
+
+        let p = Unit::Constant("p".into());
+        let q = Unit::Variable("Q".into());
+        let x = Unit::Variable("X".into());
+        let y = Unit::Variable("Y".into());
+        let a = Unit::Constant("a".into());
+        let f = Unit::Constant("f".into());
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(a.clone()),
+            Term::Unit(x.clone()),
+            Term::Unit(a.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "{a,X}");
+        assert_eq!(heap.cells, [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Ref, 2),]);
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(q.clone()),
+            Term::Unit(a.clone()),
+            Term::Unit(q.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "{Q,a}");
+        assert_eq!(heap.cells, [(Tag::Set, 2), (Tag::Ref, 1), (Tag::Con, a_id),]);
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(p.clone()),
+            Term::Atom(f.clone(), vec![Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "{p,f(X),X}");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Func, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 2),
+                (Tag::Set, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(p.clone()),
+            Term::Tuple(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "{p,(f,X),X}");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Tup, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 2),
+                (Tag::Set, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(p.clone()),
+            Term::Set(vec![Term::Unit(f.clone()), Term::Unit(x.clone())]),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "{p,{f,X},X}");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Set, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 2),
+                (Tag::Set, 3),
+                (Tag::Con, p_id),
+                (Tag::Str, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::Set(vec![
+            Term::Unit(p.clone()),
+            Term::List(
+                vec![Term::Unit(f.clone()), Term::Unit(x.clone())],
+                Box::new(Term::EmptyList),
+            ),
+            Term::Unit(x.clone()),
+        ]);
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        assert_eq!(heap.cells.term_string(addr), "{p,[f,X],X}");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Con, f_id),
+                (Tag::Lis, 2),
+                (Tag::Ref, 2),
+                EMPTY_LIS,
+                (Tag::Set, 3),
+                (Tag::Con, p_id),
+                (Tag::Lis, 0),
+                (Tag::Ref, 2),
+            ]
+        );
+        drop(heap.cells);
+    }
+
+    #[test]
+    fn program_encode_list() {
+        let mut heap = QueryHeap::new(None).unwrap();
+
+        let a_id = SymbolDB::set_const("a".into());
+
+        let q = Unit::Variable("Q".into());
+        let x = Unit::Variable("X".into());
+        let a = Unit::Constant("a".into());
+
+        heap.cells = vec![];
+        let term = Term::List(
+            vec![
+                Term::Unit(a.clone()),
+                Term::Unit(x.clone()),
+                Term::Unit(a.clone()),
+            ],
+            Box::new(Term::EmptyList),
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        let addr = heap.heap_push((Tag::Lis, addr));
+        assert_eq!(heap.cells.term_string(addr), "[a,X,a]");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Con, a_id),
+                (Tag::Lis, 2),
+                (Tag::Arg, 0),
+                (Tag::Lis, 4),
+                (Tag::Con, a_id),
+                EMPTY_LIS,
+                (Tag::Lis, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::List(
+            vec![Term::Unit(q.clone()), Term::Unit(a.clone())],
+            Box::new(Term::Unit(q.clone())),
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        let addr = heap.heap_push((Tag::Lis, addr));
+        assert_eq!(heap.cells.term_string(addr), "[Q,a|Q]");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Arg, 0),
+                (Tag::Lis, 2),
+                (Tag::Con, a_id),
+                (Tag::Arg, 0),
+                (Tag::Lis, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::List(
+            vec![
+                Term::List(vec![Term::Unit(Unit::Int(1)),Term::Unit(Unit::Int(2)),Term::Unit(Unit::Int(3))], Box::new(Term::EmptyList)),
+                Term::EmptyList,
+                Term::List(vec![Term::EmptyList], Box::new(Term::Unit(q.clone())))
+            ],
+            Box::new(Term::Unit(q.clone())),
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
+        let addr = heap.heap_push((Tag::Lis, addr));
+        assert_eq!(heap.cells.term_string(addr), "[[1,2,3],[],[[]|Q]|Q]");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Int, 1),
+                (Tag::Lis, 2),
+                (Tag::Int, 2),
+                (Tag::Lis, 4),
+                (Tag::Int, 3),
+                EMPTY_LIS,
+                EMPTY_LIS,
+                (Tag::Arg, 0),
+                (Tag::Lis, 0),
+                (Tag::Lis,10),
+                EMPTY_LIS,
+                (Tag::Lis,12),
+                (Tag::Lis, 6),
+                (Tag::Arg, 0),
+                (Tag::Lis, 8),
+            ]
+        );
+        drop(heap.cells);
+    }
+
+    #[test]
+    fn query_encode_list() {
+        let mut heap = QueryHeap::new(None).unwrap();
+
+        let p_id = SymbolDB::set_const("p".into());
+        let a_id = SymbolDB::set_const("a".into());
+        let f_id = SymbolDB::set_const("f".into());
+
+        let p = Unit::Constant("p".into());
+        let q = Unit::Variable("Q".into());
+        let x = Unit::Variable("X".into());
+        let y = Unit::Variable("Y".into());
+        let a = Unit::Constant("a".into());
+        let f = Unit::Constant("f".into());
+
+        heap.cells = vec![];
+        let term = Term::List(
+            vec![
+                Term::Unit(a.clone()),
+                Term::Unit(x.clone()),
+                Term::Unit(a.clone()),
+            ],
+            Box::new(Term::EmptyList),
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        let addr = heap.heap_push((Tag::Lis, addr));
+        assert_eq!(heap.cells.term_string(addr), "[a,X,a]");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Con, a_id),
+                (Tag::Lis, 2),
+                (Tag::Ref, 2),
+                (Tag::Lis, 4),
+                (Tag::Con, a_id),
+                EMPTY_LIS,
+                (Tag::Lis, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::List(
+            vec![Term::Unit(q.clone()), Term::Unit(a.clone())],
+            Box::new(Term::Unit(q.clone())),
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        let addr = heap.heap_push((Tag::Lis, addr));
+        assert_eq!(heap.cells.term_string(addr), "[Q,a|Q]");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Ref, 0),
+                (Tag::Lis, 2),
+                (Tag::Con, a_id),
+                (Tag::Ref, 0),
+                (Tag::Lis, 0),
+            ]
+        );
+
+        heap.cells = vec![];
+        let term = Term::List(
+            vec![
+                Term::List(vec![Term::Unit(Unit::Int(1)),Term::Unit(Unit::Int(2)),Term::Unit(Unit::Int(3))], Box::new(Term::EmptyList)),
+                Term::EmptyList,
+                Term::List(vec![Term::EmptyList], Box::new(Term::Unit(q.clone())))
+            ],
+            Box::new(Term::Unit(q.clone())),
+        );
+        let addr = term.encode(&mut heap.cells, &mut HashMap::new(), true);
+        let addr = heap.heap_push((Tag::Lis, addr));
+        assert_eq!(heap.cells.term_string(addr), "[[1,2,3],[],[[]|Q]|Q]");
+        assert_eq!(
+            heap.cells,
+            [
+                (Tag::Int, 1),
+                (Tag::Lis, 2),
+                (Tag::Int, 2),
+                (Tag::Lis, 4),
+                (Tag::Int, 3),
+                EMPTY_LIS,
+                EMPTY_LIS,
+                (Tag::Ref, 7),
+                (Tag::Lis, 0),
+                (Tag::Lis,10),
+                EMPTY_LIS,
+                (Tag::Lis,12),
+                (Tag::Lis, 6),
+                (Tag::Ref, 7),
+                (Tag::Lis, 8),
+            ]
+        );
+        drop(heap.cells);
+    }
+
 }

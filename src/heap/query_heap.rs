@@ -1,4 +1,4 @@
-use std::{ops::{Index, IndexMut, Range}, sync::{atomic::{AtomicUsize,Ordering::Acquire}, PoisonError, RwLock, RwLockReadGuard}};
+use std::{ops::{Deref, DerefMut, Index, IndexMut, Range}, sync::{atomic::{AtomicUsize,Ordering::Acquire}, PoisonError, RwLock, RwLockReadGuard}};
 
 use super::heap::{Cell, Heap, Tag, PROG_HEAP};
 
@@ -7,7 +7,7 @@ static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 pub struct QueryHeap<'a> {
     id: usize,
     arg_regs: [Cell; 64],
-    cells: Vec<Cell>,
+    pub(crate) cells: Vec<Cell>,
     prog_cells: RwLockReadGuard<'a, Vec<Cell>>,
     //TODO handle branching query heap multi-threading
     root: Option<RwLockReadGuard<'a, QueryHeap<'a>>>,
@@ -18,6 +18,7 @@ impl<'a> QueryHeap<'a> {
         root: Option<RwLockReadGuard<'a, QueryHeap<'a>>>
     ) -> Result<QueryHeap<'a>, String> {
         let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
+        println!("New heap, ID: {id}");
         Ok(QueryHeap {
             id,
             arg_regs: [(Tag::Ref, 0); 64],
