@@ -7,7 +7,7 @@ use super::symbol_db::SymbolDB;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
-pub(crate) enum Tag {
+pub enum Tag {
     Ref,  //Query Variable
     Arg,  //Clause Variable
     Func, //Functor + tuple

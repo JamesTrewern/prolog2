@@ -1,8 +1,10 @@
-use std::{ops::{Index, IndexMut, Range}, sync::{PoisonError, RwLock, RwLockReadGuard}};
+use std::{ops::{Index, IndexMut, Range}, sync::{atomic::{AtomicUsize,Ordering::Acquire}, PoisonError, RwLock, RwLockReadGuard}};
 
 use super::heap::{Cell, Heap, Tag, PROG_HEAP};
 
-pub(crate) struct QueryHeap<'a> {
+static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+pub struct QueryHeap<'a> {
     id: usize,
     arg_regs: [Cell; 64],
     cells: Vec<Cell>,
@@ -13,8 +15,9 @@ pub(crate) struct QueryHeap<'a> {
 
 impl<'a> QueryHeap<'a> {
     pub fn new(
-        root: Option<RwLockReadGuard<'a, QueryHeap<'a>>>, id: usize
+        root: Option<RwLockReadGuard<'a, QueryHeap<'a>>>
     ) -> Result<QueryHeap<'a>, String> {
+        let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
         Ok(QueryHeap {
             id,
             arg_regs: [(Tag::Ref, 0); 64],
