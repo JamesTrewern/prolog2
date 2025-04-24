@@ -52,7 +52,6 @@ mod heap {
 
     #[test]
     fn encode_argument_variable() {
-        SymbolDB::new();
         let mut heap = Vec::<Cell>::new();
 
         let addr1 = heap.set_arg(0);
@@ -67,7 +66,6 @@ mod heap {
 
     #[test]
     fn encode_ref_variable() {
-        SymbolDB::new();
         let mut heap = Vec::<Cell>::new();
 
         let addr1 = heap.set_ref(None);
@@ -81,7 +79,6 @@ mod heap {
 
     #[test]
     fn encode_constant() {
-        SymbolDB::new();
         let mut heap = Vec::<Cell>::new();
 
         let a = SymbolDB::set_const("a".into());
@@ -96,7 +93,6 @@ mod heap {
 
     #[test]
     fn encode_functor() {
-        SymbolDB::new();
         let p = SymbolDB::set_const("p".into());
         let f = SymbolDB::set_const("f".into());
         let a = SymbolDB::set_const("a".into());
@@ -162,8 +158,6 @@ mod heap {
 
     #[test]
     fn encode_tuple() {
-        SymbolDB::new();
-
         let f = SymbolDB::set_const("f".into());
         let a = SymbolDB::set_const("a".into());
 
@@ -218,7 +212,6 @@ mod heap {
 
     #[test]
     fn encode_list() {
-        SymbolDB::new();
 
         let f = SymbolDB::set_const("f".into());
         let a = SymbolDB::set_const("a".into());
@@ -284,7 +277,6 @@ mod heap {
 
     #[test]
     fn encode_set() {
-        SymbolDB::new();
         
         let f = SymbolDB::set_const("f".into());
         let a = SymbolDB::set_const("a".into());
@@ -340,7 +332,6 @@ mod heap {
 
     #[test]
     fn dereference() {
-        SymbolDB::new();
 
         let f = SymbolDB::set_const("f".into());
         let a = SymbolDB::set_const("a".into());
