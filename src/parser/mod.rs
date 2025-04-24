@@ -1,5 +1,4 @@
-#[cfg(test)]
-mod tests;
-mod syntax_tree;
+mod build_tree;
+mod term;
 mod tokeniser;
 mod execute_tree;
