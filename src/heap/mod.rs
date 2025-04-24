@@ -1,5 +1,3 @@
-#[cfg(test)]
-mod tests;
 // mod state_heaps;
 pub(crate) mod symbol_db;
 pub(crate) mod heap;

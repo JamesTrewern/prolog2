@@ -128,3 +128,40 @@ impl SymbolDB {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::{heap::CON_PTR, symbol_db::SymbolDB};
+
+    #[test]
+    //Check required symbols are preloaded
+    fn known_symbols() {
+        assert_eq!(&*SymbolDB::get_const(CON_PTR), "false");
+        assert_eq!(&*SymbolDB::get_const(CON_PTR + 1), "true");
+    }
+
+    #[test]
+    fn insert_constant_symbol() {
+        let id = SymbolDB::set_const("a".into());
+
+        assert_eq!(&*SymbolDB::get_const(id), "a");
+        assert_eq!(SymbolDB::set_const("a".into()), id);
+    }
+
+    #[test]
+    fn insert_variable_symbol() {
+        SymbolDB::set_var("X".into(), 100, 0);
+        SymbolDB::set_var("Y".into(), 200, 1);
+        SymbolDB::set_var("Z".into(), 200, 2);
+
+        assert_eq!(*SymbolDB::get_var(100, 0).unwrap(), *"X");
+        assert_eq!(*SymbolDB::get_var(200, 1).unwrap(), *"Y");
+        assert_eq!(*SymbolDB::get_var(200, 2).unwrap(), *"Z");
+    }
+
+    #[test]
+    fn insert_string() {
+        let idx = SymbolDB::set_string("some string".into());
+        assert_eq!(*SymbolDB::get_string(idx), *"some string");
+    }
+}

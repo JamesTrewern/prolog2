@@ -1,6 +1,7 @@
 use std::{
     mem,
-    ops::{Index, IndexMut, Range, RangeInclusive}, sync::RwLock,
+    ops::{Index, IndexMut, Range, RangeInclusive},
+    sync::RwLock,
 };
 
 use super::symbol_db::SymbolDB;
@@ -40,7 +41,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn heap_len(&self) -> usize;
 
-    fn get_id(&self) -> usize{
+    fn get_id(&self) -> usize {
         0
     }
 
@@ -221,7 +222,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             (Tag::Tup, len) => todo!(),
             (Tag::Set, len) => todo!(),
             (Tag::Ref, pointer) => panic!(),
-            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt|Tag::Stri,_) => {
+            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri, _) => {
                 self.heap_push(other[addr]);
                 self.heap_len() - 1
             }
@@ -245,8 +246,10 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             ((Tag::Str, p1), (Tag::Str, p2)) => self.term_equal(p1, p2),
             ((Tag::Tup, len1), (Tag::Tup, len2)) => todo!(),
             ((Tag::Set, len1), (Tag::Set, len2)) => todo!(),
-            ((Tag::Stri, i1), (Tag::Stri, i2)) =>SymbolDB::get_string(i1) == SymbolDB::get_string(i2),
-            
+            ((Tag::Stri, i1), (Tag::Stri, i2)) => {
+                SymbolDB::get_string(i1) == SymbolDB::get_string(i2)
+            }
+
             _ => self[addr1] == self[addr2],
         }
     }
@@ -268,10 +271,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     }
                 }
                 Tag::Ref | Tag::Arg => {
-                    println!(
-                        "[{i:3}]|{tag:w$?}|{value:w$}|:({})",
-                        self.term_string(i)
-                    )
+                    println!("[{i:3}]|{tag:w$?}|{value:w$}|:({})", self.term_string(i))
                 }
                 Tag::Int => {
                     let value: isize = unsafe { mem::transmute_copy(&value) };
@@ -337,8 +337,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     /**Create a string for a tuple*/
     fn tuple_string(&self, addr: usize) -> String {
         let mut buf = String::from("(");
-        for i in 1..self[addr].1+1 {
-            buf += &self.term_string(addr+i);
+        for i in 1..self[addr].1 + 1 {
+            buf += &self.term_string(addr + i);
             buf += ",";
         }
         buf.pop();
@@ -348,14 +348,14 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     /**Create a string for a set*/
     fn set_string(&self, addr: usize) -> String {
-            let mut buf = String::from("{");
-            for i in 1..self[addr].1+1 {
-                buf += &self.term_string(addr+i);
-                buf += ",";
-            }
-            buf.pop();
-            buf += "}";
-            buf
+        let mut buf = String::from("{");
+        for i in 1..self[addr].1 + 1 {
+            buf += &self.term_string(addr + i);
+            buf += ",";
+        }
+        buf.pop();
+        buf += "}";
+        buf
     }
 
     /** Create String to represent cell, can be recursively used to format complex structures or list */
@@ -366,13 +366,13 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
             Tag::Func => self.func_string(addr),
             Tag::Lis => self.list_string(addr),
-            Tag::Arg => match SymbolDB::get_var(addr, self.get_id()){
+            Tag::Arg => match SymbolDB::get_var(addr, self.get_id()) {
                 Some(symbol) => symbol.to_string(),
-                None => format!("Arg_{}",self[addr].1),
-            }
-            Tag::Ref => match SymbolDB::get_var(self.deref_addr(addr),self.get_id()).to_owned() {
+                None => format!("Arg_{}", self[addr].1),
+            },
+            Tag::Ref => match SymbolDB::get_var(self.deref_addr(addr), self.get_id()).to_owned() {
                 Some(symbol) => symbol.to_string(),
-                None => format!("Ref_{}",self[addr].1),
+                None => format!("Ref_{}", self[addr].1),
             },
             Tag::Int => {
                 let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
@@ -385,13 +385,13 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             Tag::Tup => self.tuple_string(addr),
             Tag::Set => self.set_string(addr),
             Tag::Str => self.term_string(self[addr].1),
-            Tag::Stri => SymbolDB::get_string(self[addr].1).to_string()
+            Tag::Stri => SymbolDB::get_string(self[addr].1).to_string(),
         }
     }
 }
 
 impl Heap for Vec<Cell> {
-    fn heap_push(&mut self, cell: Cell) -> usize{
+    fn heap_push(&mut self, cell: Cell) -> usize {
         let i = self.len();
         self.push(cell);
         i
@@ -402,4 +402,346 @@ impl Heap for Vec<Cell> {
     }
 }
 
-pub (crate) static PROG_HEAP: RwLock<Vec<Cell>> = RwLock::new(Vec::new());
+pub(crate) static PROG_HEAP: RwLock<Vec<Cell>> = RwLock::new(Vec::new());
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        super::symbol_db::SymbolDB,
+        {Cell, Heap, Tag, EMPTY_LIS},
+    };
+
+    #[test]
+    fn encode_argument_variable() {
+        let mut heap = Vec::<Cell>::new();
+
+        let addr1 = heap.set_arg(0);
+        let addr2 = heap.set_arg(1);
+
+        assert_eq!(heap.term_string(addr1), "Arg_0");
+        assert_eq!(heap.term_string(addr2), "Arg_1");
+    }
+
+    #[test]
+    fn encode_ref_variable() {
+        let mut heap = Vec::<Cell>::new();
+
+        let addr1 = heap.set_ref(None);
+        let addr2 = heap.set_ref(Some(addr1));
+
+        assert_eq!(heap.term_string(addr1), "Ref_0");
+        assert_eq!(heap.term_string(addr2), "Ref_0");
+    }
+
+    #[test]
+    fn encode_constant() {
+        let mut heap = Vec::<Cell>::new();
+
+        let a = SymbolDB::set_const("a".into());
+        let b = SymbolDB::set_const("b".into());
+
+        let addr1 = heap.set_const(a);
+        let addr2 = heap.set_const(b);
+
+        assert_eq!(heap.term_string(addr1), "a");
+        assert_eq!(heap.term_string(addr2), "b");
+    }
+
+    #[test]
+    fn encode_functor() {
+        let p = SymbolDB::set_const("p".into());
+        let f = SymbolDB::set_const("f".into());
+        let a = SymbolDB::set_const("a".into());
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Func, 3),
+            (Tag::Con, p),
+            (Tag::Arg, 0),
+            (Tag::Con, a),
+        ];
+        assert_eq!(heap.term_string(0), "p(Arg_0,a)");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Func, 3),
+            (Tag::Con, p),
+            (Tag::Str, 5),
+            (Tag::Con, a),
+            (Tag::Func, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 7),
+        ];
+        assert_eq!(heap.term_string(0), "p(f(Ref_7),a)");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Func, 3),
+            (Tag::Con, p),
+            (Tag::Str, 5),
+            (Tag::Con, a),
+            (Tag::Tup, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 7),
+        ];
+        assert_eq!(heap.term_string(0), "p((f,Ref_7),a)");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Func, 3),
+            (Tag::Con, p),
+            (Tag::Str, 5),
+            (Tag::Con, a),
+            (Tag::Set, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 7),
+        ];
+        assert_eq!(heap.term_string(0), "p({f,Ref_7},a)");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Func, 3),
+            (Tag::Con, p),
+            (Tag::Lis, 5),
+            (Tag::Con, a),
+            (Tag::Con, f),
+            (Tag::Lis, 7),
+            (Tag::Ref, 7),
+            EMPTY_LIS,
+        ];
+        assert_eq!(heap.term_string(0), "p([f,Ref_7],a)");
+    }
+
+    #[test]
+    fn encode_tuple() {
+        let f = SymbolDB::set_const("f".into());
+        let a = SymbolDB::set_const("a".into());
+
+        let heap: Vec<Cell> = vec![(Tag::Str, 1), (Tag::Tup, 2), (Tag::Arg, 0), (Tag::Con, a)];
+        assert_eq!(heap.term_string(0), "(Arg_0,a)");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Tup, 2),
+            (Tag::Str, 4),
+            (Tag::Con, a),
+            (Tag::Func, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 6),
+        ];
+        assert_eq!(heap.term_string(0), "(f(Ref_6),a)");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Tup, 2),
+            (Tag::Str, 4),
+            (Tag::Con, a),
+            (Tag::Tup, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 6),
+        ];
+        assert_eq!(heap.term_string(0), "((f,Ref_6),a)");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Tup, 2),
+            (Tag::Str, 4),
+            (Tag::Con, a),
+            (Tag::Set, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 6),
+        ];
+        assert_eq!(heap.term_string(0), "({f,Ref_6},a)");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Tup, 2),
+            (Tag::Lis, 4),
+            (Tag::Con, a),
+            (Tag::Con, f),
+            (Tag::Lis, 6),
+            (Tag::Ref, 6),
+            EMPTY_LIS,
+        ];
+        assert_eq!(heap.term_string(0), "([f,Ref_6],a)");
+    }
+
+    #[test]
+    fn encode_list() {
+        let f = SymbolDB::set_const("f".into());
+        let a = SymbolDB::set_const("a".into());
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Lis, 1),
+            (Tag::Arg, 0),
+            (Tag::Lis, 3),
+            (Tag::Con, a),
+            EMPTY_LIS,
+        ];
+        assert_eq!(heap.term_string(0), "[Arg_0,a]");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Lis, 1),
+            (Tag::Str, 5),
+            (Tag::Lis, 3),
+            (Tag::Con, a),
+            EMPTY_LIS,
+            (Tag::Func, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 7),
+        ];
+        assert_eq!(heap.term_string(0), "[f(Ref_7),a]");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Lis, 1),
+            (Tag::Str, 5),
+            (Tag::Lis, 3),
+            (Tag::Con, a),
+            EMPTY_LIS,
+            (Tag::Tup, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 7),
+        ];
+        assert_eq!(heap.term_string(0), "[(f,Ref_7),a]");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Lis, 1),
+            (Tag::Str, 5),
+            (Tag::Lis, 3),
+            (Tag::Con, a),
+            EMPTY_LIS,
+            (Tag::Set, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 7),
+        ];
+        assert_eq!(heap.term_string(0), "[{f,Ref_7},a]");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Lis, 1),
+            (Tag::Lis, 5),
+            (Tag::Lis, 3),
+            (Tag::Con, a),
+            EMPTY_LIS,
+            (Tag::Con, f),
+            (Tag::Lis, 7),
+            (Tag::Ref, 7),
+            EMPTY_LIS,
+        ];
+        assert_eq!(heap.term_string(0), "[[f,Ref_7],a]");
+    }
+
+    #[test]
+    fn encode_set() {
+        let f = SymbolDB::set_const("f".into());
+        let a = SymbolDB::set_const("a".into());
+
+        let heap: Vec<Cell> = vec![(Tag::Str, 1), (Tag::Set, 2), (Tag::Arg, 0), (Tag::Con, a)];
+        assert_eq!(heap.term_string(0), "{Arg_0,a}");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Set, 2),
+            (Tag::Str, 4),
+            (Tag::Con, a),
+            (Tag::Func, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 6),
+        ];
+        assert_eq!(heap.term_string(0), "{f(Ref_6),a}");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Set, 2),
+            (Tag::Str, 4),
+            (Tag::Con, a),
+            (Tag::Tup, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 6),
+        ];
+        assert_eq!(heap.term_string(0), "{(f,Ref_6),a}");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Set, 2),
+            (Tag::Str, 4),
+            (Tag::Con, a),
+            (Tag::Set, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 6),
+        ];
+        assert_eq!(heap.term_string(0), "{{f,Ref_6},a}");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Str, 1),
+            (Tag::Set, 2),
+            (Tag::Lis, 4),
+            (Tag::Con, a),
+            (Tag::Con, f),
+            (Tag::Lis, 6),
+            (Tag::Ref, 6),
+            EMPTY_LIS,
+        ];
+        assert_eq!(heap.term_string(0), "{[f,Ref_6],a}");
+    }
+
+    #[test]
+    fn dereference() {
+        let f = SymbolDB::set_const("f".into());
+        let a = SymbolDB::set_const("a".into());
+
+        let heap: Vec<Cell> = vec![(Tag::Ref, 1), (Tag::Ref, 2), (Tag::Ref, 3), (Tag::Ref, 3)];
+        assert_eq!(heap.term_string(0), "Ref_3");
+
+        let heap: Vec<Cell> = vec![(Tag::Ref, 1), (Tag::Ref, 2), (Tag::Ref, 3), (Tag::Arg, 0)];
+        assert_eq!(heap.term_string(0), "Arg_0");
+
+        let heap: Vec<Cell> = vec![(Tag::Ref, 1), (Tag::Ref, 2), (Tag::Ref, 3), (Tag::Con, a)];
+        assert_eq!(heap.term_string(0), "a");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Ref, 1),
+            (Tag::Ref, 2),
+            (Tag::Ref, 3),
+            (Tag::Str, 4),
+            (Tag::Func, 3),
+            (Tag::Con, f),
+            (Tag::Con, a),
+            (Tag::Ref, 7),
+        ];
+        assert_eq!(heap.term_string(0), "f(a,Ref_7)");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Ref, 1),
+            (Tag::Ref, 2),
+            (Tag::Ref, 3),
+            (Tag::Str, 4),
+            (Tag::Tup, 2),
+            (Tag::Con, a),
+            (Tag::Ref, 6),
+        ];
+        assert_eq!(heap.term_string(0), "(a,Ref_6)");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Ref, 1),
+            (Tag::Ref, 2),
+            (Tag::Ref, 3),
+            (Tag::Str, 4),
+            (Tag::Set, 2),
+            (Tag::Con, a),
+            (Tag::Ref, 6),
+        ];
+        assert_eq!(heap.term_string(0), "{a,Ref_6}");
+
+        let heap: Vec<Cell> = vec![
+            (Tag::Ref, 1),
+            (Tag::Ref, 2),
+            (Tag::Ref, 3),
+            (Tag::Lis, 4),
+            (Tag::Con, a),
+            (Tag::Lis, 6),
+            (Tag::Ref, 6),
+            EMPTY_LIS,
+        ];
+        assert_eq!(heap.term_string(0), "[a,Ref_6]");
+    }
+}
