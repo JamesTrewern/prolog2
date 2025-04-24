@@ -3,7 +3,7 @@
 mod heap;
 // mod interface;
 // mod pred_module;
-// mod program;
+mod program;
 // mod resolution;
 mod parser;
 use std::{collections::HashMap, process::ExitCode};
