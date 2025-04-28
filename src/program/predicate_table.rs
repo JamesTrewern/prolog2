@@ -3,16 +3,7 @@ use std::{
     ops::{Deref, DerefMut, Range},
 };
 
-#[derive(PartialEq, Eq, Ord, Debug)]
-struct SymbolArity(usize, usize);
-impl PartialOrd for SymbolArity {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.0.partial_cmp(&other.0) {
-            Some(core::cmp::Ordering::Equal) => self.1.partial_cmp(&other.1),
-            ord => return ord,
-        }
-    }
-}
+pub(crate) type SymbolArity = (usize, usize);
 
 //TODO create predicate function type
 #[derive(PartialEq, Eq, Debug)]
@@ -59,7 +50,7 @@ impl PredicateTable {
         body: bool,
         predicate: PredClFn,
     ) {
-        let symbol_arity = SymbolArity(symbol, arity);
+        let symbol_arity = (symbol, arity);
         match self.find_predicate(&symbol_arity) {
             Ok(i) => {
                 self[i] = Predicate {
@@ -80,14 +71,14 @@ impl PredicateTable {
     }
 
     pub fn get_predicate(&self, symbol: usize, arity: usize) -> Option<&Predicate> {
-        match self.find_predicate(&SymbolArity(symbol, arity)) {
+        match self.find_predicate(&(symbol, arity)) {
             Ok(i) => Some(&self[i]),
             Err(_) => None,
         }
     }
 
     pub fn delete(&mut self, symbol: usize, arity: usize) {
-        if let Ok(index) = self.find_predicate(&SymbolArity(symbol, arity)) {
+        if let Ok(index) = self.find_predicate(&(symbol, arity)) {
             self.0.remove(index);
         }
     }
@@ -109,39 +100,39 @@ impl DerefMut for PredicateTable {
 
 #[cfg(test)]
 mod tests {
-    use super::{PredClFn, Predicate, PredicateTable, SymbolArity};
+    use super::{PredClFn, Predicate, PredicateTable};
 
     #[test]
     fn find_predicate() {
         let body = true;
         let pred_table = PredicateTable(vec![
             Predicate {
-                symbol_arity: SymbolArity(1, 2),
+                symbol_arity: (1, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(2, 1),
+                symbol_arity: (2, 1),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(2, 2),
+                symbol_arity: (2, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(3, 2),
+                symbol_arity: (3, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
         ]);
 
-        assert_eq!(pred_table.find_predicate(&SymbolArity(2, 1)), Ok(1));
-        assert_eq!(pred_table.find_predicate(&SymbolArity(2, 2)), Ok(2));
-        assert_eq!(pred_table.find_predicate(&SymbolArity(1, 3)), Err(1));
-        assert_eq!(pred_table.find_predicate(&SymbolArity(1, 1)), Err(0));
-        assert_eq!(pred_table.find_predicate(&SymbolArity(3, 3)), Err(4));
+        assert_eq!(pred_table.find_predicate(&(2, 1)), Ok(1));
+        assert_eq!(pred_table.find_predicate(&(2, 2)), Ok(2));
+        assert_eq!(pred_table.find_predicate(&(1, 3)), Err(1));
+        assert_eq!(pred_table.find_predicate(&(1, 1)), Err(0));
+        assert_eq!(pred_table.find_predicate(&(3, 3)), Err(4));
     }
 
     #[test]
@@ -149,22 +140,22 @@ mod tests {
         let body = true;
         let pred_table = PredicateTable(vec![
             Predicate {
-                symbol_arity: SymbolArity(1, 2),
+                symbol_arity: (1, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(2, 1),
+                symbol_arity: (2, 1),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(2, 2),
+                symbol_arity: (2, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(3, 2),
+                symbol_arity: (3, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
@@ -173,7 +164,7 @@ mod tests {
         assert_eq!(
             pred_table.get_predicate(2, 1),
             Some(&Predicate {
-                symbol_arity: SymbolArity(2, 1),
+                symbol_arity: (2, 1),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             })
@@ -186,22 +177,22 @@ mod tests {
         let body = true;
         let mut pred_table = PredicateTable(vec![
             Predicate {
-                symbol_arity: SymbolArity(1, 2),
+                symbol_arity: (1, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(2, 1),
+                symbol_arity: (2, 1),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(2, 2),
+                symbol_arity: (2, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(3, 2),
+                symbol_arity: (3, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
@@ -211,45 +202,45 @@ mod tests {
         pred_table.update_insert_predicate(2, 3, true, PredClFn::Clauses(0..1));
         pred_table.update_insert_predicate(4, 1, true, PredClFn::Clauses(0..1));
 
-        assert_eq!(pred_table.find_predicate(&SymbolArity(1, 1)), Ok(0));
-        assert_eq!(pred_table.find_predicate(&SymbolArity(2, 3)), Ok(4));
-        assert_eq!(pred_table.find_predicate(&SymbolArity(4, 1)), Ok(6));
+        assert_eq!(pred_table.find_predicate(&(1, 1)), Ok(0));
+        assert_eq!(pred_table.find_predicate(&(2, 3)), Ok(4));
+        assert_eq!(pred_table.find_predicate(&(4, 1)), Ok(6));
 
         assert_eq!(
             pred_table.0,
             [
                 Predicate {
-                    symbol_arity: SymbolArity(1, 1),
+                    symbol_arity: (1, 1),
                     body,
                     predicate: PredClFn::Clauses(0..1)
                 },
                 Predicate {
-                    symbol_arity: SymbolArity(1, 2),
+                    symbol_arity: (1, 2),
                     body,
                     predicate: PredClFn::Clauses(0..1)
                 },
                 Predicate {
-                    symbol_arity: SymbolArity(2, 1),
+                    symbol_arity: (2, 1),
                     body,
                     predicate: PredClFn::Clauses(0..1)
                 },
                 Predicate {
-                    symbol_arity: SymbolArity(2, 2),
+                    symbol_arity: (2, 2),
                     body,
                     predicate: PredClFn::Clauses(0..1)
                 },
                 Predicate {
-                    symbol_arity: SymbolArity(2, 3),
+                    symbol_arity: (2, 3),
                     body,
                     predicate: PredClFn::Clauses(0..1)
                 },
                 Predicate {
-                    symbol_arity: SymbolArity(3, 2),
+                    symbol_arity: (3, 2),
                     body,
                     predicate: PredClFn::Clauses(0..1)
                 },
                 Predicate {
-                    symbol_arity: SymbolArity(4, 1),
+                    symbol_arity: (4, 1),
                     body,
                     predicate: PredClFn::Clauses(0..1)
                 },
@@ -262,22 +253,22 @@ mod tests {
         let body = true;
         let mut pred_table = PredicateTable(vec![
             Predicate {
-                symbol_arity: SymbolArity(1, 2),
+                symbol_arity: (1, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(2, 1),
+                symbol_arity: (2, 1),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(2, 2),
+                symbol_arity: (2, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(3, 2),
+                symbol_arity: (3, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
@@ -288,7 +279,7 @@ mod tests {
         assert_eq!(
             pred_table.get_predicate(1, 2),
             Some(&Predicate {
-                symbol_arity: SymbolArity(1, 2),
+                symbol_arity: (1, 2),
                 body: false,
                 predicate: PredClFn::Clauses(5..7),
             })
@@ -300,22 +291,22 @@ mod tests {
         let body = true;
         let mut pred_table = PredicateTable(vec![
             Predicate {
-                symbol_arity: SymbolArity(1, 2),
+                symbol_arity: (1, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(2, 1),
+                symbol_arity: (2, 1),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(2, 2),
+                symbol_arity: (2, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
             Predicate {
-                symbol_arity: SymbolArity(3, 2),
+                symbol_arity: (3, 2),
                 body,
                 predicate: PredClFn::Clauses(0..1),
             },
@@ -329,12 +320,12 @@ mod tests {
             pred_table.0,
             [
                 Predicate {
-                    symbol_arity: SymbolArity(2, 1),
+                    symbol_arity: (2, 1),
                     body,
                     predicate: PredClFn::Clauses(0..1),
                 },
                 Predicate {
-                    symbol_arity: SymbolArity(2, 2),
+                    symbol_arity: (2, 2),
                     body,
                     predicate: PredClFn::Clauses(0..1),
                 },
