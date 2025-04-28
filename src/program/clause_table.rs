@@ -2,29 +2,29 @@ use std::{cmp::Ordering, ops::Range};
 use crate::heap::heap::Heap;
 use super::predicate_table::SymbolArity;
 
-enum ClauseMetaData {
-    Clause((usize,usize)),     // Literals range
-    Meta((usize,usize), u128), // Literals range, Existential variables bitflags
+enum ClauseMetaData<'a> {
+    Clause(&'a [usize]),     // Literals range
+    Meta(&'a [usize], u128), // Literals range, Existential variables bitflags
 }
 
-impl ClauseMetaData {
-    pub fn literals(&self ) -> Range<usize>{
+impl<'a> ClauseMetaData<'a> {
+    pub fn literals(&self ) -> &'a [usize]{
         match self {
-            ClauseMetaData::Clause(range) => range.0 .. range.1,
-            ClauseMetaData::Meta(range, _) => range.0 .. range.1,
+            ClauseMetaData::Clause(literals) => *literals,
+            ClauseMetaData::Meta(literals, _) => *literals,
         }
     }
 
     pub fn head(&self ) -> usize{
         match self {
-            ClauseMetaData::Clause(range) => range.0,
-            ClauseMetaData::Meta(range, _) => range.0,
+            ClauseMetaData::Clause(literals) => literals[0],
+            ClauseMetaData::Meta(literals, _) => literals[0],
         }
     }
 }
 
-pub struct ClauseTable {
-    clauses: Vec<ClauseMetaData>,
+pub struct ClauseTable<'a> {
+    clauses: Vec<ClauseMetaData<'a>>,
     litteral_addrs: Vec<usize>, //Heap addresses of clause literals
 }
 
@@ -45,7 +45,9 @@ fn order_clauses(
     symbol_arity1.cmp(&symbol_arity2)
 }
 
-impl ClauseTable {}
+impl<'a> ClauseTable<'a> {
+
+}
 
 #[cfg(test)]
 mod tests {
