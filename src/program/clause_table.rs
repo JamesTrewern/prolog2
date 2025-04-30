@@ -45,7 +45,7 @@ impl ClauseMetaData {
 
 pub struct ClauseTable {
     clauses: Vec<ClauseMetaData>,
-    litteral_addrs: Vec<usize>, //Heap addresses of clause literals
+    literal_addrs: Vec<usize>, //Heap addresses of clause literals
 }
 
 /**Given 2 clauses returns order between them
@@ -69,7 +69,7 @@ impl ClauseTable {
     pub fn new() -> ClauseTable {
         ClauseTable {
             clauses: vec![],
-            litteral_addrs: vec![],
+            literal_addrs: vec![],
         }
     }
 
@@ -78,7 +78,7 @@ impl ClauseTable {
     }
 
     pub fn get_literals(&self, range: Range<usize>) -> &[usize] {
-        &self.litteral_addrs[range]
+        &self.literal_addrs[range]
     }
 
     pub fn insert(&mut self, literals: Vec<usize>, meta_vars: Option<u128>, heap: &impl Heap) -> usize{
@@ -87,7 +87,7 @@ impl ClauseTable {
         let mut total_len = 0;
         while let Some(c2) = self.get(i) {
             let symbol_arity1 = heap.str_symbol_arity(literals[0]);
-            let symbol_arity2 = heap.str_symbol_arity(self.litteral_addrs[c2.head()]);
+            let symbol_arity2 = heap.str_symbol_arity(self.literal_addrs[c2.head()]);
 
             if symbol_arity1.cmp(&symbol_arity2) == Ordering::Less {
                 break;
@@ -104,7 +104,7 @@ impl ClauseTable {
             None => ClauseMetaData::Clause(literals_range),
         };
         self.clauses.insert(i, new_clause);
-        self.litteral_addrs.splice(total_len..total_len, literals);
+        self.literal_addrs.splice(total_len..total_len, literals);
         let insert_index = i;
 
         //Update following clauses
@@ -131,7 +131,7 @@ impl ClauseTable {
         let total_len = clauses.fold(0, |acc, clause| acc + clause.len());
         let ub = lb + total_len;
 
-        self.litteral_addrs.drain(lb..ub);
+        self.literal_addrs.drain(lb..ub);
 
         for clause in &mut self.clauses[lb..] {
             clause.shift_indexes(-(total_len as isize));
@@ -198,7 +198,7 @@ mod tests {
                 ClauseMetaData::Clause((4, 5)),
                 ClauseMetaData::Clause((5, 6)),
             ],
-            litteral_addrs: vec![0, 4, 9, 12, 16, 19],
+            literal_addrs: vec![0, 4, 9, 12, 16, 19],
         };
 
         (heap, clause_table)
@@ -256,7 +256,7 @@ mod tests {
         ]);
         let i3 = clause_table.insert(literals_3.clone(), Some(0), &heap);
 
-        assert_eq!(clause_table.litteral_addrs, [literals_3[0],0, 4, 9, 12, 16, 19, literals_2[0], literals_2[1], literals_1[0],literals_1[1]]);
+        assert_eq!(clause_table.literal_addrs, [literals_3[0],0, 4, 9, 12, 16, 19, literals_2[0], literals_2[1], literals_1[0],literals_1[1]]);
 
         assert_eq!(clause_table.get(i3).unwrap(), ClauseMetaData::Meta((0,1), 0));
         assert_eq!(clause_table.get_literals(clause_table.get(i3).unwrap().literals()), literals_3);
@@ -274,7 +274,7 @@ mod tests {
 
         clause_table.remove_clauses(0..2);
 
-        assert_eq!(clause_table.litteral_addrs,[9, 12, 16, 19]);
+        assert_eq!(clause_table.literal_addrs,[9, 12, 16, 19]);
         assert_eq!(clause_table.clauses,[
             ClauseMetaData::Clause((0, 1)),
             ClauseMetaData::Clause((1, 2)),
