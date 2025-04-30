@@ -113,7 +113,11 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             addr = pointer
         }
         if let (Tag::Func, arity) = self[addr] {
-            (self[self.deref_addr(addr + 1)].1, arity)
+            match  self[self.deref_addr(addr + 1)]{
+                (Tag::Arg | Tag::Ref, _) => (0, arity),
+                (Tag::Con, id) => (id, arity),
+                _ => panic!("Functor of structure not constant of variable")
+            }
         } else if let (Tag::Con, symbol) = self[addr] {
             (symbol, 0)
         } else {
