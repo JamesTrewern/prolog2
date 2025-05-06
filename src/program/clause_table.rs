@@ -1,141 +1,83 @@
 use crate::heap::heap::Heap;
-use std::{cmp::Ordering, ops::Range};
+use std::{alloc::GlobalAlloc, cmp::Ordering, ops::{Deref, Range}, sync::Arc};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ClauseMetaData {
-    Clause((usize, usize)),     // Literals range
-    Meta((usize, usize), u128), // Literals range, Existential variables bitflags
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Clause{
+    literals: Arc<[usize]>,
+    meta_vars: Option<u128>
 }
 
-impl ClauseMetaData {
-    pub fn literals(&self) -> Range<usize> {
-        match self {
-            ClauseMetaData::Clause(range) => range.0..range.1,
-            ClauseMetaData::Meta(range, _) => range.0..range.1,
+impl Clause {
+    fn meta_vars_to_bit_flags(meta_vars: Vec<usize>) -> u128{
+        let mut bit_flags: u128 = 0;
+        for meta_var in meta_vars{
+            if meta_var > 127{
+                panic!("Cant have more than 128 variables in meta clause")
+            }
+            bit_flags = bit_flags | 1 << meta_var
         }
+        bit_flags
     }
 
-    pub fn head(&self) -> usize {
-        match self {
-            ClauseMetaData::Clause(range) => range.0,
-            ClauseMetaData::Meta(range, _) => range.0,
-        }
+    pub fn new(literals: Vec<usize>, meta_vars: Option<Vec<usize>>) -> Self{
+        Clause { literals: literals.into(), meta_vars: meta_vars.map(Self::meta_vars_to_bit_flags)}
     }
 
-    pub fn len(&self) -> usize {
-        match self {
-            ClauseMetaData::Clause(range) => range.1 - range.0,
-            ClauseMetaData::Meta(range, _) => range.1 - range.0,
-        }
+    pub fn head(&self) -> usize{
+        self.literals[0]
     }
 
-    //Increment literals index range start and end by step
-    pub fn shift_indexes(&mut self, step: isize) {
-        let range = match self {
-            ClauseMetaData::Clause(range) => range,
-            ClauseMetaData::Meta(range, _) => range,
-        };
+    pub fn cmp(&self, other: &Self, heap: &impl Heap) -> Ordering{
+        let symbol_arity_1 = heap.str_symbol_arity(self.head());
+        let symbol_arity_2 = heap.str_symbol_arity(other.head());
+        symbol_arity_1.cmp(&symbol_arity_2)
+    }
 
-        *range = (
-            (range.0 as isize + step) as usize,
-            (range.1 as isize + step) as usize,
-        );
+    pub fn meta(&self) -> bool{
+        self.meta_vars.is_some()
+    }
+
+    pub fn meta_var(&self, arg_id: usize) -> Result<bool,&'static str>{
+        let meta_vars = self.meta_vars.ok_or("Clause is not a meta clause")?;
+        Ok(meta_vars & (1 << arg_id) != 0)
     }
 }
 
-pub struct ClauseTable {
-    clauses: Vec<ClauseMetaData>,
-    literal_addrs: Vec<usize>, //Heap addresses of clause literals
+impl Deref for Clause{
+    type Target = [usize];
+
+    fn deref(&self) -> &Self::Target {
+        &self.literals
+    }
 }
 
-/**Given 2 clauses returns order between them
- * @c1: 1st clause
- * @c2: 2nd clause
- * @literals: The clause table's list of literal addresses
- * @heap: The heap
- */
-fn order_clauses(
-    c1: &ClauseMetaData,
-    c2: &ClauseMetaData,
-    literals: &[usize],
-    heap: &impl Heap,
-) -> Ordering {
-    let symbol_arity1 = heap.str_symbol_arity(literals[c1.head()]);
-    let symbol_arity2 = heap.str_symbol_arity(literals[c2.head()]);
-    symbol_arity1.cmp(&symbol_arity2)
-}
+#[derive(PartialEq,Debug)]
+pub struct ClauseTable (Vec<Clause>);
 
 impl ClauseTable {
     pub fn new() -> ClauseTable {
-        ClauseTable {
-            clauses: vec![],
-            literal_addrs: vec![],
-        }
+        ClauseTable(vec![])
     }
 
-    pub fn get(&self, i: usize) -> Option<ClauseMetaData> {
-        self.clauses.get(i).map(|&clause| clause)
+    pub fn get(&self, i: usize) -> Option<Clause> {
+        self.0.get(i).map(|clause| clause.clone())
     }
 
-    pub fn get_literals(&self, range: Range<usize>) -> &[usize] {
-        &self.literal_addrs[range]
-    }
-
-    pub fn insert(&mut self, literals: Vec<usize>, meta_vars: Option<u128>, heap: &impl Heap) -> usize{
-        //Find insertion point
-        let mut i = 0;
-        let mut total_len = 0;
-        while let Some(c2) = self.get(i) {
-            let symbol_arity1 = heap.str_symbol_arity(literals[0]);
-            let symbol_arity2 = heap.str_symbol_arity(self.literal_addrs[c2.head()]);
-
-            if symbol_arity1.cmp(&symbol_arity2) == Ordering::Less {
+    pub fn insert(&mut self, clause: Clause, heap: &impl Heap) -> usize{
+        let mut i: usize = 0;
+        while let Some(other_clause) = self.0.get(i){
+            if clause.cmp(other_clause, heap) == Ordering::Less{
                 break;
-            } else {
-                total_len += c2.len();
-                i += 1;
+            }else{
+                i+=1;
             }
         }
-
-        //Insert Clause
-        let literals_range = (total_len, total_len + literals.len());
-        let new_clause = match meta_vars {
-            Some(meta_vars) => ClauseMetaData::Meta(literals_range, meta_vars),
-            None => ClauseMetaData::Clause(literals_range),
-        };
-        self.clauses.insert(i, new_clause);
-        self.literal_addrs.splice(total_len..total_len, literals);
-        let insert_index = i;
-
-        //Update following clauses
-        i += 1;
-        while let Some(clause) = self.clauses.get_mut(i) {
-            clause.shift_indexes(new_clause.len() as isize);
-            i+=1;
-        }
-        insert_index
+        self.0.insert(i, clause);
+        i
     }
 
-    // pub fn remove(&mut self, i: usize) {
-    //     let clause = self.clauses.remove(i);
-    //     let step = - (clause.len() as isize);
-    //     self.litteral_addrs.drain(clause.literals());
-    //     for clause in &mut self.clauses[i..]{
-    //         clause.shift_indexes(step);
-    //     }
-    // }
-
-    pub fn remove_clauses(&mut self, is: Range<usize>) {
-        let lb = self.clauses[is.start].head();
-        let clauses = self.clauses.drain(is);
-        let total_len = clauses.fold(0, |acc, clause| acc + clause.len());
-        let ub = lb + total_len;
-
-        self.literal_addrs.drain(lb..ub);
-
-        for clause in &mut self.clauses[lb..] {
-            clause.shift_indexes(-(total_len as isize));
-        }
+    pub fn remove_clauses(&mut self, range: Range<usize>) {
+        self.0.drain(range);
     }
 }
 
@@ -148,7 +90,7 @@ mod tests {
         symbol_db::SymbolDB,
     };
 
-    use super::{ClauseMetaData, ClauseTable};
+    use super::{Clause, ClauseTable};
 
     fn setup() -> (Vec<Cell>,ClauseTable) {
         let p = SymbolDB::set_const("p".into());
@@ -189,17 +131,14 @@ mod tests {
             (Tag::Arg, 0),
         ];
 
-        let clause_table = ClauseTable {
-            clauses: vec![
-                ClauseMetaData::Meta((0, 1), 0),
-                ClauseMetaData::Meta((1, 2), 0),
-                ClauseMetaData::Clause((2, 3)),
-                ClauseMetaData::Clause((3, 4)),
-                ClauseMetaData::Clause((4, 5)),
-                ClauseMetaData::Clause((5, 6)),
-            ],
-            literal_addrs: vec![0, 4, 9, 12, 16, 19],
-        };
+        let clause_table = ClauseTable(vec![
+            Clause::new(vec![0], Some(vec![])),
+            Clause::new(vec![4], Some(vec![])),
+            Clause::new(vec![9], None),
+            Clause::new(vec![12], None),
+            Clause::new(vec![16], None),
+            Clause::new(vec![19], None),
+        ]);
 
         (heap, clause_table)
     }
@@ -208,14 +147,11 @@ mod tests {
     fn get() {
         let (heap,clause_table) = setup();
 
-        assert_eq!(clause_table.get(0).unwrap(), ClauseMetaData::Meta((0,1), 0));
-        assert_eq!(clause_table.get_literals(clause_table.get(0).unwrap().literals()), [0]);
+        assert_eq!(clause_table.get(0), Some(Clause{ literals: [0].into(), meta_vars: Some(0) }));
 
-        assert_eq!(clause_table.get(3).unwrap(), ClauseMetaData::Clause((3,4)));
-        assert_eq!(clause_table.get_literals(clause_table.get(3).unwrap().literals()), [12]);
+        assert_eq!(clause_table.get(3), Some(Clause{literals: [12].into(), meta_vars: None}));
 
-        assert_eq!(clause_table.get(5).unwrap(), ClauseMetaData::Clause((5,6)));
-        assert_eq!(clause_table.get_literals(clause_table.get(5).unwrap().literals()), [19]);
+        assert_eq!(clause_table.get(5), Some(Clause{literals: [19].into(), meta_vars: None}));
 
         assert_eq!(clause_table.get(6), None);
     }
@@ -236,7 +172,7 @@ mod tests {
             (Tag::Con, p),
             (Tag::Arg, 0)
         ]);
-        let i1 = clause_table.insert(literals_1.clone(), None, &heap);
+        let i1 = clause_table.insert(Clause { literals: literals_1.clone().into(), meta_vars: None }, &heap);
 
 
         let literals_2 = vec![heap.len(),heap.len()+1];
@@ -246,7 +182,7 @@ mod tests {
             (Tag::Con, symbol),
             (Tag::Arg, 0)
         ]);
-        let i2 = clause_table.insert(literals_2.clone(), None, &heap);
+        let i2 = clause_table.insert(Clause { literals: literals_2.clone().into(), meta_vars: None }, &heap);
 
         let literals_3 = vec![heap.len()];
         heap.append(&mut vec![
@@ -254,18 +190,11 @@ mod tests {
             (Tag::Arg, 0),
             (Tag::Arg, 1)
         ]);
-        let i3 = clause_table.insert(literals_3.clone(), Some(0), &heap);
+        let i3 = clause_table.insert(Clause { literals: literals_3.clone().into(), meta_vars: Some(0) }, &heap);
 
-        assert_eq!(clause_table.literal_addrs, [literals_3[0],0, 4, 9, 12, 16, 19, literals_2[0], literals_2[1], literals_1[0],literals_1[1]]);
-
-        assert_eq!(clause_table.get(i3).unwrap(), ClauseMetaData::Meta((0,1), 0));
-        assert_eq!(clause_table.get_literals(clause_table.get(i3).unwrap().literals()), literals_3);
-
-        assert_eq!(clause_table.get(i2+1).unwrap(), ClauseMetaData::Clause((7,9)));
-        assert_eq!(clause_table.get_literals(clause_table.get(i2+1).unwrap().literals()), literals_2);
-
-        assert_eq!(clause_table.get(i1+2).unwrap(), ClauseMetaData::Clause((9,11)));
-        assert_eq!(clause_table.get_literals(clause_table.get(i1+2).unwrap().literals()), literals_1);
+        assert_eq!(clause_table.get(i3).unwrap(), Clause{ literals: literals_3.into(), meta_vars: Some(0) });
+        assert_eq!(clause_table.get(i2+1).unwrap(), Clause{ literals: literals_2.into(), meta_vars: None });
+        assert_eq!(clause_table.get(i1+2).unwrap(), Clause{ literals: literals_1.into(), meta_vars: None });
     }
 
     #[test]
@@ -274,12 +203,23 @@ mod tests {
 
         clause_table.remove_clauses(0..2);
 
-        assert_eq!(clause_table.literal_addrs,[9, 12, 16, 19]);
-        assert_eq!(clause_table.clauses,[
-            ClauseMetaData::Clause((0, 1)),
-            ClauseMetaData::Clause((1, 2)),
-            ClauseMetaData::Clause((2, 3)),
-            ClauseMetaData::Clause((3, 4)),
-        ]);
+        assert_eq!(clause_table, ClauseTable(vec![
+            Clause{ literals: vec![9].into(), meta_vars: None },
+            Clause{ literals: vec![12].into(), meta_vars: None },
+            Clause{ literals: vec![16].into(), meta_vars: None },
+            Clause{ literals: vec![19].into(), meta_vars: None },
+        ]));
+    }
+
+    #[test]
+    fn bit_flags(){
+        let clause = Clause::new(vec![0], Some(vec![0,5,10,127]));
+
+        assert_eq!(clause.meta_var(0), Ok(true));
+        assert_eq!(clause.meta_var(1), Ok(false));
+        assert_eq!(clause.meta_var(5), Ok(true));
+        assert_eq!(clause.meta_var(10), Ok(true));
+        assert_eq!(clause.meta_var(127), Ok(true));
+        assert_eq!(Clause::new(vec![1], None).meta_var(1), Err("Clause is not a meta clause"));
     }
 }
