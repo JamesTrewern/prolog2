@@ -3,9 +3,9 @@ use std::{cmp::Ordering, ops::{Deref, DerefMut, Range}};
 pub(crate) type SymbolArity = (usize, usize);
 
 //TODO create predicate function type
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub struct PredicateFN;
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum PredClFn {
     Function(PredicateFN),
     Clauses(Range<usize>),
@@ -162,6 +162,20 @@ impl PredicateTable {
             }
             _ => Err("Can't set non existing predicate to body"),
         }
+    }
+
+    pub fn get_body_clauses(&self) -> Vec<Range<usize>>{
+        self.iter().filter_map(|predicate| {
+            if let PredClFn::Clauses(range) = &predicate.predicate{
+                if predicate.body {
+                    Some(range.clone())
+                }else{
+                    None
+                }
+            }else{
+                None
+            }
+        }).collect()
     }
 }
 
