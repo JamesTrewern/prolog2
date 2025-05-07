@@ -47,23 +47,27 @@ impl Program {
 
     pub fn get_predicate(&self, symbol_arity: SymbolArity) -> Option<CallResult> {
         match self.predicate_table.get_predicate(symbol_arity) {
-            Some(predicate) => match &predicate.predicate {
+            Some(predicate) => match predicate.predicate {
                 super::predicate_table::PredClFn::Function(predicate_fn) => {
-                    Some(CallResult::Function(*predicate_fn))
+                    Some(CallResult::Function(predicate_fn))
                 }
-                super::predicate_table::PredClFn::Clauses(range) => Some(CallResult::Clauses(
-                    (range.0..range.1)
+                super::predicate_table::PredClFn::Clauses(range) => {
+                    let mut clauses: Vec<Clause> = (range.0..range.1)
                         .into_iter()
                         .map(|idx| self.clause_table.get(idx).unwrap())
-                        .collect(),
-                )),
+                        .collect();
+                    if symbol_arity.0 == 0 {
+                        clauses.append(&mut self.get_body(symbol_arity.1));
+                    }
+                    Some(CallResult::Clauses(clauses))
+                }
             },
             None => None,
         }
     }
 
-    pub fn get_body(&self) -> Vec<Clause> {
-        let ranges = self.predicate_table.get_body_clauses();
+    pub fn get_body(&self, arity: usize) -> Vec<Clause> {
+        let ranges = self.predicate_table.get_body_clauses(arity);
         let mut body_clauses = Vec::<Clause>::new();
 
         for range in ranges {

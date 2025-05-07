@@ -164,10 +164,10 @@ impl PredicateTable {
         }
     }
 
-    pub fn get_body_clauses(&self) -> Vec<(usize,usize)>{
+    pub fn get_body_clauses(&self, arity: usize) -> Vec<(usize,usize)>{
         self.iter().filter_map(|predicate| {
             if let PredClFn::Clauses(range) = &predicate.predicate{
-                if predicate.body {
+                if predicate.body && predicate.symbol_arity.1 == arity{
                     Some(*range)
                 }else{
                     None
