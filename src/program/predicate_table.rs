@@ -8,7 +8,7 @@ pub struct PredicateFN;
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum PredClFn {
     Function(PredicateFN),
-    Clauses(Range<usize>),
+    Clauses((usize,usize)),
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -21,8 +21,8 @@ pub struct Predicate {
 impl Predicate {
     pub fn shift_clause_range(&mut self, step: isize) {
         if let PredClFn::Clauses(range) = &mut self.predicate {
-            range.start = (range.start as isize + step) as usize;
-            range.end = (range.end as isize + step) as usize;
+            range.0 = (range.0 as isize + step) as usize;
+            range.1 = (range.1 as isize + step) as usize;
         }
     }
 }
@@ -95,9 +95,9 @@ impl PredicateTable {
             FindReturn::Index(idx) => match &mut self.get_mut(idx).unwrap().predicate {
                 PredClFn::Function(_) => return Err("Cannot add clause to function predicate"),
                 PredClFn::Clauses(range) => {
-                    if range.end == clause_idx {
-                        range.end += 1;
-                        for predicate in &mut self.0[idx + 1..] {
+                    if range.1 == clause_idx {
+                        range.1 += 1;
+                        for predicate in &mut self[idx + 1..] {
                             predicate.shift_clause_range(1);
                         }
                     } else {
@@ -111,7 +111,7 @@ impl PredicateTable {
                     Predicate {
                         symbol_arity,
                         body: false,
-                        predicate: PredClFn::Clauses(clause_idx..clause_idx + 1),
+                        predicate: PredClFn::Clauses((clause_idx,clause_idx + 1)),
                     },
                 );
                 for predicate in &mut self.0[insert_idx + 1..] {
@@ -129,10 +129,10 @@ impl PredicateTable {
         }
     }
 
-    pub fn remove_predicate(&mut self, symbol_arity: SymbolArity) -> Option<Range<usize>> {
+    pub fn remove_predicate(&mut self, symbol_arity: SymbolArity) -> Option<(usize,usize)> {
         if let FindReturn::Index(index) = self.find_predicate(symbol_arity) {
             if let PredClFn::Clauses(range) = self.0.remove(index).predicate {
-                let step = -((range.end - range.start) as isize);
+                let step = -((range.1 - range.0) as isize);
                 self.update_clause_indexes(step, index);
                 Some(range)
             } else {
@@ -164,11 +164,11 @@ impl PredicateTable {
         }
     }
 
-    pub fn get_body_clauses(&self) -> Vec<Range<usize>>{
+    pub fn get_body_clauses(&self) -> Vec<(usize,usize)>{
         self.iter().filter_map(|predicate| {
             if let PredClFn::Clauses(range) = &predicate.predicate{
                 if predicate.body {
-                    Some(range.clone())
+                    Some(*range)
                 }else{
                     None
                 }
@@ -204,7 +204,7 @@ mod tests {
             Predicate {
                 symbol_arity: (1, 2),
                 body: false,
-                predicate: PredClFn::Clauses(0..1),
+                predicate: PredClFn::Clauses((0,1)),
             },
             Predicate {
                 symbol_arity: (2, 1),
@@ -214,12 +214,12 @@ mod tests {
             Predicate {
                 symbol_arity: (2, 2),
                 body: false,
-                predicate: PredClFn::Clauses(1..3),
+                predicate: PredClFn::Clauses((1,3)),
             },
             Predicate {
                 symbol_arity: (3, 2),
                 body: false,
-                predicate: PredClFn::Clauses(3..5),
+                predicate: PredClFn::Clauses((3,5)),
             },
         ])
     }
@@ -252,7 +252,7 @@ mod tests {
             Some(&Predicate {
                 symbol_arity: (2, 2),
                 body: false,
-                predicate: PredClFn::Clauses(1..3),
+                predicate: PredClFn::Clauses((1,3)),
             })
         );
         assert_eq!(pred_table.get_predicate((1, 3)), None);
@@ -331,12 +331,12 @@ mod tests {
                 Predicate {
                     symbol_arity: (1, 2),
                     body: false,
-                    predicate: PredClFn::Clauses(0..2),
+                    predicate: PredClFn::Clauses((0,2)),
                 },
                 Predicate {
                     symbol_arity: (1, 3),
                     body: false,
-                    predicate: PredClFn::Clauses(2..4)
+                    predicate: PredClFn::Clauses((2,4))
                 },
                 Predicate {
                     symbol_arity: (2, 1),
@@ -346,12 +346,12 @@ mod tests {
                 Predicate {
                     symbol_arity: (2, 2),
                     body: false,
-                    predicate: PredClFn::Clauses(4..6),
+                    predicate: PredClFn::Clauses((4,6)),
                 },
                 Predicate {
                     symbol_arity: (3, 2),
                     body: false,
-                    predicate: PredClFn::Clauses(6..8),
+                    predicate: PredClFn::Clauses((6,8)),
                 },
             ]
         )
@@ -376,7 +376,7 @@ mod tests {
                 Predicate {
                     symbol_arity: (2, 2),
                     body: false,
-                    predicate: PredClFn::Clauses(0..2),
+                    predicate: PredClFn::Clauses((0,2)),
                 },
             ]
         );
@@ -402,7 +402,7 @@ mod tests {
             Some(&Predicate {
                 symbol_arity: (2, 2),
                 body: true,
-                predicate: PredClFn::Clauses(1..3),
+                predicate: PredClFn::Clauses((1,3)),
             })
         );
     }
