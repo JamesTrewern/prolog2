@@ -406,4 +406,23 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn get_body_clauses() {
+        let mut pred_table = setup();
+
+        pred_table.set_body((2, 2), true).unwrap();
+
+        assert_eq!(
+            pred_table.get_predicate((2, 2)),
+            Some(&Predicate {
+                symbol_arity: (2, 2),
+                body: true,
+                predicate: PredClFn::Clauses((1,3)),
+            })
+        );
+
+        assert_eq!(pred_table.get_body_clauses(1),[]);
+        assert_eq!(pred_table.get_body_clauses(2),[(1,3)]);
+    }
 }
