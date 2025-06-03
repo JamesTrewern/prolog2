@@ -4,7 +4,7 @@ use std::{
     ptr::copy_nonoverlapping,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub struct Clause {
     ptr: *const usize,
     len: usize,
@@ -66,5 +66,11 @@ impl Deref for Clause {
 
     fn deref(&self) -> &[usize] {
         unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
+impl PartialEq for Clause {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
     }
 }
