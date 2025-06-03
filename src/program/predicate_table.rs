@@ -1,334 +1,483 @@
 use std::{
-    cmp::{self, PartialOrd},
-    ops::{Deref, DerefMut, Range},
+    cmp::Ordering,
+    ops::{Deref, DerefMut},
 };
+
+use super::clause::Clause;
+
+// use bumpalo::{Bump};
 
 pub(crate) type SymbolArity = (usize, usize);
 
 //TODO create predicate function type
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub struct PredicateFN;
-#[derive(PartialEq, Eq, Debug)]
-pub enum PredClFn {
+
+/* A predicate takes the form of a range of indexes in the clause table,
+or a function which uses rust code to evaluate to a truth value and/or return bindings*/
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum Predicate {
     Function(PredicateFN),
-    Clauses(Range<usize>),
+    Clauses(Box<[Clause]>),
 }
 
 #[derive(PartialEq, Eq, Debug)]
-pub struct Predicate {
+pub struct PredicateEntry {
     symbol_arity: SymbolArity,
-    body: bool,
-    predicate: PredClFn,
+    predicate: Predicate,
 }
 
-pub struct PredicateTable(Vec<Predicate>);
+#[derive(Debug, PartialEq)]
+pub struct PredicateTable {
+    predicates: Vec<PredicateEntry>,
+    body_list: Vec<usize>,
+}
+
+//Return type for binary search of predicate keys
+#[derive(Debug, PartialEq, Eq)]
+enum FindReturn {
+    Index(usize),
+    InsertPos(usize),
+}
 
 impl PredicateTable {
-    pub fn find_predicate(&self, symbol_arity: &SymbolArity) -> Result<usize, usize> {
+    pub fn new() -> Self {
+        PredicateTable {
+            predicates: vec![],
+            body_list: vec![],
+        }
+    }
+
+    //Performs a binary search of the ordered predicate table.
+    fn find_predicate(&self, symbol_arity: SymbolArity) -> FindReturn {
         let mut lb: usize = 0;
         let mut ub: usize = self.len() - 1;
         let mut mid: usize;
         while ub > lb {
             mid = (lb + ub) / 2;
             match symbol_arity.cmp(&self[mid].symbol_arity) {
-                std::cmp::Ordering::Less => ub = mid - 1,
-                std::cmp::Ordering::Equal => return Ok(mid),
-                std::cmp::Ordering::Greater => lb = mid + 1,
+                Ordering::Less => ub = mid - 1,
+                Ordering::Equal => return FindReturn::Index(mid),
+                Ordering::Greater => lb = mid + 1,
             }
         }
         match symbol_arity.cmp(&self[lb].symbol_arity) {
-            cmp::Ordering::Less => Err(lb),
-            cmp::Ordering::Equal => Ok(lb),
-            cmp::Ordering::Greater => Err(lb + 1),
+            Ordering::Less => FindReturn::InsertPos(lb),
+            Ordering::Equal => FindReturn::Index(lb),
+            Ordering::Greater => FindReturn::InsertPos(lb + 1),
         }
     }
 
-    pub fn update_insert_predicate(
+    //Inserts a new predicate function to the table
+    pub fn insert_predicate_function(
         &mut self,
-        symbol: usize,
-        arity: usize,
-        body: bool,
-        predicate: PredClFn,
-    ) {
-        let symbol_arity = (symbol, arity);
-        match self.find_predicate(&symbol_arity) {
-            Ok(i) => {
-                self[i] = Predicate {
-                    symbol_arity,
-                    body,
-                    predicate,
+        symbol_arity: SymbolArity,
+        predicate_fn: PredicateFN,
+    ) -> Result<(), &str> {
+        match self.find_predicate(symbol_arity) {
+            FindReturn::Index(idx) => match &mut self[idx].predicate {
+                Predicate::Function(old_predicate_fn) => {
+                    *old_predicate_fn = predicate_fn;
+                    Ok(())
+                }
+                _ => Err("Cannot insert predicate function to clause predicate"),
+            },
+            FindReturn::InsertPos(insert_idx) => {
+                self.insert(
+                    insert_idx,
+                    PredicateEntry {
+                        symbol_arity,
+                        predicate: Predicate::Function(predicate_fn),
+                    },
+                );
+                Ok(())
+            }
+        }
+    }
+
+    //Adds a clause to an existing enrty or creates a new entry with a single clause
+    pub fn add_clause_to_predicate(
+        &mut self,
+        clause: Clause,
+        symbol_arity: SymbolArity,
+    ) -> Result<(), &str> {
+        match self.find_predicate(symbol_arity) {
+            FindReturn::Index(idx) => match &mut self.get_mut(idx).unwrap().predicate {
+                Predicate::Function(_) => return Err("Cannot add clause to function predicate"),
+                Predicate::Clauses(clauses) => {
+                    *clauses = [&**clauses, &[clause]].concat().into_boxed_slice();
+                }
+            },
+            FindReturn::InsertPos(insert_idx) => {
+                self.insert(
+                    insert_idx,
+                    PredicateEntry {
+                        symbol_arity,
+                        predicate: Predicate::Clauses(Box::new([clause])),
+                    },
+                );
+            }
+        };
+        Ok(())
+    }
+
+    //Get predicate by SymbolArity key
+    pub fn get_predicate(&self, symbol_arity: SymbolArity) -> Option<Predicate> {
+        match self.find_predicate(symbol_arity) {
+            FindReturn::Index(i) => match &self[i].predicate {
+                Predicate::Function(predicate_fn) => Some(Predicate::Function(*predicate_fn)),
+                Predicate::Clauses(clauses) => Some(Predicate::Clauses(clauses.clone())),
+            },
+            FindReturn::InsertPos(_) => None,
+        }
+    }
+
+    //Remove predicate by SymbolArity key, if clause predicate return the range to remove from clause table
+    pub fn remove_predicate(&mut self, symbol_arity: SymbolArity) {
+        if let FindReturn::Index(predicate_idx) = self.find_predicate(symbol_arity) {
+            if let Predicate::Clauses(clauses) = self.remove(predicate_idx).predicate {
+                for clause in clauses {
+                    clause.drop();
+                }
+                self.body_list.retain(|i| *i != predicate_idx);
+            }
+            for i in &mut self.body_list {
+                if *i > predicate_idx {
+                    println!("{i}");
+                    *i -= 1;
                 }
             }
-            Err(new_i) => self.insert(
-                new_i,
-                Predicate {
-                    symbol_arity,
-                    body,
-                    predicate,
-                },
-            ),
         }
     }
 
-    pub fn get_predicate(&self, symbol: usize, arity: usize) -> Option<&Predicate> {
-        match self.find_predicate(&(symbol, arity)) {
-            Ok(i) => Some(&self[i]),
-            Err(_) => None,
+    //Remove or add entry index from the body predicate list
+    pub fn set_body(&mut self, symbol_arity: SymbolArity, value: bool) -> Result<(), &str> {
+        match self.find_predicate(symbol_arity) {
+            FindReturn::Index(idx) => {
+                let predicate = &mut self[idx];
+                if matches!(predicate.predicate, Predicate::Function(_)) {
+                    Err("Can't set predicate function to body")
+                } else {
+                    if value == false {
+                        self.body_list.retain(|&idx2| idx != idx2);
+                    } else {
+                        self.body_list.push(idx);
+                    }
+                    Ok(())
+                }
+            }
+            _ => Err("Can't set non existing predicate to body"),
         }
     }
 
-    pub fn delete(&mut self, symbol: usize, arity: usize) {
-        if let Ok(index) = self.find_predicate(&(symbol, arity)) {
-            self.0.remove(index);
+    //Get all clause index ranges from entry indexes in the body_list
+    pub fn get_body_clauses(&self, arity: usize) -> Vec<Clause> {
+        let mut body_clauses = vec![];
+
+        for &idx in &self.body_list {
+            if self[idx].symbol_arity.1 != arity {
+                continue;
+            }
+            if let Predicate::Clauses(pred_clauses) = &self[idx].predicate {
+                body_clauses.extend_from_slice(pred_clauses);
+            }
         }
+
+        body_clauses
     }
 }
 
 impl Deref for PredicateTable {
-    type Target = Vec<Predicate>;
+    type Target = Vec<PredicateEntry>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.predicates
     }
 }
 
 impl DerefMut for PredicateTable {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.predicates
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{PredClFn, Predicate, PredicateTable};
+    use crate::{
+        heap::symbol_db::SymbolDB,
+        program::predicate_table::{FindReturn, PredicateFN},
+    };
+
+    use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
+
+    fn setup() -> PredicateTable {
+        let p = SymbolDB::set_const("p".into());
+        let q = SymbolDB::set_const("q".into());
+        let pred_func = SymbolDB::set_const("func".into());
+
+        if q < p || q > pred_func {
+            panic!("q comes before p in predicate table tests");
+        }
+
+        PredicateTable {
+            predicates: vec![
+                PredicateEntry {
+                    symbol_arity: (0, 2),
+                    predicate: Predicate::Clauses(Box::new([
+                        Clause::new(vec![0, 3], Some(vec![0, 1])),
+                        Clause::new(vec![7, 11], Some(vec![0])),
+                    ])),
+                },
+                PredicateEntry {
+                    symbol_arity: (p, 2),
+                    predicate: Predicate::Clauses(Box::new([
+                        Clause::new(vec![15, 19], None),
+                        Clause::new(vec![23, 27], None),
+                    ])),
+                },
+                PredicateEntry {
+                    symbol_arity: (q, 2),
+                    predicate: Predicate::Clauses(Box::new([
+                        Clause::new(vec![31, 35], None),
+                        Clause::new(vec![39, 43], None),
+                    ])),
+                },
+                PredicateEntry {
+                    symbol_arity: (pred_func, 2),
+                    predicate: Predicate::Function(PredicateFN),
+                },
+            ],
+            body_list: vec![1],
+        }
+    }
 
     #[test]
     fn find_predicate() {
-        let body = true;
-        let pred_table = PredicateTable(vec![
-            Predicate {
-                symbol_arity: (1, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (2, 1),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (2, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (3, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-        ]);
+        let pred_table = setup();
 
-        assert_eq!(pred_table.find_predicate(&(2, 1)), Ok(1));
-        assert_eq!(pred_table.find_predicate(&(2, 2)), Ok(2));
-        assert_eq!(pred_table.find_predicate(&(1, 3)), Err(1));
-        assert_eq!(pred_table.find_predicate(&(1, 1)), Err(0));
-        assert_eq!(pred_table.find_predicate(&(3, 3)), Err(4));
+        let symbol = SymbolDB::set_const("find_predicate_test_symbol".into());
+        let p = SymbolDB::set_const("p".into());
+
+        assert_eq!(pred_table.find_predicate((0, 1)), FindReturn::InsertPos(0));
+        assert_eq!(
+            pred_table.find_predicate((symbol, 2)),
+            FindReturn::InsertPos(4)
+        );
+        assert_eq!(pred_table.find_predicate((p, 1)), FindReturn::InsertPos(1));
+        assert_eq!(pred_table.find_predicate((p, 2)), FindReturn::Index(1));
     }
 
     #[test]
     fn get_predicate() {
-        let body = true;
-        let pred_table = PredicateTable(vec![
-            Predicate {
-                symbol_arity: (1, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (2, 1),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (2, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (3, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-        ]);
+        let pred_table = setup();
+        let p = SymbolDB::set_const("p".into());
 
+        assert_eq!(pred_table.get_predicate((p, 3)), None);
         assert_eq!(
-            pred_table.get_predicate(2, 1),
-            Some(&Predicate {
-                symbol_arity: (2, 1),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            })
+            pred_table.get_predicate((p, 2)),
+            Some(Predicate::Clauses(Box::new([
+                Clause::new(vec![15, 19], None),
+                Clause::new(vec![23, 27], None),
+            ])))
         );
-        assert_eq!(pred_table.get_predicate(1, 3), None);
     }
 
     #[test]
-    fn insert() {
-        let body = true;
-        let mut pred_table = PredicateTable(vec![
-            Predicate {
-                symbol_arity: (1, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (2, 1),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (2, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (3, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-        ]);
-
-        pred_table.update_insert_predicate(1, 1, true, PredClFn::Clauses(0..1));
-        pred_table.update_insert_predicate(2, 3, true, PredClFn::Clauses(0..1));
-        pred_table.update_insert_predicate(4, 1, true, PredClFn::Clauses(0..1));
-
-        assert_eq!(pred_table.find_predicate(&(1, 1)), Ok(0));
-        assert_eq!(pred_table.find_predicate(&(2, 3)), Ok(4));
-        assert_eq!(pred_table.find_predicate(&(4, 1)), Ok(6));
+    fn insert_predicate_function() {
+        let mut pred_table = setup();
+        let pred_func = SymbolDB::set_const("func".into());
+        let p = SymbolDB::set_const("p".into());
 
         assert_eq!(
-            pred_table.0,
+            pred_table.insert_predicate_function((p, 2), super::PredicateFN),
+            Err("Cannot insert predicate function to clause predicate")
+        );
+
+        pred_table
+            .insert_predicate_function((pred_func, 3), super::PredicateFN)
+            .unwrap();
+        assert_eq!(
+            pred_table.get_predicate((pred_func, 3)),
+            Some(Predicate::Function(PredicateFN))
+        );
+    }
+
+    #[test]
+    fn add_clause_to_predicate() {
+        let mut pred_table = setup();
+        let p = SymbolDB::set_const("p".into());
+        let r = SymbolDB::set_const("r".into());
+        let pred_func = SymbolDB::set_const("func".into());
+
+        pred_table
+            .add_clause_to_predicate(Clause::new(vec![], Some(vec![])), (p, 2))
+            .unwrap();
+        pred_table
+            .add_clause_to_predicate(Clause::new(vec![], Some(vec![])), (r, 2))
+            .unwrap();
+        assert_eq!(
+            pred_table.add_clause_to_predicate(Clause::new(vec![], Some(vec![])), (pred_func, 2)),
+            Err("Cannot add clause to function predicate")
+        );
+
+        assert_eq!(
+            pred_table.get_predicate((p, 2)),
+            Some(Predicate::Clauses(Box::new([
+                Clause::new(vec![15, 19], None),
+                Clause::new(vec![23, 27], None),
+                Clause::new(vec![], Some(vec![]))
+            ])))
+        );
+        assert_eq!(
+            pred_table.get_predicate((r, 2)),
+            Some(Predicate::Clauses(Box::new([Clause::new(
+                vec![],
+                Some(vec![])
+            )])))
+        );
+    }
+
+    #[test]
+    fn remove_predicate() {
+        let mut pred_table = setup();
+        let p = SymbolDB::set_const("p".into());
+        let q = SymbolDB::set_const("q".into());
+        let pred_func = SymbolDB::set_const("func".into());
+
+        pred_table.remove_predicate((p, 2));
+
+        assert_eq!(
+            pred_table,
+            PredicateTable {
+                predicates: vec![
+                    PredicateEntry {
+                        symbol_arity: (0, 2),
+                        predicate: Predicate::Clauses(Box::new([
+                            Clause::new(vec![0, 3], Some(vec![0, 1])),
+                            Clause::new(vec![7, 11], Some(vec![0])),
+                        ])),
+                    },
+                    PredicateEntry {
+                        symbol_arity: (q, 2),
+                        predicate: Predicate::Clauses(Box::new([
+                            Clause::new(vec![31, 35], None),
+                            Clause::new(vec![39, 43], None),
+                        ])),
+                    },
+                    PredicateEntry {
+                        symbol_arity: (pred_func, 2),
+                        predicate: Predicate::Function(PredicateFN),
+                    },
+                ],
+                body_list: vec![],
+            }
+        );
+
+        let mut pred_table = setup();
+        pred_table.remove_predicate((q, 2));
+
+        assert_eq!(
+            pred_table,
+            PredicateTable {
+                predicates: vec![
+                    PredicateEntry {
+                        symbol_arity: (0, 2),
+                        predicate: Predicate::Clauses(Box::new([
+                            Clause::new(vec![0, 3], Some(vec![0, 1])),
+                            Clause::new(vec![7, 11], Some(vec![0])),
+                        ])),
+                    },
+                    PredicateEntry {
+                        symbol_arity: (p, 2),
+                        predicate: Predicate::Clauses(Box::new([
+                            Clause::new(vec![15, 19], None),
+                            Clause::new(vec![23, 27], None),
+                        ])),
+                    },
+                    PredicateEntry {
+                        symbol_arity: (pred_func, 2),
+                        predicate: Predicate::Function(PredicateFN),
+                    },
+                ],
+                body_list: vec![1],
+            }
+        );
+
+        let mut pred_table = setup();
+        pred_table.remove_predicate((0, 2));
+
+        assert_eq!(
+            pred_table,
+            PredicateTable {
+                predicates: vec![
+                    PredicateEntry {
+                        symbol_arity: (p, 2),
+                        predicate: Predicate::Clauses(Box::new([
+                            Clause::new(vec![15, 19], None),
+                            Clause::new(vec![23, 27], None),
+                        ])),
+                    },
+                    PredicateEntry {
+                        symbol_arity: (q, 2),
+                        predicate: Predicate::Clauses(Box::new([
+                            Clause::new(vec![31, 35], None),
+                            Clause::new(vec![39, 43], None),
+                        ])),
+                    },
+                    PredicateEntry {
+                        symbol_arity: (pred_func, 2),
+                        predicate: Predicate::Function(PredicateFN),
+                    },
+                ],
+                body_list: vec![0],
+            }
+        );
+    }
+
+    #[test]
+    fn set_body() {
+        let mut pred_table = setup();
+        let p = SymbolDB::set_const("p".into());
+        let q = SymbolDB::set_const("q".into());
+        let pred_func = SymbolDB::set_const("func".into());
+
+        pred_table.set_body((p, 2), false).unwrap();
+        pred_table.set_body((q, 2), true).unwrap();
+        assert_eq!(
+            pred_table.set_body((pred_func, 2), true),
+            Err("Can't set predicate function to body")
+        );
+        assert_eq!(
+            pred_table.set_body((100, 2), true),
+            Err("Can't set non existing predicate to body")
+        );
+
+        assert_eq!(pred_table.body_list, [2]);
+    }
+
+    #[test]
+    fn get_body_clauses() {
+        let mut pred_table = setup();
+        let q = SymbolDB::set_const("q".into());
+
+        assert_eq!(pred_table.get_body_clauses(1), []);
+        assert_eq!(
+            pred_table.get_body_clauses(2),
             [
-                Predicate {
-                    symbol_arity: (1, 1),
-                    body,
-                    predicate: PredClFn::Clauses(0..1)
-                },
-                Predicate {
-                    symbol_arity: (1, 2),
-                    body,
-                    predicate: PredClFn::Clauses(0..1)
-                },
-                Predicate {
-                    symbol_arity: (2, 1),
-                    body,
-                    predicate: PredClFn::Clauses(0..1)
-                },
-                Predicate {
-                    symbol_arity: (2, 2),
-                    body,
-                    predicate: PredClFn::Clauses(0..1)
-                },
-                Predicate {
-                    symbol_arity: (2, 3),
-                    body,
-                    predicate: PredClFn::Clauses(0..1)
-                },
-                Predicate {
-                    symbol_arity: (3, 2),
-                    body,
-                    predicate: PredClFn::Clauses(0..1)
-                },
-                Predicate {
-                    symbol_arity: (4, 1),
-                    body,
-                    predicate: PredClFn::Clauses(0..1)
-                },
+                Clause::new(vec![15, 19], None),
+                Clause::new(vec![23, 27], None),
             ]
         );
-    }
 
-    #[test]
-    fn update() {
-        let body = true;
-        let mut pred_table = PredicateTable(vec![
-            Predicate {
-                symbol_arity: (1, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (2, 1),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (2, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (3, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-        ]);
-
-        pred_table.update_insert_predicate(1, 2, false, PredClFn::Clauses(5..7));
+        pred_table.set_body((q,2), true).unwrap();
 
         assert_eq!(
-            pred_table.get_predicate(1, 2),
-            Some(&Predicate {
-                symbol_arity: (1, 2),
-                body: false,
-                predicate: PredClFn::Clauses(5..7),
-            })
-        );
-    }
-
-    #[test]
-    fn delete() {
-        let body = true;
-        let mut pred_table = PredicateTable(vec![
-            Predicate {
-                symbol_arity: (1, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (2, 1),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (2, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-            Predicate {
-                symbol_arity: (3, 2),
-                body,
-                predicate: PredClFn::Clauses(0..1),
-            },
-        ]);
-
-        pred_table.delete(1, 2);
-        pred_table.delete(2, 3);
-        pred_table.delete(3, 2);
-
-        assert_eq!(
-            pred_table.0,
+            pred_table.get_body_clauses(2),
             [
-                Predicate {
-                    symbol_arity: (2, 1),
-                    body,
-                    predicate: PredClFn::Clauses(0..1),
-                },
-                Predicate {
-                    symbol_arity: (2, 2),
-                    body,
-                    predicate: PredClFn::Clauses(0..1),
-                },
+                Clause::new(vec![15, 19], None),
+                Clause::new(vec![23, 27], None),
+                Clause::new(vec![31, 35], None),
+                Clause::new(vec![39, 43], None),
             ]
         );
     }
