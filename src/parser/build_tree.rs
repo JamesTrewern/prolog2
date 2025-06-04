@@ -14,10 +14,10 @@ const INFIX_ORDER: &[&[&str]] = &[
 ];
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Clause {
+pub enum TreeClause {
     Fact(Term),
-    Rule(Term, Vec<Term>),
-    MetaRule(Term, Vec<Term>),
+    Rule(Vec<Term>),
+    MetaRule(Vec<Term>),
     Directive(Vec<Term>),
 }
 
@@ -238,21 +238,19 @@ impl TokenStream {
         Ok(body)
     }
 
-    pub(super) fn parse_clause(&mut self) -> Result<Option<Clause>, String> {
+    pub(super) fn parse_clause(&mut self) -> Result<Option<TreeClause>, String> {
         match self.peek() {
             None => return Ok(None),
             Some(":-") => {
                 self.next();
-                return Ok(Some(Clause::Directive(self.parse_body_literals()?)));
+                return Ok(Some(TreeClause::Directive(self.parse_body_literals()?)));
             }
             Some(_) => {
-                let head = self.parse_expression()?;
+                let mut literals = vec![self.parse_expression()?];
                 match self.next() {
                     Some(":-") => {
-                        let mut meta_rule = false;
-                        // self.next(); // Consume ":-"
-                        let mut body = self.parse_body_literals()?;
-                        let meta_rule = if let Some(Term::Set(eq_vars)) = body.last() {
+                        literals.append( &mut self.parse_body_literals()?);
+                        let meta_rule = if let Some(Term::Set(eq_vars)) = literals.last() {
                             if eq_vars
                                 .iter()
                                 .any(|eq_var| !matches!(eq_var, Term::Unit(Unit::Variable(_))))
@@ -264,12 +262,12 @@ impl TokenStream {
                             false
                         };
                         if meta_rule {
-                            Ok(Some(Clause::MetaRule(head, body)))
+                            Ok(Some(TreeClause::MetaRule(literals)))
                         } else {
-                            Ok(Some(Clause::Rule(head, body)))
+                            Ok(Some(TreeClause::Rule(literals)))
                         }
                     }
-                    Some(".") => Ok(Some(Clause::Fact(head))),
+                    Some(".") => Ok(Some(TreeClause::Fact(literals[0].clone()))),
                     Some(token) => Err(format!("Expected \".\" or \":-\", recieved {token}")),
                     None => Err("Unexpected end of file".into()),
                 }
@@ -277,12 +275,9 @@ impl TokenStream {
         }
     }
 
-    pub(super) fn parse_all(&mut self) -> Result<Vec<Clause>, String> {
-        let mut clauses = Vec::<Clause>::new();
-
+    pub(super) fn parse_all(&mut self) -> Result<Vec<TreeClause>, String> {
+        let mut clauses = Vec::<TreeClause>::new();
         loop {
-            println!("{clauses:?}");
-            self.print_state();
             match self.parse_clause() {
                 Ok(Some(clause)) => clauses.push(clause),
                 Ok(None) => return Ok(clauses),
@@ -296,7 +291,7 @@ impl TokenStream {
 mod tests {
     use super::{
         super::tokeniser::tokenise,
-        {Clause, Term, TokenStream, Unit},
+        {TreeClause, Term, TokenStream, Unit},
     };
     #[test]
     fn parse_number_term() {
@@ -850,7 +845,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(clause, Clause::Rule(head, vec![body]));
+        assert_eq!(clause, TreeClause::Rule(vec![head, body]));
         // assert_eq!(token_stream.parse_clause().unwrap(),None);
     }
 
@@ -863,7 +858,7 @@ mod tests {
             vec![Term::Unit(Unit::Constant("plato".into()))],
         );
 
-        assert_eq!(clause, Clause::Fact(head));
+        assert_eq!(clause, TreeClause::Fact(head));
         assert_eq!(token_stream.parse_clause().unwrap(), None);
     }
 
@@ -890,7 +885,7 @@ mod tests {
             Term::Unit(Unit::Variable("Q".into())),
         ]);
 
-        assert_eq!(clause, Clause::MetaRule(head, vec![body, meta_data]));
+        assert_eq!(clause, TreeClause::MetaRule(vec![head, body, meta_data]));
         assert_eq!(token_stream.parse_clause().unwrap(), None);
     }
 
@@ -908,7 +903,7 @@ mod tests {
             Box::new(Term::EmptyList),
         );
 
-        assert_eq!(clause, Clause::Directive(vec![body, body2]));
+        assert_eq!(clause, TreeClause::Directive(vec![body, body2]));
         assert_eq!(token_stream.parse_clause().unwrap(), None);
     }
 
@@ -931,13 +926,13 @@ mod tests {
                 Term::Unit(Unit::Int(1)),
             ],
         );
-        assert_eq!(clauses[0], Clause::Rule(head, vec![body]));
+        assert_eq!(clauses[0], TreeClause::Rule(vec![head, body]));
 
         let head = Term::Atom(
             Unit::Constant("man".into()),
             vec![Term::Unit(Unit::Constant("plato".into()))],
         );
-        assert_eq!(clauses[1], Clause::Fact(head));
+        assert_eq!(clauses[1], TreeClause::Fact(head));
 
         let head = Term::Atom(
             Unit::Variable("P".into()),
@@ -957,7 +952,7 @@ mod tests {
             Term::Unit(Unit::Variable("P".into())),
             Term::Unit(Unit::Variable("Q".into())),
         ]);
-        assert_eq!(clauses[2], Clause::MetaRule(head, vec![body, meta_data]));
+        assert_eq!(clauses[2], TreeClause::MetaRule(vec![head, body, meta_data]));
 
         let body = Term::Atom(
             Unit::Constant("test".into()),
@@ -967,6 +962,6 @@ mod tests {
             vec![Term::Unit(Unit::Constant("file/path".into()))],
             Box::new(Term::EmptyList),
         );
-        assert_eq!(clauses[3], Clause::Directive(vec![body, body2]));
+        assert_eq!(clauses[3], TreeClause::Directive(vec![body, body2]));
     }
 }

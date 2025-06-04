@@ -51,21 +51,18 @@ impl PredicateTable {
     //Performs a binary search of the ordered predicate table.
     fn find_predicate(&self, symbol_arity: SymbolArity) -> FindReturn {
         let mut lb: usize = 0;
-        let mut ub: usize = self.len() - 1;
+        let mut ub: usize = self.len();
         let mut mid: usize;
+
         while ub > lb {
             mid = (lb + ub) / 2;
             match symbol_arity.cmp(&self[mid].symbol_arity) {
-                Ordering::Less => ub = mid - 1,
+                Ordering::Less => ub = mid,
                 Ordering::Equal => return FindReturn::Index(mid),
                 Ordering::Greater => lb = mid + 1,
             }
         }
-        match symbol_arity.cmp(&self[lb].symbol_arity) {
-            Ordering::Less => FindReturn::InsertPos(lb),
-            Ordering::Equal => FindReturn::Index(lb),
-            Ordering::Greater => FindReturn::InsertPos(lb + 1),
-        }
+        FindReturn::InsertPos(lb)
     }
 
     //Inserts a new predicate function to the table
@@ -265,6 +262,13 @@ mod tests {
         );
         assert_eq!(pred_table.find_predicate((p, 1)), FindReturn::InsertPos(1));
         assert_eq!(pred_table.find_predicate((p, 2)), FindReturn::Index(1));
+
+        let pred_table = PredicateTable{
+            predicates: vec![],
+            body_list: vec![],
+        };
+
+        assert_eq!(pred_table.find_predicate((50,2)), FindReturn::InsertPos(0));
     }
 
     #[test]
@@ -469,7 +473,7 @@ mod tests {
             ]
         );
 
-        pred_table.set_body((q,2), true).unwrap();
+        pred_table.set_body((q, 2), true).unwrap();
 
         assert_eq!(
             pred_table.get_body_clauses(2),

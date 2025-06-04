@@ -1,3 +1,3 @@
-mod predicate_table;
-mod clause;
-mod hypothesis;
+pub mod predicate_table;
+pub mod clause;
+pub mod hypothesis;
