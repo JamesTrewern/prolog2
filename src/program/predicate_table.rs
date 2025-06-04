@@ -55,9 +55,7 @@ impl PredicateTable {
         let mut mid: usize;
 
         while ub > lb {
-            println!("{lb}, {ub}");
             mid = (lb + ub) / 2;
-            println!("{mid}");
             match symbol_arity.cmp(&self[mid].symbol_arity) {
                 Ordering::Less => ub = mid,
                 Ordering::Equal => return FindReturn::Index(mid),
