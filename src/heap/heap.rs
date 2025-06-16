@@ -15,6 +15,7 @@ pub enum Tag {
     Tup,  //Tuple
     Set,  //Set
     Lis,  //List
+    ELis, //Empty List
     Con,  //Constant
     Int,  //Integer
     Flt,  //Float
@@ -34,7 +35,7 @@ use fsize::fsize;
 pub const CON_PTR: usize = isize::MAX as usize;
 pub const FALSE: Cell = (Tag::Con, CON_PTR);
 pub const TRUE: Cell = (Tag::Con, CON_PTR + 1);
-pub const EMPTY_LIS: Cell = (Tag::Lis, CON_PTR);
+pub const EMPTY_LIS: Cell = (Tag::ELis, 0);
 
 pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]> {
     fn heap_push(&mut self, cell: Cell) -> usize;
@@ -69,14 +70,11 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn deref_addr(&self, mut addr: usize) -> usize {
         loop {
-            if let (Tag::Ref, pointer) = self[addr] {
-                if addr == pointer {
-                    return pointer;
-                } else {
-                    addr = pointer
-                }
-            } else {
-                return addr;
+            match self[addr] {
+                (Tag::Ref, pointer) if addr == pointer => return pointer,
+                (Tag::Ref, pointer) => addr = pointer,
+                (Tag::Str, pointer) => return pointer,
+                _ => return addr,
             }
         }
     }
@@ -113,10 +111,10 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             addr = pointer
         }
         if let (Tag::Func, arity) = self[addr] {
-            match  self[self.deref_addr(addr + 1)]{
-                (Tag::Arg | Tag::Ref, _) => (0, arity-1),
-                (Tag::Con, id) => (id, arity-1),
-                _ => panic!("Functor of structure not constant of variable")
+            match self[self.deref_addr(addr + 1)] {
+                (Tag::Arg | Tag::Ref, _) => (0, arity - 1),
+                (Tag::Con, id) => (id, arity - 1),
+                _ => panic!("Functor of structure not constant of variable"),
             }
         } else if let (Tag::Con, symbol) = self[addr] {
             (symbol, 0)
@@ -136,7 +134,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         addr = self.deref_addr(addr);
         match self[addr].0 {
             Tag::Ref | Tag::Arg => vec![self[addr]],
-            Tag::Lis if self[addr].1 != CON_PTR => [
+            Tag::Lis => [
                 self.term_vars(self[addr].1),
                 self.term_vars(self[addr].1 + 1),
             ]
@@ -163,7 +161,9 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     self.normalise_args(i, args)
                 }
             }
-            (Tag::Lis, pointer) if pointer != CON_PTR => {
+            (Tag::Tup, _) => todo!(),
+            (Tag::Set, _) => todo!(),
+            (Tag::Lis, pointer) => {
                 self.normalise_args(pointer, args);
                 self.normalise_args(pointer + 1, args);
             }
@@ -175,7 +175,6 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     fn copy_complex(&mut self, other: &impl Heap, mut addr: usize, update_addr: &mut usize) {
         addr = other.deref_addr(addr);
         match other[addr] {
-            EMPTY_LIS => *update_addr = CON_PTR,
             (Tag::Str, pointer) => *update_addr = self.copy_term(other, pointer),
             (Tag::Lis, _) => *update_addr = self.copy_term(other, addr),
             _ => (),
@@ -226,7 +225,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             (Tag::Tup, len) => todo!(),
             (Tag::Set, len) => todo!(),
             (Tag::Ref, pointer) => panic!(),
-            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri, _) => {
+            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri | Tag::ELis, _) => {
                 self.heap_push(other[addr]);
                 self.heap_len() - 1
             }
@@ -296,26 +295,20 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     /**Create a string from a list */
     fn list_string(&self, addr: usize) -> String {
-        if self[addr] == EMPTY_LIS {
-            return "[]".to_string();
-        }
-
         let mut buffer = "[".to_string();
         let mut pointer = self[addr].1;
 
         loop {
             buffer += &self.term_string(pointer);
-            if self[pointer + 1].0 != Tag::Lis {
-                buffer += "|";
-                buffer += &self.term_string(pointer + 1);
-                break;
-            } else {
-                buffer += ",";
-            }
-            pointer = self[pointer + 1].1;
-            if pointer == CON_PTR {
-                buffer.pop();
-                break;
+
+            match self[pointer + 1].0 {
+                Tag::Lis => {buffer += ",";pointer = self[pointer+1].1},
+                Tag::ELis => break,
+                _ => {
+                    buffer += "|";
+                    buffer += &self.term_string(pointer + 1);
+                    break;
+                }
             }
         }
         buffer += "]";
@@ -370,6 +363,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
             Tag::Func => self.func_string(addr),
             Tag::Lis => self.list_string(addr),
+            Tag::ELis => "[]".into(),
             Tag::Arg => match SymbolDB::get_var(addr, self.get_id()) {
                 Some(symbol) => symbol.to_string(),
                 None => format!("Arg_{}", self[addr].1),
