@@ -73,7 +73,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             match self[addr] {
                 (Tag::Ref, pointer) if addr == pointer => return pointer,
                 (Tag::Ref, pointer) => addr = pointer,
-                (Tag::Str, pointer) => return pointer,
+                // (Tag::Str, pointer) => return pointer,
                 _ => return addr,
             }
         }
@@ -254,6 +254,17 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             }
 
             _ => self[addr1] == self[addr2],
+        }
+    }
+
+    fn contains_args(&self, mut addr: usize) -> bool{
+        addr = self.deref_addr(addr);
+        match self[addr] {
+            (Tag::Arg,_) => true,
+            (Tag::Lis,ptr) => self.contains_args(ptr) || self.contains_args(ptr+1),
+            (Tag::Str,ptr) => self.contains_args(ptr),
+            (Tag::Func|Tag::Set|Tag::Tup,length) => (addr+1..addr+1+length).any(|addr| self.contains_args(addr)),
+            _ => false
         }
     }
 

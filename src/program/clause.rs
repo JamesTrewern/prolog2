@@ -4,21 +4,38 @@ use std::{
     ptr::copy_nonoverlapping,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BitFlag64(u64);
+
+impl BitFlag64 {
+    pub fn set(&mut self, idx: usize) {
+        self.0 = self.0 | 1 << idx;
+    }
+
+    pub fn unset(&mut self, idx: usize) {
+        self.0 = self.0 & !(1 << idx);
+    }
+
+    pub fn get(&self, idx: usize) -> bool {
+        self.0 & (1 << idx) != 0
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq)]
 pub struct Clause {
     ptr: *const usize,
     len: usize,
-    meta_vars: Option<u64>,
+    meta_vars: Option<BitFlag64>,
 }
 
 impl Clause {
-    fn meta_vars_to_bit_flags(meta_vars: Vec<usize>) -> u64 {
-        let mut bit_flags: u64 = 0;
+    fn meta_vars_to_bit_flags(meta_vars: Vec<usize>) -> BitFlag64 {
+        let mut bit_flags = BitFlag64::default();
         for meta_var in meta_vars {
-            if meta_var > 65 {
+            if meta_var > 63 {
                 panic!("Cant have more than 64 variables in meta clause")
             }
-            bit_flags = bit_flags | 1 << meta_var
+            bit_flags.set(meta_var);
         }
         bit_flags
     }
@@ -48,7 +65,7 @@ impl Clause {
 
     pub fn meta_var(&self, arg_id: usize) -> Result<bool, &'static str> {
         let meta_vars = self.meta_vars.ok_or("Clause is not a meta clause")?;
-        Ok(meta_vars & (1 << arg_id) != 0)
+        Ok(meta_vars.get(arg_id))
     }
 
     pub fn drop(self) {

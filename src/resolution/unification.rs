@@ -1,18 +1,24 @@
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use crate::heap::heap::{Heap, Tag, CON_PTR};
 
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
     arg_regs: [usize; 32],
-    binding_array: [(usize, usize); 32],
+    binding_array: [(usize, usize, bool); 32],
     binding_len: usize,
 }
 
 impl Deref for Substitution {
-    type Target = [(usize, usize)];
+    type Target = [(usize, usize, bool)];
     fn deref(&self) -> &Self::Target {
         &self.binding_array[..self.binding_len]
+    }
+}
+
+impl DerefMut for Substitution {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.binding_array[..self.binding_len]
     }
 }
 
@@ -29,8 +35,8 @@ impl Default for Substitution {
 impl Substitution {
     pub fn bound(&self, addr: usize) -> Option<usize> {
         // println!("{addr}");
-        match self.iter().find(|(a1, _)| *a1 == addr) {
-            Some((_, a2)) => match self.bound(*a2) {
+        match self.iter().find(|(a1, _, _)| *a1 == addr) {
+            Some((_, a2, _)) => match self.bound(*a2) {
                 Some(a2) => Some(a2),
                 None => Some(*a2),
             },
@@ -38,7 +44,7 @@ impl Substitution {
         }
     }
 
-    pub fn push(mut self, binding: (usize, usize)) -> Self {
+    pub fn push(mut self, binding: (usize, usize, bool)) -> Self {
         self.binding_array[self.binding_len] = binding;
         self.binding_len += 1;
         self
@@ -61,10 +67,9 @@ pub fn unify(heap: &impl Heap, addr_1: usize, addr_2: usize) -> Option<Substitut
     unify_rec(heap, Substitution::default(), addr_1, addr_2)
 }
 
-/*
-    @addr_1: Address of program term
-    @addr_2: Address of goal term
-*/
+///Recursive unification function \
+///@addr_1: Address of program term \
+///@addr_2: Address of goal term
 fn unify_rec(
     heap: &impl Heap,
     mut binding: Substitution,
@@ -104,8 +109,14 @@ fn unify_rec(
                 Some(binding)
             }
         },
-        (Tag::Ref, _) => Some(binding.push((addr_1, addr_2))),
-        (_, Tag::Ref) => Some(binding.push((addr_2, addr_1))),
+        (Tag::Ref, Tag::Lis | Tag::Func | Tag::Set | Tag::Tup | Tag::Lis) => {
+            Some(binding.push((addr_1, addr_2, true)))
+        }
+        (Tag::Ref, _) => Some(binding.push((addr_1, addr_2, false))),
+        (Tag::Lis | Tag::Func | Tag::Set | Tag::Tup | Tag::Lis, Tag::Ref) => {
+            Some(binding.push((addr_2, addr_1, true)))
+        }
+        (_, Tag::Ref) => Some(binding.push((addr_2, addr_1, false))),
         (Tag::Con, Tag::Con) if heap[addr_1].1 == heap[addr_2].1 => Some(binding),
         (Tag::Func, Tag::Func) => unify_func_or_tup(heap, binding, addr_1, addr_2),
         (Tag::Tup, Tag::Tup) => unify_func_or_tup(heap, binding, addr_1, addr_2),
@@ -192,23 +203,40 @@ mod tests {
         assert_eq!(binding.arg_regs[1..32], [usize::MAX; 31]);
         assert_eq!(binding.bound(1), Some(2));
 
-        binding.binding_array[0] = (0, 0);
+        binding.binding_array[0] = (0, 0, false);
         binding.binding_len = 0;
         binding.arg_regs[0] = 3;
         binding = unify_rec(&heap, binding, 0, 1).unwrap();
         assert_eq!(binding.bound(1), Some(4));
 
-        binding.binding_array[0] = (0, 0);
+        binding.binding_array[0] = (0, 0, false);
         binding.binding_len = 0;
         binding.arg_regs[0] = 4;
         binding = unify_rec(&heap, binding, 0, 1).unwrap();
         assert_eq!(binding.bound(1), Some(4));
 
-        binding.binding_array[0] = (0, 0);
+        binding.binding_array[0] = (0, 0, false);
         binding.binding_len = 0;
         binding.arg_regs[0] = 5;
         binding = unify_rec(&heap, binding, 0, 1).unwrap();
         assert_eq!(binding.bound(1), Some(5));
+    }
+
+    #[test]
+    fn arg() {
+        let p = SymbolDB::set_const("p".into());
+        let a = SymbolDB::set_const("p".into());
+
+        let heap = vec![
+            (Tag::Arg, 0),
+            (Tag::Str, 2),
+            (Tag::Func, 2),
+            (Tag::Con, p),
+            (Tag::Con, a),
+        ];
+
+        let binding = unify(&heap, 0, 1).unwrap();
+        assert_eq!(binding.get_arg(0), Some(1));
     }
 
     #[test]
@@ -227,23 +255,23 @@ mod tests {
         ];
 
         let mut binding = Substitution::default();
-        binding = binding.push((1, 2));
+        binding = binding.push((1, 2, false));
 
         binding = unify_rec(&heap, binding, 0, 1).unwrap();
         assert_eq!(binding.bound(0), Some(2));
 
         let mut binding = Substitution::default();
-        binding = binding.push((1, 3));
+        binding = binding.push((1, 3, false));
         binding = unify_rec(&heap, binding, 0, 1).unwrap();
         assert_eq!(binding.bound(0), Some(4));
 
         let mut binding = Substitution::default();
-        binding = binding.push((1, 4));
+        binding = binding.push((1, 4, false));
         binding = unify_rec(&heap, binding, 0, 1).unwrap();
         assert_eq!(binding.bound(0), Some(4));
 
         let mut binding = Substitution::default();
-        binding = binding.push((1, 5));
+        binding = binding.push((1, 5, false));
         binding = unify_rec(&heap, binding, 0, 1).unwrap();
         assert_eq!(binding.bound(0), Some(5));
     }
@@ -333,20 +361,20 @@ mod tests {
         assert_eq!(binding.bound(12), Some(5));
 
         let heap = vec![
-            (Tag::Lis, 1), //0
-            (Tag::Arg, 0), //1
-            (Tag::Lis, 3), //2
-            (Tag::Arg, 1), //3
-            (Tag::Lis, 5), //4
-            (Tag::Arg, 2), //5
-            (Tag::Con, t), //6
-            (Tag::Lis, 8), //7
-            (Tag::Con, a), //8
+            (Tag::Lis, 1),  //0
+            (Tag::Arg, 0),  //1
+            (Tag::Lis, 3),  //2
+            (Tag::Arg, 1),  //3
+            (Tag::Lis, 5),  //4
+            (Tag::Arg, 2),  //5
+            (Tag::Con, t),  //6
+            (Tag::Lis, 8),  //7
+            (Tag::Con, a),  //8
             (Tag::Lis, 10), //9
-            (Tag::Con, b), //10
+            (Tag::Con, b),  //10
             (Tag::Lis, 12), //11
             (Tag::Ref, 12), //12
-            (Tag::Con, t), //13
+            (Tag::Con, t),  //13
         ];
 
         let binding = unify(&heap, 0, 7).unwrap();
@@ -355,15 +383,15 @@ mod tests {
         assert_eq!(binding.get_arg(2), Some(12));
 
         let heap = vec![
-            (Tag::Lis, 1), //0
-            (Tag::Arg, 0), //1
-            (Tag::Lis, 3), //2
-            (Tag::Arg, 1), //3
-            (Tag::Lis, 5), //4
-            (Tag::Arg, 2), //5
-            (Tag::Arg, 3), //6
-            (Tag::Lis, 8), //7
-            (Tag::Ref, 8), //8
+            (Tag::Lis, 1),  //0
+            (Tag::Arg, 0),  //1
+            (Tag::Lis, 3),  //2
+            (Tag::Arg, 1),  //3
+            (Tag::Lis, 5),  //4
+            (Tag::Arg, 2),  //5
+            (Tag::Arg, 3),  //6
+            (Tag::Lis, 8),  //7
+            (Tag::Ref, 8),  //8
             (Tag::Lis, 10), //9
             (Tag::Ref, 10), //10
             (Tag::Lis, 12), //11
@@ -411,25 +439,19 @@ mod tests {
             (Tag::Lis, 5),  //4
             (Tag::Lis, 16), //5
             (Tag::ELis, 0), //6
-
             (Tag::Lis, 8),  //7
             (Tag::Lis, 18), //8
-            (Tag::Lis, 10),  //9
+            (Tag::Lis, 10), //9
             (Tag::Lis, 20), //10
             (Tag::Ref, 11), //11
-
             (Tag::Con, a),  //12
             (Tag::ELis, 0), //13
-
             (Tag::Arg, 0),  //14
             (Tag::ELis, 0), //15
-
             (Tag::Con, c),  //16
             (Tag::ELis, 0), //17
-
             (Tag::Con, a),  //18
             (Tag::ELis, 0), //19
-
             (Tag::Con, b),  //20
             (Tag::ELis, 0), //21
         ];
