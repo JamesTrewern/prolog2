@@ -29,7 +29,7 @@ impl Env {
     }
 }
 
-struct Proof<'a> {
+pub struct Proof<'a> {
     stack: Vec<Env>,
     pointer: usize,
     hypothesis: Hypothesis,
