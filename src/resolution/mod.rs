@@ -1,2 +1,3 @@
-mod unification;
-mod build;
+pub mod unification;
+pub mod build;
+pub mod proof;
