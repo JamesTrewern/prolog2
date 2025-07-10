@@ -59,6 +59,10 @@ impl Clause {
         self[0]
     }
 
+    pub fn body(&self) -> &[usize]{
+        &self[1..]
+    }
+
     pub fn meta(&self) -> bool {
         self.meta_vars.is_some()
     }
