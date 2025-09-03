@@ -3,21 +3,18 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use crate::program::predicate_function::PredicateFunction;
+
 use super::clause::Clause;
 
-// use bumpalo::{Bump};
-
+// use bumpalo::{Bump};self.choices = hypothesis.get_predicate((symbol, arity))
 pub(crate) type SymbolArity = (usize, usize);
-
-//TODO create predicate function type
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub struct PredicateFN;
 
 /* A predicate takes the form of a range of indexes in the clause table,
 or a function which uses rust code to evaluate to a truth value and/or return bindings*/
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Predicate {
-    Function(PredicateFN),
+    Function(PredicateFunction),
     Clauses(Box<[Clause]>),
 }
 
@@ -69,7 +66,7 @@ impl PredicateTable {
     pub fn insert_predicate_function(
         &mut self,
         symbol_arity: SymbolArity,
-        predicate_fn: PredicateFN,
+        predicate_fn: PredicateFunction,
     ) -> Result<(), &str> {
         match self.find_predicate(symbol_arity) {
             FindReturn::Index(idx) => match &mut self[idx].predicate {
@@ -201,11 +198,15 @@ impl DerefMut for PredicateTable {
 #[cfg(test)]
 mod tests {
     use crate::{
-        heap::symbol_db::SymbolDB,
-        program::predicate_table::{FindReturn, PredicateFN},
+        heap::{query_heap::QueryHeap, symbol_db::SymbolDB},
+        program::{hypothesis::Hypothesis, predicate_function::PredReturn, predicate_table::{FindReturn, PredicateFunction}},
     };
 
     use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
+
+    fn pred_fn_placeholder(heap: &mut QueryHeap, hypothesis: &mut Hypothesis, goal: usize) -> PredReturn{
+        PredReturn::True
+    }
 
     fn setup() -> PredicateTable {
         let p = SymbolDB::set_const("p".into());
@@ -241,7 +242,7 @@ mod tests {
                 },
                 PredicateEntry {
                     symbol_arity: (pred_func, 2),
-                    predicate: Predicate::Function(PredicateFN),
+                    predicate: Predicate::Function(pred_fn_placeholder),
                 },
             ],
             body_list: vec![1],
@@ -293,16 +294,16 @@ mod tests {
         let p = SymbolDB::set_const("p".into());
 
         assert_eq!(
-            pred_table.insert_predicate_function((p, 2), super::PredicateFN),
+            pred_table.insert_predicate_function((p, 2), pred_fn_placeholder),
             Err("Cannot insert predicate function to clause predicate")
         );
 
         pred_table
-            .insert_predicate_function((pred_func, 3), super::PredicateFN)
+            .insert_predicate_function((pred_func, 3), pred_fn_placeholder)
             .unwrap();
         assert_eq!(
             pred_table.get_predicate((pred_func, 3)),
-            Some(Predicate::Function(PredicateFN))
+            Some(Predicate::Function(pred_fn_placeholder))
         );
     }
 
@@ -370,7 +371,7 @@ mod tests {
                     },
                     PredicateEntry {
                         symbol_arity: (pred_func, 2),
-                        predicate: Predicate::Function(PredicateFN),
+                        predicate: Predicate::Function(pred_fn_placeholder),
                     },
                 ],
                 body_list: vec![],
@@ -400,7 +401,7 @@ mod tests {
                     },
                     PredicateEntry {
                         symbol_arity: (pred_func, 2),
-                        predicate: Predicate::Function(PredicateFN),
+                        predicate: Predicate::Function(pred_fn_placeholder),
                     },
                 ],
                 body_list: vec![1],
@@ -430,7 +431,7 @@ mod tests {
                     },
                     PredicateEntry {
                         symbol_arity: (pred_func, 2),
-                        predicate: Predicate::Function(PredicateFN),
+                        predicate: Predicate::Function(pred_fn_placeholder),
                     },
                 ],
                 body_list: vec![0],

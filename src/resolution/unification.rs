@@ -61,6 +61,15 @@ impl Substitution {
     pub fn set_arg(&mut self, arg_idx: usize, addr: usize) {
         self.arg_regs[arg_idx] = addr;
     }
+
+    pub fn get_bindings(&self) -> Box<[(usize,usize)]>{
+        let mut bindings: Box<[(usize,usize)]> = Vec::<(usize,usize)>::with_capacity(self.binding_len).into_boxed_slice();
+        for i in 0..self.binding_len{
+            bindings[i].0 = self[i].0;
+            bindings[i].1 = self[i].1;
+        }
+        bindings
+    }
 }
 
 pub fn unify(heap: &impl Heap, addr_1: usize, addr_2: usize) -> Option<Substitution> {

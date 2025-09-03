@@ -25,7 +25,7 @@ impl BitFlag64 {
 pub struct Clause {
     ptr: *const usize,
     len: usize,
-    meta_vars: Option<BitFlag64>,
+    pub meta_vars: Option<BitFlag64>,
 }
 
 impl Clause {

@@ -1,9 +1,9 @@
-use crate::resolution::{unification::Substitution,proof::Proof};
+use crate::{heap::{heap::Heap, query_heap::QueryHeap}, program::hypothesis::Hypothesis, resolution::{proof::Proof, unification::Substitution}};
 
 pub enum PredReturn {
     True,
     False,
-    Binding(Substitution),
+    Binding(Vec<(usize,usize)>),
 }
 
 impl PredReturn {
@@ -17,4 +17,4 @@ impl PredReturn {
 }
 
 //Take Proof and pointer to function call term and return true(possibly with binding), or false
-pub type PredicateFunction = fn(&mut Proof, usize) -> PredReturn;
+pub type PredicateFunction = fn(&mut QueryHeap, &mut Hypothesis, usize) -> PredReturn;
