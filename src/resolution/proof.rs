@@ -1,9 +1,10 @@
 use crate::{
     heap::{heap::Heap, query_heap::QueryHeap, symbol_db::SymbolDB},
+    predicate_modules::{PredicateFunction,PredReturn},
     program::{
         clause::Clause,
         hypothesis::Hypothesis,
-        predicate_function::PredicateFunction,
+        
         predicate_table::{Predicate, PredicateTable},
     },
     resolution::{
@@ -89,9 +90,9 @@ impl Env {
     ) -> Option<Vec<Env>> {
         if let Some(pred_function) = self.pred_function {
             match pred_function(heap, hypothesis, self.goal) {
-                crate::program::predicate_function::PredReturn::True => return Some(Vec::new()),
-                crate::program::predicate_function::PredReturn::False => return None,
-                crate::program::predicate_function::PredReturn::Binding(bindings) => {
+                PredReturn::True => return Some(Vec::new()),
+                PredReturn::False => return None,
+                PredReturn::Binding(bindings) => {
                     self.bindings = bindings.into_boxed_slice();
                     heap.bind(&self.bindings);
                 }

@@ -3,7 +3,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::program::predicate_function::PredicateFunction;
+use crate::predicate_modules::PredicateFunction;
 
 use super::clause::Clause;
 
@@ -199,7 +199,8 @@ impl DerefMut for PredicateTable {
 mod tests {
     use crate::{
         heap::{query_heap::QueryHeap, symbol_db::SymbolDB},
-        program::{hypothesis::Hypothesis, predicate_function::PredReturn, predicate_table::{FindReturn, PredicateFunction}},
+        predicate_modules::{PredReturn,PredicateFunction},
+        program::{hypothesis::Hypothesis, predicate_table::FindReturn},
     };
 
     use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};

@@ -2,7 +2,7 @@
 // mod examples;
 mod heap;
 // mod interface;
-// mod pred_module;
+mod predicate_modules;
 mod parser;
 mod program;
 mod resolution;
