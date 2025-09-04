@@ -5,11 +5,10 @@ use super::{
     term::{Term, Unit},
 };
 use crate::{heap::{
-    heap::{Cell, Heap, Tag, EMPTY_LIS},
-    symbol_db::SymbolDB,
-}, program::{clause::{self, Clause}, predicate_table::PredicateTable}};
+    heap::{Cell, Heap, Tag, EMPTY_LIS}, query_heap::QueryHeap, symbol_db::SymbolDB
+}, program::{clause::{self, Clause}, predicate_table::{self, PredicateTable}}, resolution::proof::Proof};
 
-fn build_clause(literals: Vec<Term>, meta_vars: Option<Vec<String>>, heap: &mut Vec<Cell>) -> Clause{
+pub fn build_clause(literals: Vec<Term>, meta_vars: Option<Vec<String>>, heap: &mut impl Heap) -> Clause{
     let mut var_values = HashMap::new();
 
     let literals: Vec<usize> = literals
@@ -26,7 +25,16 @@ fn build_clause(literals: Vec<Term>, meta_vars: Option<Vec<String>>, heap: &mut 
     Clause::new(literals, meta_vars)
 }
 
-pub(crate) fn execute_tree(syntax_tree: Vec<TreeClause>, heap: &mut Vec<Cell>, pred_table: &mut PredicateTable) {
+pub fn execute_directive(directive: Vec<Term>, predicate_table: &mut PredicateTable) -> Result<(),String>{
+    let mut heap = QueryHeap::new(None)?;
+    let goals = build_clause(directive, None, &mut heap);
+    //TODO Find Variables in goals to report bindings once solved
+    let proof = Proof::new(heap, &goals, predicate_table);
+
+    Ok(())
+}
+
+pub(crate) fn execute_tree(syntax_tree: Vec<TreeClause>, heap: &mut impl Heap, pred_table: &mut PredicateTable) {
     for clause in syntax_tree {
         match clause {
             TreeClause::Fact(term) => {

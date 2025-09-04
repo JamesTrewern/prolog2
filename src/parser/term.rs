@@ -82,7 +82,7 @@ pub enum Term {
 impl Unit {
     fn encode_var(
         symbol: &String,
-        heap: &mut Vec<Cell>,
+        heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
@@ -111,7 +111,7 @@ impl Unit {
 
     pub fn encode(
         &self,
-        heap: &mut Vec<Cell>,
+        heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
@@ -138,7 +138,7 @@ impl Term {
 
     pub fn encode(
         &self,
-        heap: &mut Vec<Cell>,
+        heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
@@ -154,7 +154,7 @@ impl Term {
 
     fn pre_encode_complex(
         &self,
-        heap: &mut Vec<Cell>,
+        heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> Option<Cell> {
@@ -172,7 +172,7 @@ impl Term {
 
     fn pre_encode_complex_terms(
         terms: &Vec<Term>,
-        heap: &mut Vec<Cell>,
+        heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> Vec<Option<Cell>> {
@@ -186,7 +186,7 @@ impl Term {
 
     fn encode_tup(
         terms: &Vec<Term>,
-        heap: &mut Vec<Cell>,
+        heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
@@ -209,7 +209,7 @@ impl Term {
 
     fn encode_set(
         terms: &Vec<Term>,
-        heap: &mut Vec<Cell>,
+        heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
@@ -240,7 +240,7 @@ impl Term {
     fn encode_func(
         unit: &Unit,
         terms: &Vec<Term>,
-        heap: &mut Vec<Cell>,
+        heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
@@ -263,7 +263,7 @@ impl Term {
     fn encode_list(
         head: &Vec<Term>,
         tail: &Box<Term>,
-        heap: &mut Vec<Cell>,
+        heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
@@ -280,7 +280,7 @@ impl Term {
                 Some(cell) => heap.heap_push(*cell),
                 None => term.encode(heap, var_values, query),
             };
-            heap.push((Tag::Lis, heap.len()+1));
+            heap.heap_push((Tag::Lis, heap.heap_len()+1));
         }
 
         let (complex, term) = (complex_terms.last().unwrap(), head.last().unwrap());

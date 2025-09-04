@@ -48,6 +48,21 @@ impl Hypothesis {
                 .collect()
         }
     }
+
+    pub fn print_hypothesis(&self, heap: &impl Heap){
+        for (_,clause) in &self.0{
+            let mut buffer = String::new();
+            buffer += &heap.term_string(clause.head());
+            buffer += ":-";
+            for literal in clause.body(){
+                buffer+= &heap.term_string(*literal);
+                buffer+=",";
+            }
+            buffer.pop();
+            buffer+=".";
+            println!("{buffer}");
+        }
+    }
 }
 
 // impl Deref for Hypothesis {

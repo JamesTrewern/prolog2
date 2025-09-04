@@ -3,56 +3,100 @@
 mod heap;
 // mod interface;
 // mod pred_module;
+mod parser;
 mod program;
 mod resolution;
-mod parser;
-use std::{collections::HashMap, process::ExitCode};
+use std::{
+    collections::HashMap,
+    io::{stdin, stdout, Write},
+    process::ExitCode,
+};
 
-// use heap::store::Store;
-// use interface::{parser::{parse_goals, tokenise}, state::State};
-// use program::dynamic_program::{DynamicProgram, Hypothesis};
-// use resolution::solver::Proof;
-// use resolution::solver::Proof;
-/*
+use console::Term;
 
-Remove terms from heap when no longer needed
-New Clause rules: constraints, head can't be existing predicate
-*/
+use crate::{
+    heap::{heap::Heap, query_heap::{self, QueryHeap}},
+    parser::{build_tree::{TokenStream, TreeClause}, execute_tree::{build_clause, execute_tree}, tokeniser::tokenise},
+    program::{clause::Clause, predicate_table::{self, PredicateTable}}, resolution::proof::{self, Proof},
+};
 
-// fn setup<'a>(file: &str) -> State {
-//     let state = State::new(None);
-//     state.load_file(file).unwrap();
-//     state
-// }
+#[derive(Clone, Copy)]
+struct Config {
+    max_depth: usize,
+    max_clause: usize,
+    max_pred: usize,
+}
 
-// fn make_goals<'a>(state: &'a State, goals: &str) -> (Vec<usize>, Store<'a>) {
-//     let mut store = Store::new(state.heap.try_read().unwrap());
-//     let goals: Vec<usize> = parse_goals(&tokenise(goals))
-//         .unwrap()
-//         .into_iter()
-//         .map(|t| t.build_to_heap(&mut store, &mut HashMap::new(), false))
-//         .collect();
-//     (goals, store)
-// }
+fn continue_proof() -> bool{
+    let term = Term::stderr();
+    loop {
+        match term.read_key_raw().unwrap() {
+            console::Key::Enter |  console::Key::Backspace | console::Key::Char('.') => return false,
+            console::Key::Char(' '|';') | console::Key::Tab => return true,
+            _ => (),
+        }
+    }
+}
+
+fn start_query(query_text: &str, predicate_table: &mut PredicateTable, config: Config) -> Result<(), String> {
+    let query = format!(":-{query_text}");
+    let literals = match TokenStream::new(tokenise(query)?).parse_clause()? {
+        Some(TreeClause::Directive(literals)) => literals,
+        _ => return Err(format!("Query: '{query_text}' incorrectly formatted")),
+    };
+
+
+    let mut heap = QueryHeap::new(None)?;
+    let goals = build_clause(literals, None, &mut heap);
+
+    let mut proof = Proof::new(heap, &goals, predicate_table);
+
+    loop {
+        if proof.prove(){
+            //TODO display variable bindings
+            if proof.hypothesis.len() != 0{
+                proof.hypothesis.print_hypothesis(&proof.heap);
+            }
+            if !continue_proof() {
+                break;
+            }
+        }else{
+            break;
+        }
+
+        
+    }
+
+    drop(proof);
+
+    Ok(())
+}
 
 fn main() -> ExitCode {
-    // let state = setup("./examples/robots/robots");
+    let config = Config {
+        max_depth: 100,
+        max_clause: 0,
+        max_pred: 0,
+    };
 
-    // let (goals, store) = make_goals(&state, "test_learn(H).");
-    // // let (goals, store) = make_goals(&state, "double_move(X,Y,Z).");
-
-
-    // let mut proof = Proof::new(
-    //     &goals,
-    //     store,
-    //     Hypothesis::None,
-    //     None,
-    //     &state,
-    // );
-
-    // assert!(proof.next().is_some());
-
-    // let state = State::new(None);
-    // state.main_loop();
+    let mut buffer = String::new();
+    loop {
+        if buffer.is_empty() {
+            print!("?-");
+            stdout().flush().unwrap();
+        }
+        match stdin().read_line(&mut buffer) {
+            Ok(_) => {
+                if buffer.contains('.') {
+                } else {
+                    continue;
+                }
+            }
+            Err(error) => {
+                println!("error: {error}");
+                break;
+            }
+        }
+    }
     ExitCode::SUCCESS
 }

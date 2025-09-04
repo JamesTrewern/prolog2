@@ -238,7 +238,7 @@ impl TokenStream {
         Ok(body)
     }
 
-    pub(super) fn parse_clause(&mut self) -> Result<Option<TreeClause>, String> {
+    pub fn parse_clause(&mut self) -> Result<Option<TreeClause>, String> {
         match self.peek() {
             None => return Ok(None),
             Some(":-") => {
@@ -275,7 +275,7 @@ impl TokenStream {
         }
     }
 
-    pub(super) fn parse_all(&mut self) -> Result<Vec<TreeClause>, String> {
+    pub fn parse_all(&mut self) -> Result<Vec<TreeClause>, String> {
         let mut clauses = Vec::<TreeClause>::new();
         loop {
             match self.parse_clause() {

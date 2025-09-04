@@ -134,6 +134,7 @@ impl Env {
                     hypothesis.push_clause(Clause::new(new_clause_literals, None), heap);
                 }
                 self.bindings = substitution.get_bindings();
+                heap.bind(&self.bindings);
                 //Convert goals to new enviroments and return
                 return Some(
                     new_goals
@@ -145,26 +146,22 @@ impl Env {
         }
         None
     }
-
-    pub fn retry_goal(&mut self) -> Option<Vec<Env>> {
-        todo!()
-    }
 }
 
 pub struct Proof<'a> {
     stack: Vec<Env>,
     pointer: usize,
-    predicate_table: PredicateTable,
-    hypothesis: Hypothesis,
-    heap: QueryHeap<'a>,
+    predicate_table: &'a mut PredicateTable,
     goal_count: u8, //How many goals were in initial query
+    pub hypothesis: Hypothesis,
+    pub heap: QueryHeap<'a>,
 }
 
 impl<'a> Proof<'a> {
-    pub fn new(heap: QueryHeap<'a>, goals: Vec<usize>, predicate_table: PredicateTable) -> Self {
+    pub fn new(heap: QueryHeap<'a>, goals: &[usize], predicate_table: &'a mut PredicateTable) -> Self {
         let goal_count = goals.len() as u8;
         let hypothesis = Hypothesis::new();
-        let stack = goals.into_iter().map(|goal| Env::new(goal, 0)).collect();
+        let stack = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
         Proof {
             stack,
             pointer: 0,
@@ -176,8 +173,10 @@ impl<'a> Proof<'a> {
     }
 
     pub fn prove(&mut self) -> bool {
+        //A previous proof has already been found, back track to find a new one.
         if self.pointer == self.stack.len() {
-            todo!("Handle attempting to find a different proof")
+            self.pointer -= 1;
+            self.stack[self.pointer].undo_try(&mut self.hypothesis, &mut self.heap);
         }
 
         //Once the pointer exceeds the last enviroment all goals have been proven
@@ -224,10 +223,4 @@ impl<'a> Proof<'a> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test1() {
-        let mut arr = vec![1, 2, 3, 4];
-        arr.insert(1, 10);
-        println!("{arr:?}");
-    }
 }
