@@ -63,12 +63,11 @@ impl Substitution {
     }
 
     pub fn get_bindings(&self) -> Box<[(usize,usize)]>{
-        let mut bindings: Box<[(usize,usize)]> = Vec::<(usize,usize)>::with_capacity(self.binding_len).into_boxed_slice();
+        let mut bindings = Vec::<(usize,usize)>::with_capacity(self.binding_len);
         for i in 0..self.binding_len{
-            bindings[i].0 = self[i].0;
-            bindings[i].1 = self[i].1;
+            bindings.push((self.binding_array[i].0, self.binding_array[i].1));
         }
-        bindings
+        bindings.into_boxed_slice()
     }
 }
 
@@ -85,8 +84,6 @@ fn unify_rec(
     mut addr_1: usize,
     mut addr_2: usize,
 ) -> Option<Substitution> {
-    println!("Unify:({addr_1},{addr_2})");
-
     addr_1 = heap.deref_addr(addr_1);
     addr_2 = heap.deref_addr(addr_2);
     if heap[addr_1].0 == Tag::Ref {
@@ -99,8 +96,6 @@ fn unify_rec(
             addr_2 = addr;
         }
     }
-
-    println!("Unify:({addr_1},{addr_2})");
 
     if addr_1 == addr_2 {
         return Some(binding);
