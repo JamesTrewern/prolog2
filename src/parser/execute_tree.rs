@@ -25,14 +25,14 @@ pub fn build_clause(literals: Vec<Term>, meta_vars: Option<Vec<String>>, heap: &
     Clause::new(literals, meta_vars)
 }
 
-pub fn execute_directive(directive: Vec<Term>, predicate_table: &mut PredicateTable) -> Result<(),String>{
-    let mut heap = QueryHeap::new(None)?;
-    let goals = build_clause(directive, None, &mut heap, true);
-    //TODO Find Variables in goals to report bindings once solved
-    let proof = Proof::new(heap, &goals, predicate_table);
+// pub fn execute_directive(directive: Vec<Term>, predicate_table: &mut PredicateTable) -> Result<(),String>{
+//     let mut heap = QueryHeap::new(None)?;
+//     let goals = build_clause(directive, None, &mut heap, true);
+//     //TODO Find Variables in goals to report bindings once solved
+//     let proof = Proof::new(heap, &goals, predicate_table);
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 pub(crate) fn execute_tree(syntax_tree: Vec<TreeClause>, heap: &mut impl Heap, pred_table: &mut PredicateTable) {
     for clause in syntax_tree {

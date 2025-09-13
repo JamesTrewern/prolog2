@@ -1,0 +1,10 @@
+{
+    "config" : {
+        "max_depth": 10,
+        "max_clause": 1,
+        "max_pred": 1
+    },
+
+    "body_predicates" : [{"symbol" : "dad", "arity": 2},{"symbol" : "mum", "arity": 2}],
+    "files" : ["examples/family.pl"]
+}

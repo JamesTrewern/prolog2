@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
 use crate::{
     heap::{heap::Heap, query_heap::QueryHeap, symbol_db::SymbolDB},
-    predicate_modules::{PredicateFunction,PredReturn},
+    predicate_modules::{PredReturn, PredicateFunction},
     program::{
         clause::Clause,
         hypothesis::Hypothesis,
         
-        predicate_table::{Predicate, PredicateTable},
+        predicate_table::{self, Predicate, PredicateTable},
     },
     resolution::{
         build::{build, re_build_bound_arg_terms},
@@ -152,28 +154,26 @@ impl Env {
 pub struct Proof<'a> {
     stack: Vec<Env>,
     pointer: usize,
-    predicate_table: &'a mut PredicateTable,
     goal_count: u8, //How many goals were in initial query
     pub hypothesis: Hypothesis,
     pub heap: QueryHeap<'a>,
 }
 
 impl<'a> Proof<'a> {
-    pub fn new(heap: QueryHeap<'a>, goals: &[usize], predicate_table: &'a mut PredicateTable) -> Self {
+    pub fn new(heap: QueryHeap<'a>, goals: &[usize]) -> Self {
         let goal_count = goals.len() as u8;
         let hypothesis = Hypothesis::new();
         let stack = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
         Proof {
             stack,
             pointer: 0,
-            predicate_table,
             hypothesis,
             heap,
             goal_count,
         }
     }
 
-    pub fn prove(&mut self) -> bool {
+    pub fn prove(&mut self, predicate_table: Arc<PredicateTable>) -> bool {
         //A previous proof has already been found, back track to find a new one.
         if self.pointer == self.stack.len() {
             self.pointer -= 1;
@@ -186,7 +186,7 @@ impl<'a> Proof<'a> {
             self.stack[self.pointer].get_choices(
                 &mut self.heap,
                 &mut self.hypothesis,
-                &self.predicate_table,
+                &predicate_table,
             );
 
             match self.stack[self.pointer].try_choices(

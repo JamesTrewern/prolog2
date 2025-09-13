@@ -8,15 +8,17 @@ mod program;
 mod resolution;
 use std::{
     collections::HashMap,
+    fs,
     io::{stdin, stdout, Write},
-    process::ExitCode,
+    process::ExitCode, sync::Arc,
 };
 
 use console::Term;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     heap::{
-        heap::Heap,
+        heap::{Cell, Heap},
         query_heap::{self, QueryHeap},
         symbol_db::SymbolDB,
     },
@@ -32,11 +34,24 @@ use crate::{
     resolution::proof::{self, Proof},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 struct Config {
     max_depth: usize,
     max_clause: usize,
     max_pred: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct BodyClause{
+    symbol: String,
+    arity: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct SetUp{
+    pub config: Config,
+    pub body_predicates: Vec<BodyClause>,
+    pub files: Vec<String>,
 }
 
 fn continue_proof() -> bool {
@@ -54,7 +69,8 @@ fn continue_proof() -> bool {
 
 fn start_query(
     query_text: &str,
-    predicate_table: &mut PredicateTable,
+    predicate_table: Arc<PredicateTable>,
+    heap: Arc<Vec<Cell>>,
     config: Config,
 ) -> Result<(), String> {
     let query = format!(":-{query_text}");
@@ -63,22 +79,22 @@ fn start_query(
         _ => return Err(format!("Query: '{query_text}' incorrectly formatted")),
     };
 
-    let mut heap = QueryHeap::new(None)?;
-    let goals = build_clause(literals, None, &mut heap, true);
+    let mut query_heap = QueryHeap::new(heap, None)?;
+    let goals = build_clause(literals, None, &mut query_heap, true);
     let mut vars = Vec::new();
     for literal in goals.iter() {
         vars.extend(
-            heap.term_vars(*literal, false)
+            query_heap.term_vars(*literal, false)
                 .iter()
-                .map(|addr| (SymbolDB::get_var(*addr, heap.get_id()).unwrap(), *addr)),
+                .map(|addr| (SymbolDB::get_var(*addr, query_heap.get_id()).unwrap(), *addr)),
         );
     }
-    let mut proof = Proof::new(heap, &goals, predicate_table);
+    let mut proof = Proof::new(query_heap, &goals);
 
     loop {
-        if proof.prove() {
+        if proof.prove(predicate_table.clone()) {
             println!("TRUE");
-            for (symbol, addr) in &vars{
+            for (symbol, addr) in &vars {
                 println!("{symbol} = {}", proof.heap.term_string(*addr))
             }
             //TODO display variable bindings
@@ -99,14 +115,42 @@ fn start_query(
     Ok(())
 }
 
-fn main() -> ExitCode {
-    let config = Config {
-        max_depth: 100,
-        max_clause: 0,
-        max_pred: 0,
-    };
+fn load_file(file_path: String, predicate_table: &mut PredicateTable, heap: &mut Vec<Cell>) {
+    let file = fs::read_to_string(file_path).unwrap();
+    let syntax_tree = TokenStream::new(tokenise(file).unwrap())
+        .parse_all()
+        .unwrap();
 
+    execute_tree(syntax_tree, heap, predicate_table);
+}
+
+fn load_setup() -> (Config, PredicateTable, Vec<Cell>){
+    let mut heap = Vec::new();
     let mut predicate_table = PredicateTable::new();
+
+    let setup: SetUp = serde_json::from_str(&fs::read_to_string("setup.json").unwrap()).unwrap();
+
+    println!("{setup:?}");
+
+    let config = setup.config;
+
+    for file_path in setup.files{
+        load_file(file_path, &mut predicate_table, &mut heap);
+    }
+    
+    for BodyClause{symbol, arity} in setup.body_predicates{
+        predicate_table.set_body((SymbolDB::set_const(symbol),arity), true).unwrap();
+    }
+
+
+    (config,predicate_table,heap)
+}
+
+fn main() -> ExitCode {
+    let(config, predicate_table, heap) = load_setup();
+
+    let predicate_table = Arc::new(predicate_table);
+    let heap = Arc::new(heap);
 
     let mut buffer = String::new();
     loop {
@@ -117,7 +161,7 @@ fn main() -> ExitCode {
         match stdin().read_line(&mut buffer) {
             Ok(_) => {
                 if buffer.contains('.') {
-                    match start_query(&buffer, &mut predicate_table, config) {
+                    match start_query(&buffer, predicate_table.clone(), heap.clone(), config) {
                         Ok(_) => continue,
                         Err(error) => println!("{error}"),
                     }

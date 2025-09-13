@@ -1,4 +1,4 @@
-use std::{ops::{Deref, DerefMut, Index, IndexMut, Range}, sync::{atomic::{AtomicUsize,Ordering::Acquire}, PoisonError, RwLock, RwLockReadGuard}};
+use std::{ops::{Deref, DerefMut, Index, IndexMut, Range}, sync::{atomic::{AtomicUsize,Ordering::Acquire}, Arc, PoisonError, RwLock, RwLockReadGuard}};
 
 use super::heap::{Cell, Heap, Tag, PROG_HEAP};
 
@@ -8,13 +8,14 @@ pub struct QueryHeap<'a> {
     id: usize,
     arg_regs: [Cell; 64],
     pub(crate) cells: Vec<Cell>,
-    prog_cells: RwLockReadGuard<'a, Vec<Cell>>,
+    prog_cells: Arc<Vec<Cell>>,
     //TODO handle branching query heap multi-threading
     root: Option<RwLockReadGuard<'a, QueryHeap<'a>>>,
 }
 
 impl<'a> QueryHeap<'a> {
     pub fn new(
+        prog_cells: Arc<Vec<Cell>>,
         root: Option<RwLockReadGuard<'a, QueryHeap<'a>>>
     ) -> Result<QueryHeap<'a>, String> {
         let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
@@ -23,7 +24,7 @@ impl<'a> QueryHeap<'a> {
             id,
             arg_regs: [(Tag::Ref, 0); 64],
             cells: Vec::new(),
-            prog_cells: PROG_HEAP.read().map_err(|_| "Cannot aquire read on program heap".to_string())?,
+            prog_cells,
             root,
         })
     }
