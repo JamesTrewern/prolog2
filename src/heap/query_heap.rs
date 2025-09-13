@@ -36,7 +36,7 @@ impl<'a> QueryHeap<'a> {
 
 impl<'a> Heap for QueryHeap<'a> {
     fn heap_push(&mut self, cell: Cell) -> usize{
-        let i = self.cells.len();
+        let i = self.heap_len();
         self.cells.push(cell);
         i
     }

@@ -91,6 +91,7 @@ fn start_query(
     }
     let mut proof = Proof::new(query_heap, &goals);
 
+
     loop {
         if proof.prove(predicate_table.clone()) {
             println!("TRUE");
@@ -159,7 +160,7 @@ fn main() -> ExitCode {
             Ok(_) => {
                 if buffer.contains('.') {
                     match start_query(&buffer, predicate_table.clone(), heap.clone(), config) {
-                        Ok(_) => continue,
+                        Ok(_) => buffer.clear(),
                         Err(error) => println!("{error}"),
                     }
                 } else {
