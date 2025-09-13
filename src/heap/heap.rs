@@ -130,19 +130,20 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     /**Collect all REF, cells in structure or referenced by structure
      * If cell at addr is a reference return that cell  
      */
-    fn term_vars(&self, mut addr: usize) -> Vec<Cell> {
+    fn term_vars(&self, mut addr: usize, args: bool) -> Vec<usize> {
         addr = self.deref_addr(addr);
         match self[addr].0 {
-            Tag::Ref | Tag::Arg => vec![self[addr]],
+            Tag::Arg if args => vec![addr],
+            Tag::Ref if !args => vec![addr],
             Tag::Lis => [
-                self.term_vars(self[addr].1),
-                self.term_vars(self[addr].1 + 1),
+                self.term_vars(self[addr].1,args),
+                self.term_vars(self[addr].1 + 1,args),
             ]
             .concat(),
             Tag::Func => self
                 .str_iterator(addr)
-                .map(|addr| self.term_vars(addr))
-                .collect::<Vec<Vec<Cell>>>()
+                .map(|addr| self.term_vars(addr,args))
+                .collect::<Vec<Vec<usize>>>()
                 .concat(),
             _ => vec![],
         }

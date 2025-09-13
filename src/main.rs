@@ -2,8 +2,8 @@
 // mod examples;
 mod heap;
 // mod interface;
-mod predicate_modules;
 mod parser;
+mod predicate_modules;
 mod program;
 mod resolution;
 use std::{
@@ -15,9 +15,21 @@ use std::{
 use console::Term;
 
 use crate::{
-    heap::{heap::Heap, query_heap::{self, QueryHeap}},
-    parser::{build_tree::{TokenStream, TreeClause}, execute_tree::{build_clause, execute_tree}, tokeniser::tokenise},
-    program::{clause::Clause, predicate_table::{self, PredicateTable}}, resolution::proof::{self, Proof},
+    heap::{
+        heap::Heap,
+        query_heap::{self, QueryHeap},
+        symbol_db::SymbolDB,
+    },
+    parser::{
+        build_tree::{TokenStream, TreeClause},
+        execute_tree::{build_clause, execute_tree},
+        tokeniser::tokenise,
+    },
+    program::{
+        clause::Clause,
+        predicate_table::{self, PredicateTable},
+    },
+    resolution::proof::{self, Proof},
 };
 
 #[derive(Clone, Copy)]
@@ -27,44 +39,59 @@ struct Config {
     max_pred: usize,
 }
 
-fn continue_proof() -> bool{
+fn continue_proof() -> bool {
     let term = Term::stderr();
     loop {
         match term.read_key_raw().unwrap() {
-            console::Key::Enter |  console::Key::Backspace | console::Key::Char('.') => return false,
-            console::Key::Char(' '|';') | console::Key::Tab => return true,
+            console::Key::Enter | console::Key::Backspace | console::Key::Char('.') => {
+                return false
+            }
+            console::Key::Char(' ' | ';') | console::Key::Tab => return true,
             _ => (),
         }
     }
 }
 
-fn start_query(query_text: &str, predicate_table: &mut PredicateTable, config: Config) -> Result<(), String> {
+fn start_query(
+    query_text: &str,
+    predicate_table: &mut PredicateTable,
+    config: Config,
+) -> Result<(), String> {
     let query = format!(":-{query_text}");
     let literals = match TokenStream::new(tokenise(query)?).parse_clause()? {
         Some(TreeClause::Directive(literals)) => literals,
         _ => return Err(format!("Query: '{query_text}' incorrectly formatted")),
     };
 
-
     let mut heap = QueryHeap::new(None)?;
     let goals = build_clause(literals, None, &mut heap);
-
+    let mut vars = Vec::new();
+    for literal in goals.iter() {
+        vars.extend(
+            heap.term_vars(*literal, false)
+                .iter()
+                .map(|addr| (SymbolDB::get_var(*addr, heap.get_id()).unwrap(), *addr)),
+        );
+    }
     let mut proof = Proof::new(heap, &goals, predicate_table);
 
     loop {
-        if proof.prove(){
+        if proof.prove() {
+            println!("TRUE");
+            for (symbol, addr) in &vars{
+                println!("{symbol} = {}", proof.heap.term_string(*addr))
+            }
             //TODO display variable bindings
-            if proof.hypothesis.len() != 0{
+            if proof.hypothesis.len() != 0 {
                 proof.hypothesis.print_hypothesis(&proof.heap);
             }
             if !continue_proof() {
                 break;
             }
-        }else{
+        } else {
+            println!("FALSE");
             break;
         }
-
-        
     }
 
     drop(proof);
@@ -79,6 +106,8 @@ fn main() -> ExitCode {
         max_pred: 0,
     };
 
+    let mut predicate_table = PredicateTable::new();
+
     let mut buffer = String::new();
     loop {
         if buffer.is_empty() {
@@ -88,6 +117,10 @@ fn main() -> ExitCode {
         match stdin().read_line(&mut buffer) {
             Ok(_) => {
                 if buffer.contains('.') {
+                    match start_query(&buffer, &mut predicate_table, config) {
+                        Ok(_) => continue,
+                        Err(error) => println!("{error}"),
+                    }
                 } else {
                     continue;
                 }
