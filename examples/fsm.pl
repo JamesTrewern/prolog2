@@ -15,5 +15,5 @@ goal:-
 edge(Q1,Q2):-
     observe(Obs),
     P(Obs,Act),
-    action(Act)
+    action(Act),
     {Obs, Act}.

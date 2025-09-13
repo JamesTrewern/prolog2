@@ -3,8 +3,8 @@
 :- body_pred(zero,1), body_pred(prev,2), max_h_clause(3), max_h_preds(1), max_depth(5), debug(false).
 
 % Meta clauses
-P(X):- Q(X,Y), R(Y) {X,Y}.
-P(X):- Q(X) {X,Y}.
+P(X):- Q(X,Y), R(Y), {X,Y}.
+P(X):- Q(X), {X,Y}.
 
 % Background Knowledge
 zero(0).

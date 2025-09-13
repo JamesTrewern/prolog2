@@ -9,7 +9,7 @@ sub(X,Y,Z):-
 
 P([A,B],[A,C]):-
     Q(D),
-    R(B,D,C)
+    R(B,D,C),
     {A,B,C,D}.
 
 
