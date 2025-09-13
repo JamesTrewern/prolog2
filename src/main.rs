@@ -64,7 +64,7 @@ fn start_query(
     };
 
     let mut heap = QueryHeap::new(None)?;
-    let goals = build_clause(literals, None, &mut heap);
+    let goals = build_clause(literals, None, &mut heap, true);
     let mut vars = Vec::new();
     for literal in goals.iter() {
         vars.extend(

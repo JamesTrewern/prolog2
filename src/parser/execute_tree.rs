@@ -8,12 +8,12 @@ use crate::{heap::{
     heap::{Cell, Heap, Tag, EMPTY_LIS}, query_heap::QueryHeap, symbol_db::SymbolDB
 }, program::{clause::{self, Clause}, predicate_table::{self, PredicateTable}}, resolution::proof::Proof};
 
-pub fn build_clause(literals: Vec<Term>, meta_vars: Option<Vec<String>>, heap: &mut impl Heap) -> Clause{
+pub fn build_clause(literals: Vec<Term>, meta_vars: Option<Vec<String>>, heap: &mut impl Heap, query: bool) -> Clause{
     let mut var_values = HashMap::new();
 
     let literals: Vec<usize> = literals
         .into_iter()
-        .map(|term| term.encode(heap, &mut var_values, false))
+        .map(|term| term.encode(heap, &mut var_values, query))
         .collect();
 
     let meta_vars = meta_vars.map(|vars| {
@@ -27,7 +27,7 @@ pub fn build_clause(literals: Vec<Term>, meta_vars: Option<Vec<String>>, heap: &
 
 pub fn execute_directive(directive: Vec<Term>, predicate_table: &mut PredicateTable) -> Result<(),String>{
     let mut heap = QueryHeap::new(None)?;
-    let goals = build_clause(directive, None, &mut heap);
+    let goals = build_clause(directive, None, &mut heap, true);
     //TODO Find Variables in goals to report bindings once solved
     let proof = Proof::new(heap, &goals, predicate_table);
 
@@ -38,12 +38,12 @@ pub(crate) fn execute_tree(syntax_tree: Vec<TreeClause>, heap: &mut impl Heap, p
     for clause in syntax_tree {
         match clause {
             TreeClause::Fact(term) => {
-                let clause = build_clause(vec![term], None, heap);
+                let clause = build_clause(vec![term], None, heap, false);
                 let symbol_arity = heap.str_symbol_arity(clause[0]);
                 pred_table.add_clause_to_predicate(clause, symbol_arity).unwrap();
             },
             TreeClause::Rule(terms) => {
-                let clause = build_clause(terms, None, heap);
+                let clause = build_clause(terms, None, heap, false);
                 let symbol_arity = heap.str_symbol_arity(clause[0]);
                 pred_table.add_clause_to_predicate(clause, symbol_arity).unwrap();
             },
@@ -61,7 +61,7 @@ pub(crate) fn execute_tree(syntax_tree: Vec<TreeClause>, heap: &mut impl Heap, p
                 }else{
                     panic!("Last literal in meta_rule wasn't a set")
                 };
-                let clause = build_clause(terms, Some(meta_vars), heap);
+                let clause = build_clause(terms, Some(meta_vars), heap, false);
                 let symbol_arity = heap.str_symbol_arity(clause[0]);
                 pred_table.add_clause_to_predicate(clause, symbol_arity).unwrap();
 
