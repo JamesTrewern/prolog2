@@ -4,6 +4,8 @@ use std::{
     ptr::copy_nonoverlapping,
 };
 
+use crate::heap::heap::Heap;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BitFlag64(u64);
 
@@ -80,6 +82,17 @@ impl Clause {
             )
         };
     }
+
+    pub fn to_string(&self, heap: &impl Heap) -> String{
+        let mut buffer = format!("{}:-", heap.term_string(self.head()));
+        for body_literal in self.body(){
+            buffer += &heap.term_string(*body_literal);
+            buffer += ","
+        }
+        buffer.pop();
+        buffer += ".";
+        buffer
+    }
 }
 
 impl Deref for Clause {
@@ -94,4 +107,12 @@ impl PartialEq for Clause {
     fn eq(&self, other: &Self) -> bool {
         self.deref() == other.deref()
     }
+}
+
+unsafe impl Send for Clause {
+    
+}
+
+unsafe impl Sync for Clause {
+    
 }
