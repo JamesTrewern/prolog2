@@ -137,7 +137,6 @@ fn unify_func_or_tup(
     addr_1: usize,
     addr_2: usize,
 ) -> Option<Substitution> {
-    println!("Func_Tup:({addr_1},{addr_2})");
     if heap[addr_1].1 != heap[addr_2].1 {
         return None;
     };

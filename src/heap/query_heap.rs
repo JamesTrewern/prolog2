@@ -19,7 +19,6 @@ impl<'a> QueryHeap<'a> {
         root: Option<RwLockReadGuard<'a, QueryHeap<'a>>>
     ) -> Result<QueryHeap<'a>, String> {
         let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
-        println!("New heap, ID: {id}");
         Ok(QueryHeap {
             id,
             arg_regs: [(Tag::Ref, 0); 64],
