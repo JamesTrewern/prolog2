@@ -10,7 +10,8 @@ use std::{
     collections::HashMap,
     fs,
     io::{stdin, stdout, Write},
-    process::ExitCode, sync::Arc,
+    process::ExitCode,
+    sync::Arc,
 };
 
 use console::Term;
@@ -42,16 +43,23 @@ struct Config {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct BodyClause{
+struct BodyClause {
     symbol: String,
     arity: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct SetUp{
+struct Examples {
+    pos: Vec<String>,
+    neg: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct SetUp {
     pub config: Config,
     pub body_predicates: Vec<BodyClause>,
     pub files: Vec<String>,
+    pub examples: Option<Examples>
 }
 
 fn continue_proof() -> bool {
@@ -83,17 +91,17 @@ fn start_query(
     let goals = build_clause(literals, None, &mut query_heap, true);
     let mut vars = Vec::new();
     for literal in goals.iter() {
-        vars.extend(
-            query_heap.term_vars(*literal, false)
-                .iter()
-                .map(|addr| (SymbolDB::get_var(*addr, query_heap.get_id()).unwrap(), *addr)),
-        );
+        vars.extend(query_heap.term_vars(*literal, false).iter().map(|addr| {
+            (
+                SymbolDB::get_var(*addr, query_heap.get_id()).unwrap(),
+                *addr,
+            )
+        }));
     }
-    let mut proof = Proof::new(query_heap, &goals);
-
+    let mut proof = Proof::new(query_heap, &goals, config);
 
     loop {
-        if proof.prove(predicate_table.clone()) {
+        if proof.prove(predicate_table.clone(), config) {
             println!("TRUE");
             for (symbol, addr) in &vars {
                 println!("{symbol} = {}", proof.heap.term_string(*addr))
@@ -125,27 +133,29 @@ fn load_file(file_path: String, predicate_table: &mut PredicateTable, heap: &mut
     execute_tree(syntax_tree, heap, predicate_table);
 }
 
-fn load_setup() -> (Config, PredicateTable, Vec<Cell>){
+fn load_setup() -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
     let mut heap = Vec::new();
     let mut predicate_table = PredicateTable::new();
 
     let setup: SetUp = serde_json::from_str(&fs::read_to_string("setup.json").unwrap()).unwrap();
+    println!("{setup:?}");
     let config = setup.config;
 
-    for file_path in setup.files{
+    for file_path in setup.files {
         load_file(file_path, &mut predicate_table, &mut heap);
     }
-    
-    for BodyClause{symbol, arity} in setup.body_predicates{
-        predicate_table.set_body((SymbolDB::set_const(symbol),arity), true).unwrap();
+
+    for BodyClause { symbol, arity } in setup.body_predicates {
+        predicate_table
+            .set_body((SymbolDB::set_const(symbol), arity), true)
+            .unwrap();
     }
 
-
-    (config,predicate_table,heap)
+    (config, predicate_table, heap, setup.examples)
 }
 
 fn main() -> ExitCode {
-    let(config, predicate_table, heap) = load_setup();
+    let (config, predicate_table, heap, examples) = load_setup();
 
     let predicate_table = Arc::new(predicate_table);
     let heap = Arc::new(heap);
