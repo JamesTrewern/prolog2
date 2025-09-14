@@ -138,7 +138,7 @@ fn load_setup() -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
     let mut predicate_table = PredicateTable::new();
 
     let setup: SetUp = serde_json::from_str(&fs::read_to_string("setup.json").unwrap()).unwrap();
-    println!("{setup:?}");
+    // println!("{setup:?}");
     let config = setup.config;
 
     for file_path in setup.files {

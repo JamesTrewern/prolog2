@@ -126,6 +126,16 @@ impl PredicateTable {
         }
     }
 
+    pub fn get_variable_predicates(&self, arity: usize) -> Option<Box<[Clause]>>{
+        match self.find_predicate((0,arity)) {
+            FindReturn::Index(i) => match &self[i].predicate {
+                Predicate::Clauses(clauses) => Some(clauses.clone()),
+                _ => None
+            },
+            _ => None,
+        }
+    }
+
     //Remove predicate by SymbolArity key, if clause predicate return the range to remove from clause table
     pub fn remove_predicate(&mut self, symbol_arity: SymbolArity) {
         if let FindReturn::Index(predicate_idx) = self.find_predicate(symbol_arity) {
