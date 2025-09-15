@@ -8,7 +8,7 @@ enum ParseError {
 }
 
 const DELIMINATORS: &[char] = &[
-    '(', ')', ',', '.', ' ', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|', '>',
+    '(', ')', ',', '.', ' ', '\r','\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|', '>',
     '<', '{', '}',
 ];
 const KNOWN_SYMBOLS: &[&str] = &[":-", "==", "=/=", "/=", "=:=", "**", "<=", ">=", "/*", "*/"];
@@ -284,14 +284,14 @@ pub fn tokenise(text: String) -> Result<Vec<String>, String> {
         }
     }
     tokens.push(text[last_i..].into());
-    tokens.retain(|token| "" != *token);
+    tokens.retain(|token| "" != *token );
     form_known_symbols(&mut tokens);
     join_decimal_nums(&mut tokens);
     form_negative_nums(&mut tokens);
     form_empty_list_token(&mut tokens);
     form_empty_set_token(&mut tokens);
     form_empty_tuple_token(&mut tokens);
-    tokens.retain(|t1| !["\t", " "].iter().any(|t2| t1 == t2));
+    tokens.retain(|t1| !["\t", " ", "\r"].iter().any(|t2| t1 == t2));
     Ok(tokens)
 }
 
