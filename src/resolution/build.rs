@@ -53,7 +53,7 @@ fn build_arg(
 ) -> usize {
     let arg_id = heap[src_addr].1;
     match meta_vars {
-        Some(bit_flags) if bit_flags.get(arg_id) => heap.heap_push(heap[src_addr]),
+        Some(bit_flags) if !bit_flags.get(arg_id) => heap.heap_push(heap[src_addr]),
         _ => match substitution.get_arg(arg_id) {
             Some(bound_addr) => heap.set_ref(Some(bound_addr)),
             None => {

@@ -16,7 +16,7 @@ use crate::{
 };
 
 pub type Binding = (usize, usize);
-
+#[derive(Debug)]
 pub(super) struct Env {
     pub(super) goal: usize, // Pointer to heap literal
     pub(super) bindings: Box<[Binding]>,
@@ -106,7 +106,7 @@ impl Env {
         if self.depth > config.max_depth{
             return None;
         }
-        // println!("Call[{}|{}]: {}", self.depth, self.choices.len(), heap.term_string(self.goal));
+        println!("Call[{}|{}]: {}", self.depth, self.choices.len(), heap.term_string(self.goal));
         if let Some(pred_function) = self.pred_function {
             match pred_function(heap, hypothesis, self.goal) {
                 PredReturn::True => return Some(Vec::new()),
@@ -118,7 +118,7 @@ impl Env {
             }
         }
         while let Some(clause) = self.choices.pop() {
-            // println!("Try[{}]: {}", self.depth, clause.to_string(heap));
+            println!("Try[{}]: {}", self.depth, clause.to_string(heap));
 
             let head = clause.head();
 
@@ -140,7 +140,7 @@ impl Env {
                     .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
                     .collect();
 
-                // println!("{new_goals:?}");
+                println!("new_goals:{new_goals:?}");
                 //If meta clause we must create a new clause with the substitution
                 if clause.meta() {
                     self.new_clause = true;
@@ -160,6 +160,7 @@ impl Env {
                     hypothesis.push_clause(Clause::new(new_clause_literals, None), heap);
                 }
                 self.bindings = substitution.get_bindings();
+                self.children = new_goals.len();
                 heap.bind(&self.bindings);
                 //Convert goals to new enviroments and return
                 return Some(
@@ -231,9 +232,7 @@ impl<'a> Proof<'a> {
                         self.invented_preds += 1;
                     }
                     self.pointer += 1;
-                    for new_goal in new_goals {
-                        self.stack.insert(self.pointer, new_goal);
-                    }
+                    self.stack.splice(self.pointer..self.pointer, new_goals);
                 }
                 //If this goal fails the proof stack is backtracked
                 None => {
