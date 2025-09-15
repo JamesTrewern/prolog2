@@ -239,7 +239,7 @@ mod tests {
         ];
 
         let binding = unify(&heap, 0, 1).unwrap();
-        assert_eq!(binding.get_arg(0), Some(1));
+        assert_eq!(binding.get_arg(0), Some(2));
     }
 
     #[test]

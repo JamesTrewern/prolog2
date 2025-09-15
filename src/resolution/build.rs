@@ -161,26 +161,27 @@ mod tests {
         let p = SymbolDB::set_const("p".into());
         let f = SymbolDB::set_const("f".into());
 
-        let mut heap = vec![(Tag::Func, 3), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 0)];
+        let mut heap = vec![(Tag::Func, 4), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 0), (Tag::Arg, 1)];
         let mut substitution = Substitution::default();
         let addr = build(&mut heap, &mut substitution, None, 0);
         assert_eq!(
             heap[addr..(addr + 4)],
             [
-                (Tag::Func, 3),
+                (Tag::Func, 4),
                 (Tag::Con, p),
                 (Tag::Ref, addr + 2),
                 (Tag::Ref, addr + 2),
             ]
         );
 
-        // let mut substitution = Substitution::default();
+        let mut substitution = Substitution::default();
         let mut meta_vars = BitFlag64::default();
         meta_vars.set(0);
         let addr = build(&mut heap, &mut substitution, Some(meta_vars), 0);
+        heap.print_heap();
         assert_eq!(
-            heap[addr..(addr + 4)],
-            [(Tag::Func, 3), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 0),]
+            heap[addr..(addr + 5)],
+            [(Tag::Func, 4), (Tag::Con, p), (Tag::Ref, addr+2), (Tag::Ref, addr+2), (Tag::Arg, 1)]
         );
 
         heap = vec![
@@ -285,6 +286,11 @@ mod tests {
         re_build_bound_arg_terms(&mut heap, &mut substitution);
         let new_term = build(&mut heap, &mut substitution, None, 13);
         println!("{}",heap.term_string(new_term));
+    }
+
+    #[test]
+    fn meta_vars(){
+
     }
 
     #[test]
