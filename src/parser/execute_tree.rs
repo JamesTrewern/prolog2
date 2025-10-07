@@ -88,7 +88,7 @@ mod tests{
         execute_tree(facts, &mut heap, &mut pred_table);
 
         if let Predicate::Clauses(clauses) = pred_table.get_predicate((p,2)).unwrap(){
-            let fact = clauses[0];
+            let fact = &clauses[0];
             assert_eq!(&heap[fact[0]..fact[0]+4],&[
                 (Tag::Func, 3),
                 (Tag::Con, p),
@@ -100,7 +100,7 @@ mod tests{
         }
 
         if let Predicate::Clauses(clauses) = pred_table.get_predicate((q,1)).unwrap(){
-            let fact = clauses[0];
+            let fact = &clauses[0];
             assert_eq!(&heap[fact[0]..fact[0]+3],&[
                 (Tag::Func, 2),
                 (Tag::Con, q),
@@ -123,7 +123,7 @@ mod tests{
         execute_tree(facts, &mut heap, &mut pred_table);
 
         if let Predicate::Clauses(clauses) = pred_table.get_predicate((p,2)).unwrap(){
-            let rule = clauses[0];
+            let rule = &clauses[0];
             assert_eq!(&heap[rule[0]..rule[0]+4],&[
                 (Tag::Func, 3),
                 (Tag::Con, p),
@@ -147,7 +147,7 @@ mod tests{
         }
 
         if let Predicate::Clauses(clauses) = pred_table.get_predicate((q,1)).unwrap(){
-            let rule = clauses[0];
+            let rule = &clauses[0];
             assert_eq!(&heap[rule[0]..rule[0]+3],&[
                 (Tag::Func, 2),
                 (Tag::Con, q),
@@ -159,7 +159,7 @@ mod tests{
                 (Tag::Arg, 0),
             ]);
 
-            let rule = clauses[1];
+            let rule = &clauses[1];
             assert_eq!(&heap[rule[0]..rule[0]+3],&[
                 (Tag::Func, 2),
                 (Tag::Con, q),
@@ -186,7 +186,7 @@ mod tests{
         execute_tree(facts, &mut heap, &mut pred_table);
 
         if let Predicate::Clauses(clauses) = pred_table.get_predicate((p,2)).unwrap(){
-            let meta_rule = clauses[0];
+            let meta_rule = &clauses[0];
             assert_eq!(&heap[meta_rule[0]..meta_rule[0]+4],&[
                 (Tag::Func, 3),
                 (Tag::Con, p),

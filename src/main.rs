@@ -108,7 +108,7 @@ fn start_query(
             }
             //TODO display variable bindings
             if proof.hypothesis.len() != 0 {
-                proof.hypothesis.print_hypothesis(&proof.heap);
+                println!("{}",proof.hypothesis.to_string(&proof.heap));
             }
             if !continue_proof() {
                 break;
@@ -154,12 +154,7 @@ fn load_setup() -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
     (config, predicate_table, heap, setup.examples)
 }
 
-fn main() -> ExitCode {
-    let (config, predicate_table, heap, examples) = load_setup();
-
-    let predicate_table = Arc::new(predicate_table);
-    let heap = Arc::new(heap);
-
+fn main_loop(config: Config, predicate_table: Arc<PredicateTable>, heap: Arc<Vec<Cell>>) -> ExitCode {
     let mut buffer = String::new();
     loop {
         if buffer.is_empty() {
@@ -184,4 +179,29 @@ fn main() -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+fn main() -> ExitCode {
+    let (config, predicate_table, heap, examples) = load_setup();
+
+    let predicate_table = Arc::new(predicate_table);
+    let heap = Arc::new(heap);
+
+    match examples {
+        Some(Examples { pos, neg }) => {
+            let mut buffer = String::new();
+            for example in pos{
+                buffer += &example;
+                buffer += ",";
+            }
+            for example in neg{
+                buffer += &format!("not({example}),");
+            }
+            buffer.pop();
+            buffer += ".";
+            start_query(&buffer, predicate_table, heap, config).unwrap();
+            ExitCode::SUCCESS
+        },
+        None => main_loop(config, predicate_table, heap),
+    }
 }

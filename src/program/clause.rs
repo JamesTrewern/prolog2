@@ -1,7 +1,7 @@
 use std::{
     alloc::{alloc, dealloc, Layout},
     ops::Deref,
-    ptr::copy_nonoverlapping,
+    ptr::copy_nonoverlapping, sync::Arc,
 };
 
 use crate::heap::heap::Heap;
@@ -23,10 +23,9 @@ impl BitFlag64 {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Clause {
-    ptr: *const usize,
-    len: usize,
+    literals: Arc<[usize]>,
     pub meta_vars: Option<BitFlag64>,
 }
 
@@ -45,16 +44,8 @@ impl Clause {
     pub fn new(literals: Vec<usize>, meta_vars: Option<Vec<usize>>) -> Self {
         let len = literals.len();
         let meta_vars = meta_vars.map(Self::meta_vars_to_bit_flags);
-        unsafe {
-            let layout = Layout::array::<usize>(len).unwrap();
-            let ptr = alloc(layout) as *mut usize;
-            copy_nonoverlapping(literals.as_ptr(), ptr, len);
-            Clause {
-                ptr: ptr as *const usize,
-                len,
-                meta_vars,
-            }
-        }
+        let literals: Arc<[usize]> = literals.into();
+        Clause { literals, meta_vars}
     }
 
     pub fn head(&self) -> usize {
@@ -74,15 +65,6 @@ impl Clause {
         Ok(meta_vars.get(arg_id))
     }
 
-    pub fn drop(self) {
-        unsafe {
-            dealloc(
-                self.ptr as *mut u8,
-                Layout::array::<usize>(self.len()).unwrap(),
-            )
-        };
-    }
-
     pub fn to_string(&self, heap: &impl Heap) -> String{
         let mut buffer = format!("{}:-", heap.term_string(self.head()));
         for body_literal in self.body(){
@@ -99,20 +81,6 @@ impl Deref for Clause {
     type Target = [usize];
 
     fn deref(&self) -> &[usize] {
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+        &self.literals
     }
-}
-
-impl PartialEq for Clause {
-    fn eq(&self, other: &Self) -> bool {
-        self.deref() == other.deref()
-    }
-}
-
-unsafe impl Send for Clause {
-    
-}
-
-unsafe impl Sync for Clause {
-    
 }

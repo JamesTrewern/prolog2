@@ -5,7 +5,7 @@ use crate::{
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
         clause::Clause,
-        hypothesis::Hypothesis,
+        hypothesis::{Constraints, Hypothesis},
         predicate_table::{self, Predicate, PredicateTable},
     },
     resolution::{
@@ -15,12 +15,16 @@ use crate::{
     Config,
 };
 
+fn triangular(n: usize) -> usize {
+    (n * (n + 1)) / 2
+}
+
 pub type Binding = (usize, usize);
 #[derive(Debug)]
 pub(super) struct Env {
     pub(super) goal: usize, // Pointer to heap literal
     pub(super) bindings: Box<[Binding]>,
-    pub(super) choices: Vec<Clause>, //Array of choices which have not been tried
+    pub(super) choices: Vec<(Clause, Option<Constraints>)>, //Array of choices which have not been tried
     pred_function: Option<PredicateFunction>,
     got_choices: bool,
     pub(super) new_clause: bool, //Was a new clause created by this enviroment
@@ -53,27 +57,36 @@ impl Env {
         if !self.got_choices {
             self.got_choices = true;
             let (symbol, arity) = heap.str_symbol_arity(self.goal);
-            //TODO recognise when predicate is in hypothesis
+
+            self.choices = hypothesis
+                .iter()
+                .map(|(clause, constraints)| (clause.clone(), Some(constraints.clone())))
+                .collect();
+
             if symbol == 0 {
-                self.choices = predicate_table.get_body_clauses(arity);
-                if let Some(clauses) = predicate_table.get_variable_predicates(arity){
-                    self.choices.extend(clauses);
+                if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
+                    self.choices
+                        .extend(clauses.iter().map(|c| ((c.clone(), None))));
                 }
-                self.choices
-                    .append(&mut hypothesis.get_predicate((symbol, arity)));
+                self.choices.extend(
+                    predicate_table
+                        .get_body_clauses(arity)
+                        .into_iter()
+                        .map(|c| (c, None)),
+                );
             } else {
                 match predicate_table.get_predicate((symbol, arity)) {
-                    Some(Predicate::Clauses(clauses)) => {
-                        self.choices = hypothesis.get_predicate((symbol, arity));
-                        self.choices.extend_from_slice(&clauses);
-                    }
                     Some(Predicate::Function(pred_function)) => {
                         self.pred_function = Some(pred_function)
                     }
+                    Some(Predicate::Clauses(clauses)) => {
+                        self.choices
+                            .extend(clauses.iter().map(|c| ((c.clone(), None))));
+                    }
                     None => {
-                        self.choices = hypothesis.get_predicate((symbol, arity));
-                        if let Some(clauses) = predicate_table.get_variable_predicates(arity){
-                            self.choices.extend(clauses);
+                        if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
+                            self.choices
+                                .extend(clauses.iter().map(|c| ((c.clone(), None))));
                         }
                     }
                 }
@@ -81,12 +94,18 @@ impl Env {
         }
     }
 
-    pub fn undo_try(&mut self, hypothesis: &mut Hypothesis, heap: &mut QueryHeap, h_clauses: &mut usize, invented_preds: &mut usize) -> usize {
+    pub fn undo_try(
+        &mut self,
+        hypothesis: &mut Hypothesis,
+        heap: &mut QueryHeap,
+        h_clauses: &mut usize,
+        invented_preds: &mut usize,
+    ) -> usize {
         if self.new_clause {
-            hypothesis.drop_clause();
+            hypothesis.pop();
             *h_clauses -= 1;
             self.new_clause = false;
-            if self.invent_pred{
+            if self.invent_pred {
                 *invented_preds -= 1;
                 self.invent_pred = false;
             }
@@ -103,10 +122,15 @@ impl Env {
         allow_new_pred: bool,
         config: Config,
     ) -> Option<Vec<Env>> {
-        if self.depth > config.max_depth{
+        if self.depth > config.max_depth {
             return None;
         }
-        println!("Call[{}|{}]: {}", self.depth, self.choices.len(), heap.term_string(self.goal));
+        println!(
+            "Call[{}|{}]: {}",
+            self.depth,
+            self.choices.len(),
+            heap.term_string(self.goal)
+        );
         if let Some(pred_function) = self.pred_function {
             match pred_function(heap, hypothesis, self.goal) {
                 PredReturn::True => return Some(Vec::new()),
@@ -117,7 +141,7 @@ impl Env {
                 }
             }
         }
-        while let Some(clause) = self.choices.pop() {
+        while let Some((clause, constraints)) = self.choices.pop() {
             println!("Try[{}]: {}", self.depth, clause.to_string(heap));
 
             let head = clause.head();
@@ -140,7 +164,7 @@ impl Env {
                     .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
                     .collect();
 
-                println!("new_goals:{new_goals:?}");
+                // println!("new_goals:{new_goals:?}");
                 //If meta clause we must create a new clause with the substitution
                 if clause.meta() {
                     self.new_clause = true;
@@ -157,7 +181,26 @@ impl Env {
                         .iter()
                         .map(|literal| build(heap, &mut substitution, clause.meta_vars, *literal))
                         .collect();
-                    hypothesis.push_clause(Clause::new(new_clause_literals, None), heap);
+                    //Collect disallowed bindings
+                    let mut eq_vars = Vec::with_capacity(16);
+                    for i in 0..32 {
+                        if unsafe { clause.meta_var(i).unwrap_unchecked() } {
+                            eq_vars.push(unsafe { substitution.get_arg(i).unwrap_unchecked() });
+                        }
+                    }
+                    let mut constraints = Vec::with_capacity(triangular(eq_vars.len()));
+                    for x in &eq_vars {
+                        for y in &eq_vars {
+                            if *x != *y {
+                                constraints.push((*x, *y));
+                            }
+                        }
+                    }
+                    hypothesis.push_clause(
+                        Clause::new(new_clause_literals, None),
+                        heap,
+                        constraints.into(),
+                    );
                 }
                 self.bindings = substitution.get_bindings();
                 self.children = new_goals.len();
@@ -205,7 +248,12 @@ impl<'a> Proof<'a> {
         //A previous proof has already been found, back track to find a new one.
         if self.pointer == self.stack.len() {
             self.pointer -= 1;
-            self.stack[self.pointer].undo_try(&mut self.hypothesis, &mut self.heap, &mut self.h_clauses, &mut self.invented_preds);
+            self.stack[self.pointer].undo_try(
+                &mut self.hypothesis,
+                &mut self.heap,
+                &mut self.h_clauses,
+                &mut self.invented_preds,
+            );
         }
 
         //Once the pointer exceeds the last enviroment all goals have been proven
@@ -242,8 +290,12 @@ impl<'a> Proof<'a> {
                     }
                     self.pointer -= 1;
                     //Undo bindings and creation of clauses
-                    let children =
-                        self.stack[self.pointer].undo_try(&mut self.hypothesis, &mut self.heap, &mut self.h_clauses, &mut self.invented_preds);
+                    let children = self.stack[self.pointer].undo_try(
+                        &mut self.hypothesis,
+                        &mut self.heap,
+                        &mut self.h_clauses,
+                        &mut self.invented_preds,
+                    );
                     //Remove child goals from proof stack
                     self.stack
                         .drain((self.pointer + 1)..(self.pointer + 1 + children));
