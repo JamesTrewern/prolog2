@@ -1,4 +1,4 @@
-use std::ops::{Deref, DerefMut};
+use std::{ops::{Deref, DerefMut}, usize};
 
 use crate::heap::heap::{Heap, Tag, CON_PTR};
 
@@ -68,6 +68,17 @@ impl Substitution {
             bindings.push((self.binding_array[i].0, self.binding_array[i].1));
         }
         bindings.into_boxed_slice()
+    }
+
+    pub fn check_constraints(&self, constraints: &[usize]) -> bool{
+        for i in 0..self.binding_len{
+            let binding = (self.binding_array[i].0,self.binding_array[i].1);
+            if constraints.contains(&binding){
+                return false;
+            }
+        }
+        
+        true
     }
 }
 

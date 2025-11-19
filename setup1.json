@@ -1,0 +1,14 @@
+{
+    "config" : {
+        "max_depth": 5,
+        "max_clause": 4,
+        "max_pred": 1
+    },
+
+    "body_predicates" : [{"symbol" : "dad", "arity": 2},{"symbol" : "mum", "arity": 2}],
+    "examples" : {
+        "pos" : ["ancestor(ken,james), ancestor(christine,james)"],
+        "neg" : []
+    },
+    "files" : ["examples/simple_family.pl"]
+}

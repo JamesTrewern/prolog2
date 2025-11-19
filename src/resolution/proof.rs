@@ -101,8 +101,15 @@ impl Env {
         h_clauses: &mut usize,
         invented_preds: &mut usize,
     ) -> usize {
+        println!(
+            "Undo[{}]: {}",
+            self.depth,
+            heap.term_string(self.goal)
+        );
         if self.new_clause {
-            hypothesis.pop();
+            // hypothesis.pop();
+            let clause = hypothesis.pop().unwrap().0;
+            println!("Remove clause: {}", clause.to_string(heap));
             *h_clauses -= 1;
             self.new_clause = false;
             if self.invent_pred {
@@ -155,6 +162,12 @@ impl Env {
             }
 
             if let Some(mut substitution) = unify(heap, head, self.goal) {
+                if let Some(constraints) = constraints{
+                    if !substitution.check_constraints(&constraints){
+                        continue;
+                    }
+                }
+
                 //If a ref is bound to a complex term containing args then it must be rebuilt in the query heap
                 re_build_bound_arg_terms(heap, &mut substitution);
                 //Create new goals
@@ -182,22 +195,17 @@ impl Env {
                         .map(|literal| build(heap, &mut substitution, clause.meta_vars, *literal))
                         .collect();
                     //Collect disallowed bindings
-                    let mut eq_vars = Vec::with_capacity(16);
+                    let mut constraints = Vec::with_capacity(16);
                     for i in 0..32 {
                         if unsafe { clause.meta_var(i).unwrap_unchecked() } {
-                            eq_vars.push(unsafe { substitution.get_arg(i).unwrap_unchecked() });
+                            constraints.push(unsafe { substitution.get_arg(i).unwrap_unchecked() });
                         }
                     }
-                    let mut constraints = Vec::with_capacity(triangular(eq_vars.len()));
-                    for x in &eq_vars {
-                        for y in &eq_vars {
-                            if *x != *y {
-                                constraints.push((*x, *y));
-                            }
-                        }
-                    }
+                    
+                    let clause = Clause::new(new_clause_literals, None);
+                    println!("Add clause: {}", clause.to_string(heap));
                     hypothesis.push_clause(
-                        Clause::new(new_clause_literals, None),
+                        clause,
                         heap,
                         constraints.into(),
                     );
@@ -265,6 +273,7 @@ impl<'a> Proof<'a> {
                 &predicate_table,
             );
 
+            print!("({})", self.pointer);
             match self.stack[self.pointer].try_choices(
                 &mut self.heap,
                 &mut self.hypothesis,

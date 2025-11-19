@@ -4,7 +4,7 @@ use crate::{heap::heap::Heap, program::predicate_table::SymbolArity};
 
 use super::clause::Clause;
 
-pub type Constraints = Arc<[(usize,usize)]>;
+pub type Constraints = Arc<[usize]>;
 
 pub struct Hypothesis (Vec<(Clause,Constraints)>);
     
