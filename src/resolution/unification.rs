@@ -70,10 +70,10 @@ impl Substitution {
         bindings.into_boxed_slice()
     }
 
-    pub fn check_constraints(&self, constraints: &[usize]) -> bool{
+    pub fn check_constraints(&self, constraints: &[usize], heap: &impl Heap) -> bool{
         for i in 0..self.binding_len{
             let binding = (self.binding_array[i].0,self.binding_array[i].1);
-            if constraints.contains(&binding){
+            if constraints.contains(&heap.deref_addr(binding.0)) && constraints.contains(&heap.deref_addr(binding.1)){
                 return false;
             }
         }

@@ -24,7 +24,7 @@ pub type Binding = (usize, usize);
 pub(super) struct Env {
     pub(super) goal: usize, // Pointer to heap literal
     pub(super) bindings: Box<[Binding]>,
-    pub(super) choices: Vec<(Clause, Option<Constraints>)>, //Array of choices which have not been tried
+    pub(super) choices: Vec<Clause>, //Array of choices which have not been tried
     pred_function: Option<PredicateFunction>,
     got_choices: bool,
     pub(super) new_clause: bool, //Was a new clause created by this enviroment
@@ -60,19 +60,19 @@ impl Env {
 
             self.choices = hypothesis
                 .iter()
-                .map(|(clause, constraints)| (clause.clone(), Some(constraints.clone())))
+                .map(|clause| clause.clone())
                 .collect();
 
             if symbol == 0 {
                 if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
                     self.choices
-                        .extend(clauses.iter().map(|c| ((c.clone(), None))));
+                        .extend(clauses.iter().map(|c| c.clone()));
                 }
                 self.choices.extend(
                     predicate_table
                         .get_body_clauses(arity)
                         .into_iter()
-                        .map(|c| (c, None)),
+                        .map(|c| c),
                 );
             } else {
                 match predicate_table.get_predicate((symbol, arity)) {
@@ -81,12 +81,12 @@ impl Env {
                     }
                     Some(Predicate::Clauses(clauses)) => {
                         self.choices
-                            .extend(clauses.iter().map(|c| ((c.clone(), None))));
+                            .extend(clauses.iter().map(|c| c.clone()));
                     }
                     None => {
                         if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
                             self.choices
-                                .extend(clauses.iter().map(|c| ((c.clone(), None))));
+                                .extend(clauses.iter().map(|c| c.clone()));
                         }
                     }
                 }
@@ -108,7 +108,7 @@ impl Env {
         );
         if self.new_clause {
             // hypothesis.pop();
-            let clause = hypothesis.pop().unwrap().0;
+            let clause = hypothesis.pop().unwrap();
             println!("Remove clause: {}", clause.to_string(heap));
             *h_clauses -= 1;
             self.new_clause = false;
@@ -148,7 +148,7 @@ impl Env {
                 }
             }
         }
-        while let Some((clause, constraints)) = self.choices.pop() {
+        'choices: while let Some(clause) = self.choices.pop() {
             println!("Try[{}]: {}", self.depth, clause.to_string(heap));
 
             let head = clause.head();
@@ -162,11 +162,12 @@ impl Env {
             }
 
             if let Some(mut substitution) = unify(heap, head, self.goal) {
-                if let Some(constraints) = constraints{
-                    if !substitution.check_constraints(&constraints){
-                        continue;
+                for constraints in &hypothesis.constraints{
+                    if !substitution.check_constraints(&constraints, heap){
+                        continue 'choices;
                     }
                 }
+                
 
                 //If a ref is bound to a complex term containing args then it must be rebuilt in the query heap
                 re_build_bound_arg_terms(heap, &mut substitution);
