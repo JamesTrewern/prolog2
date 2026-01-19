@@ -1,156 +1,345 @@
-use crate::heap::{
-    heap::Heap,
-    store::{Store, Tag},
+use crate::{
+    heap::heap::{Cell, Heap, Tag},
+    program::clause::BitFlag64,
+    resolution::unification::Substitution,
 };
 
-pub fn build_goals(
-    body_literals: &[usize],
-    store: &mut Store,
-    arg_regs: &mut[usize; 64],
-) -> Box<[usize]> {
-    body_literals
-        .iter()
-        .map(|l| build(*l, store, false, arg_regs))
-        .collect::<Box<[usize]>>()
-}
-
-pub fn build_clause(clause: &[usize], store: &mut Store, arg_regs: &mut [usize; 64]) -> Box<[usize]> {
-    clause
-        .iter()
-        .map(|l| build(*l, store, true, arg_regs))
-        .collect::<Box<[usize]>>()
-}
-
-pub fn build(src_addr: usize, store: &mut Store, clause: bool, arg_regs: &mut [usize; 64]) -> usize {
-    match store[src_addr] {
-        (Tag::Lis, _) => {
-            let (pointer, con) = build_list(src_addr, store, clause,arg_regs);
-            store.heap_push((Tag::Lis, pointer));
-            store.heap_len() - 1
-        }
-        (Tag::Func, _) => build_str(src_addr, store, clause,arg_regs).0,
-        _ => {
-            store.print_heap();
-            panic!("src_addr: {src_addr}, {}", store.term_string(src_addr))
-        }
-    }
-}
-
-/**This function serves two purposes
- * firstly if a sub term to a structure is itself a structure, we need to pre build this before attempting to build the original strucure with a binding
- * Secondly through this process of potentially building new sub structures we can discover if these are constant sub structures
- * @binding: Binding that informs us how to handle the source term
- * @sub_term: The source term used to build a new term on heap
- * @heap: The heap
- * @uqvar_binding: Optional value that tracks the first instance of a uq var when it is added. If None we are building goal
+/*  If a ref if bound to some complex term which contains args we want
+    to rebuild this term in the query space replacing args with refs or arg reg values
  */
-fn build_complex_subterm(
-    sub_term: usize,
-    store: &mut Store,
-    clause: bool,
-    update_addr: &mut usize,
-    arg_regs: &mut [usize; 64],
-) -> bool {
-    match store[sub_term] {
-        (Tag::ArgA | Tag::Arg, _) => false, //If address points to ref this is not a constant value
-        (Tag::Str, func_addr) => {
-            let (addr, constant) = build_str(func_addr, store, clause,arg_regs);
-            *update_addr = addr;
-            constant
-        }
-        Store::EMPTY_LIS => true,
-        (Tag::Lis, _) => {
-            let (addr, constant) = build_list(sub_term, store, clause,arg_regs);
-            *update_addr = addr;
-            constant
-        }
-        _ => true,
-    }
-}
-
-/** Used after build subterm, all complex structures have been rebuilt if needed, we can now reconstruct orignal structure using the binding
- * @term_addr: The source term used to build a new term on heap
- * @binding: Binding that informs us how to handle the source term
- * @heap: The heap
- * @uqvar_binding: Optional value that tracks the first instance of a uq var when it is added. If None we are building goal
- */
-fn build_subterm(sub_term: usize, store: &mut Store, clause: bool, update_addr: usize, arg_regs: &mut [usize;64]) {
-    match store[sub_term] {
-        (Tag::ArgA, arg) if clause => store.heap_push((Tag::Arg, arg)), //We are building a new clause and the cell is universally quantified
-        (Tag::Arg | Tag::ArgA, arg) => {
-            if arg_regs[arg] == usize::MAX {
-                arg_regs[arg] = store.set_ref(None);
-            } else {
-                store.heap_push(store[arg_regs[arg]]);
+pub fn re_build_bound_arg_terms(heap: &mut impl Heap,substitution: &mut Substitution){
+    for i in 0..substitution.len(){
+        if let (_, bound_addr, true) = substitution[i]{
+            if heap.contains_args(bound_addr) {
+                    //Build term if contains args
+                    //Update bound_addr to newly built term
+                    let new_bound_addr = build(heap, substitution, None, bound_addr);
+                    substitution[i].1 = new_bound_addr;
             }
         }
-        (Tag::Str, _) => store.heap_push((Tag::Str, update_addr)),
-        Store::EMPTY_LIS => store.heap_push(Store::EMPTY_LIS),
-        (Tag::Lis, _) => store.heap_push((Tag::Lis, update_addr)),
-        _ => store.heap_push(store[sub_term]),
+
     }
 }
 
-/**Use a binding and an list address to create a new list, unless source list is constant, then return src address and true
- * @binding: Binding that informs us how to handle the source term
- * @src_lis: The source list used to build a new term on heap
- * @heap: The heap
- * @uqvar_binding: Optional value that tracks the first instance of a uq var when it is added. If None we are building goal
- */
-fn build_list(src_lis: usize, store: &mut Store, clause: bool, arg_regs: &mut [usize;64]) -> (usize, bool) {
-    let pointer = store[src_lis].1;
-    let mut constant = true;
+/*  Build a new term from previous term and substitution.
+    Assume that src_addr does not point to bound ref.   ``
 
-    let mut update_addrs = [usize::MAX; 2];
-
-    for i in 0..=1 {
-        if !build_complex_subterm(pointer + i, store, clause, &mut update_addrs[i],arg_regs) {
-            constant = false
+*/
+pub fn build(
+    heap: &mut impl Heap,
+    substitution: &mut Substitution,
+    meta_vars: Option<BitFlag64>,
+    src_addr: usize,
+) -> usize {
+    match heap[heap.deref_addr(src_addr)] {
+        (tag @ (Tag::Con | Tag::Flt | Tag::Int | Tag::Stri | Tag::ELis | Tag::Ref), value) => {
+            heap.heap_push((tag, value))
         }
+        (Tag::Arg, arg_id) => build_arg(heap, substitution, meta_vars, src_addr),
+        (Tag::Func | Tag::Tup | Tag::Set, _) => build_str(heap, substitution, meta_vars, src_addr),
+        (Tag::Lis, ptr) => {
+            let new_ptr = build_list(heap, substitution, meta_vars, ptr);
+            heap.heap_push((Tag::Lis, ptr))
+        }
+        cell => todo!("handle: {cell:?}"),
     }
-
-    if constant {
-        return (pointer, true);
-    }
-
-    let new_lis = store.heap_len();
-
-    for i in 0..=1 {
-        build_subterm(pointer + i, store, clause, update_addrs[i],arg_regs)
-    }
-
-    (new_lis, false)
 }
 
-/**Use a binding and an str address to create a new list, unless the source structure is constant, then return src address and true
- * @binding: Binding that informs us how to handle the source term
- * @src_str: The source structure used to build a new term on heap
- * @heap: The heap
- * @uqvar_binding: Optional value that tracks the first instance of a uq var when it is added. If None we are building goal
- */
-pub fn build_str(func_addr: usize, store: &mut Store, clause: bool, arg_regs: &mut [usize;64]) -> (usize, bool) {
-    let mut constant: bool = true;
-    let arity = store[func_addr].1;
+fn build_arg(
+    heap: &mut impl Heap,
+    substitution: &mut Substitution,
+    meta_vars: Option<BitFlag64>,
+    src_addr: usize,
+) -> usize {
+    let arg_id = heap[src_addr].1;
+    match meta_vars {
+        Some(bit_flags) if !bit_flags.get(arg_id) => heap.heap_push(heap[src_addr]),
+        _ => match substitution.get_arg(arg_id) {
+            Some(bound_addr) => heap.set_ref(Some(bound_addr)),
+            None => {
+                let ref_addr = heap.set_ref(None);
+                substitution.set_arg(arg_id, ref_addr);
+                ref_addr
+            }
+        },
+    }
+}
 
-    let mut update_addrs: Box<[usize]> = (0..arity).collect();
-    //Iterate over structure subterms
-    for (i, addr) in store.str_iterator(func_addr).enumerate() {
-        if !build_complex_subterm(addr, store, clause, &mut update_addrs[i],arg_regs) {
-            constant = false
+fn build_ref() {}
+
+fn build_str(
+    heap: &mut impl Heap,
+    substitution: &mut Substitution,
+    meta_vars: Option<BitFlag64>,
+    src_addr: usize,
+) -> usize {
+    let (tag, length) = heap[src_addr];
+    let mut complex_terms: Vec<Option<Cell>> = Vec::with_capacity(length);
+    for i in 1..length + 1 {
+        complex_terms.push(build_complex_term(
+            heap,
+            substitution,
+            meta_vars,
+            src_addr + i,
+        ));
+    }
+    let addr = heap.heap_push((tag, length));
+    let mut i = 1;
+    for complex_term in complex_terms {
+        match complex_term {
+            Some(cell) => heap.heap_push(cell),
+            None => build(heap, substitution, meta_vars, src_addr + i),
+        };
+        i += 1;
+    }
+
+    addr
+}
+
+fn build_list(
+    heap: &mut impl Heap,
+    substitution: &mut Substitution,
+    meta_vars: Option<BitFlag64>,
+    src_addr: usize,
+) -> usize {
+    let head = build_complex_term(heap, substitution, meta_vars, src_addr);
+    let tail = build_complex_term(heap, substitution, meta_vars, src_addr+1);
+    let ptr = match head{
+        Some(cell) => heap.heap_push(cell),
+        None => build(heap, substitution, meta_vars, src_addr),
+    };
+    match tail {
+        Some(cell) => heap.heap_push(cell),
+        None => build(heap, substitution, meta_vars, src_addr+1),
+    };
+    ptr
+}
+
+fn build_complex_term(
+    heap: &mut impl Heap,
+    substitution: &mut Substitution,
+    meta_vars: Option<BitFlag64>,
+    src_addr: usize,
+) -> Option<Cell> {
+    match heap[heap.deref_addr(src_addr)] {
+        (Tag::Func | Tag::Tup | Tag::Set, _) => {
+            Some((Tag::Str, build_str(heap, substitution, meta_vars, src_addr)))
         }
+        (Tag::Str, ptr) => Some((Tag::Str, build_str(heap, substitution, meta_vars, ptr))),
+        (Tag::Lis, ptr) => Some((Tag::Lis, build_list(heap, substitution, meta_vars, ptr))),
+        (Tag::Arg, id) => match meta_vars {
+            Some(bitflags) if bitflags.get(id) => None,
+            _ => match substitution.get_arg(id) {
+                Some(addr) => build_complex_term(heap, substitution, meta_vars, addr),
+                None => None,
+            },
+        },
+        (Tag::Ref, ref_addr) if ref_addr == src_addr => {
+            if let Some(bound_addr) = substitution.bound(ref_addr) {
+                build_complex_term(heap, substitution, meta_vars, bound_addr)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        heap::{
+            heap::{Heap, Tag},
+            symbol_db::SymbolDB,
+        },
+        program::clause::BitFlag64,
+        resolution::{build::{build, re_build_bound_arg_terms}, unification::{unify, Substitution}},
+    };
+
+    #[test]
+    fn args() {
+        let p = SymbolDB::set_const("p".into());
+        let f = SymbolDB::set_const("f".into());
+
+        let mut heap = vec![(Tag::Func, 4), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 0), (Tag::Arg, 1)];
+        let mut substitution = Substitution::default();
+        let addr = build(&mut heap, &mut substitution, None, 0);
+        assert_eq!(
+            heap[addr..(addr + 4)],
+            [
+                (Tag::Func, 4),
+                (Tag::Con, p),
+                (Tag::Ref, addr + 2),
+                (Tag::Ref, addr + 2),
+            ]
+        );
+
+        let mut substitution = Substitution::default();
+        let mut meta_vars = BitFlag64::default();
+        meta_vars.set(0);
+        let addr = build(&mut heap, &mut substitution, Some(meta_vars), 0);
+        heap.print_heap();
+        assert_eq!(
+            heap[addr..(addr + 5)],
+            [(Tag::Func, 4), (Tag::Con, p), (Tag::Ref, addr+2), (Tag::Ref, addr+2), (Tag::Arg, 1)]
+        );
+
+        heap = vec![
+            (Tag::Func, 2),
+            (Tag::Con, f),
+            (Tag::Ref, 2),
+            (Tag::Func, 2),
+            (Tag::Con, p),
+            (Tag::Arg, 0),
+        ];
+        substitution = Substitution::default();
+        substitution.set_arg(0, 0);
+        let addr = build(&mut heap, &mut substitution, None, 3);
+        assert_eq!(
+            heap[addr - 3..(addr + 3)],
+            [
+                (Tag::Func, 2),
+                (Tag::Con, f),
+                (Tag::Ref, 2),
+                (Tag::Func, 2),
+                (Tag::Con, p),
+                (Tag::Str, addr-3),
+            ]
+        );
+
+        // heap = vec![
+        //     (Tag::Con, f),
+        //     (Tag::Lis, 2),
+        //     (Tag::Ref, 2),
+        //     (Tag::ELis, 0),
+        //     (Tag::Lis, 0),
+        //     (Tag::Func, 2),
+        //     (Tag::Con, p),
+        //     (Tag::Arg, 0),
+        // ];
+        // substitution = Substitution::default();
+        // substitution.set_arg(0, 4);
+        // let addr = build(&mut heap, &mut substitution, None, 5);
+        // assert_eq!(
+        //     heap[addr..(addr + 3)],
+        //     [(Tag::Func, 2), (Tag::Con, p), (Tag::Ref, 4),]
+        // );
     }
 
-    //If all subterms are constant then the structure is constant
-    if constant {
-        return (func_addr, true);
+    #[test]
+    fn lists() {
+        let p = SymbolDB::set_const("p".into());
+        let a = SymbolDB::set_const("a".into());
+        let b = SymbolDB::set_const("b".into());
+        let c = SymbolDB::set_const("c".into());
+
+        let mut heap = vec![
+            (Tag::Con, a),  //0
+            (Tag::Lis, 2),  //1
+            (Tag::Con, b),  //2
+            (Tag::Arg, 0),  //3
+
+            (Tag::Func, 2), //4
+            (Tag::Con, p),  //5
+            (Tag::Lis, 0),  //6
+
+            (Tag::Con, a),  //7
+            (Tag::Lis, 9),  //8
+            (Tag::Con, b),  //9
+            (Tag::Lis, 11), //10
+            (Tag::Con, c),  //11
+            (Tag::ELis, 0), //12
+
+            (Tag::Func, 2), //13
+            (Tag::Con, p),  //14
+            (Tag::Lis, 7),  //15
+        ];
+        let mut substitution = Substitution::default();
+        substitution.set_arg(0, 10);
+        let addr = build(&mut heap, &mut substitution, None, 4);
+        assert_eq!(heap.term_string(addr), "p([a,b,c])");
+
+
+        let mut heap = vec![
+            (Tag::Con, a),  //0
+            (Tag::Lis, 2),  //1
+            (Tag::Con, b),  //2
+            (Tag::Ref, 3),  //3
+
+            (Tag::Func, 2), //4
+            (Tag::Con, p),  //5
+            (Tag::Lis, 0),  //6
+
+            (Tag::Con, a),  //7
+            (Tag::Lis, 9),  //8
+            (Tag::Con, b),  //9
+            (Tag::Lis, 11), //10
+            (Tag::Arg, 0),  //11
+            (Tag::ELis, 0), //12
+
+            (Tag::Func, 2), //13
+            (Tag::Con, p),  //14
+            (Tag::Lis, 7),  //15
+        ];
+        let mut substitution = Substitution::default();
+        substitution = substitution.push((3,10,true));
+        re_build_bound_arg_terms(&mut heap, &mut substitution);
+        let new_term = build(&mut heap, &mut substitution, None, 13);
+        println!("{}",heap.term_string(new_term));
     }
 
-    let new_str = store.heap_len();
-    store.heap_push((Tag::Func, arity));
+    #[test]
+    fn meta_vars(){
 
-    for (i, addr) in store.str_iterator(func_addr).enumerate() {
-        build_subterm(addr, store, clause, update_addrs[i],arg_regs)
     }
 
-    (new_str, false)
+    #[test]
+    fn test1() {
+        let p = SymbolDB::set_const("p".into());
+        let mut heap = vec![
+            (Tag::Ref, 0),  //0
+            (Tag::Lis, 2),  //1
+            (Tag::Ref, 2),  //2
+            (Tag::ELis, 0), //3
+            (Tag::Func, 3), //4
+            (Tag::Con, p),  //5
+            (Tag::Ref, 6),  //6
+            (Tag::Lis, 0),  //7
+            (Tag::Func, 3), //8
+            (Tag::Con, p),  //9
+            (Tag::Arg, 0),  //10
+            (Tag::Arg, 0),  //11
+        ];
+
+        let mut sub = unify(&heap, 8, 4).unwrap();
+        re_build_bound_arg_terms(&mut heap, &mut sub);
+
+        heap.print_heap();
+        println!("{:?}", sub.bound(6))
+    }
+
+    #[test]
+    fn test2() {
+        let p = SymbolDB::set_const("p".into());
+        let mut heap = vec![
+            (Tag::Ref, 0),  //0
+            (Tag::Lis, 2),  //1
+            (Tag::Ref, 2),  //2
+            (Tag::ELis, 0), //3
+            (Tag::Func, 3), //4
+            (Tag::Con, p),  //5
+            (Tag::Ref, 6),  //6
+            (Tag::Lis, 0),  //7
+            (Tag::Func, 3), //8
+            (Tag::Con, p),  //9
+            (Tag::Arg, 0),  //10
+            (Tag::Arg, 0),  //11
+        ];
+
+        let mut sub = unify(&heap, 8, 4).unwrap();
+        re_build_bound_arg_terms(&mut heap, &mut sub);
+
+        heap.print_heap();
+        println!("{:?}", sub.bound(6))
+    }
 }

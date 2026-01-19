@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    heap::{heap::Heap, store::Tag},
+    old_heap::{heap::Heap, store::Tag},
     interface::parser::{parse_goals, tokenise},
 };
 

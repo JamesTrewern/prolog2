@@ -1,12 +1,35 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{
+            AtomicBool,
+            Ordering::{Acquire, Relaxed},
+        },
+        Arc, Mutex, RwLock,
+    },
+};
+
+use lazy_static::lazy_static;
 
 const KNOWN_SYMBOLS: &[&str] = &["false", "true"];
 
-static SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
+// static SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
+//     const_symbols: Vec::new(),
+//     // var_symbols: Vec::new(),
+//     var_symbol_map: None,
+//     strings: Vec::new(),
+// });
+
+lazy_static!{
+    static ref SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
     const_symbols: Vec::new(),
-    var_symbols: Vec::new(),
-    var_symbol_map: Vec::new(),
+    // var_symbols: Vec::new(),
+    var_symbol_map: HashMap::new(),
+    strings: Vec::new(),
 });
+}
+
+static RUN_NEW: AtomicBool = AtomicBool::new(true);
 
 /**Stores all symbols from compiled terms
  * The heap will use this to create term strings whilst allowing
@@ -14,67 +37,58 @@ static SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
  */
 pub struct SymbolDB {
     const_symbols: Vec<Arc<str>>,
-    var_symbols: Vec<Arc<str>>,
-    var_symbol_map: Vec<(usize, usize)>, //Key: Variable Ref addr, Value: index to var symbols vec
+    var_symbol_map: HashMap<(usize, usize), Arc<str>>, //Key: (Variable Ref addr, heap_id), Value: index to var symbols vec
+    strings: Vec<Arc<str>>,
 }
 
 impl SymbolDB {
-    pub fn new() {
-        for symbol in KNOWN_SYMBOLS{
-            Self::set_const(symbol);
-        }
-    }
+    // pub fn new() {
+    //     if RUN_NEW.swap(false, Acquire) {
+    //         let mut symbol_db = SYMBOLS.write().unwrap();
+    //         for symbol in KNOWN_SYMBOLS {
+    //             symbol_db.const_symbols.push(symbol.to_string().into());
+    //         }
+    //         symbol_db.var_symbol_map = Some(HashMap::new());
+    //     }
+    // }
 
-    pub fn set_const(symbol: &str) -> usize {
+    pub fn set_const(symbol: String) -> usize {
         let mut symbols = SYMBOLS.write().unwrap();
-        match symbols
-            .const_symbols
-            .iter()
-            .position(|e| *e == symbol.into())
-        {
+        let symbol: Arc<str> = symbol.into();
+        match symbols.const_symbols.iter().position(|e| *e == symbol) {
             Some(i) => i + isize::MAX as usize,
             None => {
-                symbols.const_symbols.push(symbol.into());
+                symbols.const_symbols.push(symbol);
                 symbols.const_symbols.len() - 1 + isize::MAX as usize
             }
         }
     }
 
-    pub fn set_var(symbol: &str, addr: usize) {
-        let mut symbols = SYMBOLS.write().unwrap();
-        match symbols.var_symbols.iter().position(|e| *e == symbol.into()) {
-            Some(i) => {
-                symbols.var_symbol_map.push((addr, i));
-            }
-            None => {
-                symbols.var_symbols.push(symbol.into());
-                let i = symbols.var_symbols.len() - 1;
-                symbols
-                    .var_symbol_map
-                    .push((addr, i));
-            }
-        }
+    pub fn set_var(symbol: String, addr: usize, heap_id: usize) {
+        SYMBOLS
+            .write()
+            .unwrap()
+            .var_symbol_map
+            .insert((addr, heap_id), symbol.into());
     }
 
     pub fn get_const(id: usize) -> Arc<str> {
         SYMBOLS.read().unwrap().const_symbols[id - isize::MAX as usize].clone()
     }
 
-    pub fn get_var(addr: usize) -> Option<Arc<str>> {
-        let symbols = SYMBOLS.read().unwrap();
-        if let Some((_, i)) = symbols
-            .var_symbol_map
-            .iter()
-            .find(|(heap_ref, _)| heap_ref == &addr)
-        {
-            Some(symbols.var_symbols[*i].clone())
+    pub fn get_var(addr: usize, heap_id: usize) -> Option<Arc<str>> {
+        let vars = &SYMBOLS.read().unwrap().var_symbol_map;
+        if let Some(symbol) = vars.get(&(addr, heap_id)) {
+            Some(symbol.clone())
+        } else if let Some(symbol) = vars.get(&(addr, 0)) {
+            Some(symbol.clone())
         } else {
             None
         }
     }
 
     /** Given either a ref addr or a const id this function will return the related symbol */
-    pub fn get_symbol(id: usize) -> String {
+    pub fn get_symbol(id: usize, heap_id: usize) -> String {
         //If id >= usize:Max/2 then it is a constant id and not a heap ref addr
         let symbols = SYMBOLS.read().unwrap();
         if id >= (isize::MAX as usize) {
@@ -83,10 +97,65 @@ impl SymbolDB {
                 None => panic!("Unkown const id"),
             }
         } else {
-            match Self::get_var(id) {
+            match Self::get_var(id, heap_id) {
                 Some(symbol) => symbol.to_string(),
                 None => format!("_{id}"),
             }
         }
+    }
+
+    pub fn get_string(index: usize) -> Arc<str> {
+        //TODO make this much more effecient
+        SYMBOLS.read().unwrap().strings.get(index).unwrap().clone()
+    }
+
+    pub fn set_string(value: String) -> usize {
+        let mut write_gaurd = SYMBOLS.write().unwrap();
+        write_gaurd.strings.push(value.into());
+        write_gaurd.strings.len() - 1
+    }
+
+    pub fn see_var_map() {
+        let symbols = SYMBOLS.read().unwrap();
+        for (k, v) in &symbols.var_symbol_map {
+            println!("{k:?}:\t{v}")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{heap::CON_PTR, symbol_db::SymbolDB};
+
+    #[test]
+    //Check required symbols are preloaded
+    fn known_symbols() {
+        assert_eq!(&*SymbolDB::get_const(CON_PTR), "false");
+        assert_eq!(&*SymbolDB::get_const(CON_PTR + 1), "true");
+    }
+
+    #[test]
+    fn insert_constant_symbol() {
+        let id = SymbolDB::set_const("a".into());
+
+        assert_eq!(&*SymbolDB::get_const(id), "a");
+        assert_eq!(SymbolDB::set_const("a".into()), id);
+    }
+
+    #[test]
+    fn insert_variable_symbol() {
+        SymbolDB::set_var("X".into(), 100, 0);
+        SymbolDB::set_var("Y".into(), 200, 1);
+        SymbolDB::set_var("Z".into(), 200, 2);
+
+        assert_eq!(*SymbolDB::get_var(100, 0).unwrap(), *"X");
+        assert_eq!(*SymbolDB::get_var(200, 1).unwrap(), *"Y");
+        assert_eq!(*SymbolDB::get_var(200, 2).unwrap(), *"Z");
+    }
+
+    #[test]
+    fn insert_string() {
+        let idx = SymbolDB::set_string("some string".into());
+        assert_eq!(*SymbolDB::get_string(idx), *"some string");
     }
 }

@@ -1,6 +1,4 @@
-pub mod store;
-pub mod heap;
-pub mod symbol_db;
-pub mod branch_store;
-#[cfg(test)]
-mod tests;
+// mod state_heaps;
+pub(crate) mod symbol_db;
+pub(crate) mod heap;
+pub(crate) mod query_heap;

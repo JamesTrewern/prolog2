@@ -1,243 +1,297 @@
-use super::{
-    syntax_tree::{Clause, Term, TokenStream, Unit},
-    tokeniser::tokenise,
-};
+//TODO Handle sets
 
-mod tokenizer {
-    use crate::parser::tokeniser::{remove_comments, tokenise};
+use std::{fmt::format, str};
 
-    #[test]
-    fn single_line_comments() {
-        let mut file =
-            "\n%simple predicate\np(x,y):-%The head\nq(x),%body 1\nr(y).%body 2".to_string();
+use fsize::fsize;
 
-        let tokens = tokenise(file).unwrap();
+use super::term::{Term, Unit};
 
-        assert_eq!(
+const INFIX_ORDER: &[&[&str]] = &[
+    &["**"],
+    &["*", "/"],
+    &["+", "-"],
+    &["==", "=/=", "/=", "=:=", "is", ">", ">=", "<", "<="],
+];
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum TreeClause {
+    Fact(Term),
+    Rule(Vec<Term>),
+    MetaRule(Vec<Term>),
+    Directive(Vec<Term>),
+}
+
+pub struct TokenStream {
+    tokens: Vec<String>,
+    index: usize,
+    line: usize,
+}
+
+impl TokenStream {
+    pub fn new(tokens: Vec<String>) -> Self {
+        TokenStream {
             tokens,
-            [
-                "\n", "\n", "p", "(", "x", ",", "y", ")", ":-", "\n", "q", "(", "x", ")", ",",
-                "\n", "r", "(", "y", ")", "."
-            ]
-        );
-    }
-
-    #[test]
-    fn multi_line_comments() {
-        let mut file = "/* This is a\nmutli\nline\ncomment */\np(x,y):-q(x,y).".to_string();
-
-        let tokens = tokenise(file).unwrap();
-
-        assert_eq!(
-            tokens,
-            [
-                "\n", "\n", "\n", "\n", "p", "(", "x", ",", "y", ")", ":-", "q", "(", "x", ",",
-                "y", ")", "."
-            ]
-        )
-    }
-
-    #[test]
-    fn unclosed_multi_line_comments() {
-        let file = "p(x,y):-q(x,y)
-        /* a comment
-        on two lines
-        fact(a,b)."
-            .to_string();
-
-        match tokenise(file) {
-            Ok(tokens) => panic!("Should have thrown error\nTokens: {tokens:?}"),
-            Err(message) => assert_eq!(message, "Unclosed multi line comment"),
+            index: 0,
+            line: 0,
         }
     }
 
-    #[test]
-    fn unclosed_strings() {
-        let mut file = "\"a string".to_string();
-
-        match tokenise(file) {
-            Ok(tokens) => panic!("Should have thrown error\nTokens: {tokens:?}"),
-            Err(message) => assert_eq!(message, "Unexpected end of file, missing closing \""),
+    pub fn next(&mut self) -> Option<&str> {
+        loop {
+            if self.index == self.tokens.len() {
+                return None;
+            }
+            match self.tokens[self.index].as_str() {
+                "\n" => {
+                    self.index += 1;
+                    self.line += 1
+                }
+                token => {
+                    self.index += 1;
+                    return Some(token);
+                }
+            }
         }
+    }
 
-        let mut file = "'a string".to_string();
-
-        match tokenise(file) {
-            Ok(tokens) => panic!("Should have thrown error\nTokens: {tokens:?}"),
-            Err(message) => assert_eq!(message, "Unexpected end of file, missing closing '"),
+    pub fn peek(&self) -> Option<&str> {
+        let mut index = self.index;
+        loop {
+            if index == self.tokens.len() {
+                return None;
+            }
+            match self.tokens[index].as_str() {
+                "\n" => {
+                    index += 1;
+                }
+                token => {
+                    return Some(token);
+                }
+            }
         }
     }
 
-    #[test]
-    fn string_tokenisation() {
-        assert_eq!(tokenise("\"a.b\'/c\"".into()).unwrap(), ["\"a.b'/c\""]);
-        assert_eq!(tokenise("'a.b\"/c'".into()).unwrap(), ["'a.b\"/c'"]);
-
-        assert_eq!(
-            tokenise("p(\"a.b\'/c\").".into()).unwrap(),
-            ["p", "(", "\"a.b'/c\"", ")", "."]
-        );
-    }
-
-    #[test]
-    fn string_escape_characters() {
-        assert_eq!(tokenise("\"a\\\"b\"".into()).unwrap(), ["\"a\"b\""]);
-
-        assert_eq!(tokenise("'a\\'b'".into()).unwrap(), ["'a'b'"]);
-
-        assert_eq!(
-            tokenise("\" \\n \\t \\\\ \"".into()).unwrap(),
-            ["\" \n \t \\ \""]
-        );
-    }
-
-    #[test]
-    fn float_tokenisation() {
-        assert_eq!(tokenise("123.123".into()).unwrap(), ["123.123"]);
-        assert_eq!(
-            tokenise("123.123.123".into()).unwrap(),
-            ["123.123", ".", "123"]
-        );
-        assert_eq!(tokenise("123 . 123".into()).unwrap(), ["123", ".", "123"]);
-    }
-
-    #[test]
-    fn negative_number_tokenisation() {
-        assert_eq!(tokenise("-123 - 123".into()).unwrap(), ["-123", "-", "123"]);
-        assert_eq!(tokenise("-123.123".into()).unwrap(), ["-123.123"]);
-        assert_eq!(tokenise("- 123.123".into()).unwrap(), ["-", "123.123"]);
-        assert_eq!(tokenise("-123 . 123".into()).unwrap(), ["-123", ".", "123"]);
-    }
-
-    #[test]
-    fn list_tokenisation() {
-        assert_eq!(
-            tokenise("[123,abc, VAR]".into()).unwrap(),
-            ["[", "123", ",", "abc", ",", "VAR", "]"]
-        );
-        assert_eq!(
-            tokenise("[123,abc, VAR|T]".into()).unwrap(),
-            ["[", "123", ",", "abc", ",", "VAR", "|", "T", "]"]
-        );
-        assert_eq!(
-            tokenise("[123,abc, VAR | T]".into()).unwrap(),
-            ["[", "123", ",", "abc", ",", "VAR", "|", "T", "]"]
-        );
-    }
-
-    #[test]
-    fn empty_list_token() {
-        assert_eq!(tokenise("[]".into()).unwrap(), ["[]"]);
-        assert_eq!(tokenise("[ ]".into()).unwrap(), ["[]"]);
-        assert_eq!(tokenise("[\n]".into()).unwrap(), ["[]", "\n"]);
-        assert_eq!(tokenise("[\n\n]".into()).unwrap(), ["[]", "\n", "\n"]);
-        assert_eq!(tokenise("[\t]".into()).unwrap(), ["[]"]);
-        assert_eq!(tokenise("[  \n\t\n ]".into()).unwrap(), ["[]", "\n", "\n"]);
-    }
-
-    #[test]
-    fn empty_set_token() {
-        assert_eq!(tokenise("{}".into()).unwrap(), ["{}"]);
-        assert_eq!(tokenise("{ }".into()).unwrap(), ["{}"]);
-        assert_eq!(tokenise("{\n}".into()).unwrap(), ["{}", "\n"]);
-        assert_eq!(tokenise("{\n\n}".into()).unwrap(), ["{}", "\n", "\n"]);
-        assert_eq!(tokenise("{\t}".into()).unwrap(), ["{}"]);
-        assert_eq!(tokenise("{  \n\t\n }".into()).unwrap(), ["{}", "\n", "\n"]);
-    }
-
-    #[test]
-    fn known_symbol_formation() {
-        assert_eq!(tokenise(":-".into()).unwrap(), [":-"]);
-        assert_eq!(tokenise(": -".into()).unwrap(), [":", "-"]);
-
-        assert_eq!(tokenise("==".into()).unwrap(), ["=="]);
-        assert_eq!(tokenise("= =".into()).unwrap(), ["=", "="]);
-
-        assert_eq!(tokenise("=/=".into()).unwrap(), ["=/="]);
-        assert_eq!(tokenise("= / =".into()).unwrap(), ["=", "/", "="]);
-
-        assert_eq!(tokenise("/=".into()).unwrap(), ["/="]);
-        assert_eq!(tokenise("/ =".into()).unwrap(), ["/", "="]);
-
-        assert_eq!(tokenise("=:=".into()).unwrap(), ["=:="]);
-        assert_eq!(tokenise("=  : =".into()).unwrap(), ["=", ":", "="]);
-
-        assert_eq!(tokenise("**".into()).unwrap(), ["**"]);
-        assert_eq!(tokenise("* *".into()).unwrap(), ["*", "*",]);
-
-        assert_eq!(tokenise("<=".into()).unwrap(), ["<="]);
-        assert_eq!(tokenise("< =".into()).unwrap(), ["<", "=",]);
-
-        assert_eq!(tokenise(">=".into()).unwrap(), [">="]);
-        assert_eq!(tokenise("> =".into()).unwrap(), [">", "=",]);
-
-        assert_eq!(tokenise("<=".into()).unwrap(), ["<="]);
-        assert_eq!(tokenise("< =".into()).unwrap(), ["<", "=",]);
-    }
-
-    #[test]
-    fn tokenise_multiple_clauses() {
-        let text = " p(a,[b,c|[\t]]).
-        p(X,Y):- Q(X,Y), {Q}.
-        :- [\"file/name\"], test.
-        "
-        .to_string();
-
-        assert_eq!(
-            tokenise(text).unwrap(),
-            [
-                "p",
-                "(",
-                "a",
-                ",",
-                "[",
-                "b",
-                ",",
-                "c",
-                "|",
-                "[]",
-                "]",
-                ")",
-                ".",
-                "\n",
-                "p",
-                "(",
-                "X",
-                ",",
-                "Y",
-                ")",
-                ":-",
-                "Q",
-                "(",
-                "X",
-                ",",
-                "Y",
-                ")",
-                ",",
-                "{",
-                "Q",
-                "}",
-                ".",
-                "\n",
-                ":-",
-                "[",
-                "\"file/name\"",
-                "]",
-                ",",
-                "test",
-                ".",
-                "\n"
-            ]
-        );
+    fn print_state(&self) {
+        println!("{:?},{}", self.tokens, self.index);
     }
 }
 
-mod syntax_tree {
-    use crate::program::clause;
+fn is_operator(token: &str) -> bool {
+    INFIX_ORDER.iter().any(|group| group.contains(&token))
+}
 
-    use super::super::{
-        syntax_tree::{Clause, Term, TokenStream, Unit},
-        tokeniser::tokenise,
+fn infix_order(operator: &str) -> usize {
+    INFIX_ORDER
+        .iter()
+        .position(|ops| ops.contains(&operator))
+        .unwrap()
+}
+
+fn resolve_infix(term_stack: &mut Vec<Term>, op_stack: &mut Vec<String>, max_prescendence: usize) {
+    while let Some(p) = op_stack.last().map(|operator| infix_order(&operator)) {
+        if p > max_prescendence {
+            break;
+        }
+        let op = op_stack.pop().unwrap();
+        let right = term_stack.pop().unwrap();
+        let left = term_stack.pop().unwrap();
+        term_stack.push(Term::Atom(Unit::Constant(op), vec![left, right]));
+    }
+}
+
+impl TokenStream {
+    fn expect(&mut self, value: &str) -> Result<(), String> {
+        match self.next() {
+            Some(token) if token == value => Ok(()),
+            Some(token) => Err(format!("Expected \"{value}\" recieved \"{token}\"")),
+            None => Err(format!("Unexpected end of file in expect {value}")),
+        }
+    }
+
+    fn consume_args(&mut self) -> Result<Vec<Term>, String> {
+        let mut args = Vec::new();
+        loop {
+            args.push(self.parse_expression()?);
+            match self.peek() {
+                Some(")" | "|" | "]" | "}") => return Ok(args), //TODO end consuming args based on certain conditions dont accept all end tokens
+                Some(",") => {
+                    self.next();
+                }
+                Some(token) => return Err(format!("Unexpected token in arguments: {token}")),
+                None => return Err("Unexpected End of File".into()),
+            }
+        }
+    }
+
+    /**
+     *
+     */
+    pub(super) fn parse_term(&mut self) -> Result<Term, String> {
+        match self.peek().ok_or("Unexpected end of file")? {
+            "{" => {
+                self.next();
+                let args = self.consume_args()?;
+                if self.next() == Some("}") {
+                    Ok(Term::Set(args))
+                } else {
+                    Err("Incorrectly formatted set".into())
+                }
+            }
+            "[" => {
+                self.next();
+                let head = self.consume_args()?;
+                match self.next().ok_or("Unexpected end of file")? {
+                    "|" => {
+                        let tail = Box::new(self.parse_expression()?);
+                        self.expect("]")?;
+                        Ok(Term::List(head, tail))
+                    }
+                    "]" => Ok(Term::List(head, Box::new(Term::EmptyList))),
+                    token => return Err(format!("Unexpected token in list: {token}")),
+                }
+            }
+            "[]" => {
+                self.next();
+                Ok(Term::EmptyList)
+            }
+            "{}" => {
+                self.next();
+                Ok(Term::Set(vec![]))
+            }
+            "()" => {
+                self.next();
+                Ok(Term::Tuple(vec![]))
+            }
+            token if is_operator(token) => todo!("Operators Aren't handled"),
+            token => {
+                let token = token.to_string();
+                match Unit::parse_unit(self.next().unwrap()) {
+                    Some(unit @ (Unit::Constant(_) | Unit::Variable(_))) => {
+                        if self.peek() == Some("(") {
+                            self.next();
+                            let args = self.consume_args()?;
+                            self.expect(")")?;
+                            Ok(Term::Atom(unit, args))
+                        } else {
+                            Ok(Term::Unit(unit))
+                        }
+                    }
+                    Some(num @ (Unit::Float(_) | Unit::Int(_))) => Ok(Term::Unit(num)),
+                    Some(unit @ Unit::String(_)) => Ok(Term::Unit(unit)),
+                    None => todo!("handle: {token}"),
+                }
+            }
+            _ => Err(format!("Uh oh \"{}\" confused me", self.peek().unwrap())),
+        }
+    }
+
+    pub(super) fn parse_expression(&mut self) -> Result<Term, String> {
+        let mut op_stack = Vec::<String>::new();
+        let mut term_stack = Vec::<Term>::new();
+        loop {
+            //Consume a term
+            if self.peek() == Some("(") {
+                //Grouped Expression with brackets or tuple
+                self.next();
+                let mut args = self.consume_args()?;
+                self.expect(")")?;
+                if args.len() == 1 {
+                    term_stack.push(args.pop().unwrap());
+                } else {
+                    term_stack.push(Term::Tuple(args));
+                }
+            } else {
+                term_stack.push(self.parse_term()?);
+            }
+
+            //Is next token an operator
+            match self.peek() {
+                Some(operator) if is_operator(operator) => {
+                    resolve_infix(&mut term_stack, &mut op_stack, infix_order(operator));
+                    op_stack.push(operator.into());
+                    self.next();
+                }
+                // Some(token) => {println!("Token: {token}");break;}
+                _ => break,
+            }
+        }
+
+        resolve_infix(&mut term_stack, &mut op_stack, INFIX_ORDER.len());
+        term_stack.pop().ok_or("Empty expression".into())
+    }
+
+    fn parse_body_literals(&mut self) -> Result<Vec<Term>, String> {
+        let mut body = Vec::new();
+        loop {
+            body.push(self.parse_expression()?);
+            match self.next() {
+                Some(",") => continue,
+                Some(".") => break,
+                Some(token) => {
+                    return Err(format!(
+                        "Unexpected token ({token}) after literal, expected either ',' or '.'"
+                    ))
+                }
+                None => return Err("Unexpected end of file".into()),
+            }
+        }
+        Ok(body)
+    }
+
+    pub fn parse_clause(&mut self) -> Result<Option<TreeClause>, String> {
+        match self.peek() {
+            None => return Ok(None),
+            Some(":-") => {
+                self.next();
+                return Ok(Some(TreeClause::Directive(self.parse_body_literals()?)));
+            }
+            Some(_) => {
+                let mut literals = vec![self.parse_expression()?];
+                match self.next() {
+                    Some(":-") => {
+                        literals.append( &mut self.parse_body_literals()?);
+                        let meta_rule = if let Some(Term::Set(eq_vars)) = literals.last() {
+                            if eq_vars
+                                .iter()
+                                .any(|eq_var| !matches!(eq_var, Term::Unit(Unit::Variable(_))))
+                            {
+                                return Err(format!("Incorrectly formatted existentially quantified variables  {:?}", eq_vars));
+                            }
+                            true
+                        } else {
+                            false
+                        };
+                        if meta_rule {
+                            Ok(Some(TreeClause::MetaRule(literals)))
+                        } else {
+                            Ok(Some(TreeClause::Rule(literals)))
+                        }
+                    }
+                    Some(".") => Ok(Some(TreeClause::Fact(literals[0].clone()))),
+                    Some(token) => Err(format!("Expected \".\" or \":-\", recieved {token}")),
+                    None => Err("Unexpected end of file".into()),
+                }
+            }
+        }
+    }
+
+    pub fn parse_all(&mut self) -> Result<Vec<TreeClause>, String> {
+        let mut clauses = Vec::<TreeClause>::new();
+        loop {
+            match self.parse_clause() {
+                Ok(Some(clause)) => clauses.push(clause),
+                Ok(None) => return Ok(clauses),
+                Err(msg) => return Err(format!("Line {}:  {msg}", self.line)),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        super::tokeniser::tokenise,
+        {TreeClause, Term, TokenStream, Unit},
     };
     #[test]
     fn parse_number_term() {
@@ -791,7 +845,7 @@ mod syntax_tree {
             ],
         );
 
-        assert_eq!(clause, Clause::Rule(head, vec![body]));
+        assert_eq!(clause, TreeClause::Rule(vec![head, body]));
         // assert_eq!(token_stream.parse_clause().unwrap(),None);
     }
 
@@ -804,7 +858,7 @@ mod syntax_tree {
             vec![Term::Unit(Unit::Constant("plato".into()))],
         );
 
-        assert_eq!(clause, Clause::Fact(head));
+        assert_eq!(clause, TreeClause::Fact(head));
         assert_eq!(token_stream.parse_clause().unwrap(), None);
     }
 
@@ -831,7 +885,7 @@ mod syntax_tree {
             Term::Unit(Unit::Variable("Q".into())),
         ]);
 
-        assert_eq!(clause, Clause::MetaRule(head, vec![body, meta_data]));
+        assert_eq!(clause, TreeClause::MetaRule(vec![head, body, meta_data]));
         assert_eq!(token_stream.parse_clause().unwrap(), None);
     }
 
@@ -849,13 +903,15 @@ mod syntax_tree {
             Box::new(Term::EmptyList),
         );
 
-        assert_eq!(clause, Clause::Directive(vec![body, body2]));
+        assert_eq!(clause, TreeClause::Directive(vec![body, body2]));
         assert_eq!(token_stream.parse_clause().unwrap(), None);
     }
 
     #[test]
-    fn parse_all_clauses(){
-        let text = "gt1(X):-X>1.\nman(plato).\nP(X,Y):-\n\tQ(X,Y),\n\t{P,Q}.\n:-test(a),['file/path'].".to_string();
+    fn parse_all_clauses() {
+        let text =
+            "gt1(X):-X>1.\nman(plato).\nP(X,Y):-\n\tQ(X,Y),\n\t{P,Q}.\n:-test(a),['file/path']."
+                .to_string();
         let mut token_stream = TokenStream::new(tokenise(text).unwrap());
         let mut clauses = token_stream.parse_all().unwrap();
 
@@ -870,15 +926,13 @@ mod syntax_tree {
                 Term::Unit(Unit::Int(1)),
             ],
         );
-        assert_eq!(clauses[0], Clause::Rule(head, vec![body]));
-
+        assert_eq!(clauses[0], TreeClause::Rule(vec![head, body]));
 
         let head = Term::Atom(
             Unit::Constant("man".into()),
             vec![Term::Unit(Unit::Constant("plato".into()))],
         );
-        assert_eq!(clauses[1], Clause::Fact(head));
-
+        assert_eq!(clauses[1], TreeClause::Fact(head));
 
         let head = Term::Atom(
             Unit::Variable("P".into()),
@@ -898,8 +952,7 @@ mod syntax_tree {
             Term::Unit(Unit::Variable("P".into())),
             Term::Unit(Unit::Variable("Q".into())),
         ]);
-        assert_eq!(clauses[2], Clause::MetaRule(head, vec![body, meta_data]));
-
+        assert_eq!(clauses[2], TreeClause::MetaRule(vec![head, body, meta_data]));
 
         let body = Term::Atom(
             Unit::Constant("test".into()),
@@ -909,6 +962,6 @@ mod syntax_tree {
             vec![Term::Unit(Unit::Constant("file/path".into()))],
             Box::new(Term::EmptyList),
         );
-        assert_eq!(clauses[3], Clause::Directive(vec![body, body2]));
+        assert_eq!(clauses[3], TreeClause::Directive(vec![body, body2]));
     }
 }

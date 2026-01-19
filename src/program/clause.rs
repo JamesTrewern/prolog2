@@ -1,80 +1,86 @@
-use crate::heap::{
-    heap::Heap, store::{Store, Tag}, symbol_db::SymbolDB
+use std::{
+    alloc::{alloc, dealloc, Layout},
+    ops::Deref,
+    ptr::copy_nonoverlapping, sync::Arc,
 };
-use std::{mem::ManuallyDrop, ops::Deref};
 
-#[derive(Eq, PartialEq, Debug, Clone, Copy)]
-pub(crate) enum ClauseType {
-    CLAUSE,     //Simple 1st order clause
-    BODY,       //1st order clause that can match with variable predicate symbol
-    META,       //Higher-order clause
-    HYPOTHESIS, //1st order clause that is generated during solving
+use crate::heap::heap::Heap;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BitFlag64(u64);
+
+impl BitFlag64 {
+    pub fn set(&mut self, idx: usize) {
+        self.0 = self.0 | 1 << idx;
+    }
+
+    pub fn unset(&mut self, idx: usize) {
+        self.0 = self.0 & !(1 << idx);
+    }
+
+    pub fn get(&self, idx: usize) -> bool {
+        self.0 & (1 << idx) != 0
+    }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Clause {
-    pub clause_type: ClauseType,
-    pub literals: ManuallyDrop<Box<[usize]>>, //Array of heap addresses pointing to clause literals
+    literals: Arc<[usize]>,
+    pub meta_vars: Option<BitFlag64>,
 }
 
 impl Clause {
-    pub fn to_string(&self, heap: &impl Heap) -> String {
-        if self.len() == 1 {
-            let clause_str = heap.term_string(self[0]);
-            clause_str
-        } else {
-            let mut buffer: String = String::new();
-            buffer += &heap.term_string(self[0]);
-            buffer += ":-";
-            let mut i = 1;
-            loop {
-                buffer += &heap.term_string(self[i]);
-                i += 1;
-                if i == self.len() {
-                    break;
-                } else {
-                    buffer += ","
-                }
+    fn meta_vars_to_bit_flags(meta_vars: Vec<usize>) -> BitFlag64 {
+        let mut bit_flags = BitFlag64::default();
+        for meta_var in meta_vars {
+            if meta_var > 63 {
+                panic!("Cant have more than 64 variables in meta clause")
             }
-            buffer
+            bit_flags.set(meta_var);
         }
+        bit_flags
     }
 
-    /**Get the symbol and arity of the head literal */
-    pub fn symbol_arity(&self, heap: &impl Heap) -> (usize, usize) {
-        heap.str_symbol_arity(self[0])
+    pub fn new(literals: Vec<usize>, meta_vars: Option<Vec<usize>>) -> Self {
+        let len = literals.len();
+        let meta_vars = meta_vars.map(Self::meta_vars_to_bit_flags);
+        let literals: Arc<[usize]> = literals.into();
+        Clause { literals, meta_vars}
     }
 
-    /**Create symbols for the vars found in the clause
-     * Used to make hypothesis easier to read
-     */
-    pub fn normalise(&self, heap: &mut impl Heap) {
-        let mut args = Vec::<usize>::new();
-        for literal in self.iter() {
-            args.append(
-                &mut heap
-                    .term_vars(*literal)
-                    .iter()
-                    .filter_map(|(tag, addr)| if *tag == Tag::Arg { Some(*addr) } else { None })
-                    .collect(),
-            );
-        }
-        args.sort();
-        args.dedup();
-
-        for literal in self.iter(){
-            heap.normalise_args(*literal, &args)
-        }
+    pub fn head(&self) -> usize {
+        self[0]
     }
 
-    pub fn equal(&self, other: &Self, heap: &impl Heap)-> bool{
-        self.iter().zip(other.iter()).all(|(addr1,addr2)| heap.term_equal(*addr1, *addr2))
+    pub fn body(&self) -> &[usize]{
+        &self[1..]
+    }
+
+    pub fn meta(&self) -> bool {
+        self.meta_vars.is_some()
+    }
+
+    pub fn meta_var(&self, arg_id: usize) -> Result<bool, &'static str> {
+        let meta_vars = self.meta_vars.ok_or("Clause is not a meta clause")?;
+        Ok(meta_vars.get(arg_id))
+    }
+
+    pub fn to_string(&self, heap: &impl Heap) -> String{
+        let mut buffer = format!("{}:-", heap.term_string(self.head()));
+        for body_literal in self.body(){
+            buffer += &heap.term_string(*body_literal);
+            buffer += ","
+        }
+        buffer.pop();
+        buffer += ".";
+        buffer
     }
 }
 
 impl Deref for Clause {
     type Target = [usize];
 
-    fn deref(&self) -> &Self::Target {
+    fn deref(&self) -> &[usize] {
         &self.literals
     }
 }
