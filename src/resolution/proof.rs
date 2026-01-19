@@ -178,7 +178,7 @@ impl Env {
                     .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
                     .collect();
 
-                // println!("new_goals:{new_goals:?}");
+                println!("new_goals:{new_goals:?}");
                 //If meta clause we must create a new clause with the substitution
                 if clause.meta() {
                     self.new_clause = true;

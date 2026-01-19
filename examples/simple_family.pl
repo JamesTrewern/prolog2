@@ -1,9 +1,9 @@
 mum(tami,james).
-% mum(tami,luke).
+mum(tami,luke).
 mum(christine,tami).
 dad(ken,adam).
 dad(adam,james).
-dad(ken,saul).
+% dad(ken,saul).
 % dad(ken,kelly).
 % dad(adam,luke).
 
