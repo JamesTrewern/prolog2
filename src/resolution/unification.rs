@@ -1,4 +1,7 @@
-use std::{ops::{Deref, DerefMut}, usize};
+use std::{
+    ops::{Deref, DerefMut},
+    usize,
+};
 
 use crate::heap::heap::{Heap, Tag, CON_PTR};
 
@@ -62,22 +65,62 @@ impl Substitution {
         self.arg_regs[arg_idx] = addr;
     }
 
-    pub fn get_bindings(&self) -> Box<[(usize,usize)]>{
-        let mut bindings = Vec::<(usize,usize)>::with_capacity(self.binding_len);
-        for i in 0..self.binding_len{
+    pub fn get_bindings(&self) -> Box<[(usize, usize)]> {
+        let mut bindings = Vec::<(usize, usize)>::with_capacity(self.binding_len);
+        for i in 0..self.binding_len {
             bindings.push((self.binding_array[i].0, self.binding_array[i].1));
         }
         bindings.into_boxed_slice()
     }
 
-    pub fn check_constraints(&self, constraints: &[usize], heap: &impl Heap) -> bool{
-        for i in 0..self.binding_len{
-            let binding = (self.binding_array[i].0,self.binding_array[i].1);
-            if constraints.contains(&heap.deref_addr(binding.0)) && constraints.contains(&heap.deref_addr(binding.1)){
-                return false;
+    // REPLACE the check_constraints method in src/resolution/unification.rs with:
+
+    /// Fully dereference an address through both heap references and substitution bindings.
+    fn full_deref(&self, mut addr: usize, heap: &impl Heap) -> usize {
+        loop {
+            // First, dereference through the heap
+            let heap_deref = heap.deref_addr(addr);
+
+            // Then check if there's a pending binding in the substitution
+            match self.bound(heap_deref) {
+                Some(bound_to) => {
+                    let next = heap.deref_addr(bound_to);
+                    if next == heap_deref {
+                        return heap_deref;
+                    }
+                    addr = next;
+                }
+                None => return heap_deref,
             }
         }
-        
+    }
+
+    /// Check that no two constrained addresses are bound to the same final target.
+    /// This prevents different meta-variables from unifying to the same predicate symbol.
+    ///
+    /// The constraint check traces through BOTH:
+    /// 1. The heap's reference chains (via deref_addr)
+    /// 2. The substitution's pending bindings (via bound)
+    pub fn check_constraints(&self, constraints: &[usize], heap: &impl Heap) -> bool {
+        // Collect (original_constraint, final_target) for each constrained address
+        let mut constrained_targets: Vec<(usize, usize)> = Vec::new();
+
+        for &constraint_addr in constraints {
+            let final_target = self.full_deref(constraint_addr, heap);
+            constrained_targets.push((constraint_addr, final_target));
+        }
+
+        // Check if any two different constrained addresses resolve to the same target
+        for i in 0..constrained_targets.len() {
+            for j in (i + 1)..constrained_targets.len() {
+                if constrained_targets[i].0 != constrained_targets[j].0
+                    && constrained_targets[i].1 == constrained_targets[j].1
+                {
+                    return false;
+                }
+            }
+        }
+
         true
     }
 }

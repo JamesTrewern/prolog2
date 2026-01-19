@@ -28,9 +28,9 @@ impl Hypothesis {
         self.constraints.push(constraints);
     }
 
-    pub fn pop_clause(&mut self){
-        self.clauses.pop();
+    pub fn pop_clause(&mut self) -> Clause{
         self.constraints.pop();
+        self.clauses.pop().unwrap()
     }
 
     pub fn to_string(&self, heap: &impl Heap) -> String {
