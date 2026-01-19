@@ -12,11 +12,11 @@ We must define which variables will remain as variables when a new clause is cre
 We define these universally quantified variables using curly braces like so:  `{X,Y}` 
 
 ```prolog
-P(X,Y):- Q(X,Y) {X,Y}. %Identity
+P(X,Y):- Q(X,Y) {P,Q}. %Identity
 
-P(X,Y):- Q(X,Z), R(Z,Y) {X,Y,Z}. %Chain
+P(X,Y):- Q(X,Z), R(Z,Y) {P,Q,R}. %Chain
 
-P(X,Y):- Q(X,Z), P(Z,Y) {X,Y,Z}. %Tail Recursion
+P(X,Y):- Q(X,Z), P(Z,Y) {P,Q}. %Tail Recursion
 ```
 
 
@@ -25,19 +25,19 @@ for example, we can introduce certain constant predicate symbols either in the h
 We can also create second-order clauses with only constant predicate symbols but existentially and universally quantified variables to denote the introduction of some constants
 
 ``` prolog
-p(X,Y):- Q(X), R(Y) {X,Y}.
+p(X,Y):- Q(X), R(Y) {Q,R}.
 
-P(X,Y):- q(X,Y), R(Y) {X,Y}.
+P(X,Y):- q(X,Y), R(Y) {P,R}.
 
-p(X,Y):- q(X,Z) {X,Y}. %matching with this clause will create a new clause where Z is a constant
+p(X,Y):- q(X,Z) {Z}. %matching with this clause will create a new clause where Z is a constant
 ```
 
 This can even be extended to using infix operators in second-order clauses
 
 ``` prolog
-P(X,Y):- X > Y, Q(Y) {X,Y}.
+P(X,Y):- X > Y, Q(Y) {P,Q}.
 
-P(X,Y):- Z is X + Y, Q(Z) {X,Y,Z}.
+P(X,Y):- Z is X + Y, Q(Z) {P,Q}.
 ```
 
 # Example usage
@@ -61,8 +61,8 @@ dad(ken,saul).
 dad(ken,kelly).
 dad(adam,luke).
 
-P(X,Y):-Q(X,Y) {X,Y}.
-P(X,Y):-Q(X,Z),P(Z,Y) {X,Y,Z}. % Tail Recursion
+P(X,Y):-Q(X,Y), {P,Q}.
+P(X,Y):-Q(X,Z),P(Z,Y), {P,Q}. % Tail Recursion
 
 :-body_pred(mum,2).
 :-body_pred(dad,2).
@@ -98,15 +98,22 @@ double(X,Y):-
 
 
 # Configuration Options
-``` prolog
+Configured in setup.json:
+``` json
+{
+    "config" : {
+        "max_depth": 20,
+        "max_clause": 4,
+        "max_pred": 2
+    },
 
-:-body_pred(mum,2).
-:-max_h_preds(0).                %How many predicate symbols can be invented in the hypothesis
-:-max_h_clause(0).               %How many clauses can the learner create.
-:-debug(true).                   %Output Debugging statements whilst solving
-:-load_module(maths).            %Import built-in module (So far only maths)
-:- load_file('examples/family'). %Load file at path
-:- ['examples/family'].
+    "body_predicates" : [{"symbol" : "dad", "arity": 2},{"symbol" : "mum", "arity": 2}],
+    "examples" : {
+        "pos" : ["ancestor(ken,james)", "ancestor(christine,james)"],
+        "neg" : []
+    },
+    "files" : ["examples/simple_family.pl"]
+}
 ```
 # Step by Step Demonstration of New Clause Generation
 
