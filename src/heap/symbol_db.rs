@@ -20,9 +20,9 @@ const KNOWN_SYMBOLS: &[&str] = &["false", "true"];
 //     strings: Vec::new(),
 // });
 
-lazy_static!{
+lazy_static! {
     static ref SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
-    const_symbols: Vec::new(),
+    const_symbols: KNOWN_SYMBOLS.iter().map(|&symbol| symbol.to_string().into()).collect(),
     // var_symbols: Vec::new(),
     var_symbol_map: HashMap::new(),
     strings: Vec::new(),
