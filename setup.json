@@ -2,7 +2,7 @@
     "config" : {
         "max_depth": 10,
         "max_clause": 4,
-        "max_pred": 2
+        "max_pred": 1
     },
 
     "body_predicates" : [{"symbol" : "dad", "arity": 2},{"symbol" : "mum", "arity": 2}],

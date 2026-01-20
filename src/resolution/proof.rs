@@ -107,7 +107,10 @@ impl Env {
                 self.invent_pred = false;
             }
         }
+        println!("{}", hypothesis.to_string(heap));
+        println!("Unbinding: {:?}", self.bindings);
         heap.unbind(&self.bindings);
+        println!("{}", hypothesis.to_string(heap));
         self.children
     }
 
@@ -153,7 +156,10 @@ impl Env {
             if clause.meta() {
                 if !allow_new_clause {
                     continue;
-                } else if !allow_new_pred && heap.str_symbol_arity(head).0 == 0 {
+                } else if !allow_new_pred
+                    && heap.str_symbol_arity(head).0 == 0
+                    && heap.str_symbol_arity(self.goal).0 == 0
+                {
                     continue;
                 }
             }
@@ -167,18 +173,9 @@ impl Env {
 
                 //If a ref is bound to a complex term containing args then it must be rebuilt in the query heap
                 re_build_bound_arg_terms(heap, &mut substitution);
-                //Create new goals
-                let new_goals: Vec<usize> = clause
-                    .body()
-                    .iter()
-                    .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
-                    .collect();
 
-                println!("new_goals:{new_goals:?}");
                 //If meta clause we must create a new clause with the substitution
                 if clause.meta() {
-                    self.new_clause = true;
-                    //If both the goal and clause are variable predicates we invent a predicate
                     if heap.str_symbol_arity(head).0 == 0 && heap.str_symbol_arity(self.goal).0 == 0
                     {
                         self.invent_pred = true;
@@ -187,6 +184,8 @@ impl Env {
                         //If the head is a variable predicate this will always be Arg0
                         substitution.set_arg(0, pred_addr);
                     }
+                    self.new_clause = true;
+                    //If both the goal and clause are variable predicates we invent a predicate
                     let new_clause_literals: Vec<usize> = clause
                         .iter()
                         .map(|literal| build(heap, &mut substitution, clause.meta_vars, *literal))
@@ -200,9 +199,28 @@ impl Env {
                     }
 
                     let clause = Clause::new(new_clause_literals, None);
-                    println!("Add clause: {}", clause.to_string(heap));
+                    println!(
+                        ">>> ADDING CLAUSE for goal: {}",
+                        heap.term_string(self.goal)
+                    );
+                    println!(">>> New clause: {}", clause.to_string(heap));
+                    println!(
+                        "Clause head: {}, Clause body:{:?}",
+                        clause.head(),
+                        clause.body()
+                    );
                     hypothesis.push_clause(clause, heap, constraints.into());
                 }
+
+                //Create new goals
+                let new_goals: Vec<usize> = clause
+                    .body()
+                    .iter()
+                    .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
+                    .collect();
+
+                println!("new_goals:{new_goals:?}");
+
                 self.bindings = substitution.get_bindings();
                 self.children = new_goals.len();
                 heap.bind(&self.bindings);
@@ -248,15 +266,14 @@ impl<'a> Proof<'a> {
     pub fn prove(&mut self, predicate_table: Arc<PredicateTable>, config: Config) -> bool {
         //A previous proof has already been found, back track to find a new one.
         if self.pointer == self.stack.len() {
+            println!("=== RESTART ===");
             println!(
-                "=== RESTART: pointer={}, stack.len()={} ===",
-                self.pointer,
-                self.stack.len()
-            );
-            println!(
-                "=== Hypothesis before undo: {} clauses ===",
+                "  Before undo: hypothesis has {} clauses",
                 self.hypothesis.len()
             );
+            for (i, c) in self.hypothesis.iter().enumerate() {
+                println!("    [{}]: {}", i, c.to_string(&self.heap));
+            }
 
             self.pointer -= 1;
             self.stack[self.pointer].undo_try(
@@ -264,6 +281,10 @@ impl<'a> Proof<'a> {
                 &mut self.heap,
                 &mut self.h_clauses,
                 &mut self.invented_preds,
+            );
+            println!(
+                "  After undo: hypothesis has {} clauses",
+                self.hypothesis.len()
             );
             println!(
                 "=== Hypothesis after undo: {} clauses ===",
