@@ -22,15 +22,16 @@ fn triangular(n: usize) -> usize {
 pub type Binding = (usize, usize);
 #[derive(Debug)]
 pub(super) struct Env {
-    pub(super) goal: usize, // Pointer to heap literal
+    pub(super) goal: usize,
     pub(super) bindings: Box<[Binding]>,
-    pub(super) choices: Vec<Clause>, //Array of choices which have not been tried
+    pub(super) choices: Vec<Clause>,
     pred_function: Option<PredicateFunction>,
     pub(crate) got_choices: bool,
-    pub(super) new_clause: bool, //Was a new clause created by this enviroment
-    pub(super) invent_pred: bool, //If there was a new clause was a new predicate symbol invented
-    pub(super) children: usize,  //How many child goals were created
+    pub(super) new_clause: bool,
+    pub(super) invent_pred: bool,
+    pub(super) children: usize,
     pub(super) depth: usize,
+    total_choice_count: usize,
 }
 
 impl Env {
@@ -45,6 +46,7 @@ impl Env {
             invent_pred: false,
             children: 0,
             depth,
+            total_choice_count: 0,
         }
     }
 
@@ -54,38 +56,44 @@ impl Env {
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
     ) {
-        if !self.got_choices {
-            self.got_choices = true;
-            let (symbol, arity) = heap.str_symbol_arity(self.goal);
+        // eprintln!("Get choices for: {}", heap.term_string(self.goal));
 
-            self.choices = hypothesis.iter().map(|clause| clause.clone()).collect();
+        self.got_choices = true;
+        let (symbol, arity) = heap.str_symbol_arity(self.goal);
 
-            if symbol == 0 {
-                if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
+        self.choices = hypothesis.iter().map(|clause| clause.clone()).collect();
+
+        if symbol == 0 {
+            // eprintln!("Variable symbol body and meta");
+            self.choices.extend(
+                predicate_table
+                    .get_body_clauses(arity)
+                    .into_iter()
+                    .map(|c| c),
+            );
+            if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
+                self.choices.extend(clauses.iter().map(|c| c.clone()));
+            }
+            self.total_choice_count = self.choices.len();
+        } else {
+            match predicate_table.get_predicate((symbol, arity)) {
+                Some(Predicate::Function(pred_function)) => {
+                    self.pred_function = Some(pred_function)
+                }
+                Some(Predicate::Clauses(clauses)) => {
+                    // eprintln!("Kown symbol get hypothesis and predicate table");
                     self.choices.extend(clauses.iter().map(|c| c.clone()));
+                    self.total_choice_count = self.choices.len();
                 }
-                self.choices.extend(
-                    predicate_table
-                        .get_body_clauses(arity)
-                        .into_iter()
-                        .map(|c| c),
-                );
-            } else {
-                match predicate_table.get_predicate((symbol, arity)) {
-                    Some(Predicate::Function(pred_function)) => {
-                        self.pred_function = Some(pred_function)
-                    }
-                    Some(Predicate::Clauses(clauses)) => {
+                None => {
+                    // eprintln!("Unkown symbol get hypothesis variable clauses");
+                    if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
                         self.choices.extend(clauses.iter().map(|c| c.clone()));
-                    }
-                    None => {
-                        if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
-                            self.choices.extend(clauses.iter().map(|c| c.clone()));
-                        }
+                        self.total_choice_count = self.choices.len();
                     }
                 }
-            };
-        }
+            }
+        };
     }
 
     pub fn undo_try(
@@ -95,11 +103,18 @@ impl Env {
         h_clauses: &mut usize,
         invented_preds: &mut usize,
     ) -> usize {
-        println!("Undo[{}]: {}", self.depth, heap.term_string(self.goal));
+        eprintln!(
+            "[UNDO_TRY] goal={} addr={}",
+            heap.term_string(self.goal),
+            self.goal
+        );
         if self.new_clause {
-            // hypothesis.pop();
             let clause = hypothesis.pop_clause();
-            println!("Remove clause: {}", clause.to_string(heap));
+            eprintln!(
+                "[UNDO_CLAUSE] depth={} clause={}",
+                self.depth,
+                clause.to_string(heap)
+            );
             *h_clauses -= 1;
             self.new_clause = false;
             if self.invent_pred {
@@ -107,10 +122,7 @@ impl Env {
                 self.invent_pred = false;
             }
         }
-        println!("{}", hypothesis.to_string(heap));
-        println!("Unbinding: {:?}", self.bindings);
         heap.unbind(&self.bindings);
-        println!("{}", hypothesis.to_string(heap));
         self.children
     }
 
@@ -122,22 +134,20 @@ impl Env {
         allow_new_pred: bool,
         config: Config,
     ) -> Option<Vec<Env>> {
-        println!(
-            "try_choices: goal={}, h_clauses={}, hypothesis.len()={}",
-            heap.term_string(self.goal),
-            hypothesis.len(), // You'd need to pass this in
-            hypothesis.len()
-        );
-
         if self.depth > config.max_depth {
+            eprintln!(
+                "[FAIL_ON_DEPTH] depth={} goal={}",
+                self.depth,
+                heap.term_string(self.goal),
+            );
             return None;
         }
-        println!(
-            "Call[{}|{}]: {}",
-            self.depth,
-            self.choices.len(),
-            heap.term_string(self.goal)
-        );
+        // eprintln!(
+        //     "[TRY_START] goal={} choices.len()={}",
+        //     heap.term_string(self.goal),
+        //     self.choices.len()
+        // );
+
         if let Some(pred_function) = self.pred_function {
             match pred_function(heap, hypothesis, self.goal) {
                 PredReturn::True => return Some(Vec::new()),
@@ -148,9 +158,11 @@ impl Env {
                 }
             }
         }
-        'choices: while let Some(clause) = self.choices.pop() {
-            println!("Try[{}]: {}", self.depth, clause.to_string(heap));
 
+        let mut choices_tried = 0;
+
+        'choices: while let Some(clause) = self.choices.pop() {
+            choices_tried += 1;
             let head = clause.head();
 
             if clause.meta() {
@@ -164,6 +176,14 @@ impl Env {
                 }
             }
 
+            // Debug: show what we're trying
+            // eprintln!(
+            //     "[CALL] depth={} goal={} clause={}",
+            //     self.depth,
+            //     heap.term_string(self.goal),
+            //     clause.to_string(heap)
+            // );
+
             if let Some(mut substitution) = unify(heap, head, self.goal) {
                 for constraints in &hypothesis.constraints {
                     if !substitution.check_constraints(&constraints, heap) {
@@ -171,26 +191,48 @@ impl Env {
                     }
                 }
 
-                //If a ref is bound to a complex term containing args then it must be rebuilt in the query heap
+                eprintln!(
+                    "[MATCH] depth={} goal={} clause={}, choices_remaining={}",
+                    self.depth,
+                    heap.term_string(self.goal),
+                    clause.to_string(heap),
+                    self.choices.len()
+                );
+
                 re_build_bound_arg_terms(heap, &mut substitution);
 
-                //If meta clause we must create a new clause with the substitution
+                // Check if we need to invent a predicate BEFORE building goals
+                let mut invented_pred_addr: Option<usize> = None;
                 if clause.meta() {
                     if heap.str_symbol_arity(head).0 == 0 && heap.str_symbol_arity(self.goal).0 == 0
                     {
                         self.invent_pred = true;
                         let pred_symbol = SymbolDB::set_const(format!("pred_{}", hypothesis.len()));
                         let pred_addr = heap.set_const(pred_symbol);
-                        //If the head is a variable predicate this will always be Arg0
                         substitution.set_arg(0, pred_addr);
+
+                        substitution =
+                            substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
+                        invented_pred_addr = Some(pred_addr);
                     }
+                }
+
+                // Build new goals (now with invented predicate if applicable)
+                let new_goals: Vec<usize> = clause
+                    .body()
+                    .iter()
+                    .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
+                    .collect();
+
+                // Build hypothesis clause if meta
+                if clause.meta() {
                     self.new_clause = true;
-                    //If both the goal and clause are variable predicates we invent a predicate
+
                     let new_clause_literals: Vec<usize> = clause
                         .iter()
                         .map(|literal| build(heap, &mut substitution, clause.meta_vars, *literal))
                         .collect();
-                    //Collect disallowed bindings
+
                     let mut constraints = Vec::with_capacity(16);
                     for i in 0..32 {
                         if unsafe { clause.meta_var(i).unwrap_unchecked() } {
@@ -198,33 +240,28 @@ impl Env {
                         }
                     }
 
-                    let clause = Clause::new(new_clause_literals, None);
-                    println!(
-                        ">>> ADDING CLAUSE for goal: {}",
-                        heap.term_string(self.goal)
+                    let new_clause = Clause::new(new_clause_literals, None);
+                    eprintln!(
+                        "[ADD_CLAUSE] depth={} goal={} clause={}",
+                        self.depth,
+                        heap.term_string(self.goal),
+                        new_clause.to_string(heap)
                     );
-                    println!(">>> New clause: {}", clause.to_string(heap));
-                    println!(
-                        "Clause head: {}, Clause body:{:?}",
-                        clause.head(),
-                        clause.body()
-                    );
-                    hypothesis.push_clause(clause, heap, constraints.into());
+                    if invented_pred_addr.is_some() {
+                        eprintln!(
+                            "[INVENT_PRED] invented predicate for goal={}",
+                            heap.term_string(self.goal)
+                        );
+                    }
+                    hypothesis.push_clause(new_clause, heap, constraints.into());
+                    eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
                 }
-
-                //Create new goals
-                let new_goals: Vec<usize> = clause
-                    .body()
-                    .iter()
-                    .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
-                    .collect();
-
-                println!("new_goals:{new_goals:?}");
 
                 self.bindings = substitution.get_bindings();
                 self.children = new_goals.len();
+                eprintln!("Bindings: {:?}", self.bindings);
                 heap.bind(&self.bindings);
-                //Convert goals to new enviroments and return
+
                 return Some(
                     new_goals
                         .into_iter()
@@ -233,6 +270,13 @@ impl Env {
                 );
             }
         }
+        eprintln!(
+            "[NO_MATCH] depth={} goal={} tried {} choices, Originally had {} choices",
+            self.depth,
+            heap.term_string(self.goal),
+            choices_tried,
+            self.total_choice_count
+        );
         None
     }
 }
@@ -240,7 +284,7 @@ impl Env {
 pub struct Proof<'a> {
     stack: Vec<Env>,
     pointer: usize,
-    goal_count: u8, //How many goals were in initial query
+    goal_count: u8,
     pub hypothesis: Hypothesis,
     pub heap: QueryHeap<'a>,
     h_clauses: usize,
@@ -264,15 +308,17 @@ impl<'a> Proof<'a> {
     }
 
     pub fn prove(&mut self, predicate_table: Arc<PredicateTable>, config: Config) -> bool {
-        //A previous proof has already been found, back track to find a new one.
+        // Handle restart after previous success
         if self.pointer == self.stack.len() {
-            println!("=== RESTART ===");
-            println!(
-                "  Before undo: hypothesis has {} clauses",
-                self.hypothesis.len()
+            eprintln!(
+                "[RESTART] pointer={} stack_len={} h_clauses={}",
+                self.pointer,
+                self.stack.len(),
+                self.h_clauses
             );
+            eprintln!("[RESTART_HYPOTHESIS]");
             for (i, c) in self.hypothesis.iter().enumerate() {
-                println!("    [{}]: {}", i, c.to_string(&self.heap));
+                eprintln!("  [{}]: {}", i, c.to_string(&self.heap));
             }
 
             self.pointer -= 1;
@@ -282,26 +328,27 @@ impl<'a> Proof<'a> {
                 &mut self.h_clauses,
                 &mut self.invented_preds,
             );
-            println!(
-                "  After undo: hypothesis has {} clauses",
-                self.hypothesis.len()
-            );
-            println!(
-                "=== Hypothesis after undo: {} clauses ===",
-                self.hypothesis.len()
-            );
         }
 
-        //Once the pointer exceeds the last enviroment all goals have been proven
         while self.pointer < self.stack.len() {
-            //If this enviroment is new, choices will be aquired, otherwise nothing happens
-            self.stack[self.pointer].get_choices(
-                &mut self.heap,
-                &mut self.hypothesis,
-                &predicate_table,
-            );
-
-            print!("({})", self.pointer);
+            if self.stack[self.pointer].got_choices {
+                eprintln!(
+                    "[RETRY] goal={} addr={}",
+                    self.heap.term_string(self.stack[self.pointer].goal),
+                    self.stack[self.pointer].goal
+                );
+            } else {
+                self.stack[self.pointer].get_choices(
+                    &mut self.heap,
+                    &mut self.hypothesis,
+                    &predicate_table,
+                );
+                eprintln!(
+                    "[TRY] goal={} addr={}",
+                    self.heap.term_string(self.stack[self.pointer].goal),
+                    self.stack[self.pointer].goal
+                );
+            }
             match self.stack[self.pointer].try_choices(
                 &mut self.heap,
                 &mut self.hypothesis,
@@ -319,21 +366,27 @@ impl<'a> Proof<'a> {
                     self.pointer += 1;
                     self.stack.splice(self.pointer..self.pointer, new_goals);
                 }
-                //If this goal fails the proof stack is backtracked
                 None => {
-                    //If the first goal fails this proof has failed
                     if self.pointer == 0 {
+                        eprintln!("[FAILED] First goal exhausted");
+                        eprintln!("[FAILED_HYPOTHESIS]");
+                        for (i, c) in self.hypothesis.iter().enumerate() {
+                            eprintln!("  [{}]: {}", i, c.to_string(&self.heap));
+                        }
                         return false;
                     }
+                    // NEW: If the goal we're backtracking FROM is a root goal, reset its got_choices
+                    if self.stack[self.pointer].depth == 0 {
+                        self.stack[self.pointer].got_choices = false;
+                        self.stack[self.pointer].choices.clear();
+                    }
                     self.pointer -= 1;
-                    //Undo bindings and creation of clauses
                     let children = self.stack[self.pointer].undo_try(
                         &mut self.hypothesis,
                         &mut self.heap,
                         &mut self.h_clauses,
                         &mut self.invented_preds,
                     );
-                    //Remove child goals from proof stack
                     self.stack
                         .drain((self.pointer + 1)..(self.pointer + 1 + children));
                 }

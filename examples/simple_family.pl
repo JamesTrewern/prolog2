@@ -7,7 +7,7 @@ dad(adam,james).
 % dad(ken,kelly).
 % dad(adam,luke).
 
-P(X,Y):-Q(X,Y), {P,Q}.
 P(X,Y):-Q(X,Z),P(Z,Y), {P,Q}.
+P(X,Y):-Q(X,Y), {P,Q}.
 
 

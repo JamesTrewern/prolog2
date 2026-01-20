@@ -8,7 +8,7 @@ mod program;
 mod resolution;
 use std::{
     collections::HashMap,
-    fs,
+    fs::{self, File},
     io::{stdin, stdout, Write},
     process::ExitCode,
     sync::Arc,
@@ -110,9 +110,9 @@ fn start_query(
             if proof.hypothesis.len() != 0 {
                 println!("{}",proof.hypothesis.to_string(&proof.heap));
             }
-            if !continue_proof() {
-                break;
-            }
+            // if !continue_proof() {
+            //     break;
+            // }
         } else {
             println!("FALSE");
             break;
@@ -182,6 +182,9 @@ fn main_loop(config: Config, predicate_table: Arc<PredicateTable>, heap: Arc<Vec
 }
 
 fn main() -> ExitCode {
+    // fs::remove_file("debug.log");
+    // File::create("debug.log");
+
     let (config, predicate_table, heap, examples) = load_setup();
 
     let predicate_table = Arc::new(predicate_table);
