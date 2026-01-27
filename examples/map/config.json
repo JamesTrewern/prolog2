@@ -1,6 +1,6 @@
 {
     "config" : {
-        "max_depth": 20,
+        "max_depth": 5,
         "max_clause": 0,
         "max_pred": 0,
         "debug": true
