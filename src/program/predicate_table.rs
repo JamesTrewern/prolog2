@@ -204,15 +204,23 @@ impl DerefMut for PredicateTable {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use crate::{
         heap::{query_heap::QueryHeap, symbol_db::SymbolDB},
         predicate_modules::{PredReturn,PredicateFunction},
         program::{hypothesis::Hypothesis, predicate_table::FindReturn},
+        Config,
     };
 
     use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
 
-    fn pred_fn_placeholder(heap: &mut QueryHeap, hypothesis: &mut Hypothesis, goal: usize) -> PredReturn{
+    fn pred_fn_placeholder(
+        _heap: &mut QueryHeap,
+        _hypothesis: &mut Hypothesis,
+        _goal: usize,
+        _predicate_table: Arc<PredicateTable>,
+        _config: Config,
+    ) -> PredReturn {
         PredReturn::True
     }
 

@@ -26,6 +26,7 @@ pub(super) struct Env {
     pub(super) bindings: Box<[Binding]>,
     pub(super) choices: Vec<Clause>,
     pred_function: Option<PredicateFunction>,
+    pred_function_tried: bool,
     pub(crate) got_choices: bool,
     pub(super) new_clause: bool,
     pub(super) invent_pred: bool,
@@ -41,6 +42,7 @@ impl Env {
             bindings: Box::new([]),
             choices: Vec::new(),
             pred_function: None,
+            pred_function_tried: false,
             got_choices: false,
             new_clause: false,
             invent_pred: false,
@@ -132,6 +134,7 @@ impl Env {
         hypothesis: &mut Hypothesis,
         allow_new_clause: bool,
         allow_new_pred: bool,
+        predicate_table: Arc<PredicateTable>,
         config: Config,
         debug: bool,
     ) -> Option<Vec<Env>> {
@@ -147,12 +150,18 @@ impl Env {
         }
 
         if let Some(pred_function) = self.pred_function {
-            match pred_function(heap, hypothesis, self.goal) {
-                PredReturn::True => return Some(Vec::new()),
-                PredReturn::False => return None,
-                PredReturn::Binding(bindings) => {
-                    self.bindings = bindings.into_boxed_slice();
-                    heap.bind(&self.bindings);
+            if !self.pred_function_tried {
+                self.pred_function_tried = true;
+                match pred_function(heap, hypothesis, self.goal, predicate_table.clone(), config) {
+                    PredReturn::True => return Some(Vec::new()),
+                    PredReturn::False => {
+                        // Fall through to try clause-based choices
+                    }
+                    PredReturn::Binding(bindings) => {
+                        self.bindings = bindings.into_boxed_slice();
+                        heap.bind(&self.bindings);
+                        return Some(Vec::new());
+                    }
                 }
             }
         }
@@ -361,6 +370,7 @@ impl<'a> Proof<'a> {
                 &mut self.hypothesis,
                 self.h_clauses < config.max_clause,
                 self.invented_preds < config.max_pred,
+                predicate_table.clone(),
                 config,
                 debug,
             ) {
@@ -390,6 +400,7 @@ impl<'a> Proof<'a> {
                     // it will get fresh choices based on the new hypothesis state
                     self.stack[self.pointer].got_choices = false;
                     self.stack[self.pointer].choices.clear();
+                    self.stack[self.pointer].pred_function_tried = false;
                     
                     self.pointer -= 1;
                     let children = self.stack[self.pointer].undo_try(

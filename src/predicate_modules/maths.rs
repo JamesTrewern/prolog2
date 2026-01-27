@@ -1,18 +1,27 @@
-use std::mem;
+use std::{mem, sync::Arc};
 
-use crate::heap::{
+use super::PredReturn;
+use crate::{Config, heap::{
     heap::{Cell, Heap, Tag},
     query_heap::QueryHeap,
     symbol_db::SymbolDB,
-};
+}, program::predicate_table::PredicateTable};
 use crate::program::hypothesis::Hypothesis;
 
-use super::PredReturn;
+use lazy_static::lazy_static;
 
 use fsize::fsize;
 
 type MathFn = fn(usize, &QueryHeap) -> Number;
-static mut FUNCTIONS: Vec<(usize, MathFn)> = Vec::new();
+
+lazy_static! {
+    static ref FUNCTIONS: Vec<(usize, MathFn)> = {
+        FUNCTION_SYMBOLS
+            .iter()
+            .map(|(symbol, function)| (SymbolDB::set_const(symbol.to_string()), *function))
+            .collect()
+    };
+}
 
 #[derive(Debug, Clone, Copy)]
 enum Number {
@@ -32,6 +41,29 @@ impl Number {
         match self {
             Number::Flt(value) => (Tag::Flt, unsafe { mem::transmute(*value) }),
             Number::Int(value) => (Tag::Int, unsafe { mem::transmute(*value) }),
+        }
+    }
+
+    pub fn power(self, rhs: Self) -> Number {
+        match (self, rhs) {
+            (Number::Int(v1), Number::Int(v2)) if v2 > 0 => {
+                Number::Int(v1.pow(v2.try_into().unwrap()))
+            }
+            (lhs, rhs) => Number::Flt(lhs.float().powf(rhs.float())),
+        }
+    }
+
+    pub fn abs(self) -> Number {
+        match self {
+            Number::Flt(value) => Number::Flt(value.abs()),
+            Number::Int(value) => Number::Int(value.abs()),
+        }
+    }
+
+    pub fn round(self) -> Number {
+        match self {
+            Number::Flt(value) => Number::Int(value.round() as isize),
+            Number::Int(value) => Number::Int(value),
         }
     }
 }
@@ -111,6 +143,58 @@ fn div(addr: usize, heap: &QueryHeap) -> Number {
     evaluate_term(addr + 2, heap) / evaluate_term(addr + 3, heap)
 }
 
+fn pow(addr: usize, heap: &QueryHeap) -> Number {
+    evaluate_term(addr + 2, heap).power(evaluate_term(addr + 3, heap))
+}
+
+fn cos(addr: usize, heap: &QueryHeap) -> Number {
+    Number::Flt(evaluate_term(addr + 2, heap).float().cos())
+}
+
+fn sin(addr: usize, heap: &QueryHeap) -> Number {
+    Number::Flt(evaluate_term(addr + 2, heap).float().sin())
+}
+
+fn tan(addr: usize, heap: &QueryHeap) -> Number {
+    Number::Flt(evaluate_term(addr + 2, heap).float().tan())
+}
+
+fn acos(addr: usize, heap: &QueryHeap) -> Number {
+    Number::Flt(evaluate_term(addr + 2, heap).float().acos())
+}
+
+fn asin(addr: usize, heap: &QueryHeap) -> Number {
+    Number::Flt(evaluate_term(addr + 2, heap).float().asin())
+}
+
+fn atan(addr: usize, heap: &QueryHeap) -> Number {
+    Number::Flt(evaluate_term(addr + 2, heap).float().atan())
+}
+
+fn log(addr: usize, heap: &QueryHeap) -> Number {
+    Number::Flt(
+        evaluate_term(addr + 2, heap)
+            .float()
+            .log(evaluate_term(addr + 3, heap).float()),
+    )
+}
+
+fn abs(addr: usize, heap: &QueryHeap) -> Number {
+    evaluate_term(addr + 2, heap).abs()
+}
+
+fn round(addr: usize, heap: &QueryHeap) -> Number {
+    evaluate_term(addr + 2, heap).round()
+}
+
+fn to_radians(addr: usize, heap: &QueryHeap) -> Number {
+    Number::Flt(evaluate_term(addr + 2, heap).float().to_radians())
+}
+
+fn to_degrees(addr: usize, heap: &QueryHeap) -> Number {
+    Number::Flt(evaluate_term(addr + 2, heap).float().to_degrees())
+}
+
 fn evaluate_str(addr: usize, heap: &QueryHeap) -> Number {
     let symbol = heap[addr + 1].1;
     for (id, funct) in unsafe { FUNCTIONS.iter() } {
@@ -137,7 +221,7 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Number {
 }
 
 /// is/2 predicate: evaluates RHS and unifies with LHS
-pub fn is_pred(heap: &mut QueryHeap, _hypothesis: &mut Hypothesis, goal: usize) -> PredReturn {
+pub fn is_pred(heap: &mut QueryHeap, _hypothesis: &mut Hypothesis, goal: usize, pred_table: Arc<PredicateTable>, config: Config) -> PredReturn {
     // Goal structure: Func(3) | Con("is") | LHS | RHS
     let goal_addr = heap.deref_addr(goal);
     let func_addr = match heap[goal_addr] {
@@ -145,10 +229,10 @@ pub fn is_pred(heap: &mut QueryHeap, _hypothesis: &mut Hypothesis, goal: usize) 
         (Tag::Func, _) => goal_addr,
         _ => panic!("is/2: expected structure, got {:?}", heap[goal_addr]),
     };
-    
+
     let rhs = evaluate_term(func_addr + 3, heap);
     let lhs_addr = heap.deref_addr(func_addr + 2);
-    
+
     match heap[lhs_addr] {
         (Tag::Ref, _) => {
             // LHS is unbound - create binding
@@ -163,14 +247,21 @@ pub fn is_pred(heap: &mut QueryHeap, _hypothesis: &mut Hypothesis, goal: usize) 
     }
 }
 
-/// Initialize the math functions lookup table
-pub fn setup_maths() {
-    unsafe {
-        FUNCTIONS = vec![
-            (SymbolDB::set_const("+".to_string()), add),
-            (SymbolDB::set_const("-".to_string()), sub),
-            (SymbolDB::set_const("*".to_string()), mul),
-            (SymbolDB::set_const("/".to_string()), div),
-        ];
-    }
-}
+static FUNCTION_SYMBOLS: &[(&'static str, MathFn)] = &[
+    ("+", add),
+    ("-", sub),
+    ("*", mul),
+    ("/", div),
+    ("**", pow),
+    ("cos", cos),
+    ("sin", sin),
+    ("tan", tan),
+    ("acos", acos),
+    ("asin", asin),
+    ("atan", atan),
+    ("log", log),
+    ("abs", abs),
+    ("round", round),
+    ("to_degrees", to_degrees),
+    ("to_radians", to_radians),
+];
