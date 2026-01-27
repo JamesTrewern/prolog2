@@ -18,10 +18,7 @@ use crate::{
     predicate_modules::{load_predicate_module, maths, MATHS},
     program::predicate_table::PredicateTable,
     resolution::proof::Proof,
-    Config,
-    BodyClause,
-    Examples,
-    SetUp,
+    BodyClause, Config, Examples, SetUp,
 };
 
 /// Load a .pl file into the predicate table and heap
@@ -41,7 +38,6 @@ fn load_setup(config_path: &str) -> (Config, PredicateTable, Vec<Cell>, Option<E
     let mut predicate_table = PredicateTable::new();
 
     // Initialize and load maths module
-    maths::setup_maths();
     load_predicate_module(&mut predicate_table, &MATHS);
 
     let setup: SetUp = serde_json::from_str(
@@ -98,13 +94,19 @@ fn run_query(
         // Continue to find more solutions (backtrack)
     }
 
+    // if proof.prove(predicate_table.clone(), config, config.debug) {
+    //     solutions = 1;
+    //     if proof.prove(predicate_table.clone(), config, config.debug) {
+    //         solutions = 2;
+    //     }
+    // }
+
     (solutions > 0, solutions)
 }
 
 #[test]
 fn ancestor() {
-    let (config, predicate_table, heap, examples) =
-        load_setup("examples/ancestor/config.json");
+    let (config, predicate_table, heap, examples) = load_setup("examples/ancestor/config.json");
 
     let predicate_table = Arc::new(predicate_table);
     let heap = Arc::new(heap);
@@ -122,8 +124,11 @@ fn ancestor() {
         query += ".";
 
         let (success, solutions) = run_query(&query, predicate_table.clone(), heap.clone(), config);
-        
-        println!("Ancestor test: success={}, solutions={}", success, solutions);
+
+        println!(
+            "Ancestor test: success={}, solutions={}",
+            success, solutions
+        );
         assert!(success, "Expected at least one solution for ancestor test");
     } else {
         panic!("No examples in ancestor config");
@@ -134,9 +139,8 @@ fn ancestor() {
 fn map() {
     // Initialize symbol database
     // SymbolDB::new();
-    
-    let (config, predicate_table, heap, examples) =
-        load_setup("examples/map/config.json");
+
+    let (config, predicate_table, heap, examples) = load_setup("examples/map/config.json");
 
     let predicate_table = Arc::new(predicate_table);
     let heap = Arc::new(heap);
@@ -154,7 +158,7 @@ fn map() {
         query += ".";
 
         let (success, solutions) = run_query(&query, predicate_table.clone(), heap.clone(), config);
-        
+
         println!("Map test: success={}, solutions={}", success, solutions);
         assert!(success, "Expected at least one solution for map test");
     } else {
@@ -166,21 +170,20 @@ fn map() {
 fn ancestor_learning() {
     // Test that ancestor can learn hypotheses
     // SymbolDB::new();
-    
-    let (config, predicate_table, heap, _) =
-        load_setup("examples/ancestor/config.json");
+
+    let (config, predicate_table, heap, _) = load_setup("examples/ancestor/config.json");
 
     let predicate_table = Arc::new(predicate_table);
     let heap = Arc::new(heap);
 
     // Query that requires learning
     let query = "ancestor(ken,james).";
-    
+
     let mut query_heap = QueryHeap::new(heap, None).unwrap();
     let goals = build_goals(query, &mut query_heap);
 
     let mut proof = Proof::new(query_heap, &goals, config);
-    
+
     if proof.prove(predicate_table.clone(), config, config.debug) {
         println!("Ancestor learning test succeeded");
         if proof.hypothesis.len() > 0 {
