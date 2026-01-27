@@ -94,7 +94,7 @@ fn start_query(
         _ => return Err(format!("Query: '{query_text}' incorrectly formatted")),
     };
 
-    let mut query_heap = QueryHeap::new(heap, None)?;
+    let mut query_heap = QueryHeap::new(heap, None);
     let goals = build_clause(literals, None, &mut query_heap, true);
     let mut vars = Vec::new();
     for literal in goals.iter() {

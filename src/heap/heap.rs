@@ -412,10 +412,12 @@ impl Heap for Vec<Cell> {
     }
 }
 
-pub(crate) static PROG_HEAP: RwLock<Vec<Cell>> = RwLock::new(Vec::new());
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use crate::heap::query_heap::QueryHeap;
+
     use super::{
         super::symbol_db::SymbolDB,
         {Cell, Heap, Tag, EMPTY_LIS},
@@ -423,7 +425,8 @@ mod tests {
 
     #[test]
     fn encode_argument_variable() {
-        let mut heap = Vec::<Cell>::new();
+        let prog_cells = Arc::new(Vec::<Cell>::new());
+        let mut heap = QueryHeap::new(prog_cells, None);
 
         let addr1 = heap.set_arg(0);
         let addr2 = heap.set_arg(1);
@@ -434,7 +437,8 @@ mod tests {
 
     #[test]
     fn encode_ref_variable() {
-        let mut heap = Vec::<Cell>::new();
+         let prog_cells = Arc::new(Vec::<Cell>::new());
+        let mut heap = QueryHeap::new(prog_cells, None);
 
         let addr1 = heap.set_ref(None);
         let addr2 = heap.set_ref(Some(addr1));
@@ -445,7 +449,8 @@ mod tests {
 
     #[test]
     fn encode_constant() {
-        let mut heap = Vec::<Cell>::new();
+         let prog_cells = Arc::new(Vec::<Cell>::new());
+        let mut heap = QueryHeap::new(prog_cells, None);
 
         let a = SymbolDB::set_const("a".into());
         let b = SymbolDB::set_const("b".into());

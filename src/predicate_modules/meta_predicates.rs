@@ -20,23 +20,14 @@ fn not(
     // The goal is not(X), we want to prove X
     // Goal structure: Str -> Func(2) | Con("not") | InnerGoal
     // The inner goal is at goal + 2 (after the Func cell and the 'not' symbol)
-    let inner_goal_src = heap.deref_addr(goal + 2);
-    
+    let inner_goal = heap.deref_addr(goal + 2);
+
     // Create a config with learning disabled
     let mut inner_config = config;
     inner_config.max_clause = 0; // Disable learning by not allowing new clauses
+
+    let inner_heap = heap.branch(1).pop().unwrap();
     
-    // Get the program cells to create a new heap
-    let prog_cells = heap.get_prog_cells();
-    
-    // Create a new QueryHeap for the inner proof
-    let mut inner_heap = match QueryHeap::new(prog_cells, None) {
-        Ok(h) => h,
-        Err(_) => return PredReturn::False,
-    };
-    
-    // Copy the inner goal to the new heap
-    let inner_goal = inner_heap.copy_term(heap, inner_goal_src);
     
     // Create a new proof for the inner goal with an empty hypothesis
     // We don't want to inherit or modify the current hypothesis during negation check

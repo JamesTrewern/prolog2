@@ -290,18 +290,18 @@ impl Env {
     }
 }
 
-pub struct Proof<'a> {
+pub struct Proof {
     stack: Vec<Env>,
     pointer: usize,
     goal_count: u8,
     pub hypothesis: Hypothesis,
-    pub heap: QueryHeap<'a>,
+    pub heap: QueryHeap,
     h_clauses: usize,
     invented_preds: usize,
 }
 
-impl<'a> Proof<'a> {
-    pub fn new(heap: QueryHeap<'a>, goals: &[usize], config: Config) -> Self {
+impl Proof {
+    pub fn new(heap: QueryHeap, goals: &[usize], config: Config) -> Self {
         let goal_count = goals.len() as u8;
         let hypothesis = Hypothesis::new();
         let stack = goals.iter().map(|goal| Env::new(*goal, 0)).collect();

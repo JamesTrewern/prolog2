@@ -83,7 +83,7 @@ fn run_query(
     heap: Arc<Vec<Cell>>,
     config: Config,
 ) -> (bool, usize) {
-    let mut query_heap = QueryHeap::new(heap, None).unwrap();
+    let mut query_heap = QueryHeap::new(heap, None);
     let goals = build_goals(query_text, &mut query_heap);
 
     let mut proof = Proof::new(query_heap, &goals, config);
@@ -179,7 +179,7 @@ fn ancestor_learning() {
     // Query that requires learning
     let query = "ancestor(ken,james).";
 
-    let mut query_heap = QueryHeap::new(heap, None).unwrap();
+    let mut query_heap = QueryHeap::new(heap, None);
     let goals = build_goals(query, &mut query_heap);
 
     let mut proof = Proof::new(query_heap, &goals, config);
