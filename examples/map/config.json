@@ -1,0 +1,16 @@
+{
+    "config" : {
+        "max_depth": 20,
+        "max_clause": 0,
+        "max_pred": 0,
+        "debug": true
+    },
+    "body_predicates" : [
+        {"symbol" : "double", "arity": 2}
+    ],
+    "examples" : {
+        "pos" : ["map([1,2,3],[2,4,6],double)"],
+        "neg" : []
+    },
+    "files" : ["examples/map/map.pl"]
+}

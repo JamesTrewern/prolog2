@@ -1,5 +1,5 @@
-// #[cfg(test)]
-// mod examples;
+#[cfg(test)]
+mod examples;
 mod heap;
 // mod interface;
 mod parser;
@@ -8,6 +8,7 @@ mod program;
 mod resolution;
 use std::{
     collections::HashMap,
+    env,
     fs::{self, File},
     io::{stdin, stdout, Write},
     process::ExitCode,
@@ -40,6 +41,8 @@ struct Config {
     max_depth: usize,
     max_clause: usize,
     max_pred: usize,
+    #[serde(default)]
+    debug: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,7 +65,10 @@ struct SetUp {
     pub examples: Option<Examples>
 }
 
-fn continue_proof() -> bool {
+fn continue_proof(auto: bool) -> bool {
+    if auto {
+        return true;
+    }
     let term = Term::stderr();
     loop {
         match term.read_key_raw().unwrap() {
@@ -80,6 +86,7 @@ fn start_query(
     predicate_table: Arc<PredicateTable>,
     heap: Arc<Vec<Cell>>,
     config: Config,
+    auto: bool,
 ) -> Result<(), String> {
     let query = format!(":-{query_text}");
     let literals = match TokenStream::new(tokenise(query)?).parse_clause()? {
@@ -101,7 +108,7 @@ fn start_query(
     let mut proof = Proof::new(query_heap, &goals, config);
 
     loop {
-        if proof.prove(predicate_table.clone(), config) {
+        if proof.prove(predicate_table.clone(), config, config.debug) {
             println!("TRUE");
             for (symbol, addr) in &vars {
                 println!("{symbol} = {}", proof.heap.term_string(*addr))
@@ -110,9 +117,9 @@ fn start_query(
             if proof.hypothesis.len() != 0 {
                 println!("{}",proof.hypothesis.to_string(&proof.heap));
             }
-            // if !continue_proof() {
-            //     break;
-            // }
+            if !continue_proof(auto) {
+                break;
+            }
         } else {
             println!("FALSE");
             break;
@@ -164,7 +171,7 @@ fn main_loop(config: Config, predicate_table: Arc<PredicateTable>, heap: Arc<Vec
         match stdin().read_line(&mut buffer) {
             Ok(_) => {
                 if buffer.contains('.') {
-                    match start_query(&buffer, predicate_table.clone(), heap.clone(), config) {
+                    match start_query(&buffer, predicate_table.clone(), heap.clone(), config, false) {
                         Ok(_) => buffer.clear(),
                         Err(error) => println!("{error}"),
                     }
@@ -185,6 +192,9 @@ fn main() -> ExitCode {
     // fs::remove_file("debug.log");
     // File::create("debug.log");
 
+    let args: Vec<String> = env::args().collect();
+    let auto = args.iter().any(|arg| arg == "--all" || arg == "-a");
+
     let (config, predicate_table, heap, examples) = load_setup();
 
     let predicate_table = Arc::new(predicate_table);
@@ -202,7 +212,7 @@ fn main() -> ExitCode {
             }
             buffer.pop();
             buffer += ".";
-            start_query(&buffer, predicate_table, heap, config).unwrap();
+            start_query(&buffer, predicate_table, heap, config, auto).unwrap();
             ExitCode::SUCCESS
         },
         None => main_loop(config, predicate_table, heap),

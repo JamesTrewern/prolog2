@@ -1,160 +1,194 @@
-// //Broad test on example files to prove working state of application
+// Broad test on example files to prove working state of application
 
-use std::collections::HashMap;
+use std::{fs, sync::Arc};
+
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    heap::store::Store,
-    interface::{
-        parser::{parse_goals, tokenise},
-        state::State,
+    heap::{
+        heap::{Cell, Heap},
+        query_heap::QueryHeap,
+        symbol_db::SymbolDB,
     },
-    program::dynamic_program::{DynamicProgram, Hypothesis},
-    resolution::solver::Proof,
+    parser::{
+        build_tree::TokenStream,
+        execute_tree::{build_clause, execute_tree},
+        tokeniser::tokenise,
+    },
+    predicate_modules::{load_predicate_module, maths, MATHS},
+    program::predicate_table::PredicateTable,
+    resolution::proof::Proof,
+    Config,
+    BodyClause,
+    Examples,
+    SetUp,
 };
 
-fn setup<'a>(file: &str) -> State {
-    let state = State::new(None);
-    state.load_file(file).unwrap();
-    state
+/// Load a .pl file into the predicate table and heap
+fn load_file(file_path: &str, predicate_table: &mut PredicateTable, heap: &mut Vec<Cell>) {
+    let file = fs::read_to_string(file_path)
+        .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path));
+    let syntax_tree = TokenStream::new(tokenise(file).unwrap())
+        .parse_all()
+        .unwrap();
+
+    execute_tree(syntax_tree, heap, predicate_table);
 }
 
-fn make_goals<'a>(state: &'a State, goals: &str) -> (Vec<usize>, Store<'a>) {
-    let mut store = Store::new(state.heap.try_read().unwrap());
-    let goals: Vec<usize> = parse_goals(&tokenise(goals))
-        .unwrap()
-        .into_iter()
-        .map(|t| t.build_to_heap(&mut store, &mut HashMap::new(), false))
-        .collect();
-    (goals, store)
+/// Load a test setup from a config.json file
+fn load_setup(config_path: &str) -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
+    let mut heap = Vec::new();
+    let mut predicate_table = PredicateTable::new();
+
+    // Initialize and load maths module
+    maths::setup_maths();
+    load_predicate_module(&mut predicate_table, &MATHS);
+
+    let setup: SetUp = serde_json::from_str(
+        &fs::read_to_string(config_path)
+            .unwrap_or_else(|_| panic!("Failed to read config: {}", config_path)),
+    )
+    .unwrap_or_else(|e| panic!("Failed to parse config: {}", e));
+
+    let config = setup.config;
+
+    for file_path in setup.files {
+        load_file(&file_path, &mut predicate_table, &mut heap);
+    }
+
+    for BodyClause { symbol, arity } in setup.body_predicates {
+        predicate_table
+            .set_body((SymbolDB::set_const(symbol), arity), true)
+            .unwrap();
+    }
+
+    (config, predicate_table, heap, setup.examples)
 }
+
+/// Build goals from a query string onto a query heap
+fn build_goals(query_text: &str, query_heap: &mut QueryHeap) -> Vec<usize> {
+    let query = format!(":-{query_text}");
+    let literals = match TokenStream::new(tokenise(query).unwrap())
+        .parse_clause()
+        .unwrap()
+    {
+        Some(crate::parser::build_tree::TreeClause::Directive(literals)) => literals,
+        _ => panic!("Query: '{query_text}' incorrectly formatted"),
+    };
+
+    let clause = build_clause(literals, None, query_heap, true);
+    clause.iter().cloned().collect()
+}
+
+/// Run a query and return whether it succeeded and the number of solutions found
+fn run_query(
+    query_text: &str,
+    predicate_table: Arc<PredicateTable>,
+    heap: Arc<Vec<Cell>>,
+    config: Config,
+) -> (bool, usize) {
+    let mut query_heap = QueryHeap::new(heap, None).unwrap();
+    let goals = build_goals(query_text, &mut query_heap);
+
+    let mut proof = Proof::new(query_heap, &goals, config);
+    let mut solutions = 0;
+
+    while proof.prove(predicate_table.clone(), config, config.debug) {
+        solutions += 1;
+        // Continue to find more solutions (backtrack)
+    }
+
+    (solutions > 0, solutions)
+}
+
 #[test]
 fn ancestor() {
-    let state = setup("./examples/family");
-    let (goals, store) = make_goals(&state, "ancestor(ken,james), ancestor(christine,james).");
+    let (config, predicate_table, heap, examples) =
+        load_setup("examples/ancestor/config.json");
 
-    let proof = Proof::new(
-        &goals,
-        store,
-        Hypothesis::None,
-        None,
-        &state,
-    );
+    let predicate_table = Arc::new(predicate_table);
+    let heap = Arc::new(heap);
 
-    println!("proof");
-    let mut proofs = 0;
-    for _ in proof {
-        proofs += 1;
+    // Run positive examples
+    if let Some(Examples { pos, neg }) = examples {
+        // Combine positive examples into a single query
+        let mut query = String::new();
+        for example in &pos {
+            if !query.is_empty() {
+                query += ",";
+            }
+            query += example;
+        }
+        query += ".";
+
+        let (success, solutions) = run_query(&query, predicate_table.clone(), heap.clone(), config);
+        
+        println!("Ancestor test: success={}, solutions={}", success, solutions);
+        assert!(success, "Expected at least one solution for ancestor test");
+    } else {
+        panic!("No examples in ancestor config");
     }
-    assert!(proofs > 0);
 }
 
 #[test]
 fn map() {
-    let state = setup("./examples/map");
+    // Initialize symbol database
+    // SymbolDB::new();
+    
+    let (config, predicate_table, heap, examples) =
+        load_setup("examples/map/config.json");
 
-    let (goals, store) = make_goals(&state, "map([1,2,3],[2,4,6], X).");
-    let proof = Proof::new(
-        &goals,
-        store,
-        Hypothesis::None,
-        None,
-        &state,
-    );
+    let predicate_table = Arc::new(predicate_table);
+    let heap = Arc::new(heap);
 
-    let mut proofs = 0;
-    for _ in proof {
-        proofs += 1;
+    // Run positive examples
+    if let Some(Examples { pos, neg }) = examples {
+        // Combine positive examples into a single query
+        let mut query = String::new();
+        for example in &pos {
+            if !query.is_empty() {
+                query += ",";
+            }
+            query += example;
+        }
+        query += ".";
+
+        let (success, solutions) = run_query(&query, predicate_table.clone(), heap.clone(), config);
+        
+        println!("Map test: success={}, solutions={}", success, solutions);
+        assert!(success, "Expected at least one solution for map test");
+    } else {
+        panic!("No examples in map config");
     }
-    assert!(proofs > 0);
 }
 
 #[test]
-fn odd_even() {
-    let state = setup("./examples/odd_even");
+fn ancestor_learning() {
+    // Test that ancestor can learn hypotheses
+    // SymbolDB::new();
+    
+    let (config, predicate_table, heap, _) =
+        load_setup("examples/ancestor/config.json");
 
-    let (goals, store) = make_goals(&state, "even(4), not(even(3)).");
+    let predicate_table = Arc::new(predicate_table);
+    let heap = Arc::new(heap);
 
-    let proof = Proof::new(
-        &goals,
-        store,
-        Hypothesis::None,
-        None,
-        &state,
-    );
+    // Query that requires learning
+    let query = "ancestor(ken,james).";
+    
+    let mut query_heap = QueryHeap::new(heap, None).unwrap();
+    let goals = build_goals(query, &mut query_heap);
 
-    let mut proofs = 0;
-    for _ in proof {
-        proofs += 1;
+    let mut proof = Proof::new(query_heap, &goals, config);
+    
+    if proof.prove(predicate_table.clone(), config, config.debug) {
+        println!("Ancestor learning test succeeded");
+        if proof.hypothesis.len() > 0 {
+            println!("Learned hypothesis:");
+            println!("{}", proof.hypothesis.to_string(&proof.heap));
+        }
+        assert!(true);
+    } else {
+        panic!("Expected ancestor learning to find a solution");
     }
-    assert!(proofs > 0);
 }
-
-#[test]
-fn top_prog() {
-    let state = setup("./examples/top_prog");
-
-    let (goals, store) = make_goals(&state, "test.");
-
-    let proof = Proof::new(
-        &goals,
-        store,
-        Hypothesis::None,
-        None,
-        &state,
-    );
-
-    let mut proofs = 0;
-    for _ in proof {
-        proofs += 1;
-    }
-    assert!(proofs > 0);
-}
-
-#[test]
-fn mtg(){
-    let state = setup("./examples/mtg/mtg_fragment");
-
-    let prog = DynamicProgram::new(Hypothesis::None, state.program.read().unwrap());
-
-    let (goals, store) = make_goals(&state, "test.");
-
-    let proof = Proof::new(
-        &goals,
-        store,
-        Hypothesis::None,
-        None,
-        &state,
-    );
-
-    let mut proofs = 0;
-    for _ in proof {
-        proofs += 1;
-    }
-    assert!(proofs > 0);
-}
-
-// #[test]
-// fn move_up(){
-//     let mut state = State::new(Some(
-//         Config::new().max_h_clause(0).max_h_preds(0).debug(true).max_depth(10),
-//     ));
-
-//     state.load_file("./examples/move_up");
-
-//     state.prog.print_prog(&state.heap);
-
-//     let goals: Vec<usize> = parse_goals(&tokenise("move_up([1,5],[1,6])."))
-//     .unwrap()
-//     .into_iter()
-//     .map(|t| t.build_on_heap(&mut state.heap, &mut HashMap::new()))
-//     .collect();
-
-//     let proof = Proof::new(&goals, &mut state);
-
-//     let mut proofs = 0;
-//     for branch in proof {
-//         proofs += 1;
-//     }
-
-//     assert!(proofs > 0);
-// }

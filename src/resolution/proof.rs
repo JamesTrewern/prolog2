@@ -56,15 +56,12 @@ impl Env {
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
     ) {
-        // eprintln!("Get choices for: {}", heap.term_string(self.goal));
-
         self.got_choices = true;
         let (symbol, arity) = heap.str_symbol_arity(self.goal);
 
         self.choices = hypothesis.iter().map(|clause| clause.clone()).collect();
 
         if symbol == 0 {
-            // eprintln!("Variable symbol body and meta");
             self.choices.extend(
                 predicate_table
                     .get_body_clauses(arity)
@@ -81,12 +78,10 @@ impl Env {
                     self.pred_function = Some(pred_function)
                 }
                 Some(Predicate::Clauses(clauses)) => {
-                    // eprintln!("Kown symbol get hypothesis and predicate table");
                     self.choices.extend(clauses.iter().map(|c| c.clone()));
                     self.total_choice_count = self.choices.len();
                 }
                 None => {
-                    // eprintln!("Unkown symbol get hypothesis variable clauses");
                     if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
                         self.choices.extend(clauses.iter().map(|c| c.clone()));
                         self.total_choice_count = self.choices.len();
@@ -102,19 +97,24 @@ impl Env {
         heap: &mut QueryHeap,
         h_clauses: &mut usize,
         invented_preds: &mut usize,
+        debug: bool,
     ) -> usize {
-        eprintln!(
-            "[UNDO_TRY] goal={} addr={}",
-            heap.term_string(self.goal),
-            self.goal
-        );
+        if debug {
+            eprintln!(
+                "[UNDO_TRY] goal={} addr={}",
+                heap.term_string(self.goal),
+                self.goal
+            );
+        }
         if self.new_clause {
             let clause = hypothesis.pop_clause();
-            eprintln!(
-                "[UNDO_CLAUSE] depth={} clause={}",
-                self.depth,
-                clause.to_string(heap)
-            );
+            if debug {
+                eprintln!(
+                    "[UNDO_CLAUSE] depth={} clause={}",
+                    self.depth,
+                    clause.to_string(heap)
+                );
+            }
             *h_clauses -= 1;
             self.new_clause = false;
             if self.invent_pred {
@@ -133,20 +133,18 @@ impl Env {
         allow_new_clause: bool,
         allow_new_pred: bool,
         config: Config,
+        debug: bool,
     ) -> Option<Vec<Env>> {
         if self.depth > config.max_depth {
-            eprintln!(
-                "[FAIL_ON_DEPTH] depth={} goal={}",
-                self.depth,
-                heap.term_string(self.goal),
-            );
+            if debug {
+                eprintln!(
+                    "[FAIL_ON_DEPTH] depth={} goal={}",
+                    self.depth,
+                    heap.term_string(self.goal),
+                );
+            }
             return None;
         }
-        // eprintln!(
-        //     "[TRY_START] goal={} choices.len()={}",
-        //     heap.term_string(self.goal),
-        //     self.choices.len()
-        // );
 
         if let Some(pred_function) = self.pred_function {
             match pred_function(heap, hypothesis, self.goal) {
@@ -176,14 +174,6 @@ impl Env {
                 }
             }
 
-            // Debug: show what we're trying
-            // eprintln!(
-            //     "[CALL] depth={} goal={} clause={}",
-            //     self.depth,
-            //     heap.term_string(self.goal),
-            //     clause.to_string(heap)
-            // );
-
             if let Some(mut substitution) = unify(heap, head, self.goal) {
                 for constraints in &hypothesis.constraints {
                     if !substitution.check_constraints(&constraints, heap) {
@@ -191,13 +181,15 @@ impl Env {
                     }
                 }
 
-                eprintln!(
-                    "[MATCH] depth={} goal={} clause={}, choices_remaining={}",
-                    self.depth,
-                    heap.term_string(self.goal),
-                    clause.to_string(heap),
-                    self.choices.len()
-                );
+                if debug {
+                    eprintln!(
+                        "[MATCH] depth={} goal={} clause={}, choices_remaining={}",
+                        self.depth,
+                        heap.term_string(self.goal),
+                        clause.to_string(heap),
+                        self.choices.len()
+                    );
+                }
 
                 re_build_bound_arg_terms(heap, &mut substitution);
 
@@ -241,25 +233,31 @@ impl Env {
                     }
 
                     let new_clause = Clause::new(new_clause_literals, None);
-                    eprintln!(
-                        "[ADD_CLAUSE] depth={} goal={} clause={}",
-                        self.depth,
-                        heap.term_string(self.goal),
-                        new_clause.to_string(heap)
-                    );
-                    if invented_pred_addr.is_some() {
+                    if debug {
                         eprintln!(
-                            "[INVENT_PRED] invented predicate for goal={}",
-                            heap.term_string(self.goal)
+                            "[ADD_CLAUSE] depth={} goal={} clause={}",
+                            self.depth,
+                            heap.term_string(self.goal),
+                            new_clause.to_string(heap)
                         );
+                        if invented_pred_addr.is_some() {
+                            eprintln!(
+                                "[INVENT_PRED] invented predicate for goal={}",
+                                heap.term_string(self.goal)
+                            );
+                        }
                     }
                     hypothesis.push_clause(new_clause, heap, constraints.into());
-                    eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
+                    if debug {
+                        eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
+                    }
                 }
 
                 self.bindings = substitution.get_bindings();
                 self.children = new_goals.len();
-                eprintln!("Bindings: {:?}", self.bindings);
+                if debug {
+                    eprintln!("Bindings: {:?}", self.bindings);
+                }
                 heap.bind(&self.bindings);
 
                 return Some(
@@ -270,13 +268,15 @@ impl Env {
                 );
             }
         }
-        eprintln!(
-            "[NO_MATCH] depth={} goal={} tried {} choices, Originally had {} choices",
-            self.depth,
-            heap.term_string(self.goal),
-            choices_tried,
-            self.total_choice_count
-        );
+        if debug {
+            eprintln!(
+                "[NO_MATCH] depth={} goal={} tried {} choices, Originally had {} choices",
+                self.depth,
+                heap.term_string(self.goal),
+                choices_tried,
+                self.total_choice_count
+            );
+        }
         None
     }
 }
@@ -307,18 +307,20 @@ impl<'a> Proof<'a> {
         }
     }
 
-    pub fn prove(&mut self, predicate_table: Arc<PredicateTable>, config: Config) -> bool {
+    pub fn prove(&mut self, predicate_table: Arc<PredicateTable>, config: Config, debug: bool) -> bool {
         // Handle restart after previous success
         if self.pointer == self.stack.len() {
-            eprintln!(
-                "[RESTART] pointer={} stack_len={} h_clauses={}",
-                self.pointer,
-                self.stack.len(),
-                self.h_clauses
-            );
-            eprintln!("[RESTART_HYPOTHESIS]");
-            for (i, c) in self.hypothesis.iter().enumerate() {
-                eprintln!("  [{}]: {}", i, c.to_string(&self.heap));
+            if debug {
+                eprintln!(
+                    "[RESTART] pointer={} stack_len={} h_clauses={}",
+                    self.pointer,
+                    self.stack.len(),
+                    self.h_clauses
+                );
+                eprintln!("[RESTART_HYPOTHESIS]");
+                for (i, c) in self.hypothesis.iter().enumerate() {
+                    eprintln!("  [{}]: {}", i, c.to_string(&self.heap));
+                }
             }
 
             self.pointer -= 1;
@@ -327,27 +329,32 @@ impl<'a> Proof<'a> {
                 &mut self.heap,
                 &mut self.h_clauses,
                 &mut self.invented_preds,
+                debug,
             );
         }
 
         while self.pointer < self.stack.len() {
             if self.stack[self.pointer].got_choices {
-                eprintln!(
-                    "[RETRY] goal={} addr={}",
-                    self.heap.term_string(self.stack[self.pointer].goal),
-                    self.stack[self.pointer].goal
-                );
+                if debug {
+                    eprintln!(
+                        "[RETRY] goal={} addr={}",
+                        self.heap.term_string(self.stack[self.pointer].goal),
+                        self.stack[self.pointer].goal
+                    );
+                }
             } else {
                 self.stack[self.pointer].get_choices(
                     &mut self.heap,
                     &mut self.hypothesis,
                     &predicate_table,
                 );
-                eprintln!(
-                    "[TRY] goal={} addr={}",
-                    self.heap.term_string(self.stack[self.pointer].goal),
-                    self.stack[self.pointer].goal
-                );
+                if debug {
+                    eprintln!(
+                        "[TRY] goal={} addr={}",
+                        self.heap.term_string(self.stack[self.pointer].goal),
+                        self.stack[self.pointer].goal
+                    );
+                }
             }
             match self.stack[self.pointer].try_choices(
                 &mut self.heap,
@@ -355,6 +362,7 @@ impl<'a> Proof<'a> {
                 self.h_clauses < config.max_clause,
                 self.invented_preds < config.max_pred,
                 config,
+                debug,
             ) {
                 Some(new_goals) => {
                     if self.stack[self.pointer].new_clause {
@@ -368,24 +376,28 @@ impl<'a> Proof<'a> {
                 }
                 None => {
                     if self.pointer == 0 {
-                        eprintln!("[FAILED] First goal exhausted");
-                        eprintln!("[FAILED_HYPOTHESIS]");
-                        for (i, c) in self.hypothesis.iter().enumerate() {
-                            eprintln!("  [{}]: {}", i, c.to_string(&self.heap));
+                        if debug {
+                            eprintln!("[FAILED] First goal exhausted");
+                            eprintln!("[FAILED_HYPOTHESIS]");
+                            for (i, c) in self.hypothesis.iter().enumerate() {
+                                eprintln!("  [{}]: {}", i, c.to_string(&self.heap));
+                            }
                         }
                         return false;
                     }
-                    // NEW: If the goal we're backtracking FROM is a root goal, reset its got_choices
-                    if self.stack[self.pointer].depth == 0 {
-                        self.stack[self.pointer].got_choices = false;
-                        self.stack[self.pointer].choices.clear();
-                    }
+                    // Reset got_choices for the goal we're backtracking FROM
+                    // This ensures if we reach this goal again via a different proof path,
+                    // it will get fresh choices based on the new hypothesis state
+                    self.stack[self.pointer].got_choices = false;
+                    self.stack[self.pointer].choices.clear();
+                    
                     self.pointer -= 1;
                     let children = self.stack[self.pointer].undo_try(
                         &mut self.hypothesis,
                         &mut self.heap,
                         &mut self.h_clauses,
                         &mut self.invented_preds,
+                        debug,
                     );
                     self.stack
                         .drain((self.pointer + 1)..(self.pointer + 1 + children));
