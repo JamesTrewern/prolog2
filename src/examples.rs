@@ -3,16 +3,11 @@
 use std::{fs, sync::Arc};
 
 use crate::{
-    heap::{heap::Cell, query_heap::QueryHeap, symbol_db::SymbolDB},
-    parser::{
+    BodyClause, Config, Examples, SetUp, heap::{heap::Cell, query_heap::QueryHeap, symbol_db::SymbolDB}, parser::{
         build_tree::TokenStream,
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
-    },
-    predicate_modules::{load_predicate_module, MATHS},
-    program::predicate_table::PredicateTable,
-    resolution::proof::Proof,
-    BodyClause, Config, Examples, SetUp,
+    }, predicate_modules::load_all_modules, program::predicate_table::PredicateTable, resolution::proof::Proof
 };
 
 /// Load a .pl file into the predicate table and heap
@@ -31,8 +26,7 @@ fn load_setup(config_path: &str) -> (Config, PredicateTable, Vec<Cell>, Option<E
     let mut heap = Vec::new();
     let mut predicate_table = PredicateTable::new();
 
-    // Initialize and load maths module
-    load_predicate_module(&mut predicate_table, &MATHS);
+    load_all_modules(&mut predicate_table);
 
     let setup: SetUp = serde_json::from_str(
         &fs::read_to_string(config_path)
@@ -67,6 +61,7 @@ fn build_goals(query_text: &str, query_heap: &mut QueryHeap) -> Vec<usize> {
     };
 
     let clause = build_clause(literals, None, query_heap, true);
+    println!("{}",clause.to_string(query_heap));
     clause.iter().cloned().collect()
 }
 
@@ -99,18 +94,13 @@ fn ancestor() {
     let heap = Arc::new(heap);
 
     // Run positive examples
-    if let Some(Examples { pos, neg: _ }) = examples {
-        // Combine positive examples into a single query
-        let mut query = String::new();
-        for example in &pos {
-            if !query.is_empty() {
-                query += ",";
-            }
-            query += example;
-        }
-        query += ".";
-
-        let (success, solutions) = run_query(&query, predicate_table.clone(), heap.clone(), config);
+    if let Some(examples) = examples {
+        let (success, solutions) = run_query(
+            &examples.to_query(),
+            predicate_table.clone(),
+            heap.clone(),
+            config,
+        );
 
         println!(
             "Ancestor test: success={}, solutions={}",
@@ -124,27 +114,19 @@ fn ancestor() {
 
 #[test]
 fn map() {
-    // Initialize symbol database
-    // SymbolDB::new();
-
     let (config, predicate_table, heap, examples) = load_setup("examples/map/config.json");
 
     let predicate_table = Arc::new(predicate_table);
     let heap = Arc::new(heap);
 
     // Run positive examples
-    if let Some(Examples { pos, neg: _ }) = examples {
-        // Combine positive examples into a single query
-        let mut query = String::new();
-        for example in &pos {
-            if !query.is_empty() {
-                query += ",";
-            }
-            query += example;
-        }
-        query += ".";
-
-        let (success, solutions) = run_query(&query, predicate_table.clone(), heap.clone(), config);
+    if let Some(examples) = examples {
+        let (success, solutions) = run_query(
+            &examples.to_query(),
+            predicate_table.clone(),
+            heap.clone(),
+            config,
+        );
 
         println!("Map test: success={}, solutions={}", success, solutions);
         assert!(success, "Expected at least one solution for map test");
@@ -153,4 +135,26 @@ fn map() {
     }
 }
 
+#[test]
+fn odd_even() {
+    let (config, predicate_table, heap, examples) = load_setup("examples/odd_even/config.json");
 
+    let predicate_table = Arc::new(predicate_table);
+    let heap = Arc::new(heap);
+
+    if let Some(examples) = examples {
+        let (success, solutions) = run_query(
+            &examples.to_query(),
+            predicate_table.clone(),
+            heap.clone(),
+            config,
+        );
+        println!(
+            "Odd Even test: success={}, solutions={}",
+            success, solutions
+        );
+        assert!(success, "Expected at least one solution for map test");
+    } else {
+        panic!("No examples in map config");
+    }
+}

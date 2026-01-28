@@ -1,17 +1,17 @@
 {
     "config" : {
-        "max_depth": 10,
-        "max_clause": 4,
+        "max_depth": 6,
+        "max_clause": 3,
         "max_pred": 1,
-        "debug": false
+        "debug": true
     },
     "body_predicates" : [
         {"symbol" : "zero", "arity": 1},
         {"symbol" : "prev", "arity": 2}
     ],
     "examples" : {
-        "pos" : ["even(4)", "not(even(3))"],
-        "neg" : []
+        "pos" : ["even(4)"],
+        "neg" : ["even(3)"]
     },
-    "files" : ["examples/ancestor/ancestor.pl"]
+    "files" : ["examples/odd_even/odd_even.pl"]
 }

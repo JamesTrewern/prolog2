@@ -13,5 +13,5 @@
         "pos" : ["ancestor(ken,james)", "ancestor(christine,james)"],
         "neg" : []
     },
-    "files" : ["examples/ancestor/ancestor.pl"]
+    "files" : ["examples/ancestor/family.pl"]
 }

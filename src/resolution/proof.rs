@@ -165,6 +165,13 @@ impl Env {
         let mut choices_tried = 0;
 
         'choices: while let Some(clause) = self.choices.pop() {
+            if debug{
+                eprintln!(
+                        "[CALL] {}",
+                        clause.to_string(heap)
+                    );
+            }
+            
             choices_tried += 1;
             let head = clause.head();
 
@@ -309,6 +316,20 @@ impl Proof {
         }
     }
 
+    /// Create a new proof with an existing hypothesis (for negation-as-failure checks)
+    pub fn with_hypothesis(heap: QueryHeap, goals: &[usize], hypothesis: Hypothesis) -> Self {
+        let h_clauses = hypothesis.len();
+        let stack = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
+        Proof {
+            stack,
+            pointer: 0,
+            hypothesis,
+            heap,
+            h_clauses,
+            invented_preds: 0,
+        }
+    }
+
     pub fn prove(
         &mut self,
         predicate_table: Arc<PredicateTable>,
@@ -385,10 +406,6 @@ impl Proof {
                     if self.pointer == 0 {
                         if config.debug {
                             eprintln!("[FAILED] First goal exhausted");
-                            eprintln!("[FAILED_HYPOTHESIS]");
-                            for (i, c) in self.hypothesis.iter().enumerate() {
-                                eprintln!("  [{}]: {}", i, c.to_string(&self.heap));
-                            }
                         }
                         return false;
                     }

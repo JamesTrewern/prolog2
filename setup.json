@@ -1,15 +1,17 @@
 {
     "config" : {
-        "max_depth": 7,
-        "max_clause": 4,
+        "max_depth": 6,
+        "max_clause": 3,
         "max_pred": 1,
-        "debug": false
+        "debug": true
     },
-
-    "body_predicates" : [{"symbol" : "dad", "arity": 2},{"symbol" : "mum", "arity": 2}],
+    "body_predicates" : [
+        {"symbol" : "zero", "arity": 1},
+        {"symbol" : "prev", "arity": 2}
+    ],
     "examples" : {
-        "pos" : ["ancestor(ken,james)", "ancestor(christine,james)"],
-        "neg" : []
+        "pos" : ["even(4)"],
+        "neg" : ["even(3)"]
     },
-    "files" : ["examples/ancestor/family.pl"]
+    "files" : ["examples/odd_even/odd_even.pl"]
 }

@@ -27,7 +27,7 @@ use crate::{
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
     },
-    predicate_modules::{load_predicate_module, MATHS, META_PREDICATES},
+    predicate_modules::load_all_modules,
     program::predicate_table::PredicateTable,
     resolution::proof::Proof,
 };
@@ -59,6 +59,22 @@ struct SetUp {
     pub body_predicates: Vec<BodyClause>,
     pub files: Vec<String>,
     pub examples: Option<Examples>,
+}
+
+impl Examples {
+    pub fn to_query(&self) -> String{
+        let mut buffer = String::new();
+        for pos_ex in &self.pos{
+            buffer += pos_ex;
+            buffer += ",";
+        }
+        for neg_ex in &self.neg{
+            buffer += &format!("not({neg_ex}),");
+        }
+        buffer.pop();
+        buffer += ".";
+        buffer
+    }
 }
 
 fn continue_proof(auto: bool) -> bool {
@@ -140,8 +156,7 @@ fn load_setup() -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
     let mut heap = Vec::new();
     let mut predicate_table = PredicateTable::new();
 
-    load_predicate_module(&mut predicate_table, &MATHS);
-    load_predicate_module(&mut predicate_table, &META_PREDICATES);
+    load_all_modules(&mut predicate_table);
 
     let setup: SetUp = serde_json::from_str(&fs::read_to_string("setup.json").unwrap()).unwrap();
     // println!("{setup:?}");
@@ -210,18 +225,8 @@ fn main() -> ExitCode {
     let heap = Arc::new(heap);
 
     match examples {
-        Some(Examples { pos, neg }) => {
-            let mut buffer = String::new();
-            for example in pos {
-                buffer += &example;
-                buffer += ",";
-            }
-            for example in neg {
-                buffer += &format!("not({example}),");
-            }
-            buffer.pop();
-            buffer += ".";
-            start_query(&buffer, predicate_table, heap, config, auto).unwrap();
+        Some(examples) => {
+            start_query(&examples.to_query(), predicate_table, heap, config, auto).unwrap();
             ExitCode::SUCCESS
         }
         None => main_loop(config, predicate_table, heap),

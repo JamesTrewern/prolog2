@@ -9,6 +9,7 @@ use super::clause::Clause;
 
 pub type Constraints = Arc<[usize]>;
 
+#[derive(Clone)]
 pub struct Hypothesis {
     clauses: Vec<Clause>,
     pub constraints: Vec<Constraints>,

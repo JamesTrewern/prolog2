@@ -1,6 +1,13 @@
-use std::{mem, ops::{Index, IndexMut, Range}, sync::{Arc, atomic::{AtomicUsize,Ordering::Acquire} }};
-use fsize::fsize;
 use crate::heap::{heap::Tag, symbol_db::SymbolDB};
+use fsize::fsize;
+use std::{
+    mem,
+    ops::{Index, IndexMut, Range},
+    sync::{
+        atomic::{AtomicUsize, Ordering::Acquire},
+        Arc,
+    },
+};
 
 use super::heap::{Cell, Heap};
 
@@ -14,11 +21,8 @@ pub struct QueryHeap {
     root: Option<*const QueryHeap>,
 }
 
-impl  QueryHeap  {
-    pub fn new(
-        prog_cells: Arc<Vec<Cell>>,
-        root: Option<*const QueryHeap>
-    ) -> QueryHeap  {
+impl QueryHeap {
+    pub fn new(prog_cells: Arc<Vec<Cell>>, root: Option<*const QueryHeap>) -> QueryHeap {
         let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
         QueryHeap {
             id,
@@ -28,28 +32,27 @@ impl  QueryHeap  {
         }
     }
 
-    pub fn branch(&self, count: usize) -> Vec<QueryHeap>{
+    pub fn branch(&self, count: usize) -> Vec<QueryHeap> {
         let mut branch_heap = Vec::with_capacity(count);
-        for _ in 0..count{
+        for _ in 0..count {
             branch_heap.push(QueryHeap::new(self.prog_cells.clone(), Some(self)));
         }
         branch_heap
     }
 }
 
-impl  Heap for QueryHeap  {
-    fn heap_push(&mut self, cell: Cell) -> usize{
+impl Heap for QueryHeap {
+    fn heap_push(&mut self, cell: Cell) -> usize {
         let i = self.heap_len();
         self.cells.push(cell);
         i
     }
 
     fn heap_len(&self) -> usize {
-        match self.root{
-            Some(root) => self.prog_cells.len() + unsafe{&*root}.heap_len() + self.cells.len(),
+        match self.root {
+            Some(root) => unsafe { &*root }.heap_len() + self.cells.len(),
             None => self.prog_cells.len() + self.cells.len(),
         }
-        
     }
 
     fn get_id(&self) -> usize {
@@ -70,17 +73,18 @@ impl  Heap for QueryHeap  {
                 None => format!("Arg_{}", self[addr].1),
             },
             Tag::Ref => {
-                let id = if addr < self.prog_cells.len(){
+                let id = if addr < self.prog_cells.len() {
                     0
-                }else{
+                } else {
                     self.id
                 };
                 // println!("Used id {id}, addr: {addr}");
                 // SymbolDB::_see_var_map();
                 match SymbolDB::get_var(self.deref_addr(addr), id).to_owned() {
-                Some(symbol) => symbol.to_string(),
-                None => format!("Ref_{}", self[addr].1),
-            }},
+                    Some(symbol) => symbol.to_string(),
+                    None => format!("Ref_{}", self[addr].1),
+                }
+            }
             Tag::Int => {
                 let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
                 format!("{value}")
@@ -97,43 +101,62 @@ impl  Heap for QueryHeap  {
     }
 }
 
-impl  Index<usize> for QueryHeap  {
+impl Index<usize> for QueryHeap {
     type Output = Cell;
 
     fn index(&self, index: usize) -> &Self::Output {
         if index < self.prog_cells.len() {
             &self.prog_cells[index]
-        } else if self.root.is_none() {
-            &self.cells[index - self.prog_cells.len()]
-        } else{
-            todo!("Handle Branching heap")
+        } else {
+            if let Some(root) = self.root {
+                let root = unsafe { &*root };
+                if index < root.heap_len() {
+                    // Index is in root's query cells
+                    &root[index]
+                } else {
+                    // Index is in our own cells
+                    &self.cells[index - root.heap_len()]
+                }
+            } else {
+                &self.cells[index - self.prog_cells.len()]
+            }
         }
     }
 }
 
-impl  IndexMut<usize> for QueryHeap  {
+impl IndexMut<usize> for QueryHeap {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         if index < self.prog_cells.len() {
             panic!("Can't get mutable reference to program heap cell");
-        } else if self.root.is_none(){
-            &mut self.cells[index - self.prog_cells.len()]
-        } else{
-            todo!("Handle Branching heap")
+        } else {
+            if let Some(root) = self.root {
+                let root = unsafe { &*root };
+                let root_heap_len = root.heap_len(); // prog_cells.len() + root.cells.len()
+                if index < root_heap_len {
+                    // Index is in root's query cells - deny mutable access
+                    panic!("Can't get mutable reference to root heap cell");
+                } else {
+                    // Index is in our own cells
+                    &mut self.cells[index - root_heap_len]
+                }
+            } else {
+                &mut self.cells[index - self.prog_cells.len()]
+            }
         }
     }
 }
 
-impl  Index<Range<usize>> for QueryHeap {
+impl Index<Range<usize>> for QueryHeap {
     type Output = [Cell];
 
     fn index(&self, index: Range<usize>) -> &Self::Output {
         let len = self.prog_cells.len();
-        
-        if index.start < len && index.end < len{
+
+        if index.start < len && index.end < len {
             &self.prog_cells[index]
-        }else if index.start >= len && self.root.is_none(){
-            &self.cells[index.start - len .. index.end - len]
-        }else{
+        } else if index.start >= len && self.root.is_none() {
+            &self.cells[index.start - len..index.end - len]
+        } else {
             panic!("Range splits static and mutable heap")
         }
     }

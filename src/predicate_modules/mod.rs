@@ -53,8 +53,16 @@ pub fn load_predicate_module(
 }
 
 /// Math predicates module
-pub static MATHS: PredicateModule = &[
+static MATHS: PredicateModule = &[
     ("is", 2, maths::is_pred),
 ];
 
-pub static META_PREDICATES: PredicateModule = &[("not", 1, meta_predicates::not)];
+static META_PREDICATES: PredicateModule = &[("not", 1, meta_predicates::not)];
+
+/// Load all predicate modules into the predicate table.
+/// Add any new predicate modules here to ensure they are loaded consistently
+/// across main.rs and test examples.
+pub fn load_all_modules(predicate_table: &mut PredicateTable) {
+    load_predicate_module(predicate_table, &MATHS);
+    load_predicate_module(predicate_table, &META_PREDICATES);
+}

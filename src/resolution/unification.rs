@@ -8,7 +8,7 @@ use crate::heap::heap::{Heap, Tag};
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
     arg_regs: [usize; 32],
-    binding_array: [(usize, usize, bool); 32],
+    binding_array: [(usize, usize, bool); 32], //(From, To, Complex)
     binding_len: usize,
 }
 
@@ -175,9 +175,8 @@ fn unify_rec(
             Some(binding.push((addr_2, addr_1, true)))
         }
         (_, Tag::Ref) => Some(binding.push((addr_2, addr_1, false))),
-        (Tag::Con, Tag::Con) if heap[addr_1].1 == heap[addr_2].1 => Some(binding),
-        (Tag::Func, Tag::Func) => unify_func_or_tup(heap, binding, addr_1, addr_2),
-        (Tag::Tup, Tag::Tup) => unify_func_or_tup(heap, binding, addr_1, addr_2),
+        (Tag::Con, Tag::Con)|(Tag::Int, Tag::Int)|(Tag::Flt, Tag::Flt) if heap[addr_1].1 == heap[addr_2].1 => Some(binding),
+        (Tag::Func, Tag::Func)|(Tag::Tup, Tag::Tup) => unify_func_or_tup(heap, binding, addr_1, addr_2),
         (Tag::Set, Tag::Set) => unfiy_set(heap, binding, addr_1, addr_2),
         (Tag::Lis, Tag::Lis) => unify_list(heap, binding, addr_1, addr_2),
         (Tag::ELis, Tag::ELis) => Some(binding),
@@ -227,11 +226,12 @@ fn unify_list(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::Substitution;
     use crate::{
         heap::{
-            heap::Tag,
-            symbol_db::SymbolDB,
+            heap::Tag, query_heap::QueryHeap, symbol_db::SymbolDB
         },
         resolution::unification::{unify, unify_rec},
     };
@@ -516,5 +516,20 @@ mod tests {
         let binding = unify(&heap, 0, 7).unwrap();
         assert_eq!(binding.get_arg(0), Some(20));
         assert_eq!(binding.bound(11), Some(4));
+    }
+
+    #[test]
+    fn integers(){
+        let prev = SymbolDB::set_const("prev".to_string());
+        let heap = vec![(Tag::Func,3),(Tag::Con,prev),(Tag::Int,4),(Tag::Int,3)];
+        let mut heap = QueryHeap::new(Arc::new(heap), None);
+        //possible failure to deref before comparing numbers
+        heap.cells.extend(vec![
+            (Tag::Func, 3),(Tag::Ref, 5), (Tag::Int, 4), (Tag::Ref, 7)
+        ]);
+
+        let binding = unify(&heap, 0, 4).unwrap();
+        assert_eq!(binding.bound(5),Some(1));
+        assert_eq!(binding.bound(7),Some(3));
     }
 }
