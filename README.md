@@ -12,11 +12,11 @@ We must define which variables will remain as variables when a new clause is cre
 We define these universally quantified variables using curly braces like so:  `{X,Y}` 
 
 ```prolog
-P(X,Y):- Q(X,Y) {P,Q}. %Identity
+P(X,Y):- Q(X,Y), {P,Q}. %Identity
 
-P(X,Y):- Q(X,Z), R(Z,Y) {P,Q,R}. %Chain
+P(X,Y):- Q(X,Z), R(Z,Y), {P,Q,R}. %Chain
 
-P(X,Y):- Q(X,Z), P(Z,Y) {P,Q}. %Tail Recursion
+P(X,Y):- Q(X,Z), P(Z,Y), {P,Q}. %Tail Recursion
 ```
 
 
@@ -25,19 +25,19 @@ for example, we can introduce certain constant predicate symbols either in the h
 We can also create second-order clauses with only constant predicate symbols but existentially and universally quantified variables to denote the introduction of some constants
 
 ``` prolog
-p(X,Y):- Q(X), R(Y) {Q,R}.
+p(X,Y):- Q(X), R(Y), {Q,R}.
 
-P(X,Y):- q(X,Y), R(Y) {P,R}.
+P(X,Y):- q(X,Y), R(Y), {P,R}.
 
-p(X,Y):- q(X,Z) {Z}. %matching with this clause will create a new clause where Z is a constant
+p(X,Y):- q(X,Z), {Z}. %matching with this clause will create a new clause where Z is a constant
 ```
 
 This can even be extended to using infix operators in second-order clauses
 
 ``` prolog
-P(X,Y):- X > Y, Q(Y) {P,Q}.
+P(X,Y):- X > Y, Q(Y), {P,Q}.
 
-P(X,Y):- Z is X + Y, Q(Z) {P,Q}.
+P(X,Y):- Z is X + Y, Q(Z), {P,Q}.
 ```
 
 # Example usage
@@ -118,7 +118,7 @@ Configured in setup.json:
 # Step by Step Demonstration of New Clause Generation
 
 1. First, we define a higher-order clause in our program
-        `P(X,Y):-Q(X,Y) {X}`
+        `P(X,Y):-Q(X,Y), {X}`
 2. Next, the prover reaches some goal that can match with the higher-order clause
         `p(a,b)`
 3. This creates the binding 
