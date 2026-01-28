@@ -75,8 +75,8 @@ impl  Heap for QueryHeap  {
                 }else{
                     self.id
                 };
-                println!("Used id {id}, addr: {addr}");
-                SymbolDB::_see_var_map();
+                // println!("Used id {id}, addr: {addr}");
+                // SymbolDB::_see_var_map();
                 match SymbolDB::get_var(self.deref_addr(addr), id).to_owned() {
                 Some(symbol) => symbol.to_string(),
                 None => format!("Ref_{}", self[addr].1),
