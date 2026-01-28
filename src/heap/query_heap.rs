@@ -1,4 +1,6 @@
-use std::{ops::{Index, IndexMut, Range}, sync::{atomic::{AtomicUsize,Ordering::Acquire}, Arc, }};
+use std::{mem, ops::{Index, IndexMut, Range}, sync::{Arc, atomic::{AtomicUsize,Ordering::Acquire} }};
+use fsize::fsize;
+use crate::heap::{heap::Tag, symbol_db::SymbolDB};
 
 use super::heap::{Cell, Heap};
 
@@ -52,6 +54,46 @@ impl  Heap for QueryHeap  {
 
     fn get_id(&self) -> usize {
         self.id
+    }
+
+    /** Create String to represent cell, can be recursively used to format complex structures or list */
+    fn term_string(&self, addr: usize) -> String {
+        // println!("[{addr}]:{:?}", self[addr]);
+        let addr = self.deref_addr(addr);
+        match self[addr].0 {
+            Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
+            Tag::Func => self.func_string(addr),
+            Tag::Lis => self.list_string(addr),
+            Tag::ELis => "[]".into(),
+            Tag::Arg => match SymbolDB::get_var(addr, self.get_id()) {
+                Some(symbol) => symbol.to_string(),
+                None => format!("Arg_{}", self[addr].1),
+            },
+            Tag::Ref => {
+                let id = if addr < self.prog_cells.len(){
+                    0
+                }else{
+                    self.id
+                };
+                println!("Used id {id}, addr: {addr}");
+                SymbolDB::_see_var_map();
+                match SymbolDB::get_var(self.deref_addr(addr), id).to_owned() {
+                Some(symbol) => symbol.to_string(),
+                None => format!("Ref_{}", self[addr].1),
+            }},
+            Tag::Int => {
+                let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
+                format!("{value}")
+            }
+            Tag::Flt => {
+                let value: fsize = unsafe { mem::transmute_copy(&self[addr].1) };
+                format!("{value}")
+            }
+            Tag::Tup => self.tuple_string(addr),
+            Tag::Set => self.set_string(addr),
+            Tag::Str => self.term_string(self[addr].1),
+            Tag::Stri => SymbolDB::get_string(self[addr].1).to_string(),
+        }
     }
 }
 
