@@ -1,4 +1,4 @@
-use std::{mem, sync::Arc};
+use std::sync::Arc;
 
 use super::PredReturn;
 use crate::{Config, heap::{
@@ -39,8 +39,8 @@ impl Number {
 
     fn to_cell(&self) -> Cell {
         match self {
-            Number::Flt(value) => (Tag::Flt, unsafe { mem::transmute(*value) }),
-            Number::Int(value) => (Tag::Int, unsafe { mem::transmute(*value) }),
+            Number::Flt(value) => (Tag::Flt, f64::to_bits(*value) as usize ),
+            Number::Int(value) => (Tag::Int, isize::cast_unsigned(*value) ),
         }
     }
 
@@ -197,7 +197,7 @@ fn to_degrees(addr: usize, heap: &QueryHeap) -> Number {
 
 fn evaluate_str(addr: usize, heap: &QueryHeap) -> Number {
     let symbol = heap[addr + 1].1;
-    for (id, funct) in unsafe { FUNCTIONS.iter() } {
+    for (id, funct) in FUNCTIONS.iter() {
         if *id == symbol {
             return funct(addr, heap);
         }
@@ -210,8 +210,16 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Number {
     match heap[addr] {
         (Tag::Func, _) => evaluate_str(addr, heap),
         (Tag::Str, ptr) => evaluate_str(ptr, heap),
-        (Tag::Int, value) => Number::Int(unsafe { mem::transmute(value) }),
-        (Tag::Flt, value) => Number::Flt(unsafe { mem::transmute(value) }),
+        (Tag::Int, value) => Number::Int(usize::cast_signed(value)),
+        (Tag::Flt, value) => {
+            #[cfg(target_pointer_width = "32")]
+            let float_value = fsize::from_bits(value as u32);
+
+            #[cfg(target_pointer_width = "64")]
+            let float_value = fsize::from_bits(value as u64);
+
+            Number::Flt(float_value)
+        },
         _ => panic!(
             "{:?} : {} not a valid mathematical expression",
             heap[addr],
@@ -221,7 +229,7 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Number {
 }
 
 /// is/2 predicate: evaluates RHS and unifies with LHS
-pub fn is_pred(heap: &mut QueryHeap, _hypothesis: &mut Hypothesis, goal: usize, pred_table: Arc<PredicateTable>, config: Config) -> PredReturn {
+pub fn is_pred(heap: &mut QueryHeap, _hypothesis: &mut Hypothesis, goal: usize, _pred_table: Arc<PredicateTable>, _config: Config) -> PredReturn {
     // Goal structure: Func(3) | Con("is") | LHS | RHS
     let goal_addr = heap.deref_addr(goal);
     let func_addr = match heap[goal_addr] {

@@ -2,20 +2,14 @@
 
 use std::{fs, sync::Arc};
 
-use serde::{Deserialize, Serialize};
-
 use crate::{
-    heap::{
-        heap::{Cell, Heap},
-        query_heap::QueryHeap,
-        symbol_db::SymbolDB,
-    },
+    heap::{heap::Cell, query_heap::QueryHeap, symbol_db::SymbolDB},
     parser::{
         build_tree::TokenStream,
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
     },
-    predicate_modules::{load_predicate_module, maths, MATHS},
+    predicate_modules::{load_predicate_module, MATHS},
     program::predicate_table::PredicateTable,
     resolution::proof::Proof,
     BodyClause, Config, Examples, SetUp,
@@ -86,20 +80,13 @@ fn run_query(
     let mut query_heap = QueryHeap::new(heap, None);
     let goals = build_goals(query_text, &mut query_heap);
 
-    let mut proof = Proof::new(query_heap, &goals, config);
+    let mut proof = Proof::new(query_heap, &goals);
     let mut solutions = 0;
 
-    while proof.prove(predicate_table.clone(), config, config.debug) {
+    while proof.prove(predicate_table.clone(), config) {
         solutions += 1;
         // Continue to find more solutions (backtrack)
     }
-
-    // if proof.prove(predicate_table.clone(), config, config.debug) {
-    //     solutions = 1;
-    //     if proof.prove(predicate_table.clone(), config, config.debug) {
-    //         solutions = 2;
-    //     }
-    // }
 
     (solutions > 0, solutions)
 }
@@ -112,7 +99,7 @@ fn ancestor() {
     let heap = Arc::new(heap);
 
     // Run positive examples
-    if let Some(Examples { pos, neg }) = examples {
+    if let Some(Examples { pos, neg: _ }) = examples {
         // Combine positive examples into a single query
         let mut query = String::new();
         for example in &pos {
@@ -146,7 +133,7 @@ fn map() {
     let heap = Arc::new(heap);
 
     // Run positive examples
-    if let Some(Examples { pos, neg }) = examples {
+    if let Some(Examples { pos, neg: _ }) = examples {
         // Combine positive examples into a single query
         let mut query = String::new();
         for example in &pos {
@@ -166,32 +153,4 @@ fn map() {
     }
 }
 
-#[test]
-fn ancestor_learning() {
-    // Test that ancestor can learn hypotheses
-    // SymbolDB::new();
 
-    let (config, predicate_table, heap, _) = load_setup("examples/ancestor/config.json");
-
-    let predicate_table = Arc::new(predicate_table);
-    let heap = Arc::new(heap);
-
-    // Query that requires learning
-    let query = "ancestor(ken,james).";
-
-    let mut query_heap = QueryHeap::new(heap, None);
-    let goals = build_goals(query, &mut query_heap);
-
-    let mut proof = Proof::new(query_heap, &goals, config);
-
-    if proof.prove(predicate_table.clone(), config, config.debug) {
-        println!("Ancestor learning test succeeded");
-        if proof.hypothesis.len() > 0 {
-            println!("Learned hypothesis:");
-            println!("{}", proof.hypothesis.to_string(&proof.heap));
-        }
-        assert!(true);
-    } else {
-        panic!("Expected ancestor learning to find a solution");
-    }
-}

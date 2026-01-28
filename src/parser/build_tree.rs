@@ -1,8 +1,6 @@
 //TODO Handle sets
 
-use std::{fmt::format, str};
-
-use fsize::fsize;
+// use std::str;
 
 use super::term::{Term, Unit};
 
@@ -71,9 +69,9 @@ impl TokenStream {
         }
     }
 
-    fn print_state(&self) {
-        println!("{:?},{}", self.tokens, self.index);
-    }
+    // fn print_state(&self) {
+    //     println!("{:?},{}", self.tokens, self.index);
+    // }
 }
 
 fn is_operator(token: &str) -> bool {
@@ -181,7 +179,7 @@ impl TokenStream {
                     None => todo!("handle: {token}"),
                 }
             }
-            _ => Err(format!("Uh oh \"{}\" confused me", self.peek().unwrap())),
+            // _ => Err(format!("Uh oh \"{}\" confused me", self.peek().unwrap())),
         }
     }
 
@@ -249,7 +247,7 @@ impl TokenStream {
                 let mut literals = vec![self.parse_expression()?];
                 match self.next() {
                     Some(":-") => {
-                        literals.append( &mut self.parse_body_literals()?);
+                        literals.append(&mut self.parse_body_literals()?);
                         let meta_rule = if let Some(Term::Set(eq_vars)) = literals.last() {
                             if eq_vars
                                 .iter()
@@ -291,7 +289,7 @@ impl TokenStream {
 mod tests {
     use super::{
         super::tokeniser::tokenise,
-        {TreeClause, Term, TokenStream, Unit},
+        {Term, TokenStream, TreeClause, Unit},
     };
     #[test]
     fn parse_number_term() {
@@ -703,15 +701,15 @@ mod tests {
     #[test]
     fn infix_order() {
         let x = Term::Unit(Unit::Variable("X".into()));
-        let y = Term::Unit(Unit::Variable("Y".into()));
+        let _y = Term::Unit(Unit::Variable("Y".into()));
         let one = Term::Unit(Unit::Int(1));
         let two = Term::Unit(Unit::Int(2));
         let three = Term::Unit(Unit::Int(3));
         let one_and_half = Term::Unit(Unit::Float(1.5));
         let plus = Unit::Constant("+".into());
-        let minus = Unit::Constant("-".into());
+        let _minus = Unit::Constant("-".into());
         let divide = Unit::Constant("/".into());
-        let times = Unit::Constant("*".into());
+        let _times = Unit::Constant("*".into());
         let power = Unit::Constant("**".into());
         let eqauls = Unit::Constant("=:=".into());
 
@@ -747,15 +745,15 @@ mod tests {
     #[test]
     fn grouped_expression() {
         let x = Term::Unit(Unit::Variable("X".into()));
-        let y = Term::Unit(Unit::Variable("Y".into()));
+        let _y = Term::Unit(Unit::Variable("Y".into()));
         let one = Term::Unit(Unit::Int(1));
         let two = Term::Unit(Unit::Int(2));
         let three = Term::Unit(Unit::Int(3));
         let one_and_half = Term::Unit(Unit::Float(1.5));
         let plus = Unit::Constant("+".into());
-        let minus = Unit::Constant("-".into());
+        let _minus = Unit::Constant("-".into());
         let divide = Unit::Constant("/".into());
-        let times = Unit::Constant("*".into());
+        let _times = Unit::Constant("*".into());
         let power = Unit::Constant("**".into());
         let equals = Unit::Constant("=:=".into());
 
@@ -793,9 +791,9 @@ mod tests {
         let three = Term::Unit(Unit::Int(3));
         let one_and_half = Term::Unit(Unit::Float(1.5));
         let plus = Unit::Constant("+".into());
-        let minus = Unit::Constant("-".into());
+        let _minus = Unit::Constant("-".into());
         let divide = Unit::Constant("/".into());
-        let times = Unit::Constant("*".into());
+        let _times = Unit::Constant("*".into());
         let power = Unit::Constant("**".into());
         let equals = Unit::Constant("=:=".into());
 
@@ -913,7 +911,7 @@ mod tests {
             "gt1(X):-X>1.\nman(plato).\nP(X,Y):-\n\tQ(X,Y),\n\t{P,Q}.\n:-test(a),['file/path']."
                 .to_string();
         let mut token_stream = TokenStream::new(tokenise(text).unwrap());
-        let mut clauses = token_stream.parse_all().unwrap();
+        let clauses = token_stream.parse_all().unwrap();
 
         let head = Term::Atom(
             Unit::Constant("gt1".into()),
@@ -952,7 +950,10 @@ mod tests {
             Term::Unit(Unit::Variable("P".into())),
             Term::Unit(Unit::Variable("Q".into())),
         ]);
-        assert_eq!(clauses[2], TreeClause::MetaRule(vec![head, body, meta_data]));
+        assert_eq!(
+            clauses[2],
+            TreeClause::MetaRule(vec![head, body, meta_data])
+        );
 
         let body = Term::Atom(
             Unit::Constant("test".into()),

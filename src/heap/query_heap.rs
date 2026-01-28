@@ -33,16 +33,6 @@ impl  QueryHeap  {
         }
         branch_heap
     }
-
-    //Get cells as vector, allow root readguard to be dropped
-    pub fn get_cells(self) -> Vec<Cell>{
-        self.cells
-    }
-
-    /// Get a clone of the program cells Arc for creating new heaps
-    pub fn get_prog_cells(&self) -> Arc<Vec<Cell>> {
-        self.prog_cells.clone()
-    }
 }
 
 impl  Heap for QueryHeap  {

@@ -126,20 +126,20 @@ impl PredicateTable {
         }
     }
 
-    pub fn get_variable_clauses(&self, arity: usize) -> Option<&Box<[Clause]>>{
-        match self.find_predicate((0,arity)) {
+    pub fn get_variable_clauses(&self, arity: usize) -> Option<&Box<[Clause]>> {
+        match self.find_predicate((0, arity)) {
             FindReturn::Index(i) => match &self[i].predicate {
                 Predicate::Clauses(clauses) => Some(clauses),
-                _ => None
+                _ => None,
             },
             _ => None,
         }
     }
 
     //Remove predicate by SymbolArity key, if clause predicate return the range to remove from clause table
-    pub fn remove_predicate(&mut self, symbol_arity: SymbolArity) {
+    pub fn _remove_predicate(&mut self, symbol_arity: SymbolArity) {
         if let FindReturn::Index(predicate_idx) = self.find_predicate(symbol_arity) {
-            if let Predicate::Clauses(clauses) = self.remove(predicate_idx).predicate {
+            if let Predicate::Clauses(_clauses) = self.remove(predicate_idx).predicate {
                 self.body_list.retain(|i| *i != predicate_idx);
             }
             for i in &mut self.body_list {
@@ -204,13 +204,13 @@ impl DerefMut for PredicateTable {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use crate::{
         heap::{query_heap::QueryHeap, symbol_db::SymbolDB},
-        predicate_modules::{PredReturn,PredicateFunction},
+        predicate_modules::PredReturn,
         program::{hypothesis::Hypothesis, predicate_table::FindReturn},
         Config,
     };
+    use std::sync::Arc;
 
     use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
 
@@ -280,12 +280,12 @@ mod tests {
         assert_eq!(pred_table.find_predicate((p, 1)), FindReturn::InsertPos(1));
         assert_eq!(pred_table.find_predicate((p, 2)), FindReturn::Index(1));
 
-        let pred_table = PredicateTable{
+        let pred_table = PredicateTable {
             predicates: vec![],
             body_list: vec![],
         };
 
-        assert_eq!(pred_table.find_predicate((50,2)), FindReturn::InsertPos(0));
+        assert_eq!(pred_table.find_predicate((50, 2)), FindReturn::InsertPos(0));
     }
 
     #[test]
@@ -365,7 +365,7 @@ mod tests {
         let q = SymbolDB::set_const("q".into());
         let pred_func = SymbolDB::set_const("func".into());
 
-        pred_table.remove_predicate((p, 2));
+        pred_table._remove_predicate((p, 2));
 
         assert_eq!(
             pred_table,
@@ -395,7 +395,7 @@ mod tests {
         );
 
         let mut pred_table = setup();
-        pred_table.remove_predicate((q, 2));
+        pred_table._remove_predicate((q, 2));
 
         assert_eq!(
             pred_table,
@@ -425,7 +425,7 @@ mod tests {
         );
 
         let mut pred_table = setup();
-        pred_table.remove_predicate((0, 2));
+        pred_table._remove_predicate((0, 2));
 
         assert_eq!(
             pred_table,

@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{heap::heap::Heap, program::predicate_table::SymbolArity};
+use crate::heap::heap::Heap;
 
 use super::clause::Clause;
 
@@ -16,19 +16,22 @@ pub struct Hypothesis {
 
 impl Hypothesis {
     pub fn new() -> Self {
-        Hypothesis{clauses: Vec::new(), constraints: Vec::new()}
+        Hypothesis {
+            clauses: Vec::new(),
+            constraints: Vec::new(),
+        }
     }
 
     pub fn len(&self) -> usize {
         self.clauses.len()
     }
 
-    pub fn push_clause(&mut self, clause: Clause, heap: &impl Heap, constraints: Constraints) {
+    pub fn push_clause(&mut self, clause: Clause, constraints: Constraints) {
         self.clauses.push(clause);
         self.constraints.push(constraints);
     }
 
-    pub fn pop_clause(&mut self) -> Clause{
+    pub fn pop_clause(&mut self) -> Clause {
         self.constraints.pop();
         self.clauses.pop().unwrap()
     }
@@ -51,7 +54,7 @@ impl Deref for Hypothesis {
     }
 }
 
-impl DerefMut for Hypothesis{
+impl DerefMut for Hypothesis {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.clauses
     }

@@ -3,7 +3,7 @@ use std::{
     usize,
 };
 
-use crate::heap::heap::{Heap, Tag, CON_PTR};
+use crate::heap::heap::{Heap, Tag};
 
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
@@ -167,11 +167,11 @@ fn unify_rec(
                 Some(binding)
             }
         },
-        (Tag::Ref, Tag::Lis | Tag::Func | Tag::Set | Tag::Tup | Tag::Lis) => {
+        (Tag::Ref, Tag::Lis | Tag::Func | Tag::Set | Tag::Tup) => {
             Some(binding.push((addr_1, addr_2, true)))
         }
         (Tag::Ref, _) => Some(binding.push((addr_1, addr_2, false))),
-        (Tag::Lis | Tag::Func | Tag::Set | Tag::Tup | Tag::Lis, Tag::Ref) => {
+        (Tag::Lis | Tag::Func | Tag::Set | Tag::Tup, Tag::Ref) => {
             Some(binding.push((addr_2, addr_1, true)))
         }
         (_, Tag::Ref) => Some(binding.push((addr_2, addr_1, false))),
@@ -203,10 +203,10 @@ fn unify_func_or_tup(
 }
 
 fn unfiy_set(
-    heap: &impl Heap,
-    mut binding: Substitution,
-    addr_1: usize,
-    addr_2: usize,
+    _heap: &impl Heap,
+    mut _binding: Substitution,
+    _addr_1: usize,
+    _addr_2: usize,
 ) -> Option<Substitution> {
     todo!()
 }
@@ -230,7 +230,7 @@ mod tests {
     use super::Substitution;
     use crate::{
         heap::{
-            heap::{Cell, Tag},
+            heap::Tag,
             symbol_db::SymbolDB,
         },
         resolution::unification::{unify, unify_rec},
@@ -301,7 +301,7 @@ mod tests {
         let p = SymbolDB::set_const("p".into());
         let a = SymbolDB::set_const("a".into());
 
-        let mut heap = vec![
+        let heap = vec![
             (Tag::Ref, 0),
             (Tag::Ref, 1),
             (Tag::Ref, 2),

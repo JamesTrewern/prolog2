@@ -1,8 +1,4 @@
-use std::{
-    alloc::{alloc, dealloc, Layout},
-    ops::Deref,
-    ptr::copy_nonoverlapping, sync::Arc,
-};
+use std::{ops::Deref, sync::Arc};
 
 use crate::heap::heap::Heap;
 
@@ -14,7 +10,7 @@ impl BitFlag64 {
         self.0 = self.0 | 1 << idx;
     }
 
-    pub fn unset(&mut self, idx: usize) {
+    pub fn _unset(&mut self, idx: usize) {
         self.0 = self.0 & !(1 << idx);
     }
 
@@ -42,17 +38,19 @@ impl Clause {
     }
 
     pub fn new(literals: Vec<usize>, meta_vars: Option<Vec<usize>>) -> Self {
-        let len = literals.len();
         let meta_vars = meta_vars.map(Self::meta_vars_to_bit_flags);
         let literals: Arc<[usize]> = literals.into();
-        Clause { literals, meta_vars}
+        Clause {
+            literals,
+            meta_vars,
+        }
     }
 
     pub fn head(&self) -> usize {
         self[0]
     }
 
-    pub fn body(&self) -> &[usize]{
+    pub fn body(&self) -> &[usize] {
         &self[1..]
     }
 
@@ -65,9 +63,9 @@ impl Clause {
         Ok(meta_vars.get(arg_id))
     }
 
-    pub fn to_string(&self, heap: &impl Heap) -> String{
+    pub fn to_string(&self, heap: &impl Heap) -> String {
         let mut buffer = format!("{}:-", heap.term_string(self.head()));
-        for body_literal in self.body(){
+        for body_literal in self.body() {
             buffer += &heap.term_string(*body_literal);
             buffer += ","
         }

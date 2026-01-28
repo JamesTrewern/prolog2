@@ -35,11 +35,11 @@ pub fn build(
         (tag @ (Tag::Con | Tag::Flt | Tag::Int | Tag::Stri | Tag::ELis | Tag::Ref), value) => {
             heap.heap_push((tag, value))
         }
-        (Tag::Arg, arg_id) => build_arg(heap, substitution, meta_vars, src_addr),
+        (Tag::Arg, _arg_id) => build_arg(heap, substitution, meta_vars, src_addr),
         (Tag::Func | Tag::Tup | Tag::Set, _) => build_str(heap, substitution, meta_vars, src_addr),
         (Tag::Lis, ptr) => {
             let new_ptr = build_list(heap, substitution, meta_vars, ptr);
-            heap.heap_push((Tag::Lis, ptr))
+            heap.heap_push((Tag::Lis, new_ptr))
         }
         cell => todo!("handle: {cell:?}"),
     }
@@ -65,7 +65,6 @@ fn build_arg(
     }
 }
 
-fn build_ref() {}
 
 fn build_str(
     heap: &mut impl Heap,
@@ -178,7 +177,7 @@ mod tests {
         let mut meta_vars = BitFlag64::default();
         meta_vars.set(0);
         let addr = build(&mut heap, &mut substitution, Some(meta_vars), 0);
-        heap.print_heap();
+        heap._print_heap();
         assert_eq!(
             heap[addr..(addr + 5)],
             [(Tag::Func, 4), (Tag::Con, p), (Tag::Ref, addr+2), (Tag::Ref, addr+2), (Tag::Arg, 1)]
@@ -314,7 +313,7 @@ mod tests {
         let mut sub = unify(&heap, 8, 4).unwrap();
         re_build_bound_arg_terms(&mut heap, &mut sub);
 
-        heap.print_heap();
+        heap._print_heap();
         println!("{:?}", sub.bound(6))
     }
 
@@ -339,7 +338,7 @@ mod tests {
         let mut sub = unify(&heap, 8, 4).unwrap();
         re_build_bound_arg_terms(&mut heap, &mut sub);
 
-        heap.print_heap();
+        heap._print_heap();
         println!("{:?}", sub.bound(6))
     }
 }

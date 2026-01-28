@@ -1,33 +1,13 @@
-use fsize::fsize;
-use std::str::CharIndices;
-
-enum ParseError {
-    CommentError(String, usize),         //Message, line
-    TokeniseError(String, usize, usize), //Message, line, column.
-    TermError(String, usize),            //Message, line
-}
-
 const DELIMINATORS: &[char] = &[
-    '(', ')', ',', '.', ' ', '\r','\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|', '>',
-    '<', '{', '}',
+    '(', ')', ',', '.', ' ', '\r', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|',
+    '>', '<', '{', '}',
 ];
 const KNOWN_SYMBOLS: &[&str] = &[":-", "==", "=/=", "/=", "=:=", "**", "<=", ">=", "/*", "*/"];
-const INFIX_ORDER: &[&[&str]] = &[
-    &["**"],
-    &["*", "/"],
-    &["+", "-"],
-    &["==", "=/=", "/=", "=:=", "is"],
-];
+
 
 // --------------------------------------------------------------------------------------
 // Tokenise File
 // --------------------------------------------------------------------------------------
-
-pub fn remove_comments(mut file: String) -> Result<String, String> {
-    //TODO Must ingore % if in string
-    let mut i = 0;
-    Ok(file)
-}
 
 fn form_empty_list_token(tokens: &mut Vec<String>) {
     let mut i = 0;
@@ -284,7 +264,7 @@ pub fn tokenise(text: String) -> Result<Vec<String>, String> {
         }
     }
     tokens.push(text[last_i..].into());
-    tokens.retain(|token| "" != *token );
+    tokens.retain(|token| "" != *token);
     form_known_symbols(&mut tokens);
     join_decimal_nums(&mut tokens);
     form_negative_nums(&mut tokens);
@@ -297,11 +277,11 @@ pub fn tokenise(text: String) -> Result<Vec<String>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{remove_comments, tokenise};
+    use super::tokenise;
 
     #[test]
     fn single_line_comments() {
-        let mut file =
+        let file =
             "\n%simple predicate\np(x,y):-%The head\nq(x),%body 1\nr(y).%body 2".to_string();
 
         let tokens = tokenise(file).unwrap();
@@ -317,7 +297,7 @@ mod tests {
 
     #[test]
     fn multi_line_comments() {
-        let mut file = "/* This is a\nmutli\nline\ncomment */\np(x,y):-q(x,y).".to_string();
+        let file = "/* This is a\nmutli\nline\ncomment */\np(x,y):-q(x,y).".to_string();
 
         let tokens = tokenise(file).unwrap();
 
@@ -346,14 +326,14 @@ mod tests {
 
     #[test]
     fn unclosed_strings() {
-        let mut file = "\"a string".to_string();
+        let file = "\"a string".to_string();
 
         match tokenise(file) {
             Ok(tokens) => panic!("Should have thrown error\nTokens: {tokens:?}"),
             Err(message) => assert_eq!(message, "Unexpected end of file, missing closing \""),
         }
 
-        let mut file = "'a string".to_string();
+        let file = "'a string".to_string();
 
         match tokenise(file) {
             Ok(tokens) => panic!("Should have thrown error\nTokens: {tokens:?}"),

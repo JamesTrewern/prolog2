@@ -35,17 +35,17 @@ impl Unit {
             && token.chars().all(|c| c.is_alphanumeric() || c == '_')
     }
 
-    fn is_numeric(token: &str) -> bool {
-        token.chars().all(|c| c.is_ascii_digit() || c == '.')
-    }
+    // fn is_numeric(token: &str) -> bool {
+    //     token.chars().all(|c| c.is_ascii_digit() || c == '.')
+    // }
 
-    fn is_atom_var(token: &str) -> bool {
-        Unit::is_atom(token) || Unit::is_variable(token)
-    }
+    // fn is_atom_var(token: &str) -> bool {
+    //     Unit::is_atom(token) || Unit::is_variable(token)
+    // }
 
-    fn is_unit(token: &str) -> bool {
-        Unit::is_numeric(token) || Unit::is_atom_var(token) || Unit::is_string(token)
-    }
+    // fn is_unit(token: &str) -> bool {
+    //     Unit::is_numeric(token) || Unit::is_atom_var(token) || Unit::is_string(token)
+    // }
 
     pub fn parse_unit(token: &str) -> Option<Self> {
         if Unit::is_variable(token) {
@@ -170,19 +170,19 @@ impl Term {
         }
     }
 
-    fn pre_encode_complex_terms(
-        terms: &Vec<Term>,
-        heap: &mut impl Heap,
-        var_values: &mut HashMap<String, usize>,
-        query: bool,
-    ) -> Vec<Option<Cell>> {
-        let complex_terms = terms
-            .iter()
-            .map(|term| term.pre_encode_complex(heap, var_values, query))
-            .collect();
+    // fn pre_encode_complex_terms(
+    //     terms: &Vec<Term>,
+    //     heap: &mut impl Heap,
+    //     var_values: &mut HashMap<String, usize>,
+    //     query: bool,
+    // ) -> Vec<Option<Cell>> {
+    //     let complex_terms = terms
+    //         .iter()
+    //         .map(|term| term.pre_encode_complex(heap, var_values, query))
+    //         .collect();
 
-        complex_terms
-    }
+    //     complex_terms
+    // }
 
     fn encode_tup(
         terms: &Vec<Term>,
@@ -299,8 +299,8 @@ impl Term {
 }
 
 #[cfg(test)]
-mod encode {
-    use std::{collections::HashMap, mem, sync::Arc};
+mod encode_tests {
+    use std::{collections::HashMap, sync::Arc};
 
     use super::{Term, Unit};
     use crate::heap::{
@@ -355,7 +355,7 @@ mod encode {
     }
 
     #[test]
-    fn endcode_unit() {
+    fn encode_unit() {
         let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
         heap.cells = vec![];
         let a = SymbolDB::set_const("a".into());
@@ -376,21 +376,31 @@ mod encode {
         let unit = Unit::Int(value);
         let addr = unit.encode(&mut heap.cells, &mut HashMap::new(), false);
         assert_eq!(heap.cells.term_string(addr), "-10");
-        assert_eq!(heap.cells, [(Tag::Int, unsafe { mem::transmute(value) })]);
+        assert_eq!(heap.cells, [(Tag::Int, isize::cast_unsigned(value) )]);
 
         heap.cells = vec![];
         let value: fsize = 1.1;
         let unit = Unit::Float(value);
         let addr = unit.encode(&mut heap.cells, &mut HashMap::new(), false);
         assert_eq!(heap.cells.term_string(addr), "1.1");
-        assert_eq!(heap.cells, [(Tag::Flt, unsafe { mem::transmute(value) })]);
+
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(heap.cells, [(Tag::Flt, value.to_bits() as usize)]);
+
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(heap.cells, [(Tag::Flt, value.to_bits() as usize)]);
 
         heap.cells = vec![];
         let value: fsize = -1.1;
         let unit = Unit::Float(value);
         let addr = unit.encode(&mut heap.cells, &mut HashMap::new(), false);
         assert_eq!(heap.cells.term_string(addr), "-1.1");
-        assert_eq!(heap.cells, [(Tag::Flt, unsafe { mem::transmute(value) })]);
+
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(heap.cells, [(Tag::Flt, value.to_bits() as usize)]);
+
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(heap.cells, [(Tag::Flt, value.to_bits() as usize)]);
 
         heap.cells = vec![];
         drop(heap.cells);
@@ -408,7 +418,7 @@ mod encode {
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
         let x = Unit::Variable("X".into());
-        let y = Unit::Variable("Y".into());
+        let _y = Unit::Variable("Y".into());
         let a = Unit::Constant("a".into());
         let f = Unit::Constant("f".into());
 
@@ -418,7 +428,7 @@ mod encode {
             vec![Term::Unit(x.clone()), Term::Unit(a.clone())],
         );
         let addr = term.encode(&mut heap.cells, &mut HashMap::new(), false);
-        SymbolDB::see_var_map();
+        SymbolDB::_see_var_map();
         assert_eq!(heap.cells.term_string(addr), "p(X,a)");
         assert_eq!(
             heap.cells,
@@ -557,7 +567,7 @@ mod encode {
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
         let x = Unit::Variable("X".into());
-        let y = Unit::Variable("Y".into());
+        let _y = Unit::Variable("Y".into());
         let a = Unit::Constant("a".into());
         let f = Unit::Constant("f".into());
 
@@ -704,7 +714,7 @@ mod encode {
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
         let x = Unit::Variable("X".into());
-        let y = Unit::Variable("Y".into());
+        let _y = Unit::Variable("Y".into());
         let a = Unit::Constant("a".into());
         let f = Unit::Constant("f".into());
 
@@ -846,7 +856,7 @@ mod encode {
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
         let x = Unit::Variable("X".into());
-        let y = Unit::Variable("Y".into());
+        let _y = Unit::Variable("Y".into());
         let a = Unit::Constant("a".into());
         let f = Unit::Constant("f".into());
 
@@ -987,7 +997,7 @@ mod encode {
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
         let x = Unit::Variable("X".into());
-        let y = Unit::Variable("Y".into());
+        let _y = Unit::Variable("Y".into());
         let a = Unit::Constant("a".into());
         let f = Unit::Constant("f".into());
 
@@ -1111,7 +1121,7 @@ mod encode {
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
         let x = Unit::Variable("X".into());
-        let y = Unit::Variable("Y".into());
+        let _y = Unit::Variable("Y".into());
         let a = Unit::Constant("a".into());
         let f = Unit::Constant("f".into());
 
@@ -1318,16 +1328,16 @@ mod encode {
     fn query_encode_list() {
         let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
 
-        let p_id = SymbolDB::set_const("p".into());
+        let _p_id = SymbolDB::set_const("p".into());
         let a_id = SymbolDB::set_const("a".into());
-        let f_id = SymbolDB::set_const("f".into());
+        let _f_id = SymbolDB::set_const("f".into());
 
-        let p = Unit::Constant("p".into());
+        let _p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
         let x = Unit::Variable("X".into());
-        let y = Unit::Variable("Y".into());
+        let _y = Unit::Variable("Y".into());
         let a = Unit::Constant("a".into());
-        let f = Unit::Constant("f".into());
+        let _f = Unit::Constant("f".into());
 
         heap.cells = vec![];
         let term = Term::List(

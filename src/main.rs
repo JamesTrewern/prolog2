@@ -7,9 +7,7 @@ mod predicate_modules;
 mod program;
 mod resolution;
 use std::{
-    collections::HashMap,
-    env,
-    fs::{self, File},
+    env, fs,
     io::{stdin, stdout, Write},
     process::ExitCode,
     sync::Arc,
@@ -21,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     heap::{
         heap::{Cell, Heap},
-        query_heap::{self, QueryHeap},
+        query_heap::QueryHeap,
         symbol_db::SymbolDB,
     },
     parser::{
@@ -29,11 +27,9 @@ use crate::{
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
     },
-    program::{
-        clause::Clause,
-        predicate_table::{self, PredicateTable},
-    },
-    resolution::proof::{self, Proof},
+    predicate_modules::{load_predicate_module, MATHS, META_PREDICATES},
+    program::predicate_table::PredicateTable,
+    resolution::proof::Proof,
 };
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
@@ -62,7 +58,7 @@ struct SetUp {
     pub config: Config,
     pub body_predicates: Vec<BodyClause>,
     pub files: Vec<String>,
-    pub examples: Option<Examples>
+    pub examples: Option<Examples>,
 }
 
 fn continue_proof(auto: bool) -> bool {
@@ -105,17 +101,17 @@ fn start_query(
             )
         }));
     }
-    let mut proof = Proof::new(query_heap, &goals, config);
+    let mut proof = Proof::new(query_heap, &goals);
 
     loop {
-        if proof.prove(predicate_table.clone(), config, config.debug) {
+        if proof.prove(predicate_table.clone(), config) {
             println!("TRUE");
             for (symbol, addr) in &vars {
                 println!("{symbol} = {}", proof.heap.term_string(*addr))
             }
             //TODO display variable bindings
             if proof.hypothesis.len() != 0 {
-                println!("{}",proof.hypothesis.to_string(&proof.heap));
+                println!("{}", proof.hypothesis.to_string(&proof.heap));
             }
             if !continue_proof(auto) {
                 break;
@@ -144,6 +140,9 @@ fn load_setup() -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
     let mut heap = Vec::new();
     let mut predicate_table = PredicateTable::new();
 
+    load_predicate_module(&mut predicate_table, &MATHS);
+    load_predicate_module(&mut predicate_table, &META_PREDICATES);
+
     let setup: SetUp = serde_json::from_str(&fs::read_to_string("setup.json").unwrap()).unwrap();
     // println!("{setup:?}");
     let config = setup.config;
@@ -161,7 +160,11 @@ fn load_setup() -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
     (config, predicate_table, heap, setup.examples)
 }
 
-fn main_loop(config: Config, predicate_table: Arc<PredicateTable>, heap: Arc<Vec<Cell>>) -> ExitCode {
+fn main_loop(
+    config: Config,
+    predicate_table: Arc<PredicateTable>,
+    heap: Arc<Vec<Cell>>,
+) -> ExitCode {
     let mut buffer = String::new();
     loop {
         if buffer.is_empty() {
@@ -171,7 +174,13 @@ fn main_loop(config: Config, predicate_table: Arc<PredicateTable>, heap: Arc<Vec
         match stdin().read_line(&mut buffer) {
             Ok(_) => {
                 if buffer.contains('.') {
-                    match start_query(&buffer, predicate_table.clone(), heap.clone(), config, false) {
+                    match start_query(
+                        &buffer,
+                        predicate_table.clone(),
+                        heap.clone(),
+                        config,
+                        false,
+                    ) {
                         Ok(_) => buffer.clear(),
                         Err(error) => println!("{error}"),
                     }
@@ -203,18 +212,18 @@ fn main() -> ExitCode {
     match examples {
         Some(Examples { pos, neg }) => {
             let mut buffer = String::new();
-            for example in pos{
+            for example in pos {
                 buffer += &example;
                 buffer += ",";
             }
-            for example in neg{
+            for example in neg {
                 buffer += &format!("not({example}),");
             }
             buffer.pop();
             buffer += ".";
             start_query(&buffer, predicate_table, heap, config, auto).unwrap();
             ExitCode::SUCCESS
-        },
+        }
         None => main_loop(config, predicate_table, heap),
     }
 }

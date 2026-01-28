@@ -1,12 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{
-            AtomicBool,
-            Ordering::{Acquire, Relaxed},
-        },
-        Arc, Mutex, RwLock,
-    },
+    sync::{Arc, RwLock},
 };
 
 use lazy_static::lazy_static;
@@ -29,8 +23,6 @@ lazy_static! {
 });
 }
 
-static RUN_NEW: AtomicBool = AtomicBool::new(true);
-
 /**Stores all symbols from compiled terms
  * The heap will use this to create term strings whilst allowing
  * operations done with the heap to only handle usize values
@@ -42,16 +34,6 @@ pub struct SymbolDB {
 }
 
 impl SymbolDB {
-    // pub fn new() {
-    //     if RUN_NEW.swap(false, Acquire) {
-    //         let mut symbol_db = SYMBOLS.write().unwrap();
-    //         for symbol in KNOWN_SYMBOLS {
-    //             symbol_db.const_symbols.push(symbol.to_string().into());
-    //         }
-    //         symbol_db.var_symbol_map = Some(HashMap::new());
-    //     }
-    // }
-
     pub fn set_const(symbol: String) -> usize {
         let mut symbols = SYMBOLS.write().unwrap();
         let symbol: Arc<str> = symbol.into();
@@ -87,22 +69,22 @@ impl SymbolDB {
         }
     }
 
-    /** Given either a ref addr or a const id this function will return the related symbol */
-    pub fn get_symbol(id: usize, heap_id: usize) -> String {
-        //If id >= usize:Max/2 then it is a constant id and not a heap ref addr
-        let symbols = SYMBOLS.read().unwrap();
-        if id >= (isize::MAX as usize) {
-            match symbols.const_symbols.get(id - isize::MAX as usize) {
-                Some(symbol) => symbol.to_string(),
-                None => panic!("Unkown const id"),
-            }
-        } else {
-            match Self::get_var(id, heap_id) {
-                Some(symbol) => symbol.to_string(),
-                None => format!("_{id}"),
-            }
-        }
-    }
+    // /** Given either a ref addr or a const id this function will return the related symbol */
+    // pub fn get_symbol(id: usize, heap_id: usize) -> String {
+    //     //If id >= usize:Max/2 then it is a constant id and not a heap ref addr
+    //     let symbols = SYMBOLS.read().unwrap();
+    //     if id >= (isize::MAX as usize) {
+    //         match symbols.const_symbols.get(id - isize::MAX as usize) {
+    //             Some(symbol) => symbol.to_string(),
+    //             None => panic!("Unkown const id"),
+    //         }
+    //     } else {
+    //         match Self::get_var(id, heap_id) {
+    //             Some(symbol) => symbol.to_string(),
+    //             None => format!("_{id}"),
+    //         }
+    //     }
+    // }
 
     pub fn get_string(index: usize) -> Arc<str> {
         //TODO make this much more effecient
@@ -115,7 +97,8 @@ impl SymbolDB {
         write_gaurd.strings.len() - 1
     }
 
-    pub fn see_var_map() {
+
+    pub fn _see_var_map() {
         let symbols = SYMBOLS.read().unwrap();
         for (k, v) in &symbols.var_symbol_map {
             println!("{k:?}:\t{v}")
@@ -125,13 +108,13 @@ impl SymbolDB {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{heap::CON_PTR, symbol_db::SymbolDB};
+    use super::super::{heap::_CON_PTR, symbol_db::SymbolDB};
 
     #[test]
     //Check required symbols are preloaded
     fn known_symbols() {
-        assert_eq!(&*SymbolDB::get_const(CON_PTR), "false");
-        assert_eq!(&*SymbolDB::get_const(CON_PTR + 1), "true");
+        assert_eq!(&*SymbolDB::get_const(_CON_PTR), "false");
+        assert_eq!(&*SymbolDB::get_const(_CON_PTR + 1), "true");
     }
 
     #[test]

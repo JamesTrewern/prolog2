@@ -56,3 +56,5 @@ pub fn load_predicate_module(
 pub static MATHS: PredicateModule = &[
     ("is", 2, maths::is_pred),
 ];
+
+pub static META_PREDICATES: PredicateModule = &[("not", 1, meta_predicates::not)];

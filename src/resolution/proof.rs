@@ -5,8 +5,8 @@ use crate::{
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
         clause::Clause,
-        hypothesis::{Constraints, Hypothesis},
-        predicate_table::{self, Predicate, PredicateTable},
+        hypothesis::Hypothesis,
+        predicate_table::{Predicate, PredicateTable},
     },
     resolution::{
         build::{build, re_build_bound_arg_terms},
@@ -14,10 +14,6 @@ use crate::{
     },
     Config,
 };
-
-fn triangular(n: usize) -> usize {
-    (n * (n + 1)) / 2
-}
 
 pub type Binding = (usize, usize);
 #[derive(Debug)]
@@ -256,7 +252,7 @@ impl Env {
                             );
                         }
                     }
-                    hypothesis.push_clause(new_clause, heap, constraints.into());
+                    hypothesis.push_clause(new_clause, constraints.into());
                     if debug {
                         eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
                     }
@@ -293,7 +289,6 @@ impl Env {
 pub struct Proof {
     stack: Vec<Env>,
     pointer: usize,
-    goal_count: u8,
     pub hypothesis: Hypothesis,
     pub heap: QueryHeap,
     h_clauses: usize,
@@ -301,8 +296,7 @@ pub struct Proof {
 }
 
 impl Proof {
-    pub fn new(heap: QueryHeap, goals: &[usize], config: Config) -> Self {
-        let goal_count = goals.len() as u8;
+    pub fn new(heap: QueryHeap, goals: &[usize]) -> Self {
         let hypothesis = Hypothesis::new();
         let stack = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
         Proof {
@@ -310,16 +304,19 @@ impl Proof {
             pointer: 0,
             hypothesis,
             heap,
-            goal_count,
             h_clauses: 0,
             invented_preds: 0,
         }
     }
 
-    pub fn prove(&mut self, predicate_table: Arc<PredicateTable>, config: Config, debug: bool) -> bool {
+    pub fn prove(
+        &mut self,
+        predicate_table: Arc<PredicateTable>,
+        config: Config,
+    ) -> bool {
         // Handle restart after previous success
         if self.pointer == self.stack.len() {
-            if debug {
+            if config.debug {
                 eprintln!(
                     "[RESTART] pointer={} stack_len={} h_clauses={}",
                     self.pointer,
@@ -338,13 +335,13 @@ impl Proof {
                 &mut self.heap,
                 &mut self.h_clauses,
                 &mut self.invented_preds,
-                debug,
+                config.debug,
             );
         }
 
         while self.pointer < self.stack.len() {
             if self.stack[self.pointer].got_choices {
-                if debug {
+                if config.debug {
                     eprintln!(
                         "[RETRY] goal={} addr={}",
                         self.heap.term_string(self.stack[self.pointer].goal),
@@ -357,7 +354,7 @@ impl Proof {
                     &mut self.hypothesis,
                     &predicate_table,
                 );
-                if debug {
+                if config.debug {
                     eprintln!(
                         "[TRY] goal={} addr={}",
                         self.heap.term_string(self.stack[self.pointer].goal),
@@ -372,7 +369,7 @@ impl Proof {
                 self.invented_preds < config.max_pred,
                 predicate_table.clone(),
                 config,
-                debug,
+                config.debug,
             ) {
                 Some(new_goals) => {
                     if self.stack[self.pointer].new_clause {
@@ -386,7 +383,7 @@ impl Proof {
                 }
                 None => {
                     if self.pointer == 0 {
-                        if debug {
+                        if config.debug {
                             eprintln!("[FAILED] First goal exhausted");
                             eprintln!("[FAILED_HYPOTHESIS]");
                             for (i, c) in self.hypothesis.iter().enumerate() {
@@ -401,14 +398,14 @@ impl Proof {
                     self.stack[self.pointer].got_choices = false;
                     self.stack[self.pointer].choices.clear();
                     self.stack[self.pointer].pred_function_tried = false;
-                    
+
                     self.pointer -= 1;
                     let children = self.stack[self.pointer].undo_try(
                         &mut self.hypothesis,
                         &mut self.heap,
                         &mut self.h_clauses,
                         &mut self.invented_preds,
-                        debug,
+                        config.debug,
                     );
                     self.stack
                         .drain((self.pointer + 1)..(self.pointer + 1 + children));
