@@ -158,3 +158,27 @@ fn odd_even() {
         panic!("No examples in map config");
     }
 }
+
+#[test]
+fn learn_map_double() {
+    let (config, predicate_table, heap, examples) = load_setup("examples/map/learn_config.json");
+
+    let predicate_table = Arc::new(predicate_table);
+    let heap = Arc::new(heap);
+
+    if let Some(examples) = examples {
+        let (success, solutions) = run_query(
+            &examples.to_query(),
+            predicate_table.clone(),
+            heap.clone(),
+            config,
+        );
+        println!(
+            "Learn Map Double test: success={}, solutions={}",
+            success, solutions
+        );
+        assert!(success, "Expected at least one solution for map test");
+    } else {
+        panic!("No examples in map config");
+    }
+}
