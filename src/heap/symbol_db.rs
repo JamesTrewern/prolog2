@@ -5,7 +5,17 @@ use std::{
 
 use lazy_static::lazy_static;
 
-const KNOWN_SYMBOLS: &[&str] = &["false", "true"];
+const KNOWN_SYMBOLS: &[&str] = &[
+    "false", "true",  // indices 0, 1
+    "+", "-", "*", "/", "**",  // indices 2-6
+    "cos", "sin", "tan", "acos", "asin", "atan",  // indices 7-12
+    "log", "abs", "round", "sqrt", "to_degrees", "to_radians",  // indices 13-18
+];
+
+/// Compute the symbol ID for a known symbol at compile time
+pub const fn known_symbol_id(index: usize) -> usize {
+    isize::MAX as usize + index
+}
 
 // static SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
 //     const_symbols: Vec::new(),

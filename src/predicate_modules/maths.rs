@@ -4,24 +4,41 @@ use super::PredReturn;
 use crate::{Config, heap::{
     heap::{Cell, Heap, Tag},
     query_heap::QueryHeap,
-    symbol_db::SymbolDB,
+    symbol_db::known_symbol_id,
 }, program::predicate_table::PredicateTable};
 use crate::program::hypothesis::Hypothesis;
-
-use lazy_static::lazy_static;
 
 use fsize::fsize;
 
 type MathFn = fn(usize, &QueryHeap) -> Number;
 
-lazy_static! {
-    static ref FUNCTIONS: Vec<(usize, MathFn)> = {
-        FUNCTION_SYMBOLS
-            .iter()
-            .map(|(symbol, function)| (SymbolDB::set_const(symbol.to_string()), *function))
-            .collect()
-    };
-}
+// Minus symbol ID for distinguishing unary negation from binary subtraction
+const MINUS_SYMBOL: usize = known_symbol_id(3);
+
+// Math functions array using compile-time known symbol IDs
+// Indices match KNOWN_SYMBOLS in symbol_db.rs:
+// 0: false, 1: true, 2: +, 3: -, 4: *, 5: /, 6: **
+// 7: cos, 8: sin, 9: tan, 10: acos, 11: asin, 12: atan
+// 13: log, 14: abs, 15: round, 16: sqrt, 17: to_degrees, 18: to_radians
+const FUNCTIONS: [(usize, MathFn); 17] = [
+    (known_symbol_id(2), add),    // +
+    (known_symbol_id(3), sub),    // -
+    (known_symbol_id(4), mul),    // *
+    (known_symbol_id(5), div),    // /
+    (known_symbol_id(6), pow),    // **
+    (known_symbol_id(7), cos),    // cos
+    (known_symbol_id(8), sin),    // sin
+    (known_symbol_id(9), tan),    // tan
+    (known_symbol_id(10), acos),  // acos
+    (known_symbol_id(11), asin),  // asin
+    (known_symbol_id(12), atan),  // atan
+    (known_symbol_id(13), log),   // log
+    (known_symbol_id(14), abs),   // abs
+    (known_symbol_id(15), round), // round
+    (known_symbol_id(16), sqrt),  // sqrt
+    (known_symbol_id(17), to_degrees),  // to_degrees
+    (known_symbol_id(18), to_radians),  // to_radians
+];
 
 #[derive(Debug, Clone, Copy)]
 enum Number {
@@ -195,8 +212,26 @@ fn to_degrees(addr: usize, heap: &QueryHeap) -> Number {
     Number::Flt(evaluate_term(addr + 2, heap).float().to_degrees())
 }
 
+fn neg(addr: usize, heap: &QueryHeap) -> Number {
+    match evaluate_term(addr + 2, heap) {
+        Number::Int(v) => Number::Int(-v),
+        Number::Flt(v) => Number::Flt(-v),
+    }
+}
+
+fn sqrt(addr: usize, heap: &QueryHeap) -> Number {
+    Number::Flt(evaluate_term(addr + 2, heap).float().sqrt())
+}
+
 fn evaluate_str(addr: usize, heap: &QueryHeap) -> Number {
     let symbol = heap[addr + 1].1;
+    let arity = heap[addr].1;
+    
+    // Handle unary minus: -(X) has arity 2 (functor + 1 arg)
+    if symbol == MINUS_SYMBOL && arity == 2 {
+        return neg(addr, heap);
+    }
+    
     for (id, funct) in FUNCTIONS.iter() {
         if *id == symbol {
             return funct(addr, heap);
@@ -254,22 +289,3 @@ pub fn is_pred(heap: &mut QueryHeap, _hypothesis: &mut Hypothesis, goal: usize, 
         }
     }
 }
-
-static FUNCTION_SYMBOLS: &[(&'static str, MathFn)] = &[
-    ("+", add),
-    ("-", sub),
-    ("*", mul),
-    ("/", div),
-    ("**", pow),
-    ("cos", cos),
-    ("sin", sin),
-    ("tan", tan),
-    ("acos", acos),
-    ("asin", asin),
-    ("atan", atan),
-    ("log", log),
-    ("abs", abs),
-    ("round", round),
-    ("to_degrees", to_degrees),
-    ("to_radians", to_radians),
-];
