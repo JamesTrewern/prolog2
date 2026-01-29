@@ -16,6 +16,7 @@ pub enum TreeClause {
     Fact(Term),
     Rule(Vec<Term>),
     MetaRule(Vec<Term>),
+    MetaFact(Term, Term), // head and set of existentially quantified variables
     Directive(Vec<Term>),
 }
 
@@ -265,8 +266,24 @@ impl TokenStream {
                             Ok(Some(TreeClause::Rule(literals)))
                         }
                     }
+                    Some(",") => {
+                        // Could be a MetaFact: Head, {EQVars}.
+                        let meta_data = self.parse_expression()?;
+                        if let Term::Set(eq_vars) = &meta_data {
+                            if eq_vars
+                                .iter()
+                                .any(|eq_var| !matches!(eq_var, Term::Unit(Unit::Variable(_))))
+                            {
+                                return Err(format!("Incorrectly formatted existentially quantified variables {:?}", eq_vars));
+                            }
+                            self.expect(".")?;
+                            Ok(Some(TreeClause::MetaFact(literals.pop().unwrap(), meta_data)))
+                        } else {
+                            Err(format!("Expected set of existentially quantified variables after comma in meta-fact, got {:?}", meta_data))
+                        }
+                    }
                     Some(".") => Ok(Some(TreeClause::Fact(literals[0].clone()))),
-                    Some(token) => Err(format!("Expected \".\" or \":-\", recieved {token}")),
+                    Some(token) => Err(format!("Expected \".\", \",\", or \":-\", recieved {token}")),
                     None => Err("Unexpected end of file".into()),
                 }
             }
@@ -884,6 +901,26 @@ mod tests {
         ]);
 
         assert_eq!(clause, TreeClause::MetaRule(vec![head, body, meta_data]));
+        assert_eq!(token_stream.parse_clause().unwrap(), None);
+    }
+
+    #[test]
+    fn parse_meta_fact() {
+        let mut token_stream = TokenStream::new(tokenise("Map([],[],X),{Map}.".into()).unwrap());
+        let clause = token_stream.parse_clause().unwrap().unwrap();
+        let head = Term::Atom(
+            Unit::Variable("Map".into()),
+            vec![
+                Term::EmptyList,
+                Term::EmptyList,
+                Term::Unit(Unit::Variable("X".into())),
+            ],
+        );
+        let meta_data = Term::Set(vec![
+            Term::Unit(Unit::Variable("Map".into())),
+        ]);
+
+        assert_eq!(clause, TreeClause::MetaFact(head, meta_data));
         assert_eq!(token_stream.parse_clause().unwrap(), None);
     }
 

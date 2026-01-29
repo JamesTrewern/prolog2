@@ -81,6 +81,26 @@ pub(crate) fn execute_tree(
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
+            TreeClause::MetaFact(head, meta_data) => {
+                let meta_vars = if let Term::Set(set_terms) = meta_data {
+                    let mut meta_vars = Vec::new();
+                    for set_term in set_terms {
+                        if let Term::Unit(Unit::Variable(symbol)) = set_term {
+                            meta_vars.push(symbol);
+                        } else {
+                            panic!("meta variable set should only contain variables")
+                        }
+                    }
+                    meta_vars
+                } else {
+                    panic!("Meta data in MetaFact wasn't a set")
+                };
+                let clause = build_clause(vec![head], Some(meta_vars), heap, false);
+                let symbol_arity = heap.str_symbol_arity(clause[0]);
+                pred_table
+                    .add_clause_to_predicate(clause, symbol_arity)
+                    .unwrap();
+            }
             TreeClause::Directive(_terms) => todo!(),
         }
     }
@@ -223,5 +243,32 @@ mod tests {
         } else {
             panic!()
         }
+    }
+
+    #[test]
+    fn meta_facts() {
+        let mut heap = Vec::<Cell>::new();
+        let mut pred_table = PredicateTable::new();
+        let facts = TokenStream::new(tokenise("Map([],[],X),{Map}.".into()).unwrap())
+            .parse_all()
+            .unwrap();
+
+        execute_tree(facts, &mut heap, &mut pred_table);
+
+        // Map is a variable, so we need to check via arity 3
+        // The predicate symbol will be Arg 0 (the Map variable)
+        // We need to find the clause differently since the predicate symbol is a variable
+        
+        // For a meta-fact with variable predicate, it gets indexed differently
+        // Let's check the heap directly
+        assert!(!heap.is_empty());
+        
+        // The head should be: (Func, 4), (Arg, 0), (ELis), (ELis), (Arg, 1)
+        // where Arg 0 is the Map variable and Arg 1 is X
+        assert_eq!(heap[0], (Tag::Func, 4));
+        assert_eq!(heap[1], (Tag::Arg, 0)); // Map variable
+        assert_eq!(heap[2].0, Tag::ELis);   // Empty list
+        assert_eq!(heap[3].0, Tag::ELis);   // Empty list  
+        assert_eq!(heap[4], (Tag::Arg, 1)); // X variable
     }
 }
