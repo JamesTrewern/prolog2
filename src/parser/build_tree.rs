@@ -161,7 +161,23 @@ impl TokenStream {
                 self.next();
                 Ok(Term::Tuple(vec![]))
             }
-            token if is_operator(token) => todo!("Operators Aren't handled"),
+            "(" => {
+                // Grouped expression or tuple
+                self.next();
+                let mut args = self.consume_args()?;
+                self.expect(")")?;
+                if args.len() == 1 {
+                    Ok(args.pop().unwrap())
+                } else {
+                    Ok(Term::Tuple(args))
+                }
+            }
+            token if is_operator(token) => {
+                // Handle prefix operators (unary minus, unary plus)
+                let op = self.next().unwrap().to_string();
+                let operand = self.parse_term()?;
+                Ok(Term::Atom(Unit::Constant(op), vec![operand]))
+            }
             token => {
                 let token = token.to_string();
                 match Unit::parse_unit(self.next().unwrap()) {
