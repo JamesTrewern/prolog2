@@ -127,7 +127,7 @@ fn build_complex_term(
         (Tag::Str, ptr) => Some((Tag::Str, build_str(heap, substitution, meta_vars, ptr))),
         (Tag::Lis, ptr) => Some((Tag::Lis, build_list(heap, substitution, meta_vars, ptr))),
         (Tag::Arg, id) => match meta_vars {
-            Some(bitflags) if bitflags.get(id) => None,
+            Some(bitflags) if !bitflags.get(id) => None,
             _ => match substitution.get_arg(id) {
                 Some(addr) => build_complex_term(heap, substitution, meta_vars, addr),
                 None => None,
