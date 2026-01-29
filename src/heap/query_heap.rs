@@ -39,6 +39,14 @@ impl QueryHeap {
         }
         branch_heap
     }
+
+    fn get_symbol_db_id(&self, addr: usize) -> usize {
+        if addr < self.prog_cells.len() {
+            0
+        } else {
+            self.id
+        }
+    }
 }
 
 impl Heap for QueryHeap {
@@ -68,23 +76,16 @@ impl Heap for QueryHeap {
             Tag::Func => self.func_string(addr),
             Tag::Lis => self.list_string(addr),
             Tag::ELis => "[]".into(),
-            Tag::Arg => match SymbolDB::get_var(addr, self.get_id()) {
+            Tag::Arg => match SymbolDB::get_var(addr, self.get_symbol_db_id(addr)) {
                 Some(symbol) => symbol.to_string(),
                 None => format!("Arg_{}", self[addr].1),
             },
-            Tag::Ref => {
-                let id = if addr < self.prog_cells.len() {
-                    0
-                } else {
-                    self.id
-                };
-                // println!("Used id {id}, addr: {addr}");
-                // SymbolDB::_see_var_map();
-                match SymbolDB::get_var(self.deref_addr(addr), id).to_owned() {
-                    Some(symbol) => symbol.to_string(),
-                    None => format!("Ref_{}", self[addr].1),
-                }
-            }
+            Tag::Ref => match SymbolDB::get_var(self.deref_addr(addr), self.get_symbol_db_id(addr))
+                .to_owned()
+            {
+                Some(symbol) => symbol.to_string(),
+                None => format!("Ref_{}", self[addr].1),
+            },
             Tag::Int => {
                 let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
                 format!("{value}")

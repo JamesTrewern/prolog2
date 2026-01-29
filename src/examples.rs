@@ -177,8 +177,32 @@ fn learn_map_double() {
             "Learn Map Double test: success={}, solutions={}",
             success, solutions
         );
-        assert!(success, "Expected at least one solution for map test");
+        assert!(success, "Expected at least one solution for Learn Map Double test");
     } else {
-        panic!("No examples in map config");
+        panic!("No examples in Learn Map Double config");
+    }
+}
+
+#[test]
+fn trains(){
+    let (config, predicate_table, heap, examples) = load_setup("examples/map/learn_config.json");
+
+    let predicate_table = Arc::new(predicate_table);
+    let heap = Arc::new(heap);
+
+    if let Some(examples) = examples {
+        let (success, solutions) = run_query(
+            &examples.to_query(),
+            predicate_table.clone(),
+            heap.clone(),
+            config,
+        );
+        println!(
+            "Trains test: success={}, solutions={}",
+            success, solutions
+        );
+        assert!(success, "Expected at least one solution for Trains test");
+    } else {
+        panic!("No examples in Trains config");
     }
 }

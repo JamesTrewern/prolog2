@@ -62,8 +62,6 @@ impl SymbolDB {
         let vars = &SYMBOLS.read().unwrap().var_symbol_map;
         if let Some(symbol) = vars.get(&(addr, heap_id)) {
             Some(symbol.clone())
-        } else if let Some(symbol) = vars.get(&(addr, 0)) {
-            Some(symbol.clone())
         } else {
             None
         }
