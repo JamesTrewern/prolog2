@@ -98,7 +98,7 @@ double(X,Y):-
 
 
 # Configuration Options
-Configured in setup.json:
+Configured in a JSON file (default: `setup.json`):
 ``` json
 {
     "config" : {
@@ -115,6 +115,37 @@ Configured in setup.json:
     "files" : ["examples/simple_family.pl"]
 }
 ```
+
+# Running Prolog<sup>2</sup>
+
+```
+cargo run [-- [CONFIG_FILE] [OPTIONS]]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|---|---|
+| `CONFIG_FILE` | Path to a JSON config file. Defaults to `setup.json` if not provided. |
+| `--all`, `-a` | Automatically enumerate all solutions instead of prompting after each one. |
+
+**Examples:**
+
+```bash
+# Interactive REPL using default setup.json
+cargo run
+
+# Run the ancestor learning problem
+cargo run -- examples/ancestor/config.json
+
+# Run ancestor and automatically find all solutions
+cargo run -- examples/ancestor/config.json --all
+
+# Just the --all flag with default config
+cargo run -- --all
+```
+
+If the config file includes an `examples` field, Prolog<sup>2</sup> will immediately attempt to prove the examples as a query and output any learned hypotheses. If `examples` is omitted, an interactive REPL is started where queries can be entered manually.
 # Step by Step Demonstration of New Clause Generation
 
 1. First, we define a higher-order clause in our program

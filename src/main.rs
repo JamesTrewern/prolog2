@@ -152,14 +152,17 @@ fn load_file(file_path: String, predicate_table: &mut PredicateTable, heap: &mut
     execute_tree(syntax_tree, heap, predicate_table);
 }
 
-fn load_setup() -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
+fn load_setup(config_path: &str) -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
     let mut heap = Vec::new();
     let mut predicate_table = PredicateTable::new();
 
     load_all_modules(&mut predicate_table);
 
-    let setup: SetUp = serde_json::from_str(&fs::read_to_string("setup.json").unwrap()).unwrap();
-    // println!("{setup:?}");
+    let setup: SetUp = serde_json::from_str(
+        &fs::read_to_string(config_path)
+            .unwrap_or_else(|_| panic!("Failed to read config file: {}", config_path)),
+    )
+    .unwrap_or_else(|e| panic!("Failed to parse config file '{}': {}", config_path, e));
     let config = setup.config;
 
     for file_path in setup.files {
@@ -213,13 +216,17 @@ fn main_loop(
 }
 
 fn main() -> ExitCode {
-    // fs::remove_file("debug.log");
-    // File::create("debug.log");
-
     let args: Vec<String> = env::args().collect();
     let auto = args.iter().any(|arg| arg == "--all" || arg == "-a");
 
-    let (config, predicate_table, heap, examples) = load_setup();
+    let config_path = args
+        .iter()
+        .filter(|arg| !arg.starts_with('-') && *arg != &args[0])
+        .next()
+        .map(|s| s.as_str())
+        .unwrap_or("setup.json");
+
+    let (config, predicate_table, heap, examples) = load_setup(config_path);
 
     let predicate_table = Arc::new(predicate_table);
     let heap = Arc::new(heap);

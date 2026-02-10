@@ -185,7 +185,7 @@ fn learn_map_double() {
 
 #[test]
 fn trains(){
-    let (config, predicate_table, heap, examples) = load_setup("examples/map/learn_config.json");
+    let (config, predicate_table, heap, examples) = load_setup("examples/trains/config.json");
 
     let predicate_table = Arc::new(predicate_table);
     let heap = Arc::new(heap);
