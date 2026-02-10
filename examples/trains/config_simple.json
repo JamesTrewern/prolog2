@@ -2,8 +2,7 @@
     "config": {
         "max_depth": 5,
         "max_clause": 3,
-        "max_pred": 1,
-        "debug": false
+        "max_pred": 1
     },
 
     "body_predicates": [
@@ -16,17 +15,10 @@
     "examples": {
         "pos": [
             "e(east1)",
-            "e(east2)",
-            "e(east3)",
-            "e(east4)",
-            "e(east5)"
+            "e(east2)"
         ],
         "neg": [
-            "e(west6)",
-            "e(west7)",
-            "e(west8)",
-            "e(west9)",
-            "e(west10)"
+            "e(west6)"
         ]
     },
     "files": [

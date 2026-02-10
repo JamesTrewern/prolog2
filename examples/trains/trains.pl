@@ -1,16 +1,3 @@
-body_pred(car/1).
-body_pred(shape/1).
-body_pred(train/1).
-body_pred(short/1).
-body_pred(closed/1).
-body_pred(long/1).
-body_pred(open_car/1).
-body_pred(load/3).
-body_pred(wheels/2).
-body_pred(has_car/2).
-body_pred(double/1).
-body_pred(jagged/1).
-
 %% metarules
 P(A):-Q(A),{P,Q}.
 P(A):-Q(A),R(A),{P,Q,R}.
@@ -19,17 +6,6 @@ P(A,B):-Q(A,B),{P,Q}.
 P(A,B):-Q(A,B),R(B),{P,Q,R}.
 P(A):-Q(A,X),{P,Q,X}.
 P(A,B):-Q(A,B,X),{P,Q,X}.
-
-metarule([P,Q,X], [P,A,B], [[Q,A,B,X]]).
-
-    % Neg = [
-    %     e(west6),
-    %     e(west7),
-    %     e(west8),
-    %     e(west9),
-    %     e(west10)
-    % ],
-
 
 % type definitions
 car(car_11).

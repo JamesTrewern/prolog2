@@ -18,27 +18,27 @@ pub fn not(
     config: Config,
 ) -> PredReturn {
     use crate::heap::heap::Tag;
-    
+
     // The goal is not(X), we want to prove X
     // Goal may be a Str cell pointing to the Func, or directly a Func cell
     // We need to find the actual Func cell first, then get the first argument
-    
+
     // First dereference to handle any Ref indirection
     let mut func_addr = heap.deref_addr(goal);
-    
+
     // If it's a Str cell, follow the pointer to the actual Func
     if let (Tag::Str, pointer) = heap[func_addr] {
         func_addr = pointer;
     }
-    
+
     // Now func_addr points to: Func(2) | Con("not") | InnerGoal
     // The inner goal is at func_addr + 2
     // But it might be a Str cell pointing to the actual goal structure
     let arg_addr = func_addr + 2;
     let inner_goal = match heap[arg_addr] {
-        (Tag::Str, pointer) => pointer,  // Follow Str to actual goal
-        (Tag::Ref, _) => heap.deref_addr(arg_addr),  // Follow Ref chain
-        _ => arg_addr,  // Direct reference
+        (Tag::Str, pointer) => pointer, // Follow Str to actual goal
+        (Tag::Ref, _) => heap.deref_addr(arg_addr), // Follow Ref chain
+        _ => arg_addr,                  // Direct reference
     };
 
     // Create a config with learning disabled - we only want to test if the goal
@@ -54,18 +54,32 @@ pub fn not(
     let hypothesis_clone = hypothesis.clone();
     let mut inner_proof = Proof::with_hypothesis(inner_heap, &[inner_goal], hypothesis_clone);
 
-    eprintln!("[NEGATE] {} with {} hypothesis clauses", 
-        inner_proof.heap.term_string(inner_goal),
-        inner_proof.hypothesis.len());
-    
+    if config.debug {
+        eprintln!(
+            "[NEGATE] {} with {} hypothesis clauses",
+            inner_proof.heap.term_string(inner_goal),
+            inner_proof.hypothesis.len()
+        );
+    }
+
     // Try to prove the inner goal with the current hypothesis
     // If it succeeds, not/1 fails (the hypothesis entails something it shouldn't)
     // If it fails, not/1 succeeds (the hypothesis correctly doesn't entail this)
     if inner_proof.prove(predicate_table, inner_config) {
-        eprintln!("[FAILED_TO_NEGATE] {}", inner_proof.heap.term_string(inner_goal));
+        if config.debug {
+            eprintln!(
+                "[FAILED_TO_NEGATE] {}",
+                inner_proof.heap.term_string(inner_goal)
+            );
+        }
         PredReturn::False
     } else {
-        eprintln!("[NEGATED_THROUGH_FAILURE] {}", inner_proof.heap.term_string(inner_goal));
+        if config.debug {
+            eprintln!(
+                "[NEGATED_THROUGH_FAILURE] {}",
+                inner_proof.heap.term_string(inner_goal)
+            );
+        }
         PredReturn::True
     }
 }
