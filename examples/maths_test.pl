@@ -14,3 +14,9 @@ test_sub(X) :- X is 10 - 3.
 
 % Combined test
 test_combined(X) :- X is sqrt(-(-(25))).
+
+% Test negative sqrt
+square_root(X,Y):- Y is -sqrt(X).
+
+% Test negative variable in fact head
+neg(X,-X).
