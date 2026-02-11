@@ -1,19 +1,23 @@
 {
     "config" : {
-        "max_depth": 10,
-        "max_clause": 2,
-        "max_pred": 1,
+        "max_depth": 12,
+        "max_clause": 4,
+        "max_pred": 3,
         "debug": false
     },
     "body_predicates" : [
-        {"symbol" : "neg", "arity": 2},
+        {"symbol" : "times_two", "arity": 2},
+        {"symbol" : "squared", "arity": 2},
         {"symbol" : "minus", "arity": 3},
-        {"symbol" : "add", "arity": 3},
-        {"symbol" : "mult", "arity": 3},
-        {"symbol" : "squared", "arity": 2}
+        {"symbol" : "mult", "arity": 3}
     ],
     "examples" : {
-        "pos" : ["discriminant_simple(1,5,6,19)", "discriminant_simple(2,3,5,-1)", "discriminant_simple(1,4,3,13)"],
+        "pos" : [
+            "discriminant(2,5,3,1)",
+            "discriminant(2,6,4,4)",
+            "discriminant(2,8,6,16)",
+            "discriminant(3,7,4,1)"
+        ],
         "neg" : []
     },
     "files" : ["examples/quadratic_formula/learn_quad.pl"]

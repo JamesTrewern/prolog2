@@ -89,7 +89,12 @@ impl std::ops::Add for Number {
     type Output = Number;
     fn add(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Number::Int(v1), Number::Int(v2)) => Number::Int(v1 + v2),
+            (Number::Int(v1), Number::Int(v2)) => {
+                match v1.checked_add(v2) {
+                    Some(result) => Number::Int(result),
+                    None => Number::Flt(v1 as f64 + v2 as f64),
+                }
+            }
             (lhs, rhs) => Number::Flt(lhs.float() + rhs.float()),
         }
     }
@@ -99,7 +104,12 @@ impl std::ops::Sub for Number {
     type Output = Number;
     fn sub(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Number::Int(v1), Number::Int(v2)) => Number::Int(v1 - v2),
+            (Number::Int(v1), Number::Int(v2)) => {
+                match v1.checked_sub(v2) {
+                    Some(result) => Number::Int(result),
+                    None => Number::Flt(v1 as f64 - v2 as f64),
+                }
+            }
             (lhs, rhs) => Number::Flt(lhs.float() - rhs.float()),
         }
     }
@@ -109,7 +119,13 @@ impl std::ops::Mul for Number {
     type Output = Number;
     fn mul(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Number::Int(v1), Number::Int(v2)) => Number::Int(v1 * v2),
+            (Number::Int(v1), Number::Int(v2)) => {
+                // Use checked multiplication to avoid overflow panic
+                match v1.checked_mul(v2) {
+                    Some(result) => Number::Int(result),
+                    None => Number::Flt(v1 as f64 * v2 as f64), // Fallback to float on overflow
+                }
+            }
             (lhs, rhs) => Number::Flt(lhs.float() * rhs.float()),
         }
     }
@@ -119,7 +135,13 @@ impl std::ops::Div for Number {
     type Output = Number;
     fn div(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Number::Int(v1), Number::Int(v2)) => Number::Int(v1 / v2),
+            (Number::Int(v1), Number::Int(v2)) => {
+                if v2 == 0 {
+                    Number::Flt(f64::NAN) // Return NaN for division by zero
+                } else {
+                    Number::Int(v1 / v2)
+                }
+            }
             (lhs, rhs) => Number::Flt(lhs.float() / rhs.float()),
         }
     }

@@ -9,7 +9,7 @@ minus(X,Y,Z):- Z is X - Y.
 add(X,Y,Z):- Z is X + Y.
 mult(X,Y,Z):- Z is X * Y.
 squared(X,Y):- Y is X * X.
-times_four(X,Y):- Y is X * 4.
+times_two(X,Y):- Y is X * 2.
 
 % ============================================
 % META-RULES
