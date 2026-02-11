@@ -3,7 +3,7 @@ use std::{
     usize,
 };
 
-use crate::heap::heap::{Heap, Tag};
+use crate::heap::heap::{Cell, Heap, Tag};
 
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
@@ -76,7 +76,7 @@ impl Substitution {
     // REPLACE the check_constraints method in src/resolution/unification.rs with:
 
     /// Fully dereference an address through both heap references and substitution bindings.
-    fn full_deref(&self, mut addr: usize, heap: &impl Heap) -> usize {
+    pub(crate) fn full_deref(&self, mut addr: usize, heap: &impl Heap) -> usize {
         loop {
             // First, dereference through the heap
             let heap_deref = heap.deref_addr(addr);
@@ -101,16 +101,21 @@ impl Substitution {
     /// The constraint check traces through BOTH:
     /// 1. The heap's reference chains (via deref_addr)
     /// 2. The substitution's pending bindings (via bound)
+    ///
+    /// Compares cell VALUES at dereferenced addresses, not the addresses themselves.
+    /// This ensures that the same constant symbol at different heap locations is
+    /// correctly detected as a duplicate.
     pub fn check_constraints(&self, constraints: &[usize], heap: &impl Heap) -> bool {
-        // Collect (original_constraint, final_target) for each constrained address
-        let mut constrained_targets: Vec<(usize, usize)> = Vec::new();
+        // Collect (original_constraint, final_cell) for each constrained address
+        let mut constrained_targets: Vec<(usize, Cell)> = Vec::new();
 
         for &constraint_addr in constraints {
-            let final_target = self.full_deref(constraint_addr, heap);
-            constrained_targets.push((constraint_addr, final_target));
+            let final_addr = self.full_deref(constraint_addr, heap);
+            let final_cell = heap[final_addr];
+            constrained_targets.push((constraint_addr, final_cell));
         }
 
-        // Check if any two different constrained addresses resolve to the same target
+        // Check if any two different constrained addresses resolve to the same cell value
         for i in 0..constrained_targets.len() {
             for j in (i + 1)..constrained_targets.len() {
                 if constrained_targets[i].0 != constrained_targets[j].0

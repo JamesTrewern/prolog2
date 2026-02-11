@@ -1,0 +1,28 @@
+{
+    "config": {
+        "max_depth": 5,
+        "max_clause": 3,
+        "max_pred": 1,
+        "debug": true
+    },
+
+    "body_predicates": [
+        {"symbol": "short", "arity": 1},
+        {"symbol": "closed", "arity": 1},
+        {"symbol": "long", "arity": 1},
+        {"symbol": "open_car", "arity": 1},
+        {"symbol": "has_car", "arity": 2}
+    ],
+    "examples": {
+        "pos": [
+            "e(east1)",
+            "e(east2)"
+        ],
+        "neg": [
+            "e(west6)"
+        ]
+    },
+    "files": [
+        "examples/trains/trains.pl"
+    ]
+}

@@ -1,0 +1,191 @@
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+  --> src/program/predicate_table.rs:17:14
+   |
+15 | #[derive(PartialEq, Eq, Debug, Clone)]
+   |          --------- in this derive macro expansion
+16 | pub enum Predicate {
+17 |     Function(PredicateFunction),
+   |              ^^^^^^^^^^^^^^^^^
+   |
+   = note: the address of the same function can vary between different codegen units
+   = note: furthermore, different functions could have the same address after being merged together
+   = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+   = note: `#[warn(unpredictable_function_pointer_comparisons)]` on by default
+
+warning: `prolog2` (bin "prolog2") generated 1 warning
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.01s
+     Running `target/debug/prolog2 examples/trains/config_debug.json --all`
+[TRY] goal=e(east1) addr=56
+[CALL] P(A):-Q(A,B),R(B).
+[MATCH] depth=0 goal=e(east1) clause=P(A):-Q(A,B),R(B)., choices_remaining=2
+[ADD_CLAUSE] depth=0 goal=e(east1) clause=e(Arg_1):-Ref_66(Arg_1,Arg_3),Ref_70(Arg_3).
+[HYPOTHESIS]:
+e(Arg_1):-Ref_66(Arg_1,Arg_3),Ref_70(Arg_3).
+
+Bindings: []
+[TRY] goal=Ref_66(east1,Ref_68) addr=65
+[CALL] has_car(west6,car_62):.
+[CALL] has_car(west6,car_61):.
+[CALL] has_car(east1,car_12):.
+[MATCH] depth=1 goal=Ref_66(east1,Ref_68) clause=has_car(east1,car_12):., choices_remaining=2
+Bindings: [(66, 39), (68, 41)]
+[TRY] goal=Ref_70(car_12) addr=69
+[CALL] closed(car_61):.
+[CALL] closed(car_12):.
+[MATCH] depth=1 goal=Ref_70(car_12) clause=closed(car_12):., choices_remaining=7
+Bindings: [(70, 32)]
+[TRY] goal=not(e(west6)) addr=62
+[NEGATE] e(west6) with 1 hypothesis clauses
+[TRY] goal=e(west6) addr=59
+[CALL] P(A):-Q(A,B),R(B).
+[CALL] P(A):-Q(A),R(A).
+[CALL] P(A):-Q(A).
+[CALL] e(Arg_1):-has_car(Arg_1,Arg_3),closed(Arg_3).
+[MATCH] depth=0 goal=e(west6) clause=e(Arg_1):-has_car(Arg_1,Arg_3),closed(Arg_3)., choices_remaining=0
+Bindings: []
+[TRY] goal=has_car(west6,Ref_85) addr=82
+[CALL] has_car(west6,car_62):.
+[MATCH] depth=1 goal=has_car(west6,Ref_85) clause=has_car(west6,car_62):., choices_remaining=4
+Bindings: [(85, 49)]
+[TRY] goal=closed(car_62) addr=86
+[CALL] closed(car_61):.
+[CALL] closed(car_12):.
+[CALL] e(Arg_1):-has_car(Arg_1,Arg_3),closed(Arg_3).
+[NO_MATCH] depth=1 goal=closed(car_62) tried 3 choices, Originally had 3 choices
+[UNDO_TRY] goal=has_car(west6,car_62) addr=82
+[RETRY] goal=has_car(west6,Ref_85) addr=82
+[CALL] has_car(west6,car_61):.
+[MATCH] depth=1 goal=has_car(west6,Ref_85) clause=has_car(west6,car_61):., choices_remaining=3
+Bindings: [(85, 45)]
+[TRY] goal=closed(car_61) addr=86
+[CALL] closed(car_61):.
+[MATCH] depth=1 goal=closed(car_61) clause=closed(car_61):., choices_remaining=2
+Bindings: []
+[FAILED_TO_NEGATE] e(west6)
+[CALL] e(Arg_1):-has_car(Arg_1,Arg_3),closed(Arg_3).
+[NO_MATCH] depth=0 goal=not(e(west6)) tried 1 choices, Originally had 0 choices
+[UNDO_TRY] goal=closed(car_12) addr=69
+[RETRY] goal=Ref_70(car_12) addr=69
+[CALL] short(car_62):.
+[CALL] short(car_12):.
+[MATCH] depth=1 goal=Ref_70(car_12) clause=short(car_12):., choices_remaining=5
+Bindings: [(70, 29)]
+[TRY] goal=not(e(west6)) addr=62
+[NEGATE] e(west6) with 1 hypothesis clauses
+[TRY] goal=e(west6) addr=59
+[CALL] P(A):-Q(A,B),R(B).
+[CALL] P(A):-Q(A),R(A).
+[CALL] P(A):-Q(A).
+[CALL] e(Arg_1):-has_car(Arg_1,Arg_3),short(Arg_3).
+[MATCH] depth=0 goal=e(west6) clause=e(Arg_1):-has_car(Arg_1,Arg_3),short(Arg_3)., choices_remaining=0
+Bindings: []
+[TRY] goal=has_car(west6,Ref_85) addr=82
+[CALL] has_car(west6,car_62):.
+[MATCH] depth=1 goal=has_car(west6,Ref_85) clause=has_car(west6,car_62):., choices_remaining=4
+Bindings: [(85, 49)]
+[TRY] goal=short(car_62) addr=86
+[CALL] short(car_62):.
+[MATCH] depth=1 goal=short(car_62) clause=short(car_62):., choices_remaining=3
+Bindings: []
+[FAILED_TO_NEGATE] e(west6)
+[CALL] e(Arg_1):-has_car(Arg_1,Arg_3),short(Arg_3).
+[NO_MATCH] depth=0 goal=not(e(west6)) tried 1 choices, Originally had 0 choices
+[UNDO_TRY] goal=short(car_12) addr=69
+[RETRY] goal=Ref_70(car_12) addr=69
+[CALL] short(car_11):.
+[CALL] P(A):-Q(A,B),R(B).
+[CALL] P(A):-Q(A),R(A).
+[CALL] P(A):-Q(A).
+[CALL] e(Arg_1):-has_car(Arg_1,Arg_3),Ref_70(Arg_3).
+[NO_MATCH] depth=1 goal=Ref_70(car_12) tried 5 choices, Originally had 9 choices
+[UNDO_TRY] goal=has_car(east1,car_12) addr=65
+[RETRY] goal=Ref_66(east1,Ref_68) addr=65
+[CALL] has_car(east1,car_11):.
+[MATCH] depth=1 goal=Ref_66(east1,Ref_68) clause=has_car(east1,car_11):., choices_remaining=1
+Bindings: [(66, 35), (68, 37)]
+[TRY] goal=Ref_70(car_11) addr=69
+[CALL] closed(car_61):.
+[CALL] closed(car_12):.
+[CALL] short(car_62):.
+[CALL] short(car_12):.
+[CALL] short(car_11):.
+[MATCH] depth=1 goal=Ref_70(car_11) clause=short(car_11):., choices_remaining=4
+Bindings: [(70, 26)]
+[TRY] goal=not(e(west6)) addr=62
+[NEGATE] e(west6) with 1 hypothesis clauses
+[TRY] goal=e(west6) addr=59
+[CALL] P(A):-Q(A,B),R(B).
+[CALL] P(A):-Q(A),R(A).
+[CALL] P(A):-Q(A).
+[CALL] e(Arg_1):-has_car(Arg_1,Arg_3),short(Arg_3).
+[MATCH] depth=0 goal=e(west6) clause=e(Arg_1):-has_car(Arg_1,Arg_3),short(Arg_3)., choices_remaining=0
+Bindings: []
+[TRY] goal=has_car(west6,Ref_85) addr=82
+[CALL] has_car(west6,car_62):.
+[MATCH] depth=1 goal=has_car(west6,Ref_85) clause=has_car(west6,car_62):., choices_remaining=4
+Bindings: [(85, 49)]
+[TRY] goal=short(car_62) addr=86
+[CALL] short(car_62):.
+[MATCH] depth=1 goal=short(car_62) clause=short(car_62):., choices_remaining=3
+Bindings: []
+[FAILED_TO_NEGATE] e(west6)
+[CALL] e(Arg_1):-has_car(Arg_1,Arg_3),short(Arg_3).
+[NO_MATCH] depth=0 goal=not(e(west6)) tried 1 choices, Originally had 0 choices
+[UNDO_TRY] goal=short(car_11) addr=69
+[RETRY] goal=Ref_70(car_11) addr=69
+[CALL] P(A):-Q(A,B),R(B).
+[CALL] P(A):-Q(A),R(A).
+[CALL] P(A):-Q(A).
+[CALL] e(Arg_1):-has_car(Arg_1,Arg_3),Ref_70(Arg_3).
+[NO_MATCH] depth=1 goal=Ref_70(car_11) tried 4 choices, Originally had 9 choices
+[UNDO_TRY] goal=has_car(east1,car_11) addr=65
+[RETRY] goal=Ref_66(east1,Ref_68) addr=65
+[CALL] e(Arg_1):-Ref_66(Arg_1,Arg_3),Ref_70(Arg_3).
+[NO_MATCH] depth=1 goal=Ref_66(east1,Ref_68) tried 1 choices, Originally had 5 choices
+[UNDO_TRY] goal=e(east1) addr=56
+[UNDO_CLAUSE] depth=0 clause=e(Arg_1):-Ref_66(Arg_1,Arg_3),Ref_70(Arg_3).
+[RETRY] goal=e(east1) addr=56
+[CALL] P(A):-Q(A),R(A).
+[MATCH] depth=0 goal=e(east1) clause=P(A):-Q(A),R(A)., choices_remaining=1
+[ADD_CLAUSE] depth=0 goal=e(east1) clause=e(Arg_1):-Ref_83(Arg_1),Ref_86(Arg_1).
+[HYPOTHESIS]:
+e(Arg_1):-Ref_83(Arg_1),Ref_86(Arg_1).
+
+Bindings: []
+[TRY] goal=Ref_83(east1) addr=82
+[CALL] closed(car_61):.
+[CALL] closed(car_12):.
+[CALL] short(car_62):.
+[CALL] short(car_12):.
+[CALL] short(car_11):.
+[CALL] P(A):-Q(A,B),R(B).
+[CALL] P(A):-Q(A),R(A).
+[CALL] P(A):-Q(A).
+[CALL] e(Arg_1):-Ref_83(Arg_1),Ref_86(Arg_1).
+[NO_MATCH] depth=1 goal=Ref_83(east1) tried 9 choices, Originally had 9 choices
+[UNDO_TRY] goal=e(east1) addr=56
+[UNDO_CLAUSE] depth=0 clause=e(Arg_1):-Ref_83(Arg_1),Ref_86(Arg_1).
+[RETRY] goal=e(east1) addr=56
+[CALL] P(A):-Q(A).
+[MATCH] depth=0 goal=e(east1) clause=P(A):-Q(A)., choices_remaining=0
+[ADD_CLAUSE] depth=0 goal=e(east1) clause=e(Arg_1):-Ref_98(Arg_1).
+[HYPOTHESIS]:
+e(Arg_1):-Ref_98(Arg_1).
+
+Bindings: []
+[TRY] goal=Ref_98(east1) addr=97
+[CALL] closed(car_61):.
+[CALL] closed(car_12):.
+[CALL] short(car_62):.
+[CALL] short(car_12):.
+[CALL] short(car_11):.
+[CALL] P(A):-Q(A,B),R(B).
+[CALL] P(A):-Q(A),R(A).
+[CALL] P(A):-Q(A).
+[CALL] e(Arg_1):-Ref_98(Arg_1).
+[NO_MATCH] depth=1 goal=Ref_98(east1) tried 9 choices, Originally had 9 choices
+[UNDO_TRY] goal=e(east1) addr=56
+[UNDO_CLAUSE] depth=0 clause=e(Arg_1):-Ref_98(Arg_1).
+[RETRY] goal=e(east1) addr=56
+[NO_MATCH] depth=0 goal=e(east1) tried 0 choices, Originally had 3 choices
+[FAILED] First goal exhausted
