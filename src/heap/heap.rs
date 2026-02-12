@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     mem,
     ops::{Index, IndexMut, Range, RangeInclusive},
 };
@@ -229,6 +230,120 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.heap_push(other[addr]);
                 self.heap_len() - 1
             }
+        }
+    }
+
+    /// Copy a term from `other` heap into `self`, tracking variable identity
+    /// via `ref_map`. Unbound Ref cells in `other` are mapped to fresh Ref
+    /// cells in `self`; the same source Ref always maps to the same target Ref.
+    /// Call with a shared `ref_map` across multiple terms to preserve variable
+    /// sharing (e.g. across literals in a clause).
+    fn copy_term_with_ref_map(
+        &mut self,
+        other: &impl Heap,
+        addr: usize,
+        ref_map: &mut HashMap<usize, usize>,
+    ) -> usize {
+        let addr = other.deref_addr(addr);
+        match other[addr] {
+            (Tag::Str, pointer) => {
+                let new_ptr = self.copy_term_with_ref_map(other, pointer, ref_map);
+                self.heap_push((Tag::Str, new_ptr));
+                self.heap_len() - 1
+            }
+            (Tag::Func | Tag::Tup | Tag::Set, length) => {
+                // Pre-pass: recursively copy complex sub-terms
+                let mut pre: Vec<Option<Cell>> = Vec::with_capacity(length);
+                for i in 1..=length {
+                    pre.push(self._copy_ref_map_complex(other, addr + i, ref_map));
+                }
+                // Lay down structure header + sub-terms
+                let h = self.heap_len();
+                self.heap_push((other[addr].0, length));
+                for (i, pre_cell) in pre.into_iter().enumerate() {
+                    match pre_cell {
+                        Some(cell) => { self.heap_push(cell); }
+                        None => self._copy_ref_map_simple(other, addr + 1 + i, ref_map),
+                    }
+                }
+                h
+            }
+            (Tag::Lis, pointer) => {
+                let head = self._copy_ref_map_complex(other, pointer, ref_map);
+                let tail = self._copy_ref_map_complex(other, pointer + 1, ref_map);
+                let h = self.heap_len();
+                match head {
+                    Some(cell) => { self.heap_push(cell); }
+                    None => self._copy_ref_map_simple(other, pointer, ref_map),
+                }
+                match tail {
+                    Some(cell) => { self.heap_push(cell); }
+                    None => self._copy_ref_map_simple(other, pointer + 1, ref_map),
+                }
+                h
+            }
+            (Tag::Ref, r) if r == addr => {
+                // Unbound ref — use or create mapping
+                if let Some(&mapped) = ref_map.get(&addr) {
+                    mapped
+                } else {
+                    let new_addr = self.heap_len();
+                    self.heap_push((Tag::Ref, new_addr));
+                    ref_map.insert(addr, new_addr);
+                    new_addr
+                }
+            }
+            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri | Tag::ELis, _) => {
+                self.heap_push(other[addr]);
+                self.heap_len() - 1
+            }
+            (tag, val) => panic!("copy_term_with_ref_map: unhandled ({tag:?}, {val})"),
+        }
+    }
+
+    /// Pre-pass helper for copy_term_with_ref_map: recursively copy complex
+    /// sub-terms and return the Cell to later insert, or None for simple cells.
+    fn _copy_ref_map_complex(
+        &mut self,
+        other: &impl Heap,
+        addr: usize,
+        ref_map: &mut HashMap<usize, usize>,
+    ) -> Option<Cell> {
+        let addr = other.deref_addr(addr);
+        match other[addr] {
+            (Tag::Func | Tag::Tup | Tag::Set, _) => {
+                Some((Tag::Str, self.copy_term_with_ref_map(other, addr, ref_map)))
+            }
+            (Tag::Str, ptr) => {
+                Some((Tag::Str, self.copy_term_with_ref_map(other, ptr, ref_map)))
+            }
+            (Tag::Lis, _) => {
+                Some((Tag::Lis, self.copy_term_with_ref_map(other, addr, ref_map)))
+            }
+            _ => None,
+        }
+    }
+
+    /// Post-pass helper for copy_term_with_ref_map: push a simple cell,
+    /// handling Ref identity via ref_map.
+    fn _copy_ref_map_simple(
+        &mut self,
+        other: &impl Heap,
+        addr: usize,
+        ref_map: &mut HashMap<usize, usize>,
+    ) {
+        let addr = other.deref_addr(addr);
+        match other[addr] {
+            (Tag::Ref, r) if r == addr => {
+                if let Some(&mapped) = ref_map.get(&addr) {
+                    self.heap_push((Tag::Ref, mapped));
+                } else {
+                    let new_addr = self.heap_len();
+                    self.heap_push((Tag::Ref, new_addr));
+                    ref_map.insert(addr, new_addr);
+                }
+            }
+            cell => { self.heap_push(cell); }
         }
     }
 
