@@ -173,9 +173,10 @@ fn load_setup(config_path: &str) -> (Config, PredicateTable, Vec<Cell>, Option<E
     }
 
     for BodyClause { symbol, arity } in setup.body_predicates {
+        let sym = SymbolDB::set_const(symbol.clone());
         predicate_table
-            .set_body((SymbolDB::set_const(symbol), arity), true)
-            .unwrap();
+            .set_body((sym, arity), true)
+            .unwrap_or_else(|e| panic!("{e}: {symbol}/{arity}"));
     }
 
     (config, predicate_table, heap, setup.examples, setup.top_prog)
