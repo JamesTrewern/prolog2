@@ -1,0 +1,16 @@
+{
+    "config" : {
+        "max_depth": 10,
+        "max_clause": 4,
+        "max_pred": 0,
+        "debug": true
+    },
+    "body_predicates" : [
+        {"symbol" : "add", "arity": 3}
+    ],
+    "examples" : {
+        "pos" : ["fsm([1,0,1,0],even,even)","fsm([1,1,1,1],even,even)","fsm([0,0,0,0],even,even)","fsm([1,0,0,0],even,odd)","fsm([1,1,1,0],even,odd)","fsm([1,0,1,1],even,odd)"],
+        "neg" : ["fsm([1,0,1,0],even,odd)","fsm([1,1,1,1],even,odd)","fsm([0,0,0,0],even,odd)","fsm([1,0,0,0],even,even)","fsm([1,1,1,0],even,even)","fsm([1,0,1,1],even,even)"]
+    },
+    "files" : ["examples/fsm/parser_fsm.pl"]
+}

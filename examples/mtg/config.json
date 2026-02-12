@@ -166,80 +166,13 @@
             "symbol": "from_graveyard_to_battlefield",
             "arity": 2
         },
-        {
-            "symbol": "all_from_battlefield_to_hand",
-            "arity": 2
-        },
+        
         {
             "symbol": "all_from_graveyard_to_hand",
             "arity": 2
         },
         {
             "symbol": "all_from_graveyard_to_battlefield",
-            "arity": 2
-        },
-        {
-            "symbol": "permanents",
-            "arity": 2
-        },
-        {
-            "symbol": "all_of_type_from_battlefield_to_hand",
-            "arity": 2
-        },
-        {
-            "symbol": "all_of_type_from_graveyard_to_hand",
-            "arity": 2
-        },
-        {
-            "symbol": "all_of_type_from_graveyard_to_battlefield",
-            "arity": 2
-        },
-        {
-            "symbol": "to_owners_hand",
-            "arity": 2
-        },
-        {
-            "symbol": "to",
-            "arity": 2
-        },
-        {
-            "symbol": "its",
-            "arity": 2
-        },
-        {
-            "symbol": "owners_gen",
-            "arity": 2
-        },
-        {
-            "symbol": "zone_hand",
-            "arity": 2
-        },
-        {
-            "symbol": "to_owners_hands",
-            "arity": 2
-        },
-        {
-            "symbol": "their",
-            "arity": 2
-        },
-        {
-            "symbol": "owners_gen_plural",
-            "arity": 2
-        },
-        {
-            "symbol": "hands",
-            "arity": 2
-        },
-        {
-            "symbol": "from_graveyard",
-            "arity": 2
-        },
-        {
-            "symbol": "from",
-            "arity": 2
-        },
-        {
-            "symbol": "your",
             "arity": 2
         },
         {
@@ -1624,7 +1557,7 @@
         ],
         "neg": []
     },
-    "top_prog": true,
+    "top_prog": false,
     "files": [
         "examples/mtg/mtg_fragment.pl"
     ]

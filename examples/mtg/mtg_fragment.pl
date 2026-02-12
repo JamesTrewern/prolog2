@@ -1,4 +1,4 @@
-P(X,Y):- Q(X,Z), R(Z,Y) {X,Y,Z}.
+P(X,Y):- Q(X,Z), R(Z,Y), {X,Y,Z}.
 
 %Following rules are extracted from the Comprehensive Rules document effective
 %as of August 2018, online here:

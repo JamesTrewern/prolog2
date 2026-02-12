@@ -167,7 +167,7 @@ impl PredicateTable {
                     Ok(())
                 }
             }
-            _ => Err("Can't set non existing predicate to body"),
+            _ => Ok(()),//Err("Can't set non existing predicate to body"),
         }
     }
 

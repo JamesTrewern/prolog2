@@ -42,6 +42,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn heap_len(&self) -> usize;
 
+    fn truncate(&mut self, len: usize);
+
     fn get_id(&self) -> usize {
         0
     }
@@ -528,6 +530,10 @@ impl Heap for Vec<Cell> {
 
     fn heap_len(&self) -> usize {
         self.len()
+    }
+    
+    fn truncate(&mut self, len: usize) {
+        self.resize(len, (Tag::Ref,0));
     }
 }
 

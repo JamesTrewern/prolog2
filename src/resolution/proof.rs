@@ -29,10 +29,11 @@ pub(super) struct Env {
     pub(super) children: usize,
     pub(super) depth: usize,
     total_choice_count: usize,
+    heap_point: usize, //How big was the heap after this goal was created
 }
 
 impl Env {
-    pub fn new(goal: usize, depth: usize) -> Self {
+    pub fn new(goal: usize, depth: usize, heap_point: usize) -> Self {
         Env {
             goal,
             bindings: Box::new([]),
@@ -45,6 +46,7 @@ impl Env {
             children: 0,
             depth,
             total_choice_count: 0,
+            heap_point,
         }
     }
 
@@ -55,6 +57,7 @@ impl Env {
         predicate_table: &PredicateTable,
     ) {
         self.got_choices = true;
+        self.heap_point = heap.heap_len();
         let (symbol, arity) = heap.str_symbol_arity(self.goal);
 
         self.choices = hypothesis.iter().map(|clause| clause.clone()).collect();
@@ -124,6 +127,7 @@ impl Env {
             }
         }
         heap.unbind(&self.bindings);
+        heap.truncate(self.heap_point);
         self.children
     }
 
@@ -278,7 +282,7 @@ impl Env {
                 return Some(
                     new_goals
                         .into_iter()
-                        .map(|goal| Env::new(goal, self.depth + 1))
+                        .map(|goal| Env::new(goal, self.depth + 1, heap.heap_len()))
                         .collect(),
                 );
             }
@@ -308,7 +312,7 @@ pub struct Proof {
 impl Proof {
     pub fn new(heap: QueryHeap, goals: &[usize]) -> Self {
         let hypothesis = Hypothesis::new();
-        let stack = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
+        let stack = goals.iter().map(|goal| Env::new(*goal, 0, heap.heap_len())).collect();
         Proof {
             stack,
             pointer: 0,
@@ -322,7 +326,7 @@ impl Proof {
     /// Create a new proof with an existing hypothesis (for negation-as-failure checks)
     pub fn with_hypothesis(heap: QueryHeap, goals: &[usize], hypothesis: Hypothesis) -> Self {
         let h_clauses = hypothesis.len();
-        let stack = goals.iter().map(|goal| Env::new(*goal, 0)).collect();
+        let stack = goals.iter().map(|goal| Env::new(*goal, 0, heap.heap_len())).collect();
         Proof {
             stack,
             pointer: 0,
