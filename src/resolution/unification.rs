@@ -222,7 +222,7 @@ fn unify_list(
     addr_1: usize,
     addr_2: usize,
 ) -> Option<Substitution> {
-    println!("List:({addr_1},{addr_2})");
+    // println!("List:({addr_1},{addr_2})");
     let addr_1 = heap[addr_1].1;
     let addr_2 = heap[addr_2].1;
     binding = unify_rec(heap, binding, addr_1, addr_2)?;
