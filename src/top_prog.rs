@@ -1,9 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
     process::ExitCode,
-    sync::{mpsc, Arc},
+    sync::{mpsc::{self, Sender}, Arc},
     thread,
 };
+
+use lazy_static::lazy_static;
+use rayon;
 
 use crate::{
     Config, Examples,
@@ -410,64 +413,78 @@ fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, Str
     Ok(clause[0])
 }
 
-/// Generalise: spawn a proof thread per positive example, each sending
-/// hypotheses over a channel. Main thread receives, normalises, and deduplicates.
+lazy_static! {
+    static ref CPU_COUNT: usize = num_cpus::get();
+}
+
+/// Worker thread: enumerate all hypotheses for a single positive example,
+/// sending each over the channel for the main thread to deduplicate.
+fn generalise_thread(
+    example: &str,
+    index: usize,
+    predicate_table: &Arc<PredicateTable>,
+    heap: &Arc<Vec<Cell>>,
+    config: Config,
+    tx: Sender<HypothesisMsg>,
+) {
+    let mut query_heap = QueryHeap::new(heap.clone(), None);
+    let goal = match parse_example(example, &mut query_heap) {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("Failed to parse example '{}': {}", example, e);
+            return;
+        }
+    };
+
+    let mut proof = Proof::new(query_heap, &[goal]);
+    let mut solution_count: usize = 0;
+
+    while proof.prove(predicate_table.clone(), config) {
+        solution_count += 1;
+        let (cells, clauses) = extract_hypothesis_local(&proof);
+        if tx.send(HypothesisMsg { cells, clauses }).is_err() {
+            break; // Receiver dropped
+        }
+    }
+
+    println!(
+        "  Example {} '{}': {} solutions",
+        index + 1, example, solution_count
+    );
+}
+
+/// Generalise: use a rayon thread pool to enumerate hypotheses for each
+/// positive example. Main thread receives via channel and deduplicates.
 fn generalise(
     pos_examples: &[String],
     predicate_table: &Arc<PredicateTable>,
     heap: &Arc<Vec<Cell>>,
     config: Config,
 ) -> TopProgramAccumulator {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(*CPU_COUNT)
+        .build()
+        .unwrap();
+
     let (tx, rx) = mpsc::channel::<HypothesisMsg>();
 
-    let handles: Vec<_> = pos_examples
-        .iter()
-        .enumerate()
-        .map(|(i, example)| {
-            let example = example.clone();
-            let predicate_table = predicate_table.clone();
-            let heap = heap.clone();
-            let tx = tx.clone();
+    // Spawn all example threads on the pool
+    for (i, example) in pos_examples.iter().enumerate() {
+        let tx = tx.clone();
+        let predicate_table = predicate_table.clone();
+        let heap = heap.clone();
+        let example = example.clone();
+        pool.spawn(move || {
+            generalise_thread(&example, i, &predicate_table, &heap, config, tx);
+        });
+    }
+    drop(tx); // Signal completion when all senders are dropped
 
-            thread::spawn(move || {
-                let mut query_heap = QueryHeap::new(heap, None);
-                let goal = match parse_example(&example, &mut query_heap) {
-                    Ok(g) => g,
-                    Err(e) => {
-                        eprintln!("Failed to parse example '{}': {}", example, e);
-                        return;
-                    }
-                };
-
-                let mut proof = Proof::new(query_heap, &[goal]);
-                let mut solution_count: usize = 0;
-
-                while proof.prove(predicate_table.clone(), config) {
-                    solution_count += 1;
-                    let (cells, clauses) = extract_hypothesis_local(&proof);
-                    let _ = tx.send(HypothesisMsg { cells, clauses });
-                }
-
-                println!(
-                    "  Example {} '{}': {} solutions",
-                    i + 1, example, solution_count
-                );
-            })
-        })
-        .collect();
-
-    drop(tx);
-
-    // Main thread: receive, normalise, deduplicate
     let mut accumulator = TopProgramAccumulator::new();
     let mut total = 0usize;
     for msg in rx {
         total += 1;
         accumulator.receive(msg);
-    }
-
-    for handle in handles {
-        handle.join().expect("Proof thread panicked");
     }
 
     println!(
