@@ -12,6 +12,7 @@ use crate::{
 pub fn build_clause(
     literals: Vec<Term>,
     meta_vars: Option<Vec<String>>,
+    constrained_vars: Option<Vec<String>>,
     heap: &mut impl Heap,
     query: bool,
 ) -> Clause {
@@ -28,7 +29,85 @@ pub fn build_clause(
             .collect::<Vec<usize>>()
     });
 
-    Clause::new(literals, meta_vars)
+    let constrained_vars = constrained_vars.map(|vars| {
+        vars.into_iter()
+            .map(|var| *var_values.get(&var).unwrap())
+            .collect::<Vec<usize>>()
+    });
+
+    Clause::new(literals, meta_vars, constrained_vars)
+}
+
+/// Extract variable names from a Term::Set
+fn extract_var_names_from_set(term: Term) -> Vec<String> {
+    if let Term::Set(set_terms) = term {
+        set_terms
+            .into_iter()
+            .map(|t| {
+                if let Term::Unit(Unit::Variable(symbol)) = t {
+                    symbol
+                } else {
+                    panic!("meta variable set should only contain variables")
+                }
+            })
+            .collect()
+    } else {
+        panic!("Expected a Set term")
+    }
+}
+
+/// Extract variable names from a Term::List (must be a flat list with EmptyList tail)
+fn extract_var_names_from_list(term: Term) -> Vec<String> {
+    if let Term::List(list_terms, tail) = term {
+        assert!(
+            matches!(*tail, Term::EmptyList),
+            "Unconstrained variable list must not have a tail"
+        );
+        list_terms
+            .into_iter()
+            .map(|t| {
+                if let Term::Unit(Unit::Variable(symbol)) = t {
+                    symbol
+                } else {
+                    panic!("unconstrained variable list should only contain variables")
+                }
+            })
+            .collect()
+    } else {
+        panic!("Expected a List term")
+    }
+}
+
+/// Extract meta_vars and constrained_vars from a MetaRule's trailing terms.
+///
+/// Handles three cases:
+/// - `...{P,Q,R}.` → meta_vars = {P,Q,R}, constrained_vars = None (defaults to all)
+/// - `...{P},[Q1,Q2].` → meta_vars = {P,Q1,Q2}, constrained_vars = Some({P})
+/// - `...[Q1,Q2].` → meta_vars = {Q1,Q2}, constrained_vars = Some({}) (empty)
+fn extract_meta_rule_vars(terms: &mut Vec<Term>) -> (Vec<String>, Option<Vec<String>>) {
+    let last = terms.pop().unwrap();
+    match last {
+        // Case 1: last is {P,Q,R} — all constrained (original behaviour)
+        Term::Set(_) => {
+            let meta_vars = extract_var_names_from_set(last);
+            (meta_vars, None)
+        }
+        // Case 2 or 3: last is [Q1,Q2]
+        Term::List(_, _) => {
+            let unconstrained = extract_var_names_from_list(last);
+            // Check if the new last element is a Set (Case 2: {P},[Q1,Q2])
+            let constrained = if matches!(terms.last(), Some(Term::Set(_))) {
+                extract_var_names_from_set(terms.pop().unwrap())
+            } else {
+                // Case 3: [Q1,Q2] only — no constrained vars
+                Vec::new()
+            };
+            let mut meta_vars = constrained.clone();
+            meta_vars.extend(unconstrained);
+            (meta_vars, Some(constrained))
+        }
+        _ => panic!("Last literal in meta_rule wasn't a set or list"),
+    }
 }
 
 // pub fn execute_directive(directive: Vec<Term>, predicate_table: &mut PredicateTable) -> Result<(),String>{
@@ -48,54 +127,30 @@ pub(crate) fn execute_tree(
     for clause in syntax_tree {
         match clause {
             TreeClause::Fact(term) => {
-                let clause = build_clause(vec![term], None, heap, false);
+                let clause = build_clause(vec![term], None, None, heap, false);
                 let symbol_arity = heap.str_symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
             TreeClause::Rule(terms) => {
-                let clause = build_clause(terms, None, heap, false);
+                let clause = build_clause(terms, None, None, heap, false);
                 let symbol_arity = heap.str_symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
             TreeClause::MetaRule(mut terms) => {
-                let meta_vars = if let Term::Set(set_terms) = terms.pop().unwrap() {
-                    let mut meta_vars = Vec::new();
-                    for set_term in set_terms {
-                        if let Term::Unit(Unit::Variable(symbol)) = set_term {
-                            meta_vars.push(symbol);
-                        } else {
-                            panic!("meta variable set should only contain variables")
-                        }
-                    }
-                    meta_vars
-                } else {
-                    panic!("Last literal in meta_rule wasn't a set")
-                };
-                let clause = build_clause(terms, Some(meta_vars), heap, false);
+                let (meta_vars, constrained_vars) = extract_meta_rule_vars(&mut terms);
+                let clause = build_clause(terms, Some(meta_vars), constrained_vars, heap, false);
                 let symbol_arity = heap.str_symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
             TreeClause::MetaFact(head, meta_data) => {
-                let meta_vars = if let Term::Set(set_terms) = meta_data {
-                    let mut meta_vars = Vec::new();
-                    for set_term in set_terms {
-                        if let Term::Unit(Unit::Variable(symbol)) = set_term {
-                            meta_vars.push(symbol);
-                        } else {
-                            panic!("meta variable set should only contain variables")
-                        }
-                    }
-                    meta_vars
-                } else {
-                    panic!("Meta data in MetaFact wasn't a set")
-                };
-                let clause = build_clause(vec![head], Some(meta_vars), heap, false);
+                let meta_vars = extract_var_names_from_set(meta_data);
+                let clause = build_clause(vec![head], Some(meta_vars), None, heap, false);
                 let symbol_arity = heap.str_symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
@@ -240,8 +295,81 @@ mod tests {
             );
             assert!(meta_rule.meta_var(2).unwrap());
             assert!(meta_rule.meta_var(3).unwrap());
+            // With {Q,R} only, constrained_vars defaults to same as meta_vars
+            assert!(meta_rule.constrained_var(2));
+            assert!(meta_rule.constrained_var(3));
+            assert!(!meta_rule.constrained_var(0));
+            assert!(!meta_rule.constrained_var(1));
         } else {
             panic!()
+        }
+    }
+
+    #[test]
+    fn meta_rules_with_unconstrained_list() {
+        // edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].
+        // El=Arg0, Q1=Arg1, Q2=Arg2
+        // meta_vars = {El, Q1, Q2} = {0, 1, 2}
+        // constrained_vars = {El} = {0}
+        let mut heap = Vec::<Cell>::new();
+        let mut pred_table = PredicateTable::new();
+        let facts = TokenStream::new(
+            tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].".into()).unwrap(),
+        )
+        .parse_all()
+        .unwrap();
+
+        let edge = SymbolDB::set_const("edge".into());
+        let _q = SymbolDB::set_const("q".into());
+
+        execute_tree(facts, &mut heap, &mut pred_table);
+
+        if let Predicate::Clauses(clauses) = pred_table.get_predicate((edge, 3)).unwrap() {
+            let meta_rule = &clauses[0];
+            // All three are meta_vars
+            assert!(meta_rule.meta_var(0).unwrap()); // El
+            assert!(meta_rule.meta_var(1).unwrap()); // Q1
+            assert!(meta_rule.meta_var(2).unwrap()); // Q2
+            // Only El is constrained
+            assert!(meta_rule.constrained_var(0));  // El
+            assert!(!meta_rule.constrained_var(1)); // Q1 — not constrained
+            assert!(!meta_rule.constrained_var(2)); // Q2 — not constrained
+        } else {
+            panic!("Expected clauses for edge/3")
+        }
+    }
+
+    #[test]
+    fn meta_rules_list_only() {
+        // edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].
+        // El=Arg0, Q1=Arg1, Q2=Arg2
+        // meta_vars = {El, Q1, Q2} = {0, 1, 2}
+        // constrained_vars = {} (empty)
+        let mut heap = Vec::<Cell>::new();
+        let mut pred_table = PredicateTable::new();
+        let facts = TokenStream::new(
+            tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].".into()).unwrap(),
+        )
+        .parse_all()
+        .unwrap();
+
+        let edge = SymbolDB::set_const("edge".into());
+        let _q = SymbolDB::set_const("q".into());
+
+        execute_tree(facts, &mut heap, &mut pred_table);
+
+        if let Predicate::Clauses(clauses) = pred_table.get_predicate((edge, 3)).unwrap() {
+            let meta_rule = &clauses[0];
+            // All three are meta_vars
+            assert!(meta_rule.meta_var(0).unwrap()); // El
+            assert!(meta_rule.meta_var(1).unwrap()); // Q1
+            assert!(meta_rule.meta_var(2).unwrap()); // Q2
+            // None are constrained
+            assert!(!meta_rule.constrained_var(0));
+            assert!(!meta_rule.constrained_var(1));
+            assert!(!meta_rule.constrained_var(2));
+        } else {
+            panic!("Expected clauses for edge/3")
         }
     }
 

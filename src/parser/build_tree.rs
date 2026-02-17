@@ -265,16 +265,41 @@ impl TokenStream {
                 match self.next() {
                     Some(":-") => {
                         literals.append(&mut self.parse_body_literals()?);
-                        let meta_rule = if let Some(Term::Set(eq_vars)) = literals.last() {
-                            if eq_vars
-                                .iter()
-                                .any(|eq_var| !matches!(eq_var, Term::Unit(Unit::Variable(_))))
-                            {
-                                return Err(format!("Incorrectly formatted existentially quantified variables  {:?}", eq_vars));
+                        let len = literals.len();
+                        let meta_rule = match literals.last() {
+                            // Case 1: ...{P,Q,R}. — all constrained
+                            Some(Term::Set(eq_vars)) => {
+                                if eq_vars
+                                    .iter()
+                                    .any(|eq_var| !matches!(eq_var, Term::Unit(Unit::Variable(_))))
+                                {
+                                    return Err(format!("Incorrectly formatted existentially quantified variables  {:?}", eq_vars));
+                                }
+                                true
                             }
-                            true
-                        } else {
-                            false
+                            // Case 2 or 3: last is [Q1,Q2] — unconstrained vars list
+                            Some(Term::List(vars, tail)) if matches!(tail.as_ref(), Term::EmptyList) => {
+                                if vars
+                                    .iter()
+                                    .any(|v| !matches!(v, Term::Unit(Unit::Variable(_))))
+                                {
+                                    return Err(format!("Unconstrained variable list should only contain variables, got {:?}", vars));
+                                }
+                                // Case 2: ...{P},[Q1,Q2]. — check if second-to-last is a constrained set
+                                if len >= 2 {
+                                    if let Term::Set(eq_vars) = &literals[len - 2] {
+                                        if eq_vars
+                                            .iter()
+                                            .any(|eq_var| !matches!(eq_var, Term::Unit(Unit::Variable(_))))
+                                        {
+                                            return Err(format!("Incorrectly formatted existentially quantified variables {:?}", eq_vars));
+                                        }
+                                    }
+                                }
+                                // Case 3: ...[Q1,Q2]. — no constrained set, just unconstrained list
+                                true
+                            }
+                            _ => false,
                         };
                         if meta_rule {
                             Ok(Some(TreeClause::MetaRule(literals)))
@@ -917,6 +942,76 @@ mod tests {
         ]);
 
         assert_eq!(clause, TreeClause::MetaRule(vec![head, body, meta_data]));
+        assert_eq!(token_stream.parse_clause().unwrap(), None);
+    }
+
+    #[test]
+    fn parse_meta_rule_with_unconstrained_list() {
+        // {El},[Q1,Q2] — El is constrained, Q1 and Q2 are unconstrained
+        let mut token_stream = TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].".into()).unwrap());
+        let clause = token_stream.parse_clause().unwrap().unwrap();
+        let head = Term::Atom(
+            Unit::Constant("edge".into()),
+            vec![
+                Term::Unit(Unit::Variable("El".into())),
+                Term::Unit(Unit::Variable("Q1".into())),
+                Term::Unit(Unit::Variable("Q2".into())),
+            ],
+        );
+        let body1 = Term::Atom(
+            Unit::Constant("q".into()),
+            vec![Term::Unit(Unit::Variable("Q1".into()))],
+        );
+        let body2 = Term::Atom(
+            Unit::Constant("q".into()),
+            vec![Term::Unit(Unit::Variable("Q2".into()))],
+        );
+        let constrained = Term::Set(vec![
+            Term::Unit(Unit::Variable("El".into())),
+        ]);
+        let unconstrained = Term::List(
+            vec![
+                Term::Unit(Unit::Variable("Q1".into())),
+                Term::Unit(Unit::Variable("Q2".into())),
+            ],
+            Box::new(Term::EmptyList),
+        );
+
+        assert_eq!(clause, TreeClause::MetaRule(vec![head, body1, body2, constrained, unconstrained]));
+        assert_eq!(token_stream.parse_clause().unwrap(), None);
+    }
+
+    #[test]
+    fn parse_meta_rule_list_only() {
+        // [Q1,Q2] only — no constrained variables
+        let mut token_stream = TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].".into()).unwrap());
+        let clause = token_stream.parse_clause().unwrap().unwrap();
+        let head = Term::Atom(
+            Unit::Constant("edge".into()),
+            vec![
+                Term::Unit(Unit::Variable("El".into())),
+                Term::Unit(Unit::Variable("Q1".into())),
+                Term::Unit(Unit::Variable("Q2".into())),
+            ],
+        );
+        let body1 = Term::Atom(
+            Unit::Constant("q".into()),
+            vec![Term::Unit(Unit::Variable("Q1".into()))],
+        );
+        let body2 = Term::Atom(
+            Unit::Constant("q".into()),
+            vec![Term::Unit(Unit::Variable("Q2".into()))],
+        );
+        let unconstrained = Term::List(
+            vec![
+                Term::Unit(Unit::Variable("El".into())),
+                Term::Unit(Unit::Variable("Q1".into())),
+                Term::Unit(Unit::Variable("Q2".into())),
+            ],
+            Box::new(Term::EmptyList),
+        );
+
+        assert_eq!(clause, TreeClause::MetaRule(vec![head, body1, body2, unconstrained]));
         assert_eq!(token_stream.parse_clause().unwrap(), None);
     }
 

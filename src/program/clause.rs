@@ -23,6 +23,7 @@ impl BitFlag64 {
 pub struct Clause {
     literals: Arc<[usize]>,
     pub meta_vars: Option<BitFlag64>,
+    pub constrained_vars: BitFlag64,
 }
 
 impl Clause {
@@ -37,12 +38,17 @@ impl Clause {
         bit_flags
     }
 
-    pub fn new(literals: Vec<usize>, meta_vars: Option<Vec<usize>>) -> Self {
+    pub fn new(literals: Vec<usize>, meta_vars: Option<Vec<usize>>, constrained_vars: Option<Vec<usize>>) -> Self {
         let meta_vars = meta_vars.map(Self::meta_vars_to_bit_flags);
+        let constrained_vars = match constrained_vars {
+            Some(cv) => Self::meta_vars_to_bit_flags(cv),
+            None => meta_vars.unwrap_or_default(),
+        };
         let literals: Arc<[usize]> = literals.into();
         Clause {
             literals,
             meta_vars,
+            constrained_vars,
         }
     }
 
@@ -61,6 +67,10 @@ impl Clause {
     pub fn meta_var(&self, arg_id: usize) -> Result<bool, &'static str> {
         let meta_vars = self.meta_vars.ok_or("Clause is not a meta clause")?;
         Ok(meta_vars.get(arg_id))
+    }
+
+    pub fn constrained_var(&self, arg_id: usize) -> bool {
+        self.constrained_vars.get(arg_id)
     }
 
     pub fn to_string(&self, heap: &impl Heap) -> String {

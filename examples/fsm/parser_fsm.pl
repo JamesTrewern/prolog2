@@ -7,7 +7,7 @@ fsm([H|T],Q1,State):-
 edge(El,Q1,Q2):-
     q(Q1),
     q(Q2),
-    {El,Q1,Q2}.
+    {El},[Q1,Q2].
 
 q(even).
 q(odd).

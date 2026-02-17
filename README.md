@@ -19,6 +19,13 @@ P(X,Y):- Q(X,Z), R(Z,Y), {P,Q,R}. %Chain
 P(X,Y):- Q(X,Z), P(Z,Y), {P,Q}. %Tail Recursion
 ```
 
+By default Existentially quantified varibles inside the `{X,Y}` notation are contrained so they can't become the same value or unify.
+This is intended to prevent unwanted recursion in meta-rules. If you want to remove this constraint EQ variables can be placed in `[]`
+
+```prolog
+P(X,Y):- Q(X,A), R(Y,B), {P,Q,R}, [A,B].
+P(A,B), [A,B] % Meta fact
+```
 
 With this more flexible notation many we can create many more interesting second-order clauses </br> 
 for example, we can introduce certain constant predicate symbols either in the head or body to allow us to have greater control over the clauses that will be learnt.

@@ -60,7 +60,7 @@ fn build_goals(query_text: &str, query_heap: &mut QueryHeap) -> Vec<usize> {
         _ => panic!("Query: '{query_text}' incorrectly formatted"),
     };
 
-    let clause = build_clause(literals, None, query_heap, true);
+    let clause = build_clause(literals, None, None, query_heap, true);
     println!("{}",clause.to_string(query_heap));
     clause.iter().cloned().collect()
 }
@@ -204,5 +204,29 @@ fn trains(){
         assert!(success, "Expected at least one solution for Trains test");
     } else {
         panic!("No examples in Trains config");
+    }
+}
+
+#[test]
+fn fsm_parity(){
+    let (config, predicate_table, heap, examples) = load_setup("examples/fsm/config.json");
+
+    let predicate_table = Arc::new(predicate_table);
+    let heap = Arc::new(heap);
+
+    if let Some(examples) = examples {
+        let (success, solutions) = run_query(
+            &examples.to_query(),
+            predicate_table.clone(),
+            heap.clone(),
+            config,
+        );
+        println!(
+            "FSM Parity test: success={}, solutions={}",
+            success, solutions
+        );
+        assert!(success, "Expected at least one solution for FSM Parity test");
+    } else {
+        panic!("No examples in FSM Parity config");
     }
 }

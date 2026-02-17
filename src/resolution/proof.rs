@@ -246,12 +246,12 @@ impl Env {
 
                     let mut constraints = Vec::with_capacity(16);
                     for i in 0..32 {
-                        if unsafe { clause.meta_var(i).unwrap_unchecked() } {
+                        if clause.constrained_var(i) {
                             constraints.push(unsafe { substitution.get_arg(i).unwrap_unchecked() });
                         }
                     }
 
-                    let new_clause = Clause::new(new_clause_literals, None);
+                    let new_clause = Clause::new(new_clause_literals, None, None);
                     if debug {
                         eprintln!(
                             "[ADD_CLAUSE] depth={} goal={} clause={}",

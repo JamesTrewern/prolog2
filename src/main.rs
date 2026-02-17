@@ -110,7 +110,7 @@ fn start_query(
     };
 
     let mut query_heap = QueryHeap::new(heap, None);
-    let goals = build_clause(literals, None, &mut query_heap, true);
+    let goals = build_clause(literals, None, None, &mut query_heap, true);
     let mut vars = Vec::new();
     for literal in goals.iter() {
         vars.extend(query_heap.term_vars(*literal, false).iter().map(|addr| {

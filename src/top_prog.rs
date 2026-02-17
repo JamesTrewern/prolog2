@@ -272,7 +272,7 @@ impl TopProgramAccumulator {
                     .iter()
                     .map(|&addr| addr + offset)
                     .collect();
-                Clause::new(new_lits, None)
+                Clause::new(new_lits, None, None)
             })
             .collect();
 
@@ -334,7 +334,7 @@ fn specialise(
                     .iter()
                     .map(|&addr| addr + offset)
                     .collect();
-                let adjusted_clause = Clause::new(adjusted_lits, None);
+                let adjusted_clause = Clause::new(adjusted_lits, None, None);
                 hypothesis.push_clause(adjusted_clause, empty_constraints.clone());
             }
 
@@ -396,7 +396,7 @@ fn extract_hypothesis_local(proof: &Proof) -> (Vec<Cell>, Vec<Clause>) {
                 )
             })
             .collect();
-        clauses.push(Clause::new(new_literals, None));
+        clauses.push(Clause::new(new_literals, None, None));
     }
 
     (local_cells, clauses)
@@ -409,7 +409,7 @@ fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, Str
         Some(TreeClause::Directive(literals)) => literals,
         _ => return Err(format!("Example '{example}' incorrectly formatted")),
     };
-    let clause = build_clause(literals, None, query_heap, true);
+    let clause = build_clause(literals, None, None, query_heap, true);
     Ok(clause[0])
 }
 
