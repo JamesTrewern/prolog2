@@ -1,3 +1,4 @@
 /target
 results/*
 output.log
+profile.json.gz

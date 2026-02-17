@@ -21,12 +21,9 @@ serde_json = "1.0.143"
 [profile.dev]
 opt-level = 3
 
-[profile.release-with-debug]
+[profile.profiling]
 inherits = "release"
-debug = true              # debug symbols for meaningful profiles
-lto = false               # avoid LTO for readable profiles
-codegen-units = 1  
-opt-level = 3
+debug = true
 
 [profile.release]
 opt-level = 3
