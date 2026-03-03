@@ -1,12 +1,10 @@
 #[cfg(test)]
 mod examples;
 mod heap;
-// mod interface;
 mod parser;
 mod predicate_modules;
 mod program;
 mod resolution;
-mod top_prog;
 use std::{
     env, fs,
     io::{stdin, stdout, Write},
@@ -60,8 +58,6 @@ struct SetUp {
     pub body_predicates: Vec<BodyClause>,
     pub files: Vec<String>,
     pub examples: Option<Examples>,
-    #[serde(default)]
-    pub top_prog: bool,
 }
 
 impl Examples {
@@ -128,7 +124,7 @@ fn start_query(
             for (symbol, addr) in &vars {
                 println!("{symbol} = {}", proof.heap.term_string(*addr))
             }
-            //TODO display variable bindings
+            // TODO: display variable bindings
             if proof.hypothesis.len() != 0 {
                 println!("{}", proof.hypothesis.to_string(&proof.heap));
             }
@@ -155,7 +151,7 @@ fn load_file(file_path: String, predicate_table: &mut PredicateTable, heap: &mut
     execute_tree(syntax_tree, heap, predicate_table);
 }
 
-fn load_setup(config_path: &str) -> (Config, PredicateTable, Vec<Cell>, Option<Examples>, bool) {
+fn load_setup(config_path: &str) -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
     let mut heap = Vec::new();
     let mut predicate_table = PredicateTable::new();
 
@@ -179,7 +175,7 @@ fn load_setup(config_path: &str) -> (Config, PredicateTable, Vec<Cell>, Option<E
             .unwrap_or_else(|e| panic!("{e}: {symbol}/{arity}"));
     }
 
-    (config, predicate_table, heap, setup.examples, setup.top_prog)
+    (config, predicate_table, heap, setup.examples)
 }
 
 fn main_loop(
@@ -230,26 +226,16 @@ fn main() -> ExitCode {
         .map(|s| s.as_str())
         .unwrap_or("setup.json");
 
-    let (config, predicate_table, heap, examples, top_prog_mode) = load_setup(config_path);
+    let (config, predicate_table, heap, examples) = load_setup(config_path);
 
     let predicate_table = Arc::new(predicate_table);
     let heap = Arc::new(heap);
 
-    if top_prog_mode {
-        match examples {
-            Some(examples) => top_prog::run(examples, predicate_table, heap, config),
-            None => {
-                eprintln!("top_prog mode requires examples in config");
-                ExitCode::FAILURE
-            }
+    match examples {
+        Some(examples) => {
+            start_query(&examples.to_query(), predicate_table, heap, config, auto).unwrap();
+            ExitCode::SUCCESS
         }
-    } else {
-        match examples {
-            Some(examples) => {
-                start_query(&examples.to_query(), predicate_table, heap, config, auto).unwrap();
-                ExitCode::SUCCESS
-            }
-            None => main_loop(config, predicate_table, heap),
-        }
+        None => main_loop(config, predicate_table, heap),
     }
 }

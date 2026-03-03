@@ -101,7 +101,7 @@ fn walk_string(
     mut i: usize,
     mark: char,
 ) -> Result<(String, usize), String> {
-    //TODO more complex escape character processing
+    // TODO: more complex escape character processing
     let mut str = vec![mark];
     while let Some(&c) = characters.get(i) {
         match c {
@@ -145,7 +145,6 @@ fn walk_multi_line_comment(characters: &Vec<char>, mut i: usize) -> Result<(usiz
 }
 
 fn walk_single_line_comment(characters: &Vec<char>, mut i: usize) -> Result<usize, ()> {
-    //TODO more complex escape character processing
     while let Some(&c) = characters.get(i) {
         if c == '\n' {
             return Ok(i + 1);

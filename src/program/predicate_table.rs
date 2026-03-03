@@ -7,7 +7,6 @@ use crate::predicate_modules::PredicateFunction;
 
 use super::clause::Clause;
 
-// use bumpalo::{Bump};self.choices = hypothesis.get_predicate((symbol, arity))
 pub(crate) type SymbolArity = (usize, usize);
 
 /* A predicate takes the form of a range of indexes in the clause table,
@@ -466,14 +465,6 @@ mod tests {
 
         pred_table.set_body((p, 2), false).unwrap();
         pred_table.set_body((q, 2), true).unwrap();
-        // assert_eq!(
-        //     pred_table.set_body((pred_func, 2), true),
-        //     Err("Can't set predicate function to body")
-        // );
-        // assert_eq!(
-        //     pred_table.set_body((100, 2), true),
-        //     Err("Can't set non existing predicate to body")
-        // );
 
         assert_eq!(pred_table.body_list, [2]);
     }

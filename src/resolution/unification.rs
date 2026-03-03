@@ -212,7 +212,7 @@ fn unfiy_set(
     _addr_1: usize,
     _addr_2: usize,
 ) -> Option<Substitution> {
-    todo!()
+    unimplemented!("set unification not yet supported")
 }
 
 /**Unfiy two lists together */
@@ -386,11 +386,6 @@ mod tests {
         let binding = unify(&heap, 0, 6).unwrap();
         assert_eq!(binding.bound(6), Some(0));
         assert_eq!(unify(&heap, 0, 7), None);
-    }
-
-    #[test]
-    fn set() {
-        todo!()
     }
 
     #[test]

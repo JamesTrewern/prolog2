@@ -35,18 +35,6 @@ impl Unit {
             && token.chars().all(|c| c.is_alphanumeric() || c == '_')
     }
 
-    // fn is_numeric(token: &str) -> bool {
-    //     token.chars().all(|c| c.is_ascii_digit() || c == '.')
-    // }
-
-    // fn is_atom_var(token: &str) -> bool {
-    //     Unit::is_atom(token) || Unit::is_variable(token)
-    // }
-
-    // fn is_unit(token: &str) -> bool {
-    //     Unit::is_numeric(token) || Unit::is_atom_var(token) || Unit::is_string(token)
-    // }
-
     pub fn parse_unit(token: &str) -> Option<Self> {
         if Unit::is_variable(token) {
             Some(Unit::Variable(token.into()))
@@ -169,20 +157,6 @@ impl Term {
             Some((tag, self.encode(heap, var_values, query)))
         }
     }
-
-    // fn pre_encode_complex_terms(
-    //     terms: &Vec<Term>,
-    //     heap: &mut impl Heap,
-    //     var_values: &mut HashMap<String, usize>,
-    //     query: bool,
-    // ) -> Vec<Option<Cell>> {
-    //     let complex_terms = terms
-    //         .iter()
-    //         .map(|term| term.pre_encode_complex(heap, var_values, query))
-    //         .collect();
-
-    //     complex_terms
-    // }
 
     fn encode_tup(
         terms: &Vec<Term>,

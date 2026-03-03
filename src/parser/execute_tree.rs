@@ -110,15 +110,6 @@ fn extract_meta_rule_vars(terms: &mut Vec<Term>) -> (Vec<String>, Option<Vec<Str
     }
 }
 
-// pub fn execute_directive(directive: Vec<Term>, predicate_table: &mut PredicateTable) -> Result<(),String>{
-//     let mut heap = QueryHeap::new(None)?;
-//     let goals = build_clause(directive, None, &mut heap, true);
-//     //TODO Find Variables in goals to report bindings once solved
-//     let proof = Proof::new(heap, &goals, predicate_table);
-
-//     Ok(())
-// }
-
 pub(crate) fn execute_tree(
     syntax_tree: Vec<TreeClause>,
     heap: &mut impl Heap,
@@ -156,7 +147,7 @@ pub(crate) fn execute_tree(
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
-            TreeClause::Directive(_terms) => todo!(),
+            TreeClause::Directive(_terms) => unimplemented!("directive execution not yet supported"),
         }
     }
 }

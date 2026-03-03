@@ -164,8 +164,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     self._normalise_args(i, args)
                 }
             }
-            (Tag::Tup, _) => todo!(),
-            (Tag::Set, _) => todo!(),
+            (Tag::Tup, _) => unimplemented!("_normalise_args for Tup"),
+            (Tag::Set, _) => unimplemented!("_normalise_args for Set"),
             (Tag::Lis, pointer) => {
                 self._normalise_args(pointer, args);
                 self._normalise_args(pointer + 1, args);
@@ -225,8 +225,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self._copy_simple(other, pointer + 1, &mut update_addr[1]);
                 h
             }
-            (Tag::Tup, _len) => todo!(),
-            (Tag::Set, _len) => todo!(),
+            (Tag::Tup, _len) => unimplemented!("_copy_term for Tup"),
+            (Tag::Set, _len) => unimplemented!("_copy_term for Set"),
             (Tag::Ref, _pointer) => panic!(),
             (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri | Tag::ELis, _) => {
                 self.heap_push(other[addr]);
@@ -364,8 +364,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self._term_equal(p1, p2) && self._term_equal(p1 + 1, p2 + 1)
             }
             ((Tag::Str, p1), (Tag::Str, p2)) => self._term_equal(p1, p2),
-            ((Tag::Tup, _len1), (Tag::Tup, _len2)) => todo!(),
-            ((Tag::Set, _len1), (Tag::Set, _len2)) => todo!(),
+            ((Tag::Tup, _len1), (Tag::Tup, _len2)) => unimplemented!("_term_equal for Tup"),
+            ((Tag::Set, _len1), (Tag::Set, _len2)) => unimplemented!("_term_equal for Set"),
             ((Tag::Stri, i1), (Tag::Stri, i2)) => {
                 SymbolDB::get_string(i1) == SymbolDB::get_string(i2)
             }
@@ -414,9 +414,9 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     let value: fsize = unsafe { mem::transmute_copy(&value) };
                     println!("[{i:3}]|{tag:w$?}|{value:w$}|")
                 }
-                Tag::Tup => todo!(),
-                Tag::Set => todo!(),
-                Tag::Stri => todo!(),
+                Tag::Tup => unimplemented!("_print_heap for Tup"),
+                Tag::Set => unimplemented!("_print_heap for Set"),
+                Tag::Stri => unimplemented!("_print_heap for Stri"),
                 _ => println!("[{i:3}]|{tag:w$?}|{value:w$}|"),
             };
             println!("{:-<w$}--------{:-<w$}", "", "");

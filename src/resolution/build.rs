@@ -41,7 +41,7 @@ pub fn build(
             let new_ptr = build_list(heap, substitution, meta_vars, ptr);
             heap.heap_push((Tag::Lis, new_ptr))
         }
-        cell => todo!("handle: {cell:?}"),
+        cell => unimplemented!("build: unhandled cell type {cell:?}"),
     }
 }
 
@@ -205,24 +205,6 @@ mod tests {
                 (Tag::Str, addr-3),
             ]
         );
-
-        // heap = vec![
-        //     (Tag::Con, f),
-        //     (Tag::Lis, 2),
-        //     (Tag::Ref, 2),
-        //     (Tag::ELis, 0),
-        //     (Tag::Lis, 0),
-        //     (Tag::Func, 2),
-        //     (Tag::Con, p),
-        //     (Tag::Arg, 0),
-        // ];
-        // substitution = Substitution::default();
-        // substitution.set_arg(0, 4);
-        // let addr = build(&mut heap, &mut substitution, None, 5);
-        // assert_eq!(
-        //     heap[addr..(addr + 3)],
-        //     [(Tag::Func, 2), (Tag::Con, p), (Tag::Ref, 4),]
-        // );
     }
 
     #[test]

@@ -1,6 +1,4 @@
-//TODO Handle sets
-
-// use std::str;
+// TODO: Handle sets
 
 use super::term::{Term, Unit};
 
@@ -69,10 +67,6 @@ impl TokenStream {
             }
         }
     }
-
-    // fn print_state(&self) {
-    //     println!("{:?},{}", self.tokens, self.index);
-    // }
 }
 
 fn is_operator(token: &str) -> bool {
@@ -112,7 +106,7 @@ impl TokenStream {
         loop {
             args.push(self.parse_expression()?);
             match self.peek() {
-                Some(")" | "|" | "]" | "}") => return Ok(args), //TODO end consuming args based on certain conditions dont accept all end tokens
+                Some(")" | "|" | "]" | "}") => return Ok(args), // TODO: end consuming args based on certain conditions, don't accept all end tokens
                 Some(",") => {
                     self.next();
                 }
@@ -193,10 +187,9 @@ impl TokenStream {
                     }
                     Some(num @ (Unit::Float(_) | Unit::Int(_))) => Ok(Term::Unit(num)),
                     Some(unit @ Unit::String(_)) => Ok(Term::Unit(unit)),
-                    None => todo!("handle: {token}"),
+                    None => unimplemented!("parse_expression: unhandled token '{token}'"),
                 }
             }
-            // _ => Err(format!("Uh oh \"{}\" confused me", self.peek().unwrap())),
         }
     }
 
@@ -647,7 +640,7 @@ mod tests {
         assert_eq!(term, Term::Atom(p, vec![abc.clone()]));
     }
 
-    //TODO Improve Error messaging for unclosed structures
+    // TODO: Improve error messaging for unclosed structures
     #[test]
     fn unclosed_atom() {
         let mut tokens = TokenStream::new(tokenise("p(X,Y".into()).unwrap());

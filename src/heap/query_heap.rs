@@ -17,7 +17,7 @@ pub struct QueryHeap {
     id: usize,
     pub(crate) cells: Vec<Cell>,
     prog_cells: Arc<Vec<Cell>>,
-    //TODO handle branching query heap multi-threading
+    // TODO: handle branching query heap multi-threading
     root: Option<*const QueryHeap>,
 }
 

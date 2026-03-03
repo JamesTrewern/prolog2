@@ -45,36 +45,6 @@ impl TopProgramAccumulator {
         }
     }
 
-    /// Normalise Ref addresses in local cells to sequential 0,1,2...
-    /// by first-appearance order across clause literals (sorted).
-    /// Mutates cells in place and returns a mapping for display/key purposes.
-    fn normalise_refs(cells: &mut Vec<Cell>, clauses: &[Clause]) {
-        // Collect unique Ref addresses in first-appearance order
-        let mut ref_addrs: Vec<usize> = Vec::new();
-        for clause in clauses {
-            for &lit_addr in clause.iter() {
-                Self::collect_refs(cells, lit_addr, &mut ref_addrs);
-            }
-        }
-
-        // Build old_addr -> new_index mapping (for future use)
-        let _remap: HashMap<usize, usize> = ref_addrs
-            .iter()
-            .enumerate()
-            .map(|(new_idx, &old_addr)| (old_addr, new_idx))
-            .collect();
-
-        // Rewrite all Ref cells: self-referencing Refs get new sequential addresses,
-        // and any cell pointing to a Ref gets updated too.
-        // We use a two-pass approach: first allocate new positions, then rewrite.
-        // Since Refs are self-referencing, we just need to update their value
-        // and any other cell that references them.
-
-        // For now, we just need the normalised variable names for key generation.
-        // The actual cells keep their original addresses (they work fine for
-        // term_string display via Ref_N). The normalisation is used for the key.
-    }
-
     /// Recursively collect Ref addresses in a term, in first-appearance order.
     fn collect_refs(cells: &[Cell], addr: usize, refs: &mut Vec<usize>) {
         // Simple deref
@@ -548,7 +518,7 @@ pub fn run(
         }
     }
 
-    // Step 3: Reduce (TODO)
+    // TODO: Step 3 — Reduce
 
     ExitCode::SUCCESS
 }

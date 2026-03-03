@@ -17,17 +17,9 @@ pub const fn known_symbol_id(index: usize) -> usize {
     isize::MAX as usize + index
 }
 
-// static SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
-//     const_symbols: Vec::new(),
-//     // var_symbols: Vec::new(),
-//     var_symbol_map: None,
-//     strings: Vec::new(),
-// });
-
 lazy_static! {
     static ref SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
     const_symbols: KNOWN_SYMBOLS.iter().map(|&symbol| symbol.to_string().into()).collect(),
-    // var_symbols: Vec::new(),
     var_symbol_map: HashMap::new(),
     strings: Vec::new(),
 });
@@ -77,25 +69,8 @@ impl SymbolDB {
         }
     }
 
-    // /** Given either a ref addr or a const id this function will return the related symbol */
-    // pub fn get_symbol(id: usize, heap_id: usize) -> String {
-    //     //If id >= usize:Max/2 then it is a constant id and not a heap ref addr
-    //     let symbols = SYMBOLS.read().unwrap();
-    //     if id >= (isize::MAX as usize) {
-    //         match symbols.const_symbols.get(id - isize::MAX as usize) {
-    //             Some(symbol) => symbol.to_string(),
-    //             None => panic!("Unkown const id"),
-    //         }
-    //     } else {
-    //         match Self::get_var(id, heap_id) {
-    //             Some(symbol) => symbol.to_string(),
-    //             None => format!("_{id}"),
-    //         }
-    //     }
-    // }
-
     pub fn get_string(index: usize) -> Arc<str> {
-        //TODO make this much more effecient
+        // TODO: make this more efficient
         SYMBOLS.read().unwrap().strings.get(index).unwrap().clone()
     }
 

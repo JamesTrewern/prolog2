@@ -25,10 +25,6 @@ impl PredReturn {
     }
 }
 
-//Take Proof and pointer to function call term and return true(possibly with binding), or false
-// pub type PredicateFunction = fn(&mut QueryHeap, &mut Hypothesis, usize) -> PredReturn;
-
-// Meta predicate functions need additional context to spawn new proofs
 pub type PredicateFunction = fn(
     &mut QueryHeap,
     &mut Hypothesis,
@@ -38,7 +34,6 @@ pub type PredicateFunction = fn(
 ) -> PredReturn;
 
 pub type PredicateModule = &'static [(&'static str, usize, PredicateFunction)];
-// pub type MetaPredicateModule = &'static [(&'static str, usize, MetaPredicateFunction)];
 
 pub fn load_predicate_module(
     predicate_table: &mut PredicateTable,
