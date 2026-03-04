@@ -1,3 +1,5 @@
+//! AST execution: encodes parsed terms onto the heap and populates the predicate table.
+
 use std::collections::HashMap;
 
 use super::{

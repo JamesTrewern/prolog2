@@ -1,3 +1,5 @@
+//! Proof search via SLD resolution with backtracking and predicate invention.
+
 use std::sync::Arc;
 
 use crate::{
@@ -15,6 +17,7 @@ use crate::{
     Config,
 };
 
+/// A variable binding: `(source_addr, target_addr)` on the heap.
 pub type Binding = (usize, usize);
 #[derive(Debug)]
 pub(super) struct Env {
@@ -300,6 +303,11 @@ impl Env {
     }
 }
 
+/// The proof search engine.
+///
+/// Maintains a goal stack and iteratively resolves goals against the predicate
+/// table and the current hypothesis. Call [`Proof::prove`] repeatedly to
+/// enumerate solutions via backtracking.
 pub struct Proof {
     stack: Vec<Env>,
     pointer: usize,

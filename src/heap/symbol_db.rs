@@ -1,3 +1,9 @@
+//! Global symbol database.
+//!
+//! All constant and variable symbols are interned here. Heap cells store
+//! integer IDs rather than strings; this module provides the mapping in
+//! both directions.
+
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -25,13 +31,14 @@ lazy_static! {
 });
 }
 
-/**Stores all symbols from compiled terms
- * The heap will use this to create term strings whilst allowing
- * operations done with the heap to only handle usize values
- */
+/// Global symbol table.
+///
+/// Maps between string representations and numeric IDs so the heap can
+/// work entirely with `usize` values. Constants, variables, and string
+/// literals are stored separately.
 pub struct SymbolDB {
     const_symbols: Vec<Arc<str>>,
-    var_symbol_map: HashMap<(usize, usize), Arc<str>>, //Key: (Variable Ref addr, heap_id), Value: index to var symbols vec
+    var_symbol_map: HashMap<(usize, usize), Arc<str>>,
     strings: Vec<Arc<str>>,
 }
 

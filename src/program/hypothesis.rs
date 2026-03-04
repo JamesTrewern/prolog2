@@ -7,8 +7,13 @@ use crate::heap::heap::Heap;
 
 use super::clause::Clause;
 
+/// Constraint set for existentially quantified variables in a learned clause.
 pub type Constraints = Arc<[usize]>;
 
+/// A collection of learned clauses produced during proof search.
+///
+/// During MIL resolution, when a second-order clause matches a goal,
+/// a new first-order clause is invented and added to the hypothesis.
 #[derive(Clone)]
 pub struct Hypothesis {
     clauses: Vec<Clause>,

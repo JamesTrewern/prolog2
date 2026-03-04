@@ -13,6 +13,11 @@ use super::heap::{Cell, Heap};
 
 static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
+/// Working heap for proof search.
+///
+/// Wraps a shared read-only program heap (`Arc<Vec<Cell>>`) and an
+/// owned mutable cell buffer for query-time allocations. Supports
+/// branching via an optional parent pointer for backtracking.
 pub struct QueryHeap {
     id: usize,
     pub(crate) cells: Vec<Cell>,

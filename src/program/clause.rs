@@ -1,7 +1,10 @@
+//! Clause representation and metadata.
+
 use std::{ops::Deref, sync::Arc};
 
 use crate::heap::heap::Heap;
 
+/// Compact 64-bit flag set used to mark meta-variables and constrained variables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BitFlag64(u64);
 
@@ -19,6 +22,8 @@ impl BitFlag64 {
     }
 }
 
+/// A compiled clause: a list of literal heap addresses with metadata
+/// about which variables are second-order (meta) and which are constrained.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Clause {
     literals: Arc<[usize]>,

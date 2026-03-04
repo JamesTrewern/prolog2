@@ -6,21 +6,37 @@ use std::{
 
 use super::symbol_db::SymbolDB;
 
+/// Tag discriminant for heap cells.
+///
+/// Each cell on the heap is a `(Tag, usize)` pair. The tag determines how
+/// the `usize` value is interpreted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Tag {
-    Ref,  //Query Variable
-    Arg,  //Clause Variable
-    Func, //Functor + tuple
-    Tup,  //Tuple
-    Set,  //Set
-    Lis,  //List
-    ELis, //Empty List
-    Con,  //Constant
-    Int,  //Integer
-    Flt,  //Float
-    Str,  //Reference to Structure
-    Stri, //String
+    /// Query variable (self-referencing = unbound).
+    Ref,
+    /// Clause variable (index into substitution).
+    Arg,
+    /// Functor: value is the arity (following cells are symbol + arguments).
+    Func,
+    /// Tuple.
+    Tup,
+    /// Set.
+    Set,
+    /// List cons cell: value points to head, next cell is tail.
+    Lis,
+    /// Empty list.
+    ELis,
+    /// Constant: value is a symbol ID from the [`super::symbol_db::SymbolDB`].
+    Con,
+    /// Integer: value is the raw bits of an `isize`.
+    Int,
+    /// Float: value is the raw bits of an `fsize`.
+    Flt,
+    /// Indirection to a structure: value is the heap address of the Func cell.
+    Str,
+    /// String literal: value is an index into [`super::symbol_db::SymbolDB`] strings.
+    Stri,
 }
 
 impl std::fmt::Display for Tag {
@@ -29,6 +45,7 @@ impl std::fmt::Display for Tag {
     }
 }
 
+/// A single heap cell: a `(Tag, value)` pair.
 pub type Cell = (Tag, usize);
 
 use fsize::fsize;
@@ -37,6 +54,11 @@ pub const _FALSE: Cell = (Tag::Con, _CON_PTR);
 pub const _TRUE: Cell = (Tag::Con, _CON_PTR + 1);
 pub const EMPTY_LIS: Cell = (Tag::ELis, 0);
 
+/// Core trait for heap storage.
+///
+/// Implemented by both the static program heap (`Vec<Cell>`) and the
+/// query-time [`super::query_heap::QueryHeap`]. Provides cell access,
+/// term construction, dereferencing, and display.
 pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]> {
     fn heap_push(&mut self, cell: Cell) -> usize;
 

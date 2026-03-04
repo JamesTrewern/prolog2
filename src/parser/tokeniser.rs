@@ -1,3 +1,5 @@
+//! Lexer: converts Prolog source text into a token stream.
+
 const DELIMINATORS: &[char] = &[
     '(', ')', ',', '.', ' ', '\r', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|',
     '>', '<', '{', '}',

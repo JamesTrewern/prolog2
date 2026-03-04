@@ -1,3 +1,5 @@
+//! Syntax tree construction: parses a token stream into an AST of clauses and terms.
+
 // TODO: Handle sets
 
 use super::term::{Term, Unit};

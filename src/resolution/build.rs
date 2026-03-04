@@ -1,3 +1,5 @@
+//! Term building: construct new heap terms from clause templates and substitutions.
+
 use crate::{
     heap::heap::{Cell, Heap, Tag},
     program::clause::BitFlag64,

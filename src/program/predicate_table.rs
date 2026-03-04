@@ -7,22 +7,29 @@ use crate::predicate_modules::PredicateFunction;
 
 use super::clause::Clause;
 
+/// A `(symbol_id, arity)` pair identifying a predicate.
 pub(crate) type SymbolArity = (usize, usize);
 
-/* A predicate takes the form of a range of indexes in the clause table,
-or a function which uses rust code to evaluate to a truth value and/or return bindings*/
+/// A predicate is either a set of compiled clauses or a built-in function.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Predicate {
+    /// A native Rust predicate function.
     Function(PredicateFunction),
+    /// One or more compiled Prolog clauses.
     Clauses(Box<[Clause]>),
 }
 
+/// Internal entry in the predicate table.
 #[derive(PartialEq, Eq, Debug)]
 pub struct PredicateEntry {
     symbol_arity: SymbolArity,
     predicate: Predicate,
 }
 
+/// The program's predicate table.
+///
+/// Maps `(symbol, arity)` pairs to predicates (clause sets or built-in functions).
+/// Also tracks which predicates are designated as body predicates for MIL learning.
 #[derive(Debug, PartialEq)]
 pub struct PredicateTable {
     predicates: Vec<PredicateEntry>,

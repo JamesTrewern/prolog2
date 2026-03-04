@@ -1,3 +1,5 @@
+//! Unification algorithm and substitution management.
+
 use std::{
     ops::{Deref, DerefMut},
     usize,
@@ -5,6 +7,10 @@ use std::{
 
 use crate::heap::heap::{Cell, Heap, Tag};
 
+/// Substitution mapping clause `Arg` cells to heap addresses.
+///
+/// Tracks argument register bindings and direct heap-to-heap bindings
+/// produced during unification.
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
     arg_regs: [usize; 32],
@@ -130,6 +136,7 @@ impl Substitution {
     }
 }
 
+/// Unify two terms on the heap, returning a substitution on success.
 pub fn unify(heap: &impl Heap, addr_1: usize, addr_2: usize) -> Option<Substitution> {
     unify_rec(heap, Substitution::default(), addr_1, addr_2)
 }
