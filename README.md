@@ -9,7 +9,7 @@ This project aims to allow for more complex formations of second-order clauses a
 
 Traditional meta-rules can be written simply by making predicate symbols start with upper case letters. 
 We must define which variables will remain as variables when a new clause is created from this higher-order clause.
-We define these universally quantified variables using curly braces like so:  `{X,Y}` 
+We define these existentially quantified variables using curly braces like so:  `{X,Y}` 
 
 ```prolog
 P(X,Y):- Q(X,Y), {P,Q}. %Identity
@@ -47,63 +47,6 @@ P(X,Y):- X > Y, Q(Y), {P,Q}.
 P(X,Y):- Z is X + Y, Q(Z), {P,Q}.
 ```
 
-# Example usage
-
-## Family relations
-
-first, we lay out our background knowledge.</br> 
-What would have been called meta-rules is now better described as second-order clauses, where {X,Y} denotes that the X and Y variables are universally quantified. 
-
-The usage of the directive body_pred here tells the program that goals with variable symbols can match clauses of that symbol and arity.
-
-
-``` prolog
-
-mum(tami,james).
-mum(tami,luke).
-mum(christine,tami).
-dad(ken,adam).
-dad(adam,james).
-dad(ken,saul).
-dad(ken,kelly).
-dad(adam,luke).
-
-P(X,Y):-Q(X,Y), {P,Q}.
-P(X,Y):-Q(X,Z),P(Z,Y), {P,Q}. % Tail Recursion
-
-:-body_pred(mum,2).
-:-body_pred(dad,2).
-
-```
-
-With this file loaded we can then pose a query and a hypothesis will be returned
-
-``` prolog
-?-ancestor(ken,james).
-
-TRUE
-ancestor(ken,james),
-Hypothesis:
-        ancestor(A,B):-dad(A,C),ancestor(C,B)
-        ancestor(A,B):-dad(A,B)
-```
-## Map
-
-``` prolog
-map([],[], P).
-
-map([H1|T1], [H2|T2], P):-
-    P(H1,H2),
-    map(T1,T2,P).
-
-double(X,Y):-
-    Y is X + X.
-
-:- body_pred(double,2).
-
-```
-
-
 # Configuration Options
 Configured in a JSON file (default: `setup.json`):
 ``` json
@@ -126,7 +69,7 @@ Configured in a JSON file (default: `setup.json`):
 # Running Prolog<sup>2</sup>
 
 ```
-cargo run [-- [CONFIG_FILE] [OPTIONS]]
+cargo run [[CONFIG_FILE] -- [OPTIONS]]
 ```
 
 **Arguments:**
@@ -143,10 +86,10 @@ cargo run [-- [CONFIG_FILE] [OPTIONS]]
 cargo run
 
 # Run the ancestor learning problem
-cargo run -- examples/ancestor/config.json
+cargo run examples/ancestor/config.json
 
 # Run ancestor and automatically find all solutions
-cargo run -- examples/ancestor/config.json --all
+cargo run examples/ancestor/config.json -- --all
 
 # Just the --all flag with default config
 cargo run -- --all
@@ -166,4 +109,101 @@ If the config file includes an `examples` field, Prolog<sup>2</sup> will immedia
 5. Then, as this is a higher order clause, a new 1st order clause is created from the binding. The universally quantified variable X does not bind to a, but instead it transitions to an existentially quantified variable</br>
 `p(X,b):- _100(X,b) `
 6. Finally as the new clause has an unbound variable we add a constraint to our unification rules saying that _100 can not be bound to the value p
+
+# Example usage
+
+## Family relations
+
+first, we lay out our background knowledge.</br> 
+What would have been called meta-rules is now better described as second-order clauses, where {P,Q} denotes that P and Q are variables which are existentially quantified, meaning they will become constants in new clauses derived from these meta rules. 
+
+The usage of the directive body_pred here tells the program that goals with variable symbols can match clauses of that symbol and arity.
+
+
+``` prolog
+
+mum(tami,james).
+mum(tami,luke).
+mum(christine,tami).
+dad(ken,adam).
+dad(adam,james).
+dad(ken,saul).
+dad(ken,kelly).
+dad(adam,luke).
+
+P(X,Y):-Q(X,Y), {P,Q}.
+P(X,Y):-Q(X,Z),P(Z,Y), {P,Q}. % Tail Recursion
+```
+
+We must then define our learning parameters in a config file
+
+``` json
+{
+    "config" : {
+        "max_depth": 10,
+        "max_clause": 4,
+        "max_pred": 1,
+        "debug": false
+    },
+    "body_predicates" : [
+        {"symbol" : "dad", "arity": 2},
+        {"symbol" : "mum", "arity": 2}
+    ],
+    "examples" : {
+        "pos" : ["ancestor(ken,james)", "ancestor(christine,james)"],
+        "neg" : []
+    },
+    "files" : ["examples/ancestor/family.pl"]
+}
+```
+
+Then we can execute the binary with an argument for the path of the config file
+
+```
+$ target/debug/prolog2 examples/ancestor/config.json -- --all
+TRUE
+ancestor(Arg_1,Arg_2):-dad(Arg_1,Arg_4),ancestor(Arg_4,Arg_2).
+ancestor(Arg_1,Arg_2):-dad(Arg_1,Arg_2).
+ancestor(Arg_1,Arg_2):-mum(Arg_1,Arg_4),ancestor(Arg_4,Arg_2).
+ancestor(Arg_1,Arg_2):-mum(Arg_1,Arg_2).
+
+TRUE
+ancestor(Arg_1,Arg_2):-pred_1(Arg_1,Arg_4),ancestor(Arg_4,Arg_2).
+pred_1(Arg_1,Arg_2):-dad(Arg_1,Arg_2).
+ancestor(Arg_1,Arg_2):-pred_1(Arg_1,Arg_2).
+pred_1(Arg_1,Arg_2):-mum(Arg_1,Arg_2).
+
+TRUE
+ancestor(Arg_1,Arg_2):-pred_1(Arg_1,Arg_2).
+pred_1(Arg_1,Arg_2):-ancestor(Arg_1,Arg_4),pred_1(Arg_4,Arg_2).
+pred_1(Arg_1,Arg_2):-dad(Arg_1,Arg_2).
+pred_1(Arg_1,Arg_2):-mum(Arg_1,Arg_2).
+
+FALSE
+```
+## Map
+
+``` prolog
+map([],[], P).
+
+map([H1|T1], [H2|T2], P):-
+    P(H1,H2),
+    map(T1,T2,P).
+
+double(X,Y):-
+    Y is X + X.
+```
+
+``` json
+{
+    "config" : {
+        "max_depth": 10,
+        "max_clause": 0,
+        "max_pred": 0,
+        "debug": false
+    },
+    "body_predicates" : [],
+    "files" : ["examples/map/learn_map_double.pl"]
+}
+```
 
