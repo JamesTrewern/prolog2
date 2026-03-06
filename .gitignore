@@ -2,3 +2,4 @@
 results/*
 output.log
 profile.json.gz
+.DS_Store

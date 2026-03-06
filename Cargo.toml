@@ -1,13 +1,15 @@
 [package]
-name = "prolog2"
+name = "prolog-squared"
 version = "0.1.0"
 edition = "2021"
 description = "A Meta-Interpretive Learning framework implementing second-order SLD resolution"
 license-file = "LICENSE"
-repository = "https://github.com/jameswesc/prolog2"
+repository = "https://github.com/JamesTrewern/prolog2"
 readme = "README.md"
 keywords = ["prolog", "logic-programming", "machine-learning", "inductive-logic-programming"]
 categories = ["science", "mathematics"]
+exclude = ["src/top_prog.rs", ".DS_Store"]
+authors = ["James Trewern"]
 
 [lib]
 name = "prolog2"
