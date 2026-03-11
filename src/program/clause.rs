@@ -1,6 +1,8 @@
 //! Clause representation and metadata.
 
-use std::{ops::Deref, sync::Arc};
+use std::ops::Deref;
+
+use smallvec::SmallVec;
 
 use crate::heap::heap::{Heap, Tag};
 
@@ -26,7 +28,7 @@ impl BitFlag64 {
 /// about which variables are second-order (meta) and which are constrained.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Clause {
-    literals: Arc<[usize]>,
+    literals: SmallVec<[usize; 5]>,
     pub meta_vars: Option<BitFlag64>,
     pub constrained_vars: BitFlag64,
 }
@@ -49,7 +51,7 @@ impl Clause {
             Some(cv) => Self::meta_vars_to_bit_flags(cv),
             None => meta_vars.unwrap_or_default(),
         };
-        let literals: Arc<[usize]> = literals.into();
+        let literals: SmallVec<[usize; 5]> = SmallVec::from_vec(literals);
         Clause {
             literals,
             meta_vars,

@@ -1,14 +1,13 @@
-use std::{
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use std::ops::{Deref, DerefMut};
+
+use smallvec::SmallVec;
 
 use crate::heap::heap::Heap;
 
 use super::clause::Clause;
 
 /// Constraint set for existentially quantified variables in a learned clause.
-pub type Constraints = Arc<[usize]>;
+pub type Constraints = SmallVec<[usize; 5]>;
 
 /// A collection of learned clauses produced during proof search.
 ///

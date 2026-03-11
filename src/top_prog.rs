@@ -22,7 +22,7 @@ use crate::{
     },
     program::{
         clause::Clause,
-        hypothesis::{Constraints, Hypothesis},
+        hypothesis::Hypothesis,
         predicate_table::PredicateTable,
     },
     resolution::proof::Proof,

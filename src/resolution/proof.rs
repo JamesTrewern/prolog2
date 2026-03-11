@@ -1,5 +1,7 @@
 //! Proof search via SLD resolution with backtracking and predicate invention.
 
+use smallvec::SmallVec;
+
 use crate::{
     heap::{heap::Heap, query_heap::QueryHeap, symbol_db::SymbolDB},
     predicate_modules::{PredReturn, PredicateFunction},
@@ -267,7 +269,7 @@ impl Env {
                             );
                         }
                     }
-                    hypothesis.push_clause(new_clause, constraints.into());
+                    hypothesis.push_clause(new_clause, SmallVec::from_vec(constraints));
                     if debug {
                         eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
                     }

@@ -7,6 +7,7 @@ use std::{
 
 use lazy_static::lazy_static;
 use rayon;
+use smallvec::SmallVec;
 
 use crate::{
     Config, Examples,
@@ -303,7 +304,7 @@ fn specialise(
 
             // Build Hypothesis with offset-adjusted clause addresses
             let mut hypothesis = Hypothesis::new();
-            let empty_constraints: Constraints = Arc::from(Vec::<usize>::new().into_boxed_slice());
+            let empty_constraints: Constraints = SmallVec::new();
             for clause in hyp_clauses {
                 let adjusted_lits: Vec<usize> = clause
                     .iter()
