@@ -1,3 +1,7 @@
 # .cargo/config.toml
 [build]
 rustflags = ["-C", "force-frame-pointers=yes"]
+
+# Default to release builds
+[alias]
+b = "build --release"

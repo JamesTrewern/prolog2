@@ -3,8 +3,6 @@ pub mod maths;
 /// Built-in meta-predicates (`not/1`).
 pub mod meta_predicates;
 
-use std::sync::Arc;
-
 use crate::{
     heap::{query_heap::QueryHeap, symbol_db::SymbolDB},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
@@ -39,13 +37,13 @@ impl PredReturn {
 /// - `&mut QueryHeap` — the current proof's working heap
 /// - `&mut Hypothesis` — the current learned hypothesis (may be extended)
 /// - `usize` — heap address of the goal term being resolved
-/// - `Arc<PredicateTable>` — the program's predicate table
+/// - `&PredicateTable` — the program's predicate table
 /// - `Config` — engine configuration
-pub type PredicateFunction = fn(
-    &mut QueryHeap,
+pub type PredicateFunction = for<'a> fn(
+    &mut QueryHeap<'a>,
     &mut Hypothesis,
     usize,
-    Arc<PredicateTable>,
+    &PredicateTable,
     Config,
 ) -> PredReturn;
 

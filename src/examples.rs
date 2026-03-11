@@ -1,6 +1,6 @@
 // Broad test on example files to prove working state of application
 
-use std::{fs, sync::Arc};
+use std::fs;
 
 use crate::{
     BodyClause, Config, Examples, SetUp, heap::{heap::Cell, query_heap::QueryHeap, symbol_db::SymbolDB}, parser::{
@@ -68,8 +68,8 @@ fn build_goals(query_text: &str, query_heap: &mut QueryHeap) -> Vec<usize> {
 /// Run a query and return whether it succeeded and the number of solutions found
 fn run_query(
     query_text: &str,
-    predicate_table: Arc<PredicateTable>,
-    heap: Arc<Vec<Cell>>,
+    predicate_table: &PredicateTable,
+    heap: &[Cell],
     config: Config,
 ) -> (bool, usize) {
     let mut query_heap = QueryHeap::new(heap, None);
@@ -78,7 +78,7 @@ fn run_query(
     let mut proof = Proof::new(query_heap, &goals);
     let mut solutions = 0;
 
-    while proof.prove(predicate_table.clone(), config) {
+    while proof.prove(&predicate_table, config) {
         solutions += 1;
         // Continue to find more solutions (backtrack)
     }
@@ -90,15 +90,13 @@ fn run_query(
 fn ancestor() {
     let (config, predicate_table, heap, examples) = load_setup("examples/ancestor/config.json");
 
-    let predicate_table = Arc::new(predicate_table);
-    let heap = Arc::new(heap);
 
     // Run positive examples
     if let Some(examples) = examples {
         let (success, solutions) = run_query(
             &examples.to_query(),
-            predicate_table.clone(),
-            heap.clone(),
+            &predicate_table,
+            &heap,
             config,
         );
 
@@ -116,15 +114,13 @@ fn ancestor() {
 fn map() {
     let (config, predicate_table, heap, examples) = load_setup("examples/map/config.json");
 
-    let predicate_table = Arc::new(predicate_table);
-    let heap = Arc::new(heap);
 
     // Run positive examples
     if let Some(examples) = examples {
         let (success, solutions) = run_query(
             &examples.to_query(),
-            predicate_table.clone(),
-            heap.clone(),
+            &predicate_table,
+            &heap,
             config,
         );
 
@@ -139,14 +135,12 @@ fn map() {
 fn odd_even() {
     let (config, predicate_table, heap, examples) = load_setup("examples/odd_even/config.json");
 
-    let predicate_table = Arc::new(predicate_table);
-    let heap = Arc::new(heap);
 
     if let Some(examples) = examples {
         let (success, solutions) = run_query(
             &examples.to_query(),
-            predicate_table.clone(),
-            heap.clone(),
+            &predicate_table,
+            &heap,
             config,
         );
         println!(
@@ -163,14 +157,12 @@ fn odd_even() {
 fn learn_map_double() {
     let (config, predicate_table, heap, examples) = load_setup("examples/map/learn_config.json");
 
-    let predicate_table = Arc::new(predicate_table);
-    let heap = Arc::new(heap);
 
     if let Some(examples) = examples {
         let (success, solutions) = run_query(
             &examples.to_query(),
-            predicate_table.clone(),
-            heap.clone(),
+            &predicate_table,
+            &heap,
             config,
         );
         println!(
@@ -187,14 +179,11 @@ fn learn_map_double() {
 fn trains(){
     let (config, predicate_table, heap, examples) = load_setup("examples/trains/config.json");
 
-    let predicate_table = Arc::new(predicate_table);
-    let heap = Arc::new(heap);
-
     if let Some(examples) = examples {
         let (success, solutions) = run_query(
             &examples.to_query(),
-            predicate_table.clone(),
-            heap.clone(),
+            &predicate_table,
+            &heap,
             config,
         );
         println!(
@@ -211,14 +200,12 @@ fn trains(){
 fn fsm_parity(){
     let (config, predicate_table, heap, examples) = load_setup("examples/fsm/config.json");
 
-    let predicate_table = Arc::new(predicate_table);
-    let heap = Arc::new(heap);
 
     if let Some(examples) = examples {
         let (success, solutions) = run_query(
             &examples.to_query(),
-            predicate_table.clone(),
-            heap.clone(),
+            &predicate_table,
+            &heap,
             config,
         );
         println!(

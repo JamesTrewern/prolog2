@@ -2,7 +2,6 @@ use std::{
     env, fs,
     io::{stdin, stdout, Write},
     process::ExitCode,
-    sync::Arc,
 };
 
 use console::Term;
@@ -161,16 +160,13 @@ impl App {
     pub fn run(self) -> ExitCode {
         let (config, predicate_table, heap, examples) = self.load_setup();
 
-        let predicate_table = Arc::new(predicate_table);
-        let heap = Arc::new(heap);
-
         match examples {
             Some(examples) => {
-                start_query(&examples.to_query(), predicate_table, heap, config, self.auto)
+                start_query(&examples.to_query(), &predicate_table, &heap, config, self.auto)
                     .unwrap();
                 ExitCode::SUCCESS
             }
-            None => main_loop(config, predicate_table, heap),
+            None => main_loop(config, predicate_table, &heap),
         }
     }
 
@@ -234,8 +230,8 @@ fn continue_proof(auto: bool) -> bool {
 
 fn start_query(
     query_text: &str,
-    predicate_table: Arc<PredicateTable>,
-    heap: Arc<Vec<Cell>>,
+    predicate_table: &PredicateTable,
+    heap: &[Cell],
     config: Config,
     auto: bool,
 ) -> Result<(), String> {
@@ -259,7 +255,7 @@ fn start_query(
     let mut proof = Proof::new(query_heap, &goals);
 
     loop {
-        if proof.prove(predicate_table.clone(), config) {
+        if proof.prove(&predicate_table, config) {
             println!("TRUE");
             for (symbol, addr) in &vars {
                 println!("{symbol} = {}", proof.heap.term_string(*addr))
@@ -284,8 +280,8 @@ fn start_query(
 
 fn main_loop(
     config: Config,
-    predicate_table: Arc<PredicateTable>,
-    heap: Arc<Vec<Cell>>,
+    predicate_table: PredicateTable,
+    heap: &[Cell],
 ) -> ExitCode {
     let mut buffer = String::new();
     loop {
@@ -298,8 +294,8 @@ fn main_loop(
                 if buffer.contains('.') {
                     match start_query(
                         &buffer,
-                        predicate_table.clone(),
-                        heap.clone(),
+                        &predicate_table,
+                        heap,
                         config,
                         false,
                     ) {

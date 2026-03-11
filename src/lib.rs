@@ -13,7 +13,7 @@
 //! ```no_run
 //! use std::process::ExitCode;
 //! use std::sync::Arc;
-//! use prolog2::app::{APP, Config};
+//! use prolog2::app::App, Config};
 //! use prolog2::predicate_modules::{
 //!     MATHS, META_PREDICATES, PredReturn, PredicateFunction, PredicateModule,
 //! };
@@ -25,7 +25,7 @@
 //!     heap: &mut QueryHeap,
 //!     hypothesis: &mut Hypothesis,
 //!     goal: usize,
-//!     pred_table: Arc<PredicateTable>,
+//!     pred_table: &PredicateTable,
 //!     config: Config,
 //! ) -> PredReturn {
 //!     // Custom predicate logic here
@@ -57,6 +57,8 @@ pub mod predicate_modules;
 pub mod program;
 /// Resolution engine: proof search, unification, and term building.
 pub mod resolution;
+/// Implementation of the Top Program Consturction algorithm with parallelism
+pub mod top_prog;
 
 // Re-export commonly used types at crate root.
 pub use app::{BodyClause, Config, Examples, SetUp};

@@ -2,7 +2,7 @@
 
 use std::{ops::Deref, sync::Arc};
 
-use crate::heap::heap::Heap;
+use crate::heap::heap::{Heap, Tag};
 
 /// Compact 64-bit flag set used to mark meta-variables and constrained variables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -76,6 +76,13 @@ impl Clause {
 
     pub fn constrained_var(&self, arg_id: usize) -> bool {
         self.constrained_vars.get(arg_id)
+    }
+
+    pub fn normalise_clause_vars(&self, heap: &mut impl Heap) {
+        let mut arg_ids: Vec<usize> = Vec::new();
+        for &literal in self.literals.iter() {
+            heap.normalise_args( literal, &mut arg_ids);
+        }
     }
 
     pub fn to_string(&self, heap: &impl Heap) -> String {

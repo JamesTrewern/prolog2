@@ -178,19 +178,19 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         addr + 1..=addr + self[addr].1
     }
 
-    fn _normalise_args(&mut self, addr: usize, args: &[usize]) {
+    fn normalise_args(&mut self, addr: usize, args: &[usize]) {
         match self[addr] {
-            (Tag::Str, pointer) => self._normalise_args(pointer, args),
+            (Tag::Str, pointer) => self.normalise_args(pointer, args),
             (Tag::Func, _) => {
                 for i in self.str_iterator(addr) {
-                    self._normalise_args(i, args)
+                    self.normalise_args(i, args)
                 }
             }
             (Tag::Tup, _) => unimplemented!("_normalise_args for Tup"),
             (Tag::Set, _) => unimplemented!("_normalise_args for Set"),
             (Tag::Lis, pointer) => {
-                self._normalise_args(pointer, args);
-                self._normalise_args(pointer + 1, args);
+                self.normalise_args(pointer, args);
+                self.normalise_args(pointer + 1, args);
             }
             (Tag::Arg, value) => self[addr].1 = args.iter().position(|i| value == *i).unwrap(),
             _ => (),
@@ -561,8 +561,6 @@ impl Heap for Vec<Cell> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::heap::query_heap::QueryHeap;
 
     use super::{
@@ -572,8 +570,7 @@ mod tests {
 
     #[test]
     fn encode_argument_variable() {
-        let prog_cells = Arc::new(Vec::<Cell>::new());
-        let mut heap = QueryHeap::new(prog_cells, None);
+        let mut heap = QueryHeap::new(&[], None);
 
         let addr1 = heap._set_arg(0);
         let addr2 = heap._set_arg(1);
@@ -584,8 +581,7 @@ mod tests {
 
     #[test]
     fn encode_ref_variable() {
-        let prog_cells = Arc::new(Vec::<Cell>::new());
-        let mut heap = QueryHeap::new(prog_cells, None);
+        let mut heap = QueryHeap::new(&[], None);
 
         let addr1 = heap.set_ref(None);
         let addr2 = heap.set_ref(Some(addr1));
@@ -596,8 +592,7 @@ mod tests {
 
     #[test]
     fn encode_constant() {
-        let prog_cells = Arc::new(Vec::<Cell>::new());
-        let mut heap = QueryHeap::new(prog_cells, None);
+        let mut heap = QueryHeap::new(&[], None);
 
         let a = SymbolDB::set_const("a".into());
         let b = SymbolDB::set_const("b".into());
@@ -615,7 +610,7 @@ mod tests {
         let f = SymbolDB::set_const("f".into());
         let a = SymbolDB::set_const("a".into());
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Func, 3),
@@ -626,7 +621,7 @@ mod tests {
 
         assert_eq!(heap.term_string(0), "p(Arg_0,a)");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Func, 3),
@@ -639,7 +634,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "p(f(Ref_7),a)");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Func, 3),
@@ -652,7 +647,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "p((f,Ref_7),a)");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Func, 3),
@@ -666,7 +661,7 @@ mod tests {
         
         assert_eq!(heap.term_string(0), "p({f,Ref_7},a)");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Func, 3),
@@ -686,11 +681,11 @@ mod tests {
         let f = SymbolDB::set_const("f".into());
         let a = SymbolDB::set_const("a".into());
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![(Tag::Str, 1), (Tag::Tup, 2), (Tag::Arg, 0), (Tag::Con, a)]);
         assert_eq!(heap.term_string(0), "(Arg_0,a)");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Tup, 2),
@@ -702,7 +697,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "(f(Ref_6),a)");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Tup, 2),
@@ -714,7 +709,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "((f,Ref_6),a)");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Tup, 2),
@@ -726,7 +721,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "({f,Ref_6},a)");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Tup, 2),
@@ -745,7 +740,7 @@ mod tests {
         let f = SymbolDB::set_const("f".into());
         let a = SymbolDB::set_const("a".into());
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Lis, 1),
             (Tag::Arg, 0),
@@ -755,7 +750,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "[Arg_0,a]");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Lis, 1),
             (Tag::Str, 5),
@@ -768,7 +763,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "[f(Ref_7),a]");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Lis, 1),
             (Tag::Str, 5),
@@ -781,7 +776,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "[(f,Ref_7),a]");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Lis, 1),
             (Tag::Str, 5),
@@ -794,7 +789,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "[{f,Ref_7},a]");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Lis, 1),
             (Tag::Lis, 5),
@@ -814,11 +809,11 @@ mod tests {
         let f = SymbolDB::set_const("f".into());
         let a = SymbolDB::set_const("a".into());
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![(Tag::Str, 1), (Tag::Set, 2), (Tag::Arg, 0), (Tag::Con, a)]);
         assert_eq!(heap.term_string(0), "{Arg_0,a}");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Set, 2),
@@ -830,7 +825,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "{f(Ref_6),a}");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Set, 2),
@@ -842,7 +837,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "{(f,Ref_6),a}");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Set, 2),
@@ -854,7 +849,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "{{f,Ref_6},a}");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
             (Tag::Set, 2),
@@ -873,19 +868,19 @@ mod tests {
         let f = SymbolDB::set_const("f".into());
         let a = SymbolDB::set_const("a".into());
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![(Tag::Ref, 1), (Tag::Ref, 2), (Tag::Ref, 3), (Tag::Ref, 3)]);
         assert_eq!(heap.term_string(0), "Ref_3");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![(Tag::Ref, 1), (Tag::Ref, 2), (Tag::Ref, 3), (Tag::Arg, 0)]);
         assert_eq!(heap.term_string(0), "Arg_0");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![(Tag::Ref, 1), (Tag::Ref, 2), (Tag::Ref, 3), (Tag::Con, a)]);
         assert_eq!(heap.term_string(0), "a");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Ref, 1),
             (Tag::Ref, 2),
@@ -898,7 +893,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "f(a,Ref_7)");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Ref, 1),
             (Tag::Ref, 2),
@@ -910,7 +905,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "(a,Ref_6)");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Ref, 1),
             (Tag::Ref, 2),
@@ -922,7 +917,7 @@ mod tests {
         ]);
         assert_eq!(heap.term_string(0), "{a,Ref_6}");
 
-        let mut heap = QueryHeap::new(Arc::new(vec![]), None);
+        let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Ref, 1),
             (Tag::Ref, 2),

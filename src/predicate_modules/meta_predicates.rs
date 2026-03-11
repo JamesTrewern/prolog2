@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     heap::{heap::Heap, query_heap::QueryHeap},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
@@ -14,7 +12,7 @@ pub fn not(
     heap: &mut QueryHeap,
     hypothesis: &mut Hypothesis,
     goal: usize,
-    predicate_table: Arc<PredicateTable>,
+    predicate_table: &PredicateTable,
     config: Config,
 ) -> PredReturn {
     use crate::heap::heap::Tag;

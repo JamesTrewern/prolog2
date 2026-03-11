@@ -238,8 +238,6 @@ fn unify_list(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::Substitution;
     use crate::{
         heap::{
@@ -528,8 +526,8 @@ mod tests {
     #[test]
     fn integers(){
         let prev = SymbolDB::set_const("prev".to_string());
-        let heap = vec![(Tag::Func,3),(Tag::Con,prev),(Tag::Int,4),(Tag::Int,3)];
-        let mut heap = QueryHeap::new(Arc::new(heap), None);
+        let prog = vec![(Tag::Func,3),(Tag::Con,prev),(Tag::Int,4),(Tag::Int,3)];
+        let mut heap = QueryHeap::new(&prog, None);
         //possible failure to deref before comparing numbers
         heap.cells.extend(vec![
             (Tag::Func, 3),(Tag::Ref, 5), (Tag::Int, 4), (Tag::Ref, 7)

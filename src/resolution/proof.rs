@@ -1,7 +1,5 @@
 //! Proof search via SLD resolution with backtracking and predicate invention.
 
-use std::sync::Arc;
-
 use crate::{
     heap::{heap::Heap, query_heap::QueryHeap, symbol_db::SymbolDB},
     predicate_modules::{PredReturn, PredicateFunction},
@@ -140,7 +138,7 @@ impl Env {
         hypothesis: &mut Hypothesis,
         allow_new_clause: bool,
         allow_new_pred: bool,
-        predicate_table: Arc<PredicateTable>,
+        predicate_table: &PredicateTable,
         config: Config,
         debug: bool,
     ) -> Option<Vec<Env>> {
@@ -158,7 +156,7 @@ impl Env {
         if let Some(pred_function) = self.pred_function {
             if !self.pred_function_tried {
                 self.pred_function_tried = true;
-                match pred_function(heap, hypothesis, self.goal, predicate_table.clone(), config) {
+                match pred_function(heap, hypothesis, self.goal, predicate_table, config) {
                     PredReturn::True => return Some(Vec::new()),
                     PredReturn::False => {
                         // Fall through to try clause-based choices
@@ -308,17 +306,17 @@ impl Env {
 /// Maintains a goal stack and iteratively resolves goals against the predicate
 /// table and the current hypothesis. Call [`Proof::prove`] repeatedly to
 /// enumerate solutions via backtracking.
-pub struct Proof {
+pub struct Proof<'a> {
     stack: Vec<Env>,
     pointer: usize,
     pub hypothesis: Hypothesis,
-    pub heap: QueryHeap,
+    pub heap: QueryHeap<'a>,
     h_clauses: usize,
     invented_preds: usize,
 }
 
-impl Proof {
-    pub fn new(heap: QueryHeap, goals: &[usize]) -> Self {
+impl<'a> Proof<'a> {
+    pub fn new(heap: QueryHeap<'a>, goals: &[usize]) -> Self {
         let hypothesis = Hypothesis::new();
         let stack = goals.iter().map(|goal| Env::new(*goal, 0, heap.heap_len())).collect();
         Proof {
@@ -332,7 +330,7 @@ impl Proof {
     }
 
     /// Create a new proof with an existing hypothesis (for negation-as-failure checks)
-    pub fn with_hypothesis(heap: QueryHeap, goals: &[usize], hypothesis: Hypothesis) -> Self {
+    pub fn with_hypothesis(heap: QueryHeap<'a>, goals: &[usize], hypothesis: Hypothesis) -> Self {
         let h_clauses = hypothesis.len();
         let stack = goals.iter().map(|goal| Env::new(*goal, 0, heap.heap_len())).collect();
         Proof {
@@ -347,7 +345,7 @@ impl Proof {
 
     pub fn prove(
         &mut self,
-        predicate_table: Arc<PredicateTable>,
+        predicate_table: &PredicateTable,
         config: Config,
     ) -> bool {
         // Handle restart after previous success
@@ -403,7 +401,7 @@ impl Proof {
                 &mut self.hypothesis,
                 self.h_clauses < config.max_clause,
                 self.invented_preds < config.max_pred,
-                predicate_table.clone(),
+                predicate_table,
                 config,
                 config.debug,
             ) {

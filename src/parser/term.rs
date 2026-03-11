@@ -274,7 +274,7 @@ impl Term {
 
 #[cfg(test)]
 mod encode_tests {
-    use std::{collections::HashMap, sync::Arc};
+    use std::collections::HashMap;
 
     use super::{Term, Unit};
     use crate::heap::{
@@ -287,7 +287,7 @@ mod encode_tests {
 
     #[test]
     fn encode_argument() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
         let mut var_values = HashMap::new();
         let x = Unit::Variable("X".into());
         let y = Unit::Variable("Y".into());
@@ -308,7 +308,7 @@ mod encode_tests {
 
     #[test]
     fn encode_ref() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
         heap.cells = vec![];
         let mut var_values = HashMap::new();
         let x = Unit::Variable("X".into());
@@ -330,7 +330,7 @@ mod encode_tests {
 
     #[test]
     fn encode_unit() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
         heap.cells = vec![];
         let a = SymbolDB::set_const("a".into());
 
@@ -383,7 +383,7 @@ mod encode_tests {
 
     #[test]
     fn program_encode_functor() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
 
         let p_id = SymbolDB::set_const("p".into());
         let a_id = SymbolDB::set_const("a".into());
@@ -532,7 +532,7 @@ mod encode_tests {
 
     #[test]
     fn query_encode_functor() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
 
         let p_id = SymbolDB::set_const("p".into());
         let a_id = SymbolDB::set_const("a".into());
@@ -679,7 +679,7 @@ mod encode_tests {
 
     #[test]
     fn program_encode_tuple() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
 
         let p_id = SymbolDB::set_const("p".into());
         let a_id = SymbolDB::set_const("a".into());
@@ -821,7 +821,7 @@ mod encode_tests {
 
     #[test]
     fn query_encode_tuple() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
 
         let p_id = SymbolDB::set_const("p".into());
         let a_id = SymbolDB::set_const("a".into());
@@ -962,7 +962,7 @@ mod encode_tests {
 
     #[test]
     fn program_encode_set() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
 
         let p_id = SymbolDB::set_const("p".into());
         let a_id = SymbolDB::set_const("a".into());
@@ -1086,7 +1086,7 @@ mod encode_tests {
 
     #[test]
     fn query_encode_set() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
 
         let p_id = SymbolDB::set_const("p".into());
         let a_id = SymbolDB::set_const("a".into());
@@ -1211,7 +1211,7 @@ mod encode_tests {
 
     #[test]
     fn program_encode_list() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
 
         let a_id = SymbolDB::set_const("a".into());
 
@@ -1300,7 +1300,7 @@ mod encode_tests {
 
     #[test]
     fn query_encode_list() {
-        let mut heap = QueryHeap::new(Arc::new(Vec::new()),None);
+        let mut heap = QueryHeap::new(&[],None);
 
         let _p_id = SymbolDB::set_const("p".into());
         let a_id = SymbolDB::set_const("a".into());

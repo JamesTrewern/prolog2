@@ -216,15 +216,13 @@ mod tests {
         program::{hypothesis::Hypothesis, predicate_table::FindReturn},
         Config,
     };
-    use std::sync::Arc;
-
     use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
 
     fn pred_fn_placeholder(
         _heap: &mut QueryHeap,
         _hypothesis: &mut Hypothesis,
         _goal: usize,
-        _predicate_table: Arc<PredicateTable>,
+        _predicate_table: &PredicateTable,
         _config: Config,
     ) -> PredReturn {
         PredReturn::True

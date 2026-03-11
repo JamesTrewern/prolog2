@@ -3,3 +3,5 @@ results/*
 output.log
 profile.json.gz
 .DS_Store
+flamegraph.svg
+perf.data

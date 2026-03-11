@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::PredReturn;
 use crate::{Config, heap::{
     heap::{Cell, Heap, Tag},
@@ -286,7 +284,7 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Number {
 }
 
 /// is/2 predicate: evaluates RHS and unifies with LHS
-pub fn is_pred(heap: &mut QueryHeap, _hypothesis: &mut Hypothesis, goal: usize, _pred_table: Arc<PredicateTable>, _config: Config) -> PredReturn {
+pub fn is_pred(heap: &mut QueryHeap, _hypothesis: &mut Hypothesis, goal: usize, _pred_table: &PredicateTable, _config: Config) -> PredReturn {
     // Goal structure: Func(3) | Con("is") | LHS | RHS
     let goal_addr = heap.deref_addr(goal);
     let func_addr = match heap[goal_addr] {

@@ -3,10 +3,7 @@ use fsize::fsize;
 use std::{
     mem,
     ops::{Index, IndexMut, Range},
-    sync::{
-        atomic::{AtomicUsize, Ordering::Acquire},
-        Arc,
-    },
+    sync::atomic::{AtomicUsize, Ordering::Acquire},
 };
 
 use super::heap::{Cell, Heap};
@@ -15,19 +12,19 @@ static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 /// Working heap for proof search.
 ///
-/// Wraps a shared read-only program heap (`Arc<Vec<Cell>>`) and an
+/// Wraps a shared read-only program heap (`&[Cell]`) and an
 /// owned mutable cell buffer for query-time allocations. Supports
 /// branching via an optional parent pointer for backtracking.
-pub struct QueryHeap {
+pub struct QueryHeap<'a> {
     id: usize,
     pub(crate) cells: Vec<Cell>,
-    prog_cells: Arc<Vec<Cell>>,
+    prog_cells: &'a [Cell],
     // TODO: handle branching query heap multi-threading
-    root: Option<*const QueryHeap>,
+    root: Option<*const QueryHeap<'a>>,
 }
 
-impl QueryHeap {
-    pub fn new(prog_cells: Arc<Vec<Cell>>, root: Option<*const QueryHeap>) -> QueryHeap {
+impl<'a> QueryHeap<'a> {
+    pub fn new(prog_cells: &'a [Cell], root: Option<*const QueryHeap<'a>>) -> QueryHeap<'a> {
         let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
         QueryHeap {
             id,
@@ -37,10 +34,10 @@ impl QueryHeap {
         }
     }
 
-    pub fn branch(&self, count: usize) -> Vec<QueryHeap> {
+    pub fn branch(&self, count: usize) -> Vec<QueryHeap<'a>> {
         let mut branch_heap = Vec::with_capacity(count);
         for _ in 0..count {
-            branch_heap.push(QueryHeap::new(self.prog_cells.clone(), Some(self)));
+            branch_heap.push(QueryHeap::new(self.prog_cells, Some(self)));
         }
         branch_heap
     }
@@ -54,7 +51,7 @@ impl QueryHeap {
     }
 }
 
-impl Heap for QueryHeap {
+impl Heap for QueryHeap<'_> {
     fn heap_push(&mut self, cell: Cell) -> usize {
         let i = self.heap_len();
         self.cells.push(cell);
@@ -115,7 +112,7 @@ impl Heap for QueryHeap {
     }
 }
 
-impl Index<usize> for QueryHeap {
+impl Index<usize> for QueryHeap<'_> {
     type Output = Cell;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -138,7 +135,7 @@ impl Index<usize> for QueryHeap {
     }
 }
 
-impl IndexMut<usize> for QueryHeap {
+impl IndexMut<usize> for QueryHeap<'_> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         if index < self.prog_cells.len() {
             panic!("Can't get mutable reference to program heap cell");
@@ -160,7 +157,7 @@ impl IndexMut<usize> for QueryHeap {
     }
 }
 
-impl Index<Range<usize>> for QueryHeap {
+impl Index<Range<usize>> for QueryHeap<'_> {
     type Output = [Cell];
 
     fn index(&self, index: Range<usize>) -> &Self::Output {
