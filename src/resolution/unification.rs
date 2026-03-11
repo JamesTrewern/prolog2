@@ -1,6 +1,7 @@
 //! Unification algorithm and substitution management.
 
 use std::{
+    mem::MaybeUninit,
     ops::{Deref, DerefMut},
     usize,
 };
@@ -79,8 +80,6 @@ impl Substitution {
         bindings.into_boxed_slice()
     }
 
-    // REPLACE the check_constraints method in src/resolution/unification.rs with:
-
     /// Fully dereference an address through both heap references and substitution bindings.
     pub(crate) fn full_deref(&self, mut addr: usize, heap: &impl Heap) -> usize {
         loop {
@@ -112,27 +111,43 @@ impl Substitution {
     /// This ensures that the same constant symbol at different heap locations is
     /// correctly detected as a duplicate.
     pub fn check_constraints(&self, constraints: &[usize], heap: &impl Heap) -> bool {
-        // Collect (original_constraint, final_cell) for each constrained address
-        let mut constrained_targets: Vec<(usize, Cell)> = Vec::new();
+        const STACK_CAP: usize = 8;
+        let len = constraints.len();
 
-        for &constraint_addr in constraints {
-            let final_addr = self.full_deref(constraint_addr, heap);
-            let final_cell = heap[final_addr];
-            constrained_targets.push((constraint_addr, final_cell));
-        }
-
-        // Check if any two different constrained addresses resolve to the same cell value
-        for i in 0..constrained_targets.len() {
-            for j in (i + 1)..constrained_targets.len() {
-                if constrained_targets[i].0 != constrained_targets[j].0
-                    && constrained_targets[i].1 == constrained_targets[j].1
-                {
-                    return false;
+        if len <= STACK_CAP {
+            // Stack-allocated path: use MaybeUninit to avoid zeroing unused slots
+            let mut buf: [MaybeUninit<(usize, Cell)>; STACK_CAP] =
+                unsafe { MaybeUninit::uninit().assume_init() };
+            for i in 0..len {
+                let addr = constraints[i];
+                let cell = heap[self.full_deref(addr, heap)];
+                buf[i] = MaybeUninit::new((addr, cell));
+            }
+            for i in 0..len {
+                let (addr_i, cell_i) = unsafe { buf[i].assume_init() };
+                for j in (i + 1)..len {
+                    let (addr_j, cell_j) = unsafe { buf[j].assume_init() };
+                    if addr_i != addr_j && cell_i == cell_j {
+                        return false;
+                    }
                 }
             }
+            true
+        } else {
+            // Fallback for very large constraint sets
+            let targets: Vec<(usize, Cell)> = constraints
+                .iter()
+                .map(|&addr| (addr, heap[self.full_deref(addr, heap)]))
+                .collect();
+            for i in 0..targets.len() {
+                for j in (i + 1)..targets.len() {
+                    if targets[i].0 != targets[j].0 && targets[i].1 == targets[j].1 {
+                        return false;
+                    }
+                }
+            }
+            true
         }
-
-        true
     }
 }
 
