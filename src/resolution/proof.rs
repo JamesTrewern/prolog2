@@ -63,34 +63,34 @@ impl Env {
         self.heap_point = heap.heap_len();
         let (symbol, arity) = heap.str_symbol_arity(self.goal);
 
-        self.choices = hypothesis.iter().map(|clause| clause.clone()).collect();
+        self.choices.clear();
+        self.choices.extend_from_slice(hypothesis);
 
         if symbol == 0 {
             // Add meta-rules (variable clauses) FIRST so they're at the start
             if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
-                self.choices.extend(clauses.iter().map(|c| c.clone()));
+                self.choices.extend_from_slice(clauses);
             }
             // Add body predicates LAST so they're at the end and get popped first
             // This ensures we try grounded predicates before inventing new ones
             self.choices.extend(
                 predicate_table
                     .get_body_clauses(arity)
-                    .into_iter()
-                    .map(|c| c),
+                    .cloned(),
             );
             self.total_choice_count = self.choices.len();
         } else {
             match predicate_table.get_predicate((symbol, arity)) {
                 Some(Predicate::Function(pred_function)) => {
-                    self.pred_function = Some(pred_function)
+                    self.pred_function = Some(*pred_function)
                 }
                 Some(Predicate::Clauses(clauses)) => {
-                    self.choices.extend(clauses.iter().map(|c| c.clone()));
+                    self.choices.extend_from_slice(clauses);
                     self.total_choice_count = self.choices.len();
                 }
                 None => {
                     if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
-                        self.choices.extend(clauses.iter().map(|c| c.clone()));
+                        self.choices.extend_from_slice(clauses);
                         self.total_choice_count = self.choices.len();
                     }
                 }

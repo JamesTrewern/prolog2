@@ -122,12 +122,9 @@ impl PredicateTable {
     }
 
     //Get predicate by SymbolArity key
-    pub fn get_predicate(&self, symbol_arity: SymbolArity) -> Option<Predicate> {
+    pub fn get_predicate(&self, symbol_arity: SymbolArity) -> Option<&Predicate> {
         match self.find_predicate(symbol_arity) {
-            FindReturn::Index(i) => match &self[i].predicate {
-                Predicate::Function(predicate_fn) => Some(Predicate::Function(*predicate_fn)),
-                Predicate::Clauses(clauses) => Some(Predicate::Clauses(clauses.clone())),
-            },
+            FindReturn::Index(i) => Some(&self[i].predicate),
             FindReturn::InsertPos(_) => None,
         }
     }
@@ -178,19 +175,17 @@ impl PredicateTable {
     }
 
     //Get all clause index ranges from entry indexes in the body_list
-    pub fn get_body_clauses(&self, arity: usize) -> Vec<Clause> {
-        let mut body_clauses = vec![];
-
-        for &idx in &self.body_list {
+    pub fn get_body_clauses(&self, arity: usize) -> impl Iterator<Item = &Clause> {
+        self.body_list.iter().filter_map(move |&idx| {
             if self[idx].symbol_arity.1 != arity {
-                continue;
+                return None;
             }
             if let Predicate::Clauses(pred_clauses) = &self[idx].predicate {
-                body_clauses.extend_from_slice(pred_clauses);
+                Some(pred_clauses.iter())
+            } else {
+                None
             }
-        }
-
-        body_clauses
+        }).flatten()
     }
 }
 
@@ -300,7 +295,7 @@ mod tests {
         assert_eq!(pred_table.get_predicate((p, 3)), None);
         assert_eq!(
             pred_table.get_predicate((p, 2)),
-            Some(Predicate::Clauses(Box::new([
+            Some(&Predicate::Clauses(Box::new([
                 Clause::new(vec![15, 19], None, None),
                 Clause::new(vec![23, 27], None, None),
             ])))
@@ -323,7 +318,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             pred_table.get_predicate((pred_func, 3)),
-            Some(Predicate::Function(pred_fn_placeholder))
+            Some(&Predicate::Function(pred_fn_placeholder))
         );
     }
 
@@ -348,7 +343,7 @@ mod tests {
 
         assert_eq!(
             pred_table.get_predicate((p, 2)),
-            Some(Predicate::Clauses(Box::new([
+            Some(&Predicate::Clauses(Box::new([
                 Clause::new(vec![15, 19], None, None),
                 Clause::new(vec![23, 27], None, None),
                 Clause::new(vec![], Some(vec![]), None)
@@ -356,7 +351,7 @@ mod tests {
         );
         assert_eq!(
             pred_table.get_predicate((r, 2)),
-            Some(Predicate::Clauses(Box::new([Clause::new(
+            Some(&Predicate::Clauses(Box::new([Clause::new(
                 vec![],
                 Some(vec![]),
                 None
@@ -479,24 +474,27 @@ mod tests {
         let mut pred_table = setup();
         let q = SymbolDB::set_const("q".into());
 
-        assert_eq!(pred_table.get_body_clauses(1), []);
+        let empty: Vec<&Clause> = pred_table.get_body_clauses(1).collect();
+        assert!(empty.is_empty());
+        let body2: Vec<&Clause> = pred_table.get_body_clauses(2).collect();
         assert_eq!(
-            pred_table.get_body_clauses(2),
-            [
-                Clause::new(vec![15, 19], None, None),
-                Clause::new(vec![23, 27], None, None),
+            body2,
+            vec![
+                &Clause::new(vec![15, 19], None, None),
+                &Clause::new(vec![23, 27], None, None),
             ]
         );
 
         pred_table.set_body((q, 2), true).unwrap();
 
+        let body2_ext: Vec<&Clause> = pred_table.get_body_clauses(2).collect();
         assert_eq!(
-            pred_table.get_body_clauses(2),
-            [
-                Clause::new(vec![15, 19], None, None),
-                Clause::new(vec![23, 27], None, None),
-                Clause::new(vec![31, 35], None, None),
-                Clause::new(vec![39, 43], None, None),
+            body2_ext,
+            vec![
+                &Clause::new(vec![15, 19], None, None),
+                &Clause::new(vec![23, 27], None, None),
+                &Clause::new(vec![31, 35], None, None),
+                &Clause::new(vec![39, 43], None, None),
             ]
         );
     }
