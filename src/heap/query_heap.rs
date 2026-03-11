@@ -52,6 +52,18 @@ impl<'a> QueryHeap<'a> {
 }
 
 impl Heap for QueryHeap<'_> {
+    #[inline(always)]
+    fn deref_addr(&self, mut addr: usize) -> usize {
+        loop {
+            let cell = self[addr];
+            match cell {
+                (Tag::Ref, pointer) if addr == pointer => return pointer,
+                (Tag::Ref, pointer) => addr = pointer,
+                _ => return addr,
+            }
+        }
+    }
+
     fn heap_push(&mut self, cell: Cell) -> usize {
         let i = self.heap_len();
         self.cells.push(cell);
