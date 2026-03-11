@@ -91,7 +91,7 @@ impl Examples {
 /// use prolog2::app::App;
 /// use prolog2::predicate_modules::{MATHS, META_PREDICATES};
 ///
-/// Prolog2::from_args()
+/// App::from_args()
 ///     .add_module(&MATHS)
 ///     .add_module(&META_PREDICATES)
 ///     .run();

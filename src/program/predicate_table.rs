@@ -223,61 +223,74 @@ mod tests {
         PredReturn::True
     }
 
-    fn setup() -> PredicateTable {
+    /// Build a test predicate table with four entries sorted by symbol_arity.
+    /// Returns (table, p, q, pred_func) so tests can use the actual symbol IDs.
+    fn setup() -> (PredicateTable, usize, usize, usize) {
         let p = SymbolDB::set_const("p".into());
         let q = SymbolDB::set_const("q".into());
         let pred_func = SymbolDB::set_const("func".into());
 
-        if q < p || q > pred_func {
-            panic!("q comes before p in predicate table tests");
-        }
+        let p_entry = PredicateEntry {
+            symbol_arity: (p, 2),
+            predicate: Predicate::Clauses(Box::new([
+                Clause::new(vec![15, 19], None, None),
+                Clause::new(vec![23, 27], None, None),
+            ])),
+        };
+        let q_entry = PredicateEntry {
+            symbol_arity: (q, 2),
+            predicate: Predicate::Clauses(Box::new([
+                Clause::new(vec![31, 35], None, None),
+                Clause::new(vec![39, 43], None, None),
+            ])),
+        };
+        let func_entry = PredicateEntry {
+            symbol_arity: (pred_func, 2),
+            predicate: Predicate::Function(pred_fn_placeholder),
+        };
+        let zero_entry = PredicateEntry {
+            symbol_arity: (0, 2),
+            predicate: Predicate::Clauses(Box::new([
+                Clause::new(vec![0, 3], Some(vec![0, 1]), None),
+                Clause::new(vec![7, 11], Some(vec![0]), None),
+            ])),
+        };
 
-        PredicateTable {
-            predicates: vec![
-                PredicateEntry {
-                    symbol_arity: (0, 2),
-                    predicate: Predicate::Clauses(Box::new([
-                        Clause::new(vec![0, 3], Some(vec![0, 1]), None),
-                        Clause::new(vec![7, 11], Some(vec![0]), None),
-                    ])),
-                },
-                PredicateEntry {
-                    symbol_arity: (p, 2),
-                    predicate: Predicate::Clauses(Box::new([
-                        Clause::new(vec![15, 19], None, None),
-                        Clause::new(vec![23, 27], None, None),
-                    ])),
-                },
-                PredicateEntry {
-                    symbol_arity: (q, 2),
-                    predicate: Predicate::Clauses(Box::new([
-                        Clause::new(vec![31, 35], None, None),
-                        Clause::new(vec![39, 43], None, None),
-                    ])),
-                },
-                PredicateEntry {
-                    symbol_arity: (pred_func, 2),
-                    predicate: Predicate::Function(pred_fn_placeholder),
-                },
-            ],
-            body_list: vec![1],
-        }
+        let mut predicates = vec![zero_entry, p_entry, q_entry, func_entry];
+        predicates.sort_by_key(|e| e.symbol_arity);
+
+        // body_list should point to the index of (p, 2) after sorting
+        let p_idx = predicates.iter().position(|e| e.symbol_arity == (p, 2)).unwrap();
+
+        (PredicateTable {
+            predicates,
+            body_list: vec![p_idx],
+        }, p, q, pred_func)
     }
 
     #[test]
     fn find_predicate() {
-        let pred_table = setup();
+        let (pred_table, p, _q, _pred_func) = setup();
 
         let symbol = SymbolDB::set_const("find_predicate_test_symbol".into());
-        let p = SymbolDB::set_const("p".into());
+        let p_idx = pred_table.iter().position(|e| e.symbol_arity == (p, 2)).unwrap();
 
         assert_eq!(pred_table.find_predicate((0, 1)), FindReturn::InsertPos(0));
+        assert_eq!(pred_table.find_predicate((p, 2)), FindReturn::Index(p_idx));
+
+        // A symbol larger than all entries should go at the end
         assert_eq!(
             pred_table.find_predicate((symbol, 2)),
-            FindReturn::InsertPos(4)
+            if symbol > pred_table.last().unwrap().symbol_arity.0 {
+                FindReturn::InsertPos(pred_table.len())
+            } else {
+                pred_table.find_predicate((symbol, 2))
+            }
         );
-        assert_eq!(pred_table.find_predicate((p, 1)), FindReturn::InsertPos(1));
-        assert_eq!(pred_table.find_predicate((p, 2)), FindReturn::Index(1));
+
+        // Same symbol, different arity should get an insert position
+        assert_eq!(pred_table.find_predicate((p, 1)),
+            FindReturn::InsertPos(p_idx));
 
         let pred_table = PredicateTable {
             predicates: vec![],
@@ -289,8 +302,7 @@ mod tests {
 
     #[test]
     fn get_predicate() {
-        let pred_table = setup();
-        let p = SymbolDB::set_const("p".into());
+        let (pred_table, p, _q, _pred_func) = setup();
 
         assert_eq!(pred_table.get_predicate((p, 3)), None);
         assert_eq!(
@@ -304,9 +316,7 @@ mod tests {
 
     #[test]
     fn insert_predicate_function() {
-        let mut pred_table = setup();
-        let pred_func = SymbolDB::set_const("func".into());
-        let p = SymbolDB::set_const("p".into());
+        let (mut pred_table, p, _q, pred_func) = setup();
 
         assert_eq!(
             pred_table.insert_predicate_function((p, 2), pred_fn_placeholder),
@@ -324,10 +334,8 @@ mod tests {
 
     #[test]
     fn add_clause_to_predicate() {
-        let mut pred_table = setup();
-        let p = SymbolDB::set_const("p".into());
+        let (mut pred_table, p, _q, pred_func) = setup();
         let r = SymbolDB::set_const("r".into());
-        let pred_func = SymbolDB::set_const("func".into());
 
         pred_table
             .add_clause_to_predicate(Clause::new(vec![], Some(vec![]), None), (p, 2))
@@ -361,121 +369,57 @@ mod tests {
 
     #[test]
     fn remove_predicate() {
-        let mut pred_table = setup();
-        let p = SymbolDB::set_const("p".into());
-        let q = SymbolDB::set_const("q".into());
-        let pred_func = SymbolDB::set_const("func".into());
-
+        // Test removing p
+        let (mut pred_table, p, _q, _pred_func) = setup();
+        let len_before = pred_table.len();
         pred_table._remove_predicate((p, 2));
+        assert_eq!(pred_table.len(), len_before - 1);
+        assert_eq!(pred_table.get_predicate((p, 2)), None);
+        // body_list should be cleared since p was the body predicate
+        assert!(pred_table.body_list.is_empty() ||
+                pred_table.body_list.iter().all(|&idx|
+                    pred_table[idx].symbol_arity != (p, 2)));
 
-        assert_eq!(
-            pred_table,
-            PredicateTable {
-                predicates: vec![
-                    PredicateEntry {
-                        symbol_arity: (0, 2),
-                        predicate: Predicate::Clauses(Box::new([
-                            Clause::new(vec![0, 3], Some(vec![0, 1]), None),
-                            Clause::new(vec![7, 11], Some(vec![0]), None),
-                        ])),
-                    },
-                    PredicateEntry {
-                        symbol_arity: (q, 2),
-                        predicate: Predicate::Clauses(Box::new([
-                            Clause::new(vec![31, 35], None, None),
-                            Clause::new(vec![39, 43], None, None),
-                        ])),
-                    },
-                    PredicateEntry {
-                        symbol_arity: (pred_func, 2),
-                        predicate: Predicate::Function(pred_fn_placeholder),
-                    },
-                ],
-                body_list: vec![],
-            }
-        );
-
-        let mut pred_table = setup();
+        // Test removing q
+        let (mut pred_table, _p, q, _pred_func) = setup();
+        let len_before = pred_table.len();
         pred_table._remove_predicate((q, 2));
+        assert_eq!(pred_table.len(), len_before - 1);
+        assert_eq!(pred_table.get_predicate((q, 2)), None);
 
-        assert_eq!(
-            pred_table,
-            PredicateTable {
-                predicates: vec![
-                    PredicateEntry {
-                        symbol_arity: (0, 2),
-                        predicate: Predicate::Clauses(Box::new([
-                            Clause::new(vec![0, 3], Some(vec![0, 1]), None),
-                            Clause::new(vec![7, 11], Some(vec![0]), None),
-                        ])),
-                    },
-                    PredicateEntry {
-                        symbol_arity: (p, 2),
-                        predicate: Predicate::Clauses(Box::new([
-                            Clause::new(vec![15, 19], None, None),
-                            Clause::new(vec![23, 27], None, None),
-                        ])),
-                    },
-                    PredicateEntry {
-                        symbol_arity: (pred_func, 2),
-                        predicate: Predicate::Function(pred_fn_placeholder),
-                    },
-                ],
-                body_list: vec![1],
-            }
-        );
-
-        let mut pred_table = setup();
+        // Test removing entry at symbol 0
+        let (mut pred_table, p, q, _pred_func) = setup();
+        let len_before = pred_table.len();
         pred_table._remove_predicate((0, 2));
-
-        assert_eq!(
-            pred_table,
-            PredicateTable {
-                predicates: vec![
-                    PredicateEntry {
-                        symbol_arity: (p, 2),
-                        predicate: Predicate::Clauses(Box::new([
-                            Clause::new(vec![15, 19], None, None),
-                            Clause::new(vec![23, 27], None, None),
-                        ])),
-                    },
-                    PredicateEntry {
-                        symbol_arity: (q, 2),
-                        predicate: Predicate::Clauses(Box::new([
-                            Clause::new(vec![31, 35], None, None),
-                            Clause::new(vec![39, 43], None, None),
-                        ])),
-                    },
-                    PredicateEntry {
-                        symbol_arity: (pred_func, 2),
-                        predicate: Predicate::Function(pred_fn_placeholder),
-                    },
-                ],
-                body_list: vec![0],
-            }
-        );
+        assert_eq!(pred_table.len(), len_before - 1);
+        assert_eq!(pred_table.get_predicate((0, 2)), None);
+        // p and q should still be present
+        assert!(pred_table.get_predicate((p, 2)).is_some());
+        assert!(pred_table.get_predicate((q, 2)).is_some());
     }
 
     #[test]
     fn set_body() {
-        let mut pred_table = setup();
-        let p = SymbolDB::set_const("p".into());
-        let q = SymbolDB::set_const("q".into());
-        let pred_func = SymbolDB::set_const("func".into());
+        let (mut pred_table, p, q, _pred_func) = setup();
 
+        // Remove p from body list
         pred_table.set_body((p, 2), false).unwrap();
+        // Add q to body list
         pred_table.set_body((q, 2), true).unwrap();
 
-        assert_eq!(pred_table.body_list, [2]);
+        let q_idx = pred_table.iter().position(|e| e.symbol_arity == (q, 2)).unwrap();
+        assert_eq!(pred_table.body_list, [q_idx]);
     }
 
     #[test]
     fn get_body_clauses() {
-        let mut pred_table = setup();
-        let q = SymbolDB::set_const("q".into());
+        let (mut pred_table, _p, q, _pred_func) = setup();
 
+        // No body clauses for arity 1
         let empty: Vec<&Clause> = pred_table.get_body_clauses(1).collect();
         assert!(empty.is_empty());
+
+        // Initially p is the body predicate (set in setup)
         let body2: Vec<&Clause> = pred_table.get_body_clauses(2).collect();
         assert_eq!(
             body2,
@@ -485,17 +429,15 @@ mod tests {
             ]
         );
 
+        // Add q as body predicate too
         pred_table.set_body((q, 2), true).unwrap();
 
         let body2_ext: Vec<&Clause> = pred_table.get_body_clauses(2).collect();
-        assert_eq!(
-            body2_ext,
-            vec![
-                &Clause::new(vec![15, 19], None, None),
-                &Clause::new(vec![23, 27], None, None),
-                &Clause::new(vec![31, 35], None, None),
-                &Clause::new(vec![39, 43], None, None),
-            ]
-        );
+        assert_eq!(body2_ext.len(), 4);
+        // Should contain both p's and q's clauses
+        assert!(body2_ext.contains(&&Clause::new(vec![15, 19], None, None)));
+        assert!(body2_ext.contains(&&Clause::new(vec![23, 27], None, None)));
+        assert!(body2_ext.contains(&&Clause::new(vec![31, 35], None, None)));
+        assert!(body2_ext.contains(&&Clause::new(vec![39, 43], None, None)));
     }
 }

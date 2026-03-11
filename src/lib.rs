@@ -13,7 +13,7 @@
 //! ```no_run
 //! use std::process::ExitCode;
 //! use std::sync::Arc;
-//! use prolog2::app::App, Config};
+//! use prolog2::{app::App, Config};
 //! use prolog2::predicate_modules::{
 //!     MATHS, META_PREDICATES, PredReturn, PredicateFunction, PredicateModule,
 //! };
@@ -37,7 +37,7 @@
 //! ];
 //!
 //! fn main() -> ExitCode {
-//!     Prolog2::from_args()
+//!     App::from_args()
 //!         .add_module(&MATHS)
 //!         .add_module(&META_PREDICATES)
 //!         .add_module(&MY_MODULE)
