@@ -11,6 +11,7 @@ use super::clause::Clause;
 pub(crate) type SymbolArity = (usize, usize);
 
 /// A predicate is either a set of compiled clauses or a built-in function.
+#[allow(unpredictable_function_pointer_comparisons)]
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Predicate {
     /// A native Rust predicate function.
