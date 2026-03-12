@@ -1,10 +1,14 @@
 use super::PredReturn;
-use crate::{Config, heap::{
-    heap::{Cell, Heap, Tag},
-    query_heap::QueryHeap,
-    symbol_db::known_symbol_id,
-}, program::predicate_table::PredicateTable};
 use crate::program::hypothesis::Hypothesis;
+use crate::{
+    heap::{
+        heap::{Cell, Heap, Tag},
+        query_heap::QueryHeap,
+        symbol_db::known_symbol_id,
+    },
+    program::predicate_table::PredicateTable,
+    Config,
+};
 
 use fsize::fsize;
 
@@ -19,23 +23,23 @@ const MINUS_SYMBOL: usize = known_symbol_id(3);
 // 7: cos, 8: sin, 9: tan, 10: acos, 11: asin, 12: atan
 // 13: log, 14: abs, 15: round, 16: sqrt, 17: to_degrees, 18: to_radians
 const FUNCTIONS: [(usize, MathFn); 17] = [
-    (known_symbol_id(2), add),    // +
-    (known_symbol_id(3), sub),    // -
-    (known_symbol_id(4), mul),    // *
-    (known_symbol_id(5), div),    // /
-    (known_symbol_id(6), pow),    // **
-    (known_symbol_id(7), cos),    // cos
-    (known_symbol_id(8), sin),    // sin
-    (known_symbol_id(9), tan),    // tan
-    (known_symbol_id(10), acos),  // acos
-    (known_symbol_id(11), asin),  // asin
-    (known_symbol_id(12), atan),  // atan
-    (known_symbol_id(13), log),   // log
-    (known_symbol_id(14), abs),   // abs
-    (known_symbol_id(15), round), // round
-    (known_symbol_id(16), sqrt),  // sqrt
-    (known_symbol_id(17), to_degrees),  // to_degrees
-    (known_symbol_id(18), to_radians),  // to_radians
+    (known_symbol_id(2), add),         // +
+    (known_symbol_id(3), sub),         // -
+    (known_symbol_id(4), mul),         // *
+    (known_symbol_id(5), div),         // /
+    (known_symbol_id(6), pow),         // **
+    (known_symbol_id(7), cos),         // cos
+    (known_symbol_id(8), sin),         // sin
+    (known_symbol_id(9), tan),         // tan
+    (known_symbol_id(10), acos),       // acos
+    (known_symbol_id(11), asin),       // asin
+    (known_symbol_id(12), atan),       // atan
+    (known_symbol_id(13), log),        // log
+    (known_symbol_id(14), abs),        // abs
+    (known_symbol_id(15), round),      // round
+    (known_symbol_id(16), sqrt),       // sqrt
+    (known_symbol_id(17), to_degrees), // to_degrees
+    (known_symbol_id(18), to_radians), // to_radians
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -54,8 +58,8 @@ impl Number {
 
     fn to_cell(&self) -> Cell {
         match self {
-            Number::Flt(value) => (Tag::Flt, f64::to_bits(*value) as usize ),
-            Number::Int(value) => (Tag::Int, isize::cast_unsigned(*value) ),
+            Number::Flt(value) => (Tag::Flt, f64::to_bits(*value) as usize),
+            Number::Int(value) => (Tag::Int, isize::cast_unsigned(*value)),
         }
     }
 
@@ -87,12 +91,10 @@ impl std::ops::Add for Number {
     type Output = Number;
     fn add(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Number::Int(v1), Number::Int(v2)) => {
-                match v1.checked_add(v2) {
-                    Some(result) => Number::Int(result),
-                    None => Number::Flt(v1 as f64 + v2 as f64),
-                }
-            }
+            (Number::Int(v1), Number::Int(v2)) => match v1.checked_add(v2) {
+                Some(result) => Number::Int(result),
+                None => Number::Flt(v1 as f64 + v2 as f64),
+            },
             (lhs, rhs) => Number::Flt(lhs.float() + rhs.float()),
         }
     }
@@ -102,12 +104,10 @@ impl std::ops::Sub for Number {
     type Output = Number;
     fn sub(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Number::Int(v1), Number::Int(v2)) => {
-                match v1.checked_sub(v2) {
-                    Some(result) => Number::Int(result),
-                    None => Number::Flt(v1 as f64 - v2 as f64),
-                }
-            }
+            (Number::Int(v1), Number::Int(v2)) => match v1.checked_sub(v2) {
+                Some(result) => Number::Int(result),
+                None => Number::Flt(v1 as f64 - v2 as f64),
+            },
             (lhs, rhs) => Number::Flt(lhs.float() - rhs.float()),
         }
     }
@@ -246,12 +246,12 @@ fn sqrt(addr: usize, heap: &QueryHeap) -> Number {
 fn evaluate_str(addr: usize, heap: &QueryHeap) -> Number {
     let symbol = heap[addr + 1].1;
     let arity = heap[addr].1;
-    
+
     // Handle unary minus: -(X) has arity 2 (functor + 1 arg)
     if symbol == MINUS_SYMBOL && arity == 2 {
         return neg(addr, heap);
     }
-    
+
     for (id, funct) in FUNCTIONS.iter() {
         if *id == symbol {
             return funct(addr, heap);
@@ -274,7 +274,7 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Number {
             let float_value = fsize::from_bits(value as u64);
 
             Number::Flt(float_value)
-        },
+        }
         _ => panic!(
             "{:?} : {} not a valid mathematical expression",
             heap[addr],
@@ -284,7 +284,13 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Number {
 }
 
 /// is/2 predicate: evaluates RHS and unifies with LHS
-pub fn is_pred(heap: &mut QueryHeap, _hypothesis: &mut Hypothesis, goal: usize, _pred_table: &PredicateTable, _config: Config) -> PredReturn {
+pub fn is_pred(
+    heap: &mut QueryHeap,
+    _hypothesis: &mut Hypothesis,
+    goal: usize,
+    _pred_table: &PredicateTable,
+    _config: Config,
+) -> PredReturn {
     // Goal structure: Func(3) | Con("is") | LHS | RHS
     let goal_addr = heap.deref_addr(goal);
     let func_addr = match heap[goal_addr] {

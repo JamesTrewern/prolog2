@@ -7,19 +7,18 @@ use crate::{
 };
 
 /*  If a ref if bound to some complex term which contains args we want
-    to rebuild this term in the query space replacing args with refs or arg reg values
- */
-pub fn re_build_bound_arg_terms(heap: &mut impl Heap,substitution: &mut Substitution){
-    for i in 0..substitution.len(){
-        if let (_, bound_addr, true) = substitution[i]{
+   to rebuild this term in the query space replacing args with refs or arg reg values
+*/
+pub fn re_build_bound_arg_terms(heap: &mut impl Heap, substitution: &mut Substitution) {
+    for i in 0..substitution.len() {
+        if let (_, bound_addr, true) = substitution[i] {
             if heap.contains_args(bound_addr) {
-                    //Build term if contains args
-                    //Update bound_addr to newly built term
-                    let new_bound_addr = build(heap, substitution, None, bound_addr);
-                    substitution[i].1 = new_bound_addr;
+                //Build term if contains args
+                //Update bound_addr to newly built term
+                let new_bound_addr = build(heap, substitution, None, bound_addr);
+                substitution[i].1 = new_bound_addr;
             }
         }
-
     }
 }
 
@@ -67,7 +66,6 @@ fn build_arg(
     }
 }
 
-
 fn build_str(
     heap: &mut impl Heap,
     substitution: &mut Substitution,
@@ -104,14 +102,14 @@ fn build_list(
     src_addr: usize,
 ) -> usize {
     let head = build_complex_term(heap, substitution, meta_vars, src_addr);
-    let tail = build_complex_term(heap, substitution, meta_vars, src_addr+1);
-    let ptr = match head{
+    let tail = build_complex_term(heap, substitution, meta_vars, src_addr + 1);
+    let ptr = match head {
         Some(cell) => heap.heap_push(cell),
         None => build(heap, substitution, meta_vars, src_addr),
     };
     match tail {
         Some(cell) => heap.heap_push(cell),
-        None => build(heap, substitution, meta_vars, src_addr+1),
+        None => build(heap, substitution, meta_vars, src_addr + 1),
     };
     ptr
 }
@@ -154,7 +152,10 @@ mod tests {
             symbol_db::SymbolDB,
         },
         program::clause::BitFlag64,
-        resolution::{build::{build, re_build_bound_arg_terms}, unification::{unify, Substitution}},
+        resolution::{
+            build::{build, re_build_bound_arg_terms},
+            unification::{unify, Substitution},
+        },
     };
 
     #[test]
@@ -162,7 +163,13 @@ mod tests {
         let p = SymbolDB::set_const("p".into());
         let f = SymbolDB::set_const("f".into());
 
-        let mut heap = vec![(Tag::Func, 4), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 0), (Tag::Arg, 1)];
+        let mut heap = vec![
+            (Tag::Func, 4),
+            (Tag::Con, p),
+            (Tag::Arg, 0),
+            (Tag::Arg, 0),
+            (Tag::Arg, 1),
+        ];
         let mut substitution = Substitution::default();
         let addr = build(&mut heap, &mut substitution, None, 0);
         assert_eq!(
@@ -182,7 +189,13 @@ mod tests {
         heap._print_heap();
         assert_eq!(
             heap[addr..(addr + 5)],
-            [(Tag::Func, 4), (Tag::Con, p), (Tag::Ref, addr+2), (Tag::Ref, addr+2), (Tag::Arg, 1)]
+            [
+                (Tag::Func, 4),
+                (Tag::Con, p),
+                (Tag::Ref, addr + 2),
+                (Tag::Ref, addr + 2),
+                (Tag::Arg, 1)
+            ]
         );
 
         heap = vec![
@@ -204,7 +217,7 @@ mod tests {
                 (Tag::Ref, 2),
                 (Tag::Func, 2),
                 (Tag::Con, p),
-                (Tag::Str, addr-3),
+                (Tag::Str, addr - 3),
             ]
         );
     }
@@ -217,64 +230,55 @@ mod tests {
         let c = SymbolDB::set_const("c".into());
 
         let mut heap = vec![
-            (Tag::Con, a),  //0
-            (Tag::Lis, 2),  //1
-            (Tag::Con, b),  //2
-            (Tag::Arg, 0),  //3
-
+            (Tag::Con, a), //0
+            (Tag::Lis, 2), //1
+            (Tag::Con, b), //2
+            (Tag::Arg, 0), //3
             (Tag::Func, 2), //4
-            (Tag::Con, p),  //5
-            (Tag::Lis, 0),  //6
-
-            (Tag::Con, a),  //7
-            (Tag::Lis, 9),  //8
-            (Tag::Con, b),  //9
+            (Tag::Con, p), //5
+            (Tag::Lis, 0), //6
+            (Tag::Con, a), //7
+            (Tag::Lis, 9), //8
+            (Tag::Con, b), //9
             (Tag::Lis, 11), //10
-            (Tag::Con, c),  //11
+            (Tag::Con, c), //11
             (Tag::ELis, 0), //12
-
             (Tag::Func, 2), //13
-            (Tag::Con, p),  //14
-            (Tag::Lis, 7),  //15
+            (Tag::Con, p), //14
+            (Tag::Lis, 7), //15
         ];
         let mut substitution = Substitution::default();
         substitution.set_arg(0, 10);
         let addr = build(&mut heap, &mut substitution, None, 4);
         assert_eq!(heap.term_string(addr), "p([a,b,c])");
 
-
         let mut heap = vec![
-            (Tag::Con, a),  //0
-            (Tag::Lis, 2),  //1
-            (Tag::Con, b),  //2
-            (Tag::Ref, 3),  //3
-
+            (Tag::Con, a), //0
+            (Tag::Lis, 2), //1
+            (Tag::Con, b), //2
+            (Tag::Ref, 3), //3
             (Tag::Func, 2), //4
-            (Tag::Con, p),  //5
-            (Tag::Lis, 0),  //6
-
-            (Tag::Con, a),  //7
-            (Tag::Lis, 9),  //8
-            (Tag::Con, b),  //9
+            (Tag::Con, p), //5
+            (Tag::Lis, 0), //6
+            (Tag::Con, a), //7
+            (Tag::Lis, 9), //8
+            (Tag::Con, b), //9
             (Tag::Lis, 11), //10
-            (Tag::Arg, 0),  //11
+            (Tag::Arg, 0), //11
             (Tag::ELis, 0), //12
-
             (Tag::Func, 2), //13
-            (Tag::Con, p),  //14
-            (Tag::Lis, 7),  //15
+            (Tag::Con, p), //14
+            (Tag::Lis, 7), //15
         ];
         let mut substitution = Substitution::default();
-        substitution = substitution.push((3,10,true));
+        substitution = substitution.push((3, 10, true));
         re_build_bound_arg_terms(&mut heap, &mut substitution);
         let new_term = build(&mut heap, &mut substitution, None, 13);
-        println!("{}",heap.term_string(new_term));
+        println!("{}", heap.term_string(new_term));
     }
 
     #[test]
-    fn meta_vars(){
-
-    }
+    fn meta_vars() {}
 
     #[test]
     fn test1() {

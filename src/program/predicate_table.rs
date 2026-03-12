@@ -176,16 +176,19 @@ impl PredicateTable {
 
     //Get all clause index ranges from entry indexes in the body_list
     pub fn get_body_clauses(&self, arity: usize) -> impl Iterator<Item = &Clause> {
-        self.body_list.iter().filter_map(move |&idx| {
-            if self[idx].symbol_arity.1 != arity {
-                return None;
-            }
-            if let Predicate::Clauses(pred_clauses) = &self[idx].predicate {
-                Some(pred_clauses.iter())
-            } else {
-                None
-            }
-        }).flatten()
+        self.body_list
+            .iter()
+            .filter_map(move |&idx| {
+                if self[idx].symbol_arity.1 != arity {
+                    return None;
+                }
+                if let Predicate::Clauses(pred_clauses) = &self[idx].predicate {
+                    Some(pred_clauses.iter())
+                } else {
+                    None
+                }
+            })
+            .flatten()
     }
 }
 
@@ -205,13 +208,13 @@ impl DerefMut for PredicateTable {
 
 #[cfg(test)]
 mod tests {
+    use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
     use crate::{
         heap::{query_heap::QueryHeap, symbol_db::SymbolDB},
         predicate_modules::PredReturn,
         program::{hypothesis::Hypothesis, predicate_table::FindReturn},
         Config,
     };
-    use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
 
     fn pred_fn_placeholder(
         _heap: &mut QueryHeap,
@@ -260,12 +263,20 @@ mod tests {
         predicates.sort_by_key(|e| e.symbol_arity);
 
         // body_list should point to the index of (p, 2) after sorting
-        let p_idx = predicates.iter().position(|e| e.symbol_arity == (p, 2)).unwrap();
+        let p_idx = predicates
+            .iter()
+            .position(|e| e.symbol_arity == (p, 2))
+            .unwrap();
 
-        (PredicateTable {
-            predicates,
-            body_list: vec![p_idx],
-        }, p, q, pred_func)
+        (
+            PredicateTable {
+                predicates,
+                body_list: vec![p_idx],
+            },
+            p,
+            q,
+            pred_func,
+        )
     }
 
     #[test]
@@ -273,7 +284,10 @@ mod tests {
         let (pred_table, p, _q, _pred_func) = setup();
 
         let symbol = SymbolDB::set_const("find_predicate_test_symbol".into());
-        let p_idx = pred_table.iter().position(|e| e.symbol_arity == (p, 2)).unwrap();
+        let p_idx = pred_table
+            .iter()
+            .position(|e| e.symbol_arity == (p, 2))
+            .unwrap();
 
         assert_eq!(pred_table.find_predicate((0, 1)), FindReturn::InsertPos(0));
         assert_eq!(pred_table.find_predicate((p, 2)), FindReturn::Index(p_idx));
@@ -289,8 +303,10 @@ mod tests {
         );
 
         // Same symbol, different arity should get an insert position
-        assert_eq!(pred_table.find_predicate((p, 1)),
-            FindReturn::InsertPos(p_idx));
+        assert_eq!(
+            pred_table.find_predicate((p, 1)),
+            FindReturn::InsertPos(p_idx)
+        );
 
         let pred_table = PredicateTable {
             predicates: vec![],
@@ -376,9 +392,13 @@ mod tests {
         assert_eq!(pred_table.len(), len_before - 1);
         assert_eq!(pred_table.get_predicate((p, 2)), None);
         // body_list should be cleared since p was the body predicate
-        assert!(pred_table.body_list.is_empty() ||
-                pred_table.body_list.iter().all(|&idx|
-                    pred_table[idx].symbol_arity != (p, 2)));
+        assert!(
+            pred_table.body_list.is_empty()
+                || pred_table
+                    .body_list
+                    .iter()
+                    .all(|&idx| pred_table[idx].symbol_arity != (p, 2))
+        );
 
         // Test removing q
         let (mut pred_table, _p, q, _pred_func) = setup();
@@ -407,7 +427,10 @@ mod tests {
         // Add q to body list
         pred_table.set_body((q, 2), true).unwrap();
 
-        let q_idx = pred_table.iter().position(|e| e.symbol_arity == (q, 2)).unwrap();
+        let q_idx = pred_table
+            .iter()
+            .position(|e| e.symbol_arity == (q, 2))
+            .unwrap();
         assert_eq!(pred_table.body_list, [q_idx]);
     }
 

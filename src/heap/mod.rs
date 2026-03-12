@@ -5,6 +5,6 @@
 //! symbols and numeric IDs. [`QueryHeap`](crate::heap::query_heap::QueryHeap) extends the static
 //! program heap with mutable storage for proof search.
 
-pub mod symbol_db;
 pub mod heap;
 pub mod query_heap;
+pub mod symbol_db;

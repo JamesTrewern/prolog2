@@ -5,11 +5,16 @@ use std::fs;
 use std::process::ExitCode;
 
 use crate::{
-    BodyClause, Config, Examples, SetUp, heap::{heap::Cell, query_heap::QueryHeap, symbol_db::SymbolDB}, parser::{
+    heap::{heap::Cell, query_heap::QueryHeap, symbol_db::SymbolDB},
+    parser::{
         build_tree::TokenStream,
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
-    }, predicate_modules::load_all_modules, program::predicate_table::PredicateTable, resolution::proof::Proof
+    },
+    predicate_modules::load_all_modules,
+    program::predicate_table::PredicateTable,
+    resolution::proof::Proof,
+    BodyClause, Config, Examples, SetUp,
 };
 
 /// Load a .pl file into the predicate table and heap
@@ -63,7 +68,7 @@ fn build_goals(query_text: &str, query_heap: &mut QueryHeap) -> Vec<usize> {
     };
 
     let clause = build_clause(literals, None, None, query_heap, true);
-    println!("{}",clause.to_string(query_heap));
+    println!("{}", clause.to_string(query_heap));
     clause.iter().cloned().collect()
 }
 
@@ -92,15 +97,9 @@ fn run_query(
 fn ancestor() {
     let (config, predicate_table, heap, examples) = load_setup("examples/ancestor/config.json");
 
-
     // Run positive examples
     if let Some(examples) = examples {
-        let (success, solutions) = run_query(
-            &examples.to_query(),
-            &predicate_table,
-            &heap,
-            config,
-        );
+        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
 
         println!(
             "Ancestor test: success={}, solutions={}",
@@ -116,15 +115,9 @@ fn ancestor() {
 fn map() {
     let (config, predicate_table, heap, examples) = load_setup("examples/map/config.json");
 
-
     // Run positive examples
     if let Some(examples) = examples {
-        let (success, solutions) = run_query(
-            &examples.to_query(),
-            &predicate_table,
-            &heap,
-            config,
-        );
+        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
 
         println!("Map test: success={}, solutions={}", success, solutions);
         assert!(success, "Expected at least one solution for map test");
@@ -137,14 +130,8 @@ fn map() {
 fn odd_even() {
     let (config, predicate_table, heap, examples) = load_setup("examples/odd_even/config.json");
 
-
     if let Some(examples) = examples {
-        let (success, solutions) = run_query(
-            &examples.to_query(),
-            &predicate_table,
-            &heap,
-            config,
-        );
+        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
         println!(
             "Odd Even test: success={}, solutions={}",
             success, solutions
@@ -159,39 +146,28 @@ fn odd_even() {
 fn learn_map_double() {
     let (config, predicate_table, heap, examples) = load_setup("examples/map/learn_config.json");
 
-
     if let Some(examples) = examples {
-        let (success, solutions) = run_query(
-            &examples.to_query(),
-            &predicate_table,
-            &heap,
-            config,
-        );
+        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
         println!(
             "Learn Map Double test: success={}, solutions={}",
             success, solutions
         );
-        assert!(success, "Expected at least one solution for Learn Map Double test");
+        assert!(
+            success,
+            "Expected at least one solution for Learn Map Double test"
+        );
     } else {
         panic!("No examples in Learn Map Double config");
     }
 }
 
 #[test]
-fn trains(){
+fn trains() {
     let (config, predicate_table, heap, examples) = load_setup("examples/trains/config.json");
 
     if let Some(examples) = examples {
-        let (success, solutions) = run_query(
-            &examples.to_query(),
-            &predicate_table,
-            &heap,
-            config,
-        );
-        println!(
-            "Trains test: success={}, solutions={}",
-            success, solutions
-        );
+        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
+        println!("Trains test: success={}, solutions={}", success, solutions);
         assert!(success, "Expected at least one solution for Trains test");
     } else {
         panic!("No examples in Trains config");
@@ -199,22 +175,19 @@ fn trains(){
 }
 
 #[test]
-fn fsm_parity(){
+fn fsm_parity() {
     let (config, predicate_table, heap, examples) = load_setup("examples/fsm/config.json");
 
-
     if let Some(examples) = examples {
-        let (success, solutions) = run_query(
-            &examples.to_query(),
-            &predicate_table,
-            &heap,
-            config,
-        );
+        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
         println!(
             "FSM Parity test: success={}, solutions={}",
             success, solutions
         );
-        assert!(success, "Expected at least one solution for FSM Parity test");
+        assert!(
+            success,
+            "Expected at least one solution for FSM Parity test"
+        );
     } else {
         panic!("No examples in FSM Parity config");
     }
@@ -224,8 +197,7 @@ fn fsm_parity(){
 
 #[test]
 fn top_prog_robots() {
-    let (config, predicate_table, heap, examples) =
-        load_setup("examples/robots/tpc_config.json");
+    let (config, predicate_table, heap, examples) = load_setup("examples/robots/tpc_config.json");
 
     let examples = examples.expect("No examples in robots tpc_config");
     let result = crate::top_prog::run(examples, &predicate_table, heap, config, false);
@@ -234,8 +206,7 @@ fn top_prog_robots() {
 
 #[test]
 fn top_prog_trains() {
-    let (config, predicate_table, heap, examples) =
-        load_setup("examples/trains/tpc_config.json");
+    let (config, predicate_table, heap, examples) = load_setup("examples/trains/tpc_config.json");
 
     let examples = examples.expect("No examples in trains tpc config");
     let result = crate::top_prog::run(examples, &predicate_table, heap, config, false);

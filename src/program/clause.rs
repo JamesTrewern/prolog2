@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 
 use smallvec::SmallVec;
 
-use crate::heap::heap::{Heap, Tag};
+use crate::heap::heap::Heap;
 
 /// Compact 64-bit flag set used to mark meta-variables and constrained variables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -45,7 +45,11 @@ impl Clause {
         bit_flags
     }
 
-    pub fn new(literals: Vec<usize>, meta_vars: Option<Vec<usize>>, constrained_vars: Option<Vec<usize>>) -> Self {
+    pub fn new(
+        literals: Vec<usize>,
+        meta_vars: Option<Vec<usize>>,
+        constrained_vars: Option<Vec<usize>>,
+    ) -> Self {
         let meta_vars = meta_vars.map(Self::meta_vars_to_bit_flags);
         let constrained_vars = match constrained_vars {
             Some(cv) => Self::meta_vars_to_bit_flags(cv),
@@ -83,7 +87,7 @@ impl Clause {
     pub fn normalise_clause_vars(&self, heap: &mut impl Heap) {
         let mut arg_ids: Vec<usize> = Vec::new();
         for &literal in self.literals.iter() {
-            heap.normalise_args( literal, &mut arg_ids);
+            heap.normalise_args(literal, &mut arg_ids);
         }
     }
 

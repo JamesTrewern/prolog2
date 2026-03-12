@@ -3,7 +3,9 @@ use std::{
     io::{self, Write},
     process::ExitCode,
     sync::{
-        Arc, atomic::{AtomicUsize, Ordering}, mpsc::{self, Sender}
+        atomic::{AtomicUsize, Ordering},
+        mpsc::{self, Sender},
+        Arc,
     },
     thread, usize,
 };
@@ -13,14 +15,18 @@ use rayon;
 use smallvec::SmallVec;
 
 use crate::{
-    Config, Examples, heap::{
+    heap::{
         heap::{Cell, Heap, Tag},
         query_heap::QueryHeap,
-    }, parser::{
+    },
+    parser::{
         build_tree::{TokenStream, TreeClause},
         execute_tree::build_clause,
         tokeniser::tokenise,
-    }, program::{clause::Clause, hypothesis::{self, Hypothesis}, predicate_table::PredicateTable}, resolution::proof::Proof
+    },
+    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
+    resolution::proof::Proof,
+    Config, Examples,
 };
 
 lazy_static! {
@@ -92,7 +98,8 @@ pub fn run(
     } else {
         // Step 2b: Per-hypothesis reduction — remove redundant clauses within each
         // sub-hypothesis before union, so specific clauses don't drown out general ones.
-        let surviving: Vec<&Vec<Clause>> = hypotheses.iter()
+        let surviving: Vec<&Vec<Clause>> = hypotheses
+            .iter()
             .zip(retained.iter())
             .filter_map(|(h, &alive)| if alive { Some(h) } else { None })
             .collect();
@@ -104,7 +111,14 @@ pub fn run(
             eprint!("\rSub-reduce: {}/{sub_total}    ", idx + 1);
             let _ = io::stderr().flush();
             let clauses: Vec<&Clause> = hypothesis.iter().collect();
-            let reduced = reduce(&examples.pos, clauses, &heap, predicate_table, config, false);
+            let reduced = reduce(
+                &examples.pos,
+                clauses,
+                &heap,
+                predicate_table,
+                config,
+                false,
+            );
             let coverage = count_coverage(&examples.pos, &reduced, &heap, predicate_table, config);
             scored.push((coverage, reduced));
         }
@@ -133,7 +147,14 @@ pub fn run(
         }
 
         // Step 3: Final reduction on the union
-        let reduced = reduce(&examples.pos, top_program, &heap, predicate_table, config, true);
+        let reduced = reduce(
+            &examples.pos,
+            top_program,
+            &heap,
+            predicate_table,
+            config,
+            true,
+        );
 
         println!("\n=== Reduced Program ({} clauses) ===", reduced.len());
         for clause in &reduced {
@@ -179,7 +200,7 @@ fn generalise(
     predicate_table: &PredicateTable,
     heap: &[Cell],
     config: Config,
-) -> (Vec<Cell>,Vec<Vec<Clause>>){
+) -> (Vec<Cell>, Vec<Vec<Clause>>) {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT - 1)
         .build()
@@ -308,7 +329,8 @@ fn specialise(
             let tx = tx.clone();
             let completed = completed.clone();
             s.spawn(move |_| {
-                let keep = specialise_thread(neg_examples, hypothesis, heap, predicate_table, config);
+                let keep =
+                    specialise_thread(neg_examples, hypothesis, heap, predicate_table, config);
                 let _ = tx.send((idx, keep));
                 let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                 eprint!("\rSpecialise: {done}/{total} hypotheses tested");
@@ -385,15 +407,18 @@ fn count_coverage(
         h.push_clause((*clause).clone(), SmallVec::new());
     }
 
-    pos_examples.iter().filter(|example| {
-        let mut query_heap = QueryHeap::new(heap, None);
-        let goal = match parse_example(example, &mut query_heap) {
-            Ok(g) => g,
-            Err(_) => return false,
-        };
-        let mut proof = Proof::with_hypothesis(query_heap, &[goal], h.clone());
-        proof.prove(predicate_table, config)
-    }).count()
+    pos_examples
+        .iter()
+        .filter(|example| {
+            let mut query_heap = QueryHeap::new(heap, None);
+            let goal = match parse_example(example, &mut query_heap) {
+                Ok(g) => g,
+                Err(_) => return false,
+            };
+            let mut proof = Proof::with_hypothesis(query_heap, &[goal], h.clone());
+            proof.prove(predicate_table, config)
+        })
+        .count()
 }
 
 /// Plotkin's program reduction (Algorithm 3).
@@ -419,7 +444,10 @@ fn reduce<'a>(
     let mut i = 0;
     while i < top_program.len() {
         if verbose {
-            eprint!("\rReduce: {}/{total} checked, {removed} removed    ", i + removed + 1);
+            eprint!(
+                "\rReduce: {}/{total} checked, {removed} removed    ",
+                i + removed + 1
+            );
             let _ = io::stderr().flush();
         }
 

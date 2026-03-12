@@ -6,7 +6,6 @@ const DELIMINATORS: &[char] = &[
 ];
 const KNOWN_SYMBOLS: &[&str] = &[":-", "==", "=/=", "/=", "=:=", "**", "<=", ">=", "/*", "*/"];
 
-
 // --------------------------------------------------------------------------------------
 // Tokenise File
 // --------------------------------------------------------------------------------------
@@ -282,8 +281,7 @@ mod tests {
 
     #[test]
     fn single_line_comments() {
-        let file =
-            "\n%simple predicate\np(x,y):-%The head\nq(x),%body 1\nr(y).%body 2".to_string();
+        let file = "\n%simple predicate\np(x,y):-%The head\nq(x),%body 1\nr(y).%body 2".to_string();
 
         let tokens = tokenise(file).unwrap();
 

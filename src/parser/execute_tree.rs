@@ -149,7 +149,9 @@ pub(crate) fn execute_tree(
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
-            TreeClause::Directive(_terms) => unimplemented!("directive execution not yet supported"),
+            TreeClause::Directive(_terms) => {
+                unimplemented!("directive execution not yet supported")
+            }
         }
     }
 }
@@ -165,10 +167,7 @@ mod tests {
         program::predicate_table::{Predicate, PredicateTable},
     };
 
-    use super::super::{
-        build_tree::{TokenStream},
-        tokeniser::tokenise,
-    };
+    use super::super::{build_tree::TokenStream, tokeniser::tokenise};
 
     #[test]
     fn facts() {
@@ -306,11 +305,10 @@ mod tests {
         // constrained_vars = {El} = {0}
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
-        let facts = TokenStream::new(
-            tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].".into()).unwrap(),
-        )
-        .parse_all()
-        .unwrap();
+        let facts =
+            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].".into()).unwrap())
+                .parse_all()
+                .unwrap();
 
         let edge = SymbolDB::set_const("edge".into());
         let _q = SymbolDB::set_const("q".into());
@@ -323,8 +321,8 @@ mod tests {
             assert!(meta_rule.meta_var(0).unwrap()); // El
             assert!(meta_rule.meta_var(1).unwrap()); // Q1
             assert!(meta_rule.meta_var(2).unwrap()); // Q2
-            // Only El is constrained
-            assert!(meta_rule.constrained_var(0));  // El
+                                                     // Only El is constrained
+            assert!(meta_rule.constrained_var(0)); // El
             assert!(!meta_rule.constrained_var(1)); // Q1 — not constrained
             assert!(!meta_rule.constrained_var(2)); // Q2 — not constrained
         } else {
@@ -340,11 +338,10 @@ mod tests {
         // constrained_vars = {} (empty)
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
-        let facts = TokenStream::new(
-            tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].".into()).unwrap(),
-        )
-        .parse_all()
-        .unwrap();
+        let facts =
+            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].".into()).unwrap())
+                .parse_all()
+                .unwrap();
 
         let edge = SymbolDB::set_const("edge".into());
         let _q = SymbolDB::set_const("q".into());
@@ -357,7 +354,7 @@ mod tests {
             assert!(meta_rule.meta_var(0).unwrap()); // El
             assert!(meta_rule.meta_var(1).unwrap()); // Q1
             assert!(meta_rule.meta_var(2).unwrap()); // Q2
-            // None are constrained
+                                                     // None are constrained
             assert!(!meta_rule.constrained_var(0));
             assert!(!meta_rule.constrained_var(1));
             assert!(!meta_rule.constrained_var(2));
@@ -379,17 +376,17 @@ mod tests {
         // Map is a variable, so we need to check via arity 3
         // The predicate symbol will be Arg 0 (the Map variable)
         // We need to find the clause differently since the predicate symbol is a variable
-        
+
         // For a meta-fact with variable predicate, it gets indexed differently
         // Let's check the heap directly
         assert!(!heap.is_empty());
-        
+
         // The head should be: (Func, 4), (Arg, 0), (ELis), (ELis), (Arg, 1)
         // where Arg 0 is the Map variable and Arg 1 is X
         assert_eq!(heap[0], (Tag::Func, 4));
         assert_eq!(heap[1], (Tag::Arg, 0)); // Map variable
-        assert_eq!(heap[2].0, Tag::ELis);   // Empty list
-        assert_eq!(heap[3].0, Tag::ELis);   // Empty list  
+        assert_eq!(heap[2].0, Tag::ELis); // Empty list
+        assert_eq!(heap[3].0, Tag::ELis); // Empty list
         assert_eq!(heap[4], (Tag::Arg, 1)); // X variable
     }
 }

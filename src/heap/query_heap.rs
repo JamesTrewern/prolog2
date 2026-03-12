@@ -114,13 +114,13 @@ impl Heap for QueryHeap<'_> {
             Tag::Stri => SymbolDB::get_string(self[addr].1).to_string(),
         }
     }
-    
+
     fn truncate(&mut self, mut len: usize) {
-        if len < self.prog_cells.len(){
+        if len < self.prog_cells.len() {
             panic!("Can't truncate to prog cells")
         }
         len -= self.prog_cells.len();
-        self.cells.resize(len, (Tag::Ref,0));
+        self.cells.resize(len, (Tag::Ref, 0));
     }
 }
 

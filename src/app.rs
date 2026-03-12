@@ -171,15 +171,30 @@ impl App {
                 crate::top_prog::run(examples, &predicate_table, heap, config, no_reduce)
             }
             (Some(examples), false) => {
-                start_query(&examples.to_query(), &predicate_table, &heap, config, self.auto)
-                    .unwrap();
+                start_query(
+                    &examples.to_query(),
+                    &predicate_table,
+                    &heap,
+                    config,
+                    self.auto,
+                )
+                .unwrap();
                 ExitCode::SUCCESS
             }
             (None, _) => main_loop(config, predicate_table, &heap),
         }
     }
 
-    fn load_setup(&self) -> (Config, PredicateTable, Vec<Cell>, Option<Examples>, bool, bool) {
+    fn load_setup(
+        &self,
+    ) -> (
+        Config,
+        PredicateTable,
+        Vec<Cell>,
+        Option<Examples>,
+        bool,
+        bool,
+    ) {
         let mut heap = Vec::new();
         let mut predicate_table = PredicateTable::new();
 
@@ -191,9 +206,7 @@ impl App {
             &fs::read_to_string(&self.config_path)
                 .unwrap_or_else(|_| panic!("Failed to read config file: {}", self.config_path)),
         )
-        .unwrap_or_else(|e| {
-            panic!("Failed to parse config file '{}': {}", self.config_path, e)
-        });
+        .unwrap_or_else(|e| panic!("Failed to parse config file '{}': {}", self.config_path, e));
         let config = setup.config;
 
         for file_path in setup.files {
@@ -207,7 +220,14 @@ impl App {
                 .unwrap_or_else(|e| panic!("{e}: {symbol}/{arity}"));
         }
 
-        (config, predicate_table, heap, setup.examples, setup.top_prog, setup.no_reduce)
+        (
+            config,
+            predicate_table,
+            heap,
+            setup.examples,
+            setup.top_prog,
+            setup.no_reduce,
+        )
     }
 }
 
@@ -287,11 +307,7 @@ fn start_query(
     Ok(())
 }
 
-fn main_loop(
-    config: Config,
-    predicate_table: PredicateTable,
-    heap: &[Cell],
-) -> ExitCode {
+fn main_loop(config: Config, predicate_table: PredicateTable, heap: &[Cell]) -> ExitCode {
     let mut buffer = String::new();
     loop {
         if buffer.is_empty() {
@@ -301,13 +317,7 @@ fn main_loop(
         match stdin().read_line(&mut buffer) {
             Ok(_) => {
                 if buffer.contains('.') {
-                    match start_query(
-                        &buffer,
-                        &predicate_table,
-                        heap,
-                        config,
-                        false,
-                    ) {
+                    match start_query(&buffer, &predicate_table, heap, config, false) {
                         Ok(_) => buffer.clear(),
                         Err(error) => println!("{error}"),
                     }

@@ -1,6 +1,6 @@
 [package]
 name = "prolog-squared"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 description = "A Meta-Interpretive Learning framework implementing second-order SLD resolution"
 license-file = "LICENSE"

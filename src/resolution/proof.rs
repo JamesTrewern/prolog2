@@ -73,11 +73,8 @@ impl Env {
             }
             // Add body predicates LAST so they're at the end and get popped first
             // This ensures we try grounded predicates before inventing new ones
-            self.choices.extend(
-                predicate_table
-                    .get_body_clauses(arity)
-                    .cloned(),
-            );
+            self.choices
+                .extend(predicate_table.get_body_clauses(arity).cloned());
             self.total_choice_count = self.choices.len();
         } else {
             match predicate_table.get_predicate((symbol, arity)) {
@@ -175,13 +172,10 @@ impl Env {
         let mut choices_tried = 0;
 
         'choices: while let Some(clause) = self.choices.pop() {
-            if debug{
-                eprintln!(
-                        "[CALL] {}",
-                        clause.to_string(heap)
-                    );
+            if debug {
+                eprintln!("[CALL] {}", clause.to_string(heap));
             }
-            
+
             choices_tried += 1;
             let head = clause.head();
 
@@ -320,7 +314,10 @@ pub struct Proof<'a> {
 impl<'a> Proof<'a> {
     pub fn new(heap: QueryHeap<'a>, goals: &[usize]) -> Self {
         let hypothesis = Hypothesis::new();
-        let stack = goals.iter().map(|goal| Env::new(*goal, 0, heap.heap_len())).collect();
+        let stack = goals
+            .iter()
+            .map(|goal| Env::new(*goal, 0, heap.heap_len()))
+            .collect();
         Proof {
             stack,
             pointer: 0,
@@ -334,7 +331,10 @@ impl<'a> Proof<'a> {
     /// Create a new proof with an existing hypothesis (for negation-as-failure checks)
     pub fn with_hypothesis(heap: QueryHeap<'a>, goals: &[usize], hypothesis: Hypothesis) -> Self {
         let h_clauses = hypothesis.len();
-        let stack = goals.iter().map(|goal| Env::new(*goal, 0, heap.heap_len())).collect();
+        let stack = goals
+            .iter()
+            .map(|goal| Env::new(*goal, 0, heap.heap_len()))
+            .collect();
         Proof {
             stack,
             pointer: 0,
@@ -345,11 +345,7 @@ impl<'a> Proof<'a> {
         }
     }
 
-    pub fn prove(
-        &mut self,
-        predicate_table: &PredicateTable,
-        config: Config,
-    ) -> bool {
+    pub fn prove(&mut self, predicate_table: &PredicateTable, config: Config) -> bool {
         // Handle restart after previous success
         if self.pointer == self.stack.len() {
             if config.debug {

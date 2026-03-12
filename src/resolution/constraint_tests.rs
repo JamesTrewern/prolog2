@@ -17,16 +17,8 @@ use crate::{
         heap::{Cell, Heap, Tag},
         symbol_db::SymbolDB,
     },
-    parser::{
-        build_tree::TokenStream,
-        execute_tree::execute_tree,
-        tokeniser::tokenise,
-    },
-    program::{
-        clause::Clause,
-        hypothesis::Hypothesis,
-        predicate_table::PredicateTable,
-    },
+    parser::{build_tree::TokenStream, execute_tree::execute_tree, tokeniser::tokenise},
+    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::{
         build::build,
         unification::{unify, Substitution},
@@ -44,8 +36,8 @@ fn constraints_different_constants_pass() {
     let b = SymbolDB::set_const("b".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Con, a),  // 0: constant 'a'
-        (Tag::Con, b),  // 1: constant 'b'
+        (Tag::Con, a), // 0: constant 'a'
+        (Tag::Con, b), // 1: constant 'b'
     ];
 
     let constraints: Vec<usize> = vec![0, 1];
@@ -62,8 +54,8 @@ fn constraints_same_constant_fail() {
     let a = SymbolDB::set_const("ca".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Con, a),  // 0: constant 'a'
-        (Tag::Con, a),  // 1: also constant 'a'
+        (Tag::Con, a), // 0: constant 'a'
+        (Tag::Con, a), // 1: also constant 'a'
     ];
 
     let constraints: Vec<usize> = vec![0, 1];
@@ -83,9 +75,9 @@ fn constraints_refs_to_same_target_fail() {
     let a = SymbolDB::set_const("cref".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Con, a),  // 0: constant 'a'
-        (Tag::Ref, 0),  // 1: ref -> 0 (points to 'a')
-        (Tag::Ref, 0),  // 2: ref -> 0 (also points to 'a')
+        (Tag::Con, a), // 0: constant 'a'
+        (Tag::Ref, 0), // 1: ref -> 0 (points to 'a')
+        (Tag::Ref, 0), // 2: ref -> 0 (also points to 'a')
     ];
 
     let constraints: Vec<usize> = vec![1, 2];
@@ -105,9 +97,9 @@ fn constraints_three_vars_two_same() {
     let b = SymbolDB::set_const("c3b".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Con, a),  // 0
-        (Tag::Con, b),  // 1
-        (Tag::Ref, 0),  // 2: ref -> 0 (same as addr 0 = 'a')
+        (Tag::Con, a), // 0
+        (Tag::Con, b), // 1
+        (Tag::Ref, 0), // 2: ref -> 0 (same as addr 0 = 'a')
     ];
 
     let constraints: Vec<usize> = vec![0, 1, 2];
@@ -127,9 +119,9 @@ fn constraints_with_substitution_bindings() {
     let a = SymbolDB::set_const("csb_a".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Ref, 0),  // 0: unbound ref
-        (Tag::Ref, 1),  // 1: unbound ref
-        (Tag::Con, a),  // 2: constant 'a'
+        (Tag::Ref, 0), // 0: unbound ref
+        (Tag::Ref, 1), // 1: unbound ref
+        (Tag::Con, a), // 2: constant 'a'
     ];
 
     // Substitution binds both ref 0 and ref 1 to constant 'a' at addr 2
@@ -153,10 +145,10 @@ fn constraints_with_different_substitution_bindings_pass() {
     let b = SymbolDB::set_const("csdb_b".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Ref, 0),  // 0: unbound ref
-        (Tag::Ref, 1),  // 1: unbound ref
-        (Tag::Con, a),  // 2: constant 'a'
-        (Tag::Con, b),  // 3: constant 'b'
+        (Tag::Ref, 0), // 0: unbound ref
+        (Tag::Ref, 1), // 1: unbound ref
+        (Tag::Con, a), // 2: constant 'a'
+        (Tag::Con, b), // 3: constant 'b'
     ];
 
     let sub = Substitution::default()
@@ -197,9 +189,9 @@ fn constraint_creation_from_metarule_match() {
         (Tag::Arg, 2),  // 4: Q
         (Tag::Arg, 1),  // 5: A (same arg as head)
         // Goal: e(X) where X is unbound
-        (Tag::Func, 2), // 6
+        (Tag::Func, 2),    // 6
         (Tag::Con, e_sym), // 7: e
-        (Tag::Ref, 8),  // 8: X (unbound)
+        (Tag::Ref, 8),     // 8: X (unbound)
     ];
 
     // Unify metarule head (addr 0) with goal (addr 6)
@@ -325,9 +317,7 @@ fn constraints_with_garbage_zero_addresses() {
     // Here constrained_targets[i].0 is the ORIGINAL constraint address, which is also 0 for all
     // So constraint_addr 0 == constraint_addr 0, meaning the check doesn't detect duplicates
     // when the constraint addresses themselves are identical!
-    println!(
-        "Note: check_constraints skips pairs where original addresses are equal"
-    );
+    println!("Note: check_constraints skips pairs where original addresses are equal");
 }
 
 // =============================================================================
@@ -340,9 +330,9 @@ fn parse_trains_metarule_structure() {
     let mut heap = Vec::<Cell>::new();
     let mut pred_table = PredicateTable::new();
 
-    let tree = TokenStream::new(
-        tokenise("P(A):-Q(A),R(A),{P,Q,R}.".into()).unwrap()
-    ).parse_all().unwrap();
+    let tree = TokenStream::new(tokenise("P(A):-Q(A),R(A),{P,Q,R}.".into()).unwrap())
+        .parse_all()
+        .unwrap();
 
     execute_tree(tree, &mut heap, &mut pred_table);
 
@@ -350,7 +340,10 @@ fn parse_trains_metarule_structure() {
     // The head has arity 1 (P is the predicate, A is the arg)
     // Let's find it - variable clauses are stored by arity
     if let Some(clauses) = pred_table.get_variable_clauses(1) {
-        assert!(!clauses.is_empty(), "Should have at least one variable clause for arity 1");
+        assert!(
+            !clauses.is_empty(),
+            "Should have at least one variable clause for arity 1"
+        );
         let clause = &clauses[0];
 
         println!("Parsed metarule clause:");
@@ -397,9 +390,9 @@ fn parse_simple_metarule_meta_vars() {
     let mut heap = Vec::<Cell>::new();
     let mut pred_table = PredicateTable::new();
 
-    let tree = TokenStream::new(
-        tokenise("P(A):-Q(A),{P,Q}.".into()).unwrap()
-    ).parse_all().unwrap();
+    let tree = TokenStream::new(tokenise("P(A):-Q(A),{P,Q}.".into()).unwrap())
+        .parse_all()
+        .unwrap();
 
     execute_tree(tree, &mut heap, &mut pred_table);
 
@@ -429,10 +422,22 @@ fn parse_simple_metarule_meta_vars() {
         // The meta_vars set {P,Q} should mark P and Q as meta_vars
         // P=Arg(0), Q=Arg(2) should be meta_vars
         // A=Arg(1) should NOT be a meta_var
-        assert!(clause.meta_var(0).unwrap_or(false), "P (Arg 0) should be meta_var");
-        println!("  Arg 0 (P) is meta_var: {}", clause.meta_var(0).unwrap_or(false));
-        println!("  Arg 1 (A) is meta_var: {}", clause.meta_var(1).unwrap_or(false));
-        println!("  Arg 2 (Q) is meta_var: {}", clause.meta_var(2).unwrap_or(false));
+        assert!(
+            clause.meta_var(0).unwrap_or(false),
+            "P (Arg 0) should be meta_var"
+        );
+        println!(
+            "  Arg 0 (P) is meta_var: {}",
+            clause.meta_var(0).unwrap_or(false)
+        );
+        println!(
+            "  Arg 1 (A) is meta_var: {}",
+            clause.meta_var(1).unwrap_or(false)
+        );
+        println!(
+            "  Arg 2 (Q) is meta_var: {}",
+            clause.meta_var(2).unwrap_or(false)
+        );
     }
 }
 
@@ -449,12 +454,12 @@ fn cross_clause_constraint_check() {
     let closed_sym = SymbolDB::set_const("ccc_closed".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Con, e_sym),     // 0: e
-        (Tag::Con, short_sym), // 1: short
-        (Tag::Con, closed_sym),// 2: closed
+        (Tag::Con, e_sym),      // 0: e
+        (Tag::Con, short_sym),  // 1: short
+        (Tag::Con, closed_sym), // 2: closed
         // Refs for a new substitution
-        (Tag::Ref, 3),        // 3: unbound ref (will be bound to P target)
-        (Tag::Ref, 4),        // 4: unbound ref (will be bound to Q target)
+        (Tag::Ref, 3), // 3: unbound ref (will be bound to P target)
+        (Tag::Ref, 4), // 4: unbound ref (will be bound to Q target)
     ];
 
     // Simulate a previous hypothesis clause having constraints [0, 1]
@@ -463,8 +468,8 @@ fn cross_clause_constraint_check() {
 
     // New substitution that would bind ref 3 -> 0 (e) and ref 4 -> 1 (short)
     let sub = Substitution::default()
-        .push((3, 0, false))   // new P -> e
-        .push((4, 1, false));  // new Q -> short
+        .push((3, 0, false)) // new P -> e
+        .push((4, 1, false)); // new Q -> short
 
     // This should PASS because the existing constraints [0,1] are about
     // the previous clause's bindings. The check sees if the new substitution
@@ -478,8 +483,8 @@ fn cross_clause_constraint_check() {
     // Now test: existing constraints where both point to refs that the
     // new substitution binds to the same target
     let heap2: Vec<Cell> = vec![
-        (Tag::Ref, 0),  // 0: ref to self (unbound, was bound to e in prev clause)
-        (Tag::Ref, 1),  // 1: ref to self (unbound, was bound to short in prev clause)
+        (Tag::Ref, 0),     // 0: ref to self (unbound, was bound to e in prev clause)
+        (Tag::Ref, 1),     // 1: ref to self (unbound, was bound to short in prev clause)
         (Tag::Con, e_sym), // 2: e
     ];
 
@@ -492,7 +497,10 @@ fn cross_clause_constraint_check() {
     let result2 = sub2.check_constraints(&existing_constraints, &heap2);
     println!("Cross-clause check (same target via sub): {}", result2);
     // Both constraint addresses 0 and 1 now resolve (via sub) to addr 2
-    assert!(!result2, "Two constraints resolving to same target should FAIL");
+    assert!(
+        !result2,
+        "Two constraints resolving to same target should FAIL"
+    );
 }
 
 /// Test the actual constraint flow: constraints are checked for each EXISTING
@@ -525,17 +533,17 @@ fn first_clause_unprotected() {
     let e_sym = SymbolDB::set_const("fcu_e".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Ref, 0),        // 0: will be P
-        (Tag::Ref, 1),        // 1: will be Q
-        (Tag::Ref, 2),        // 2: will be R
-        (Tag::Con, e_sym),    // 3: e
+        (Tag::Ref, 0),     // 0: will be P
+        (Tag::Ref, 1),     // 1: will be Q
+        (Tag::Ref, 2),     // 2: will be R
+        (Tag::Con, e_sym), // 3: e
     ];
 
     // Substitution binding P=Q=R=e
     let sub = Substitution::default()
-        .push((0, 3, false))   // P -> e
-        .push((1, 3, false))   // Q -> e
-        .push((2, 3, false));  // R -> e
+        .push((0, 3, false)) // P -> e
+        .push((1, 3, false)) // Q -> e
+        .push((2, 3, false)); // R -> e
 
     // With empty hypothesis, check_constraints is never called (loop over empty vec)
     let hypothesis = Hypothesis::new();
@@ -564,12 +572,12 @@ fn proposed_self_constraint_check() {
     let closed_sym = SymbolDB::set_const("psc_closed".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Ref, 0),        // 0: P
-        (Tag::Ref, 1),        // 1: Q
-        (Tag::Ref, 2),        // 2: R
-        (Tag::Con, e_sym),    // 3: e
-        (Tag::Con, short_sym),// 4: short
-        (Tag::Con, closed_sym),// 5: closed
+        (Tag::Ref, 0),          // 0: P
+        (Tag::Ref, 1),          // 1: Q
+        (Tag::Ref, 2),          // 2: R
+        (Tag::Con, e_sym),      // 3: e
+        (Tag::Con, short_sym),  // 4: short
+        (Tag::Con, closed_sym), // 5: closed
     ];
 
     // GOOD case: P=e, Q=short, R=closed
@@ -596,7 +604,10 @@ fn proposed_self_constraint_check() {
         "P=Q=R=e should FAIL self-check, got: {}",
         bad_result
     );
-    println!("Self-constraint check correctly rejects P=Q=R=e: {}", !bad_result);
+    println!(
+        "Self-constraint check correctly rejects P=Q=R=e: {}",
+        !bad_result
+    );
 
     // PARTIAL bad case: P=e, Q=e, R=closed
     let partial_bad_sub = Substitution::default()
@@ -643,13 +654,13 @@ fn same_symbol_different_address_bypasses_constraint() {
     let e_sym = SymbolDB::set_const("bypass_e".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Con, e_sym),  // 0: 'e' — P's constraint target
-        (Tag::Ref, 1),      // 1: Q ref (unbound)
-        (Tag::Ref, 2),      // 2: R ref (unbound)
+        (Tag::Con, e_sym), // 0: 'e' — P's constraint target
+        (Tag::Ref, 1),     // 1: Q ref (unbound)
+        (Tag::Ref, 2),     // 2: R ref (unbound)
         // ... later in the heap, another occurrence of 'e' from building a goal
-        (Tag::Func, 2),     // 3: some goal structure
-        (Tag::Con, e_sym),  // 4: ANOTHER 'e' constant cell — same symbol, different addr
-        (Tag::Con, e_sym),  // 5: yet another 'e'
+        (Tag::Func, 2),    // 3: some goal structure
+        (Tag::Con, e_sym), // 4: ANOTHER 'e' constant cell — same symbol, different addr
+        (Tag::Con, e_sym), // 5: yet another 'e'
     ];
 
     // Constraints: P -> addr 0 (Con e), Q -> addr 1 (Ref), R -> addr 2 (Ref)
@@ -658,8 +669,8 @@ fn same_symbol_different_address_bypasses_constraint() {
     // Simulate Q's ref being bound to the DIFFERENT 'e' cell at addr 4
     // and R's ref bound to yet another 'e' at addr 5
     let mut heap_mut = heap.clone();
-    heap_mut[1] = (Tag::Ref, 4);  // Q ref -> addr 4 (Con e)
-    heap_mut[2] = (Tag::Ref, 5);  // R ref -> addr 5 (Con e)
+    heap_mut[1] = (Tag::Ref, 4); // Q ref -> addr 4 (Con e)
+    heap_mut[2] = (Tag::Ref, 5); // R ref -> addr 5 (Con e)
 
     let sub = Substitution::default();
 
@@ -670,10 +681,19 @@ fn same_symbol_different_address_bypasses_constraint() {
     println!("R constraint addr 2 deref -> {}", heap_mut.deref_addr(2));
 
     let result = sub.check_constraints(&constraints, &heap_mut);
-    println!("check_constraints with same symbol at different addresses: {}", result);
+    println!(
+        "check_constraints with same symbol at different addresses: {}",
+        result
+    );
     println!("Expected: false (they represent the same predicate 'e')");
-    println!("Actual: {} — {}", result,
-        if result { "BUG: constraint bypassed!" } else { "correctly caught" }
+    println!(
+        "Actual: {} — {}",
+        result,
+        if result {
+            "BUG: constraint bypassed!"
+        } else {
+            "correctly caught"
+        }
     );
 
     // This is the suspected root cause of the trains infinite loop:
@@ -690,11 +710,11 @@ fn same_symbol_different_address_via_heap_bind() {
     let e_sym = SymbolDB::set_const("bypass2_e".into());
 
     let mut heap: Vec<Cell> = vec![
-        (Tag::Con, e_sym),  // 0: 'e' — where P resolved to
-        (Tag::Ref, 1),      // 1: Q ref (unbound, self-pointing)
-        (Tag::Ref, 2),      // 2: R ref (unbound, self-pointing)
-        (Tag::Con, e_sym),  // 3: another 'e' (e.g., from building goal Q(X))
-        (Tag::Con, e_sym),  // 4: another 'e' (e.g., from building goal R(X))
+        (Tag::Con, e_sym), // 0: 'e' — where P resolved to
+        (Tag::Ref, 1),     // 1: Q ref (unbound, self-pointing)
+        (Tag::Ref, 2),     // 2: R ref (unbound, self-pointing)
+        (Tag::Con, e_sym), // 3: another 'e' (e.g., from building goal Q(X))
+        (Tag::Con, e_sym), // 4: another 'e' (e.g., from building goal R(X))
     ];
 
     let constraints: Vec<usize> = vec![0, 1, 2];
@@ -702,11 +722,27 @@ fn same_symbol_different_address_via_heap_bind() {
     // Bind Q ref to the 'e' at addr 3, R ref to 'e' at addr 4
     heap.bind(&[(1, 3), (2, 4)]);
 
-    println!("After bind: Q ref addr 1 -> {} (deref {})", heap[1].1, heap.deref_addr(1));
-    println!("After bind: R ref addr 2 -> {} (deref {})", heap[2].1, heap.deref_addr(2));
+    println!(
+        "After bind: Q ref addr 1 -> {} (deref {})",
+        heap[1].1,
+        heap.deref_addr(1)
+    );
+    println!(
+        "After bind: R ref addr 2 -> {} (deref {})",
+        heap[2].1,
+        heap.deref_addr(2)
+    );
     println!("P target: addr {} = {:?}", 0, heap[0]);
-    println!("Q target: addr {} = {:?}", heap.deref_addr(1), heap[heap.deref_addr(1)]);
-    println!("R target: addr {} = {:?}", heap.deref_addr(2), heap[heap.deref_addr(2)]);
+    println!(
+        "Q target: addr {} = {:?}",
+        heap.deref_addr(1),
+        heap[heap.deref_addr(1)]
+    );
+    println!(
+        "R target: addr {} = {:?}",
+        heap.deref_addr(2),
+        heap[heap.deref_addr(2)]
+    );
 
     let sub = Substitution::default();
     let result = sub.check_constraints(&constraints, &heap);
@@ -723,9 +759,9 @@ fn same_address_correctly_caught() {
     let e_sym = SymbolDB::set_const("same_addr_e".into());
 
     let mut heap: Vec<Cell> = vec![
-        (Tag::Con, e_sym),  // 0: 'e'
-        (Tag::Ref, 1),      // 1: Q ref
-        (Tag::Ref, 2),      // 2: R ref
+        (Tag::Con, e_sym), // 0: 'e'
+        (Tag::Ref, 1),     // 1: Q ref
+        (Tag::Ref, 2),     // 2: R ref
     ];
 
     let constraints: Vec<usize> = vec![0, 1, 2];
@@ -739,7 +775,6 @@ fn same_address_correctly_caught() {
     assert!(!result, "Binding to same address correctly fails");
 }
 
-
 // =============================================================================
 // Group 7: Full build flow - tracing arg register population through goal building
 // =============================================================================
@@ -749,8 +784,8 @@ fn same_address_correctly_caught() {
 #[test]
 fn full_build_flow_traces_arg_population() {
     use crate::heap::heap::Heap;
-    use crate::resolution::build::build;
     use crate::program::clause::BitFlag64;
+    use crate::resolution::build::build;
 
     let e_sym = SymbolDB::set_const("fbf_e".into());
 
@@ -789,21 +824,45 @@ fn full_build_flow_traces_arg_population() {
     // Step 2: Build goals (meta_vars=None, so all args get substituted)
     let goal1_addr = build(&mut heap, &mut sub, None, 3); // Q(A)
     println!("\nAfter building goal Q(A):");
-    println!("  Built goal at addr {}: {}", goal1_addr, heap.term_string(goal1_addr));
+    println!(
+        "  Built goal at addr {}: {}",
+        goal1_addr,
+        heap.term_string(goal1_addr)
+    );
     println!("  Arg2(Q) = {:?}", sub.get_arg(2));
-    assert!(sub.get_arg(2).is_some(), "Q should now be set after building goal");
+    assert!(
+        sub.get_arg(2).is_some(),
+        "Q should now be set after building goal"
+    );
 
     let goal2_addr = build(&mut heap, &mut sub, None, 6); // R(A)
     println!("\nAfter building goal R(A):");
-    println!("  Built goal at addr {}: {}", goal2_addr, heap.term_string(goal2_addr));
+    println!(
+        "  Built goal at addr {}: {}",
+        goal2_addr,
+        heap.term_string(goal2_addr)
+    );
     println!("  Arg3(R) = {:?}", sub.get_arg(3));
-    assert!(sub.get_arg(3).is_some(), "R should now be set after building goal");
+    assert!(
+        sub.get_arg(3).is_some(),
+        "R should now be set after building goal"
+    );
 
     // Step 3: Examine the Ref cells created for Q and R
     let q_addr = sub.get_arg(2).unwrap();
     let r_addr = sub.get_arg(3).unwrap();
-    println!("\nQ ref addr: {} -> {:?} ({})", q_addr, heap[q_addr], heap.term_string(q_addr));
-    println!("R ref addr: {} -> {:?} ({})", r_addr, heap[r_addr], heap.term_string(r_addr));
+    println!(
+        "\nQ ref addr: {} -> {:?} ({})",
+        q_addr,
+        heap[q_addr],
+        heap.term_string(q_addr)
+    );
+    println!(
+        "R ref addr: {} -> {:?} ({})",
+        r_addr,
+        heap[r_addr],
+        heap.term_string(r_addr)
+    );
     assert_ne!(q_addr, r_addr, "Q and R should be different Ref cells");
 
     // Step 4: Build hypothesis clause (with meta_vars)
@@ -835,16 +894,37 @@ fn full_build_flow_traces_arg_population() {
         }
     }
     println!("\nConstraints: {:?}", constraints);
-    println!("  Constraint[0] (P) addr {} -> {}", constraints[0], heap.term_string(constraints[0]));
-    println!("  Constraint[1] (Q) addr {} -> {}", constraints[1], heap.term_string(constraints[1]));
-    println!("  Constraint[2] (R) addr {} -> {}", constraints[2], heap.term_string(constraints[2]));
+    println!(
+        "  Constraint[0] (P) addr {} -> {}",
+        constraints[0],
+        heap.term_string(constraints[0])
+    );
+    println!(
+        "  Constraint[1] (Q) addr {} -> {}",
+        constraints[1],
+        heap.term_string(constraints[1])
+    );
+    println!(
+        "  Constraint[2] (R) addr {} -> {}",
+        constraints[2],
+        heap.term_string(constraints[2])
+    );
 
     // Step 6: Check — all three constraint addresses should be different at this point
     let result = sub.check_constraints(&constraints, &heap);
     println!("\ncheck_constraints on self (all unbound): {}", result);
-    println!("  P resolves to: {}", heap.term_string(heap.deref_addr(constraints[0])));
-    println!("  Q resolves to: {}", heap.term_string(heap.deref_addr(constraints[1])));
-    println!("  R resolves to: {}", heap.term_string(heap.deref_addr(constraints[2])));
+    println!(
+        "  P resolves to: {}",
+        heap.term_string(heap.deref_addr(constraints[0]))
+    );
+    println!(
+        "  Q resolves to: {}",
+        heap.term_string(heap.deref_addr(constraints[1]))
+    );
+    println!(
+        "  R resolves to: {}",
+        heap.term_string(heap.deref_addr(constraints[2]))
+    );
 
     // Step 7: Simulate what happens when body goals are proved
     // Q(east1) matches short(east1) — the Ref for Q gets bound to 'short'
@@ -862,13 +942,22 @@ fn full_build_flow_traces_arg_population() {
     println!("\nAfter binding Q=short, R=closed:");
     println!("  Q ref addr {} -> {}", q_addr, heap.term_string(q_addr));
     println!("  R ref addr {} -> {}", r_addr, heap.term_string(r_addr));
-    println!("  Constraint[1] (Q) -> {}", heap.term_string(constraints[1]));
-    println!("  Constraint[2] (R) -> {}", heap.term_string(constraints[2]));
+    println!(
+        "  Constraint[1] (Q) -> {}",
+        heap.term_string(constraints[1])
+    );
+    println!(
+        "  Constraint[2] (R) -> {}",
+        heap.term_string(constraints[2])
+    );
 
     // Now check constraints — P=e, Q=short, R=closed — all different, should pass
     let default_sub = Substitution::default();
     let result_good = default_sub.check_constraints(&constraints, &heap);
-    println!("  check_constraints (P=e, Q=short, R=closed): {}", result_good);
+    println!(
+        "  check_constraints (P=e, Q=short, R=closed): {}",
+        result_good
+    );
     assert!(result_good, "Different bindings should pass");
 
     // Now simulate the BAD case: Q=e, R=e (both bound to same as P)
@@ -876,9 +965,21 @@ fn full_build_flow_traces_arg_population() {
     let e_addr = sub.get_arg(0).unwrap(); // P's target = 'e'
     heap.bind(&[(q_addr, e_addr), (r_addr, e_addr)]);
     println!("\nAfter binding Q=e, R=e (same as P):");
-    println!("  P constraint {} -> {}", constraints[0], heap.term_string(constraints[0]));
-    println!("  Q constraint {} -> {}", constraints[1], heap.term_string(constraints[1]));
-    println!("  R constraint {} -> {}", constraints[2], heap.term_string(constraints[2]));
+    println!(
+        "  P constraint {} -> {}",
+        constraints[0],
+        heap.term_string(constraints[0])
+    );
+    println!(
+        "  Q constraint {} -> {}",
+        constraints[1],
+        heap.term_string(constraints[1])
+    );
+    println!(
+        "  R constraint {} -> {}",
+        constraints[2],
+        heap.term_string(constraints[2])
+    );
 
     let result_bad = default_sub.check_constraints(&constraints, &heap);
     println!("  check_constraints (P=Q=R=e): {}", result_bad);
@@ -901,9 +1002,9 @@ fn constraint_timing_during_proof() {
     let e_sym = SymbolDB::set_const("ctp_e".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Con, e_sym),  // 0: e
-        (Tag::Ref, 1),      // 1: unbound (Q's ref from goal build)
-        (Tag::Ref, 2),      // 2: unbound (R's ref from goal build)
+        (Tag::Con, e_sym), // 0: e
+        (Tag::Ref, 1),     // 1: unbound (Q's ref from goal build)
+        (Tag::Ref, 2),     // 2: unbound (R's ref from goal build)
     ];
 
     // Constraints from the first hypothesis clause: [P_addr=0, Q_addr=1, R_addr=2]
@@ -934,9 +1035,9 @@ fn constraint_detects_q_binding_to_e() {
     let e_sym = SymbolDB::set_const("cdq_e".into());
 
     let mut heap: Vec<Cell> = vec![
-        (Tag::Con, e_sym),  // 0: e
-        (Tag::Ref, 1),      // 1: Q's ref (from goal build, currently unbound)
-        (Tag::Ref, 2),      // 2: R's ref (from goal build, currently unbound)
+        (Tag::Con, e_sym), // 0: e
+        (Tag::Ref, 1),     // 1: Q's ref (from goal build, currently unbound)
+        (Tag::Ref, 2),     // 2: R's ref (from goal build, currently unbound)
     ];
 
     // Parent clause constraints: [P=addr0, Q=addr1, R=addr2]
@@ -973,21 +1074,27 @@ fn constraint_check_follows_heap_bindings() {
     let short_sym = SymbolDB::set_const("ccfh_short".into());
 
     let mut heap: Vec<Cell> = vec![
-        (Tag::Con, e_sym),    // 0: e
-        (Tag::Ref, 1),        // 1: Q ref (unbound)
-        (Tag::Ref, 2),        // 2: R ref (unbound)
-        (Tag::Con, short_sym),// 3: short
+        (Tag::Con, e_sym),     // 0: e
+        (Tag::Ref, 1),         // 1: Q ref (unbound)
+        (Tag::Ref, 2),         // 2: R ref (unbound)
+        (Tag::Con, short_sym), // 3: short
     ];
 
     let constraints: Vec<usize> = vec![0, 1, 2];
 
     // Before any binding — all different
     let sub = Substitution::default();
-    assert!(sub.check_constraints(&constraints, &heap), "All unbound = all different");
+    assert!(
+        sub.check_constraints(&constraints, &heap),
+        "All unbound = all different"
+    );
 
     // Bind Q -> short (different from P=e)
     heap.bind(&[(1, 3)]);
-    assert!(sub.check_constraints(&constraints, &heap), "P=e, Q=short, R=unbound = ok");
+    assert!(
+        sub.check_constraints(&constraints, &heap),
+        "P=e, Q=short, R=unbound = ok"
+    );
 
     // Unbind Q, then bind Q -> e (same as P)
     heap.unbind(&[(1, 3)]);
@@ -996,7 +1103,6 @@ fn constraint_check_follows_heap_bindings() {
     println!("P=e, Q=e (via heap bind), R=unbound: {}", result);
     assert!(!result, "P=Q=e should fail even with empty substitution");
 }
-
 
 // =============================================================================
 // Group 8: Child goal matching - does constraint check catch Q binding to e
@@ -1033,29 +1139,43 @@ fn child_goal_q_matches_hypothesis_e_different_addr() {
         (Tag::Arg, 3),  // 7: R
         (Tag::Arg, 1),  // 8: A
         // Goal: e(east1) — addr 9
-        (Tag::Func, 2),       // 9
-        (Tag::Con, e_sym),    // 10: e  <-- P will point here
-        (Tag::Con, east1_sym),// 11: east1
+        (Tag::Func, 2),        // 9
+        (Tag::Con, e_sym),     // 10: e  <-- P will point here
+        (Tag::Con, east1_sym), // 11: east1
     ];
 
     // === Phase 2: Unify metarule head with goal ===
     let mut sub = unify(&heap, 0, 9).unwrap();
     println!("Phase 2 - After unify P(A) with e(east1):");
-    println!("  Arg0(P) = {:?}", sub.get_arg(0));  // Some(10) = Con e
-    println!("  Arg1(A) = {:?}", sub.get_arg(1));  // Some(11) = Con east1
-    println!("  Arg2(Q) = {:?}", sub.get_arg(2));  // None
-    println!("  Arg3(R) = {:?}", sub.get_arg(3));  // None
+    println!("  Arg0(P) = {:?}", sub.get_arg(0)); // Some(10) = Con e
+    println!("  Arg1(A) = {:?}", sub.get_arg(1)); // Some(11) = Con east1
+    println!("  Arg2(Q) = {:?}", sub.get_arg(2)); // None
+    println!("  Arg3(R) = {:?}", sub.get_arg(3)); // None
 
     // === Phase 3: Build goals (meta_vars=None) ===
     let goal_q = build(&mut heap, &mut sub, None, 3);
     let goal_r = build(&mut heap, &mut sub, None, 6);
     println!("\nPhase 3 - Built goals:");
-    println!("  Goal Q(east1) at addr {}: {}", goal_q, heap.term_string(goal_q));
-    println!("  Goal R(east1) at addr {}: {}", goal_r, heap.term_string(goal_r));
+    println!(
+        "  Goal Q(east1) at addr {}: {}",
+        goal_q,
+        heap.term_string(goal_q)
+    );
+    println!(
+        "  Goal R(east1) at addr {}: {}",
+        goal_r,
+        heap.term_string(goal_r)
+    );
     let q_ref_addr = sub.get_arg(2).unwrap();
     let r_ref_addr = sub.get_arg(3).unwrap();
-    println!("  Q predicate Ref at addr {}: {:?}", q_ref_addr, heap[q_ref_addr]);
-    println!("  R predicate Ref at addr {}: {:?}", r_ref_addr, heap[r_ref_addr]);
+    println!(
+        "  Q predicate Ref at addr {}: {:?}",
+        q_ref_addr, heap[q_ref_addr]
+    );
+    println!(
+        "  R predicate Ref at addr {}: {:?}",
+        r_ref_addr, heap[r_ref_addr]
+    );
 
     // === Phase 4: Build hypothesis clause and constraints ===
     let mut meta_vars = BitFlag64::default();
@@ -1072,60 +1192,116 @@ fn child_goal_q_matches_hypothesis_e_different_addr() {
         constraints.push(sub.get_arg(i).unwrap());
     }
     println!("\nPhase 4 - Constraints: {:?}", constraints);
-    println!("  P constraint addr {} -> {} ({:?})", constraints[0], heap.term_string(constraints[0]), heap[constraints[0]]);
-    println!("  Q constraint addr {} -> {} ({:?})", constraints[1], heap.term_string(constraints[1]), heap[constraints[1]]);
-    println!("  R constraint addr {} -> {} ({:?})", constraints[2], heap.term_string(constraints[2]), heap[constraints[2]]);
+    println!(
+        "  P constraint addr {} -> {} ({:?})",
+        constraints[0],
+        heap.term_string(constraints[0]),
+        heap[constraints[0]]
+    );
+    println!(
+        "  Q constraint addr {} -> {} ({:?})",
+        constraints[1],
+        heap.term_string(constraints[1]),
+        heap[constraints[1]]
+    );
+    println!(
+        "  R constraint addr {} -> {} ({:?})",
+        constraints[2],
+        heap.term_string(constraints[2]),
+        heap[constraints[2]]
+    );
 
     // Apply parent bindings to heap (as prove() does after try_choices succeeds)
     let parent_bindings = sub.get_bindings();
     heap.bind(&parent_bindings);
     println!("\nPhase 4b - After applying parent bindings to heap:");
-    println!("  Q ref {} now -> {} ({:?})", q_ref_addr, heap.term_string(q_ref_addr), heap[q_ref_addr]);
-    println!("  R ref {} now -> {} ({:?})", r_ref_addr, heap.term_string(r_ref_addr), heap[r_ref_addr]);
+    println!(
+        "  Q ref {} now -> {} ({:?})",
+        q_ref_addr,
+        heap.term_string(q_ref_addr),
+        heap[q_ref_addr]
+    );
+    println!(
+        "  R ref {} now -> {} ({:?})",
+        r_ref_addr,
+        heap.term_string(r_ref_addr),
+        heap[r_ref_addr]
+    );
 
     // === Phase 5: Child goal Q(east1) tries to match ===
     // The hypothesis clause e(A):-e(A),e(A) has its 'e' at BUILT addresses
     // Let's simulate: the hypothesis clause head is e(A) built at some addr
     // It has a Con(e_sym) at a DIFFERENT address than addr 10
-    
+
     // Find the hypothesis head we just built - it has e(A) with e at a new addr
-    println!("\nPhase 5 - Hypothesis clause head: {}", heap.term_string(_h_head));
+    println!(
+        "\nPhase 5 - Hypothesis clause head: {}",
+        heap.term_string(_h_head)
+    );
     // The Con(e) in the hypothesis head is at _h_head + 1
     let hyp_e_addr = _h_head + 1;
-    println!("  Hypothesis 'e' at addr {}: {:?}", hyp_e_addr, heap[hyp_e_addr]);
+    println!(
+        "  Hypothesis 'e' at addr {}: {:?}",
+        hyp_e_addr, heap[hyp_e_addr]
+    );
     // This should be a Ref pointing to the original e (addr 10), not a new Con
     // because build with meta_vars set for P creates: set_ref(Some(addr_10))
-    println!("  Deref of hyp_e_addr: {} ({:?})", heap.deref_addr(hyp_e_addr), heap[heap.deref_addr(hyp_e_addr)]);
+    println!(
+        "  Deref of hyp_e_addr: {} ({:?})",
+        heap.deref_addr(hyp_e_addr),
+        heap[heap.deref_addr(hyp_e_addr)]
+    );
 
     // Now simulate unifying child goal Q(east1) with hypothesis head e(A)
     // Child goal Q(east1) is at addr goal_q
     // The Q predicate is a Ref at q_ref_addr
     // Hypothesis head e(A) is at _h_head
     // The e predicate is at hyp_e_addr (which is a Ref -> 10, the Con(e))
-    
-    println!("\n  Child goal addr {}: {}", goal_q, heap.term_string(goal_q));
-    println!("  Hypothesis head addr {}: {}", _h_head, heap.term_string(_h_head));
-    
+
+    println!(
+        "\n  Child goal addr {}: {}",
+        goal_q,
+        heap.term_string(goal_q)
+    );
+    println!(
+        "  Hypothesis head addr {}: {}",
+        _h_head,
+        heap.term_string(_h_head)
+    );
+
     let child_sub = unify(&heap, _h_head, goal_q);
     match &child_sub {
         Some(s) => {
             println!("  Unification succeeded!");
             println!("  Child sub bindings: {:?}", s.get_bindings());
-            
+
             // Now check the parent's constraints with the child's substitution
             let result = s.check_constraints(&constraints, &heap);
-            println!("\n  check_constraints (parent constraints, child sub): {}", result);
-            
+            println!(
+                "\n  check_constraints (parent constraints, child sub): {}",
+                result
+            );
+
             // Trace through full_deref for each constraint
             for (label, &c_addr) in ["P", "Q", "R"].iter().zip(constraints.iter()) {
                 let heap_deref = heap.deref_addr(c_addr);
                 let full_deref_target = s.full_deref(c_addr, &heap);
-                println!("  {} constraint addr {} -> heap_deref {} -> full_deref {}", 
-                    label, c_addr, heap_deref, full_deref_target);
-                println!("    heap_deref cell: {:?} = {}", heap[heap_deref], heap.term_string(heap_deref));
-                println!("    full_deref cell: {:?} = {}", heap[full_deref_target], heap.term_string(full_deref_target));
+                println!(
+                    "  {} constraint addr {} -> heap_deref {} -> full_deref {}",
+                    label, c_addr, heap_deref, full_deref_target
+                );
+                println!(
+                    "    heap_deref cell: {:?} = {}",
+                    heap[heap_deref],
+                    heap.term_string(heap_deref)
+                );
+                println!(
+                    "    full_deref cell: {:?} = {}",
+                    heap[full_deref_target],
+                    heap.term_string(full_deref_target)
+                );
             }
-            
+
             // The key question: does P's full_deref == Q's full_deref?
             let p_target = s.full_deref(constraints[0], &heap);
             let q_target = s.full_deref(constraints[1], &heap);
@@ -1133,25 +1309,37 @@ fn child_goal_q_matches_hypothesis_e_different_addr() {
             println!("\n  P target addr: {}", p_target);
             println!("  Q target addr: {}", q_target);
             println!("  R target addr: {}", r_target);
-            println!("  P == Q? {} (SHOULD be true if both resolve to 'e')", p_target == q_target);
-            
+            println!(
+                "  P == Q? {} (SHOULD be true if both resolve to 'e')",
+                p_target == q_target
+            );
+
             if p_target == q_target {
                 println!("  ✓ Constraint correctly detects P=Q");
-                assert!(!result, "Constraint should FAIL when Q resolves to same as P");
+                assert!(
+                    !result,
+                    "Constraint should FAIL when Q resolves to same as P"
+                );
             } else {
                 println!("  ✗ Constraint FAILS to detect P=Q!");
                 println!("    P resolves to addr {} ({:?})", p_target, heap[p_target]);
                 println!("    Q resolves to addr {} ({:?})", q_target, heap[q_target]);
                 println!("    These are DIFFERENT addresses but same symbol!");
-                
+
                 // Check if it's the same symbol even at different addresses
                 let p_cell = heap[p_target];
                 let q_cell = heap[q_target];
                 if p_cell == q_cell {
-                    println!("    BUG CONFIRMED: Same cell value {:?} at different addresses", p_cell);
+                    println!(
+                        "    BUG CONFIRMED: Same cell value {:?} at different addresses",
+                        p_cell
+                    );
                     println!("    check_constraints compares ADDRESSES not VALUES");
                     // This assertion documents the bug
-                    assert!(result, "Bug: constraint passes despite P and Q having same symbol");
+                    assert!(
+                        result,
+                        "Bug: constraint passes despite P and Q having same symbol"
+                    );
                 }
             }
         }
@@ -1168,21 +1356,21 @@ fn constraints_same_symbol_different_addresses() {
     let sym = SymbolDB::set_const("csda_test".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Con, sym),  // addr 0: Con(test)
-        (Tag::Con, sym),  // addr 1: Con(test) - same symbol, different address
-        (Tag::Con, sym),  // addr 2: Con(test) - same symbol, different address
+        (Tag::Con, sym), // addr 0: Con(test)
+        (Tag::Con, sym), // addr 1: Con(test) - same symbol, different address
+        (Tag::Con, sym), // addr 2: Con(test) - same symbol, different address
     ];
 
     let constraints: Vec<usize> = vec![0, 1, 2];
     let sub = Substitution::default();
     let result = sub.check_constraints(&constraints, &heap);
-    
+
     println!("Three Con cells with same symbol at different addresses:");
     println!("  addr 0: {:?}", heap[0]);
     println!("  addr 1: {:?}", heap[1]);
     println!("  addr 2: {:?}", heap[2]);
     println!("  check_constraints result: {}", result);
-    
+
     // full_deref on a Con cell returns the cell's own address (no ref chain)
     // So targets are [0, 1, 2] - all different addresses
     // Even though they represent the same symbol!
@@ -1200,10 +1388,10 @@ fn constraints_refs_to_same_symbol_different_con_addrs() {
     let sym = SymbolDB::set_const("crsd_test".into());
 
     let heap: Vec<Cell> = vec![
-        (Tag::Con, sym),  // addr 0: Con(test)
-        (Tag::Con, sym),  // addr 1: Con(test) - duplicate
-        (Tag::Ref, 0),    // addr 2: Ref -> 0
-        (Tag::Ref, 1),    // addr 3: Ref -> 1
+        (Tag::Con, sym), // addr 0: Con(test)
+        (Tag::Con, sym), // addr 1: Con(test) - duplicate
+        (Tag::Ref, 0),   // addr 2: Ref -> 0
+        (Tag::Ref, 1),   // addr 3: Ref -> 1
     ];
 
     // Constraints point to the refs
@@ -1215,7 +1403,7 @@ fn constraints_refs_to_same_symbol_different_con_addrs() {
     println!("  Ref at 2 -> deref to addr 0: {:?}", heap[0]);
     println!("  Ref at 3 -> deref to addr 1: {:?}", heap[1]);
     println!("  check_constraints: {}", result);
-    
+
     // full_deref(2) → heap deref → 0 (Con), full_deref(3) → heap deref → 1 (Con)
     // Targets are addr 0 and addr 1 - different addresses!
     if result {

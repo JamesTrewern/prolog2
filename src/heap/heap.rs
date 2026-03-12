@@ -294,7 +294,9 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.heap_push((other[addr].0, length));
                 for (i, pre_cell) in pre.into_iter().enumerate() {
                     match pre_cell {
-                        Some(cell) => { self.heap_push(cell); }
+                        Some(cell) => {
+                            self.heap_push(cell);
+                        }
                         None => self._copy_ref_map_simple(other, addr + 1 + i, ref_map),
                     }
                 }
@@ -305,11 +307,15 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 let tail = self._copy_ref_map_complex(other, pointer + 1, ref_map);
                 let h = self.heap_len();
                 match head {
-                    Some(cell) => { self.heap_push(cell); }
+                    Some(cell) => {
+                        self.heap_push(cell);
+                    }
                     None => self._copy_ref_map_simple(other, pointer, ref_map),
                 }
                 match tail {
-                    Some(cell) => { self.heap_push(cell); }
+                    Some(cell) => {
+                        self.heap_push(cell);
+                    }
                     None => self._copy_ref_map_simple(other, pointer + 1, ref_map),
                 }
                 h
@@ -346,12 +352,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             (Tag::Func | Tag::Tup | Tag::Set, _) => {
                 Some((Tag::Str, self.copy_term_with_ref_map(other, addr, ref_map)))
             }
-            (Tag::Str, ptr) => {
-                Some((Tag::Str, self.copy_term_with_ref_map(other, ptr, ref_map)))
-            }
-            (Tag::Lis, _) => {
-                Some((Tag::Lis, self.copy_term_with_ref_map(other, addr, ref_map)))
-            }
+            (Tag::Str, ptr) => Some((Tag::Str, self.copy_term_with_ref_map(other, ptr, ref_map))),
+            (Tag::Lis, _) => Some((Tag::Lis, self.copy_term_with_ref_map(other, addr, ref_map))),
             _ => None,
         }
     }
@@ -375,7 +377,9 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     ref_map.insert(addr, new_addr);
                 }
             }
-            cell => { self.heap_push(cell); }
+            cell => {
+                self.heap_push(cell);
+            }
         }
     }
 
@@ -561,9 +565,9 @@ impl Heap for Vec<Cell> {
     fn heap_len(&self) -> usize {
         self.len()
     }
-    
+
     fn truncate(&mut self, len: usize) {
-        self.resize(len, (Tag::Ref,0));
+        self.resize(len, (Tag::Ref, 0));
     }
 }
 
@@ -666,7 +670,7 @@ mod tests {
             (Tag::Con, f),
             (Tag::Ref, 7),
         ]);
-        
+
         assert_eq!(heap.term_string(0), "p({f,Ref_7},a)");
 
         let mut heap = QueryHeap::new(&[], None);
@@ -690,7 +694,12 @@ mod tests {
         let a = SymbolDB::set_const("a".into());
 
         let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![(Tag::Str, 1), (Tag::Tup, 2), (Tag::Arg, 0), (Tag::Con, a)]);
+        heap.cells.extend(vec![
+            (Tag::Str, 1),
+            (Tag::Tup, 2),
+            (Tag::Arg, 0),
+            (Tag::Con, a),
+        ]);
         assert_eq!(heap.term_string(0), "(Arg_0,a)");
 
         let mut heap = QueryHeap::new(&[], None);
@@ -818,7 +827,12 @@ mod tests {
         let a = SymbolDB::set_const("a".into());
 
         let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![(Tag::Str, 1), (Tag::Set, 2), (Tag::Arg, 0), (Tag::Con, a)]);
+        heap.cells.extend(vec![
+            (Tag::Str, 1),
+            (Tag::Set, 2),
+            (Tag::Arg, 0),
+            (Tag::Con, a),
+        ]);
         assert_eq!(heap.term_string(0), "{Arg_0,a}");
 
         let mut heap = QueryHeap::new(&[], None);
@@ -877,15 +891,30 @@ mod tests {
         let a = SymbolDB::set_const("a".into());
 
         let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![(Tag::Ref, 1), (Tag::Ref, 2), (Tag::Ref, 3), (Tag::Ref, 3)]);
+        heap.cells.extend(vec![
+            (Tag::Ref, 1),
+            (Tag::Ref, 2),
+            (Tag::Ref, 3),
+            (Tag::Ref, 3),
+        ]);
         assert_eq!(heap.term_string(0), "Ref_3");
 
         let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![(Tag::Ref, 1), (Tag::Ref, 2), (Tag::Ref, 3), (Tag::Arg, 0)]);
+        heap.cells.extend(vec![
+            (Tag::Ref, 1),
+            (Tag::Ref, 2),
+            (Tag::Ref, 3),
+            (Tag::Arg, 0),
+        ]);
         assert_eq!(heap.term_string(0), "Arg_0");
 
         let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![(Tag::Ref, 1), (Tag::Ref, 2), (Tag::Ref, 3), (Tag::Con, a)]);
+        heap.cells.extend(vec![
+            (Tag::Ref, 1),
+            (Tag::Ref, 2),
+            (Tag::Ref, 3),
+            (Tag::Con, a),
+        ]);
         assert_eq!(heap.term_string(0), "a");
 
         let mut heap = QueryHeap::new(&[], None);

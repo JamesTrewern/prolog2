@@ -2,7 +2,10 @@ use std::{collections::HashMap, mem};
 
 use fsize::fsize;
 
-use crate::heap::{heap::{Cell, Heap, Tag, EMPTY_LIS}, symbol_db::SymbolDB};
+use crate::heap::{
+    heap::{Cell, Heap, Tag, EMPTY_LIS},
+    symbol_db::SymbolDB,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Unit {
@@ -65,7 +68,6 @@ pub enum Term {
     Set(Vec<Term>),
     EmptyList,
 }
-
 
 impl Unit {
     fn encode_var(
@@ -254,7 +256,7 @@ impl Term {
                 Some(cell) => heap.heap_push(*cell),
                 None => term.encode(heap, var_values, query),
             };
-            heap.heap_push((Tag::Lis, heap.heap_len()+1));
+            heap.heap_push((Tag::Lis, heap.heap_len() + 1));
         }
 
         let (complex, term) = (complex_terms.last().unwrap(), head.last().unwrap());
@@ -278,8 +280,8 @@ mod encode_tests {
 
     use super::{Term, Unit};
     use crate::heap::{
-        query_heap::QueryHeap,
         heap::{Heap, Tag, EMPTY_LIS},
+        query_heap::QueryHeap,
         symbol_db::SymbolDB,
     };
 
@@ -287,7 +289,7 @@ mod encode_tests {
 
     #[test]
     fn encode_argument() {
-        let mut heap = QueryHeap::new(&[],None);
+        let mut heap = QueryHeap::new(&[], None);
         let mut var_values = HashMap::new();
         let x = Unit::Variable("X".into());
         let y = Unit::Variable("Y".into());
@@ -300,12 +302,11 @@ mod encode_tests {
             heap.cells,
             [(Tag::Arg, 0), (Tag::Arg, 1), (Tag::Arg, 0), (Tag::Arg, 1),]
         );
-
     }
 
     #[test]
     fn encode_ref() {
-        let mut heap = QueryHeap::new(&[],None);
+        let mut heap = QueryHeap::new(&[], None);
         let mut var_values = HashMap::new();
         let x = Unit::Variable("X".into());
         let y = Unit::Variable("Y".into());
@@ -318,7 +319,6 @@ mod encode_tests {
             heap.cells,
             [(Tag::Ref, 0), (Tag::Ref, 1), (Tag::Ref, 0), (Tag::Ref, 1),]
         );
-
     }
 
     #[test]
@@ -342,7 +342,7 @@ mod encode_tests {
         let unit = Unit::Int(value);
         let addr = unit.encode(&mut heap, &mut HashMap::new(), false);
         assert_eq!(heap.term_string(addr), "-10");
-        assert_eq!(heap.cells, [(Tag::Int, isize::cast_unsigned(value) )]);
+        assert_eq!(heap.cells, [(Tag::Int, isize::cast_unsigned(value))]);
 
         let mut heap = QueryHeap::new(&[], None);
         let value: fsize = 1.1;
@@ -367,7 +367,6 @@ mod encode_tests {
 
         #[cfg(target_pointer_width = "64")]
         assert_eq!(heap.cells, [(Tag::Flt, value.to_bits() as usize)]);
-
     }
 
     #[test]
@@ -513,7 +512,6 @@ mod encode_tests {
                 (Tag::Arg, 0),
             ]
         );
-
     }
 
     #[test]
@@ -796,7 +794,6 @@ mod encode_tests {
                 (Tag::Arg, 0),
             ]
         );
-
     }
 
     #[test]
@@ -958,7 +955,10 @@ mod encode_tests {
         ]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
         assert_eq!(heap.term_string(addr), "{a,X}");
-        assert_eq!(heap.cells, [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Arg, 0),]);
+        assert_eq!(
+            heap.cells,
+            [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Arg, 0),]
+        );
 
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::Set(vec![
@@ -968,7 +968,10 @@ mod encode_tests {
         ]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
         assert_eq!(heap.term_string(addr), "{Q,a}");
-        assert_eq!(heap.cells, [(Tag::Set, 2), (Tag::Arg, 0), (Tag::Con, a_id),]);
+        assert_eq!(
+            heap.cells,
+            [(Tag::Set, 2), (Tag::Arg, 0), (Tag::Con, a_id),]
+        );
 
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::Set(vec![
@@ -1080,7 +1083,10 @@ mod encode_tests {
         ]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), true);
         assert_eq!(heap.term_string(addr), "{a,X}");
-        assert_eq!(heap.cells, [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Ref, 2),]);
+        assert_eq!(
+            heap.cells,
+            [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Ref, 2),]
+        );
 
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::Set(vec![
@@ -1090,7 +1096,10 @@ mod encode_tests {
         ]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), true);
         assert_eq!(heap.term_string(addr), "{Q,a}");
-        assert_eq!(heap.cells, [(Tag::Set, 2), (Tag::Ref, 1), (Tag::Con, a_id),]);
+        assert_eq!(
+            heap.cells,
+            [(Tag::Set, 2), (Tag::Ref, 1), (Tag::Con, a_id),]
+        );
 
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::Set(vec![
@@ -1236,9 +1245,16 @@ mod encode_tests {
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::List(
             vec![
-                Term::List(vec![Term::Unit(Unit::Int(1)),Term::Unit(Unit::Int(2)),Term::Unit(Unit::Int(3))], Box::new(Term::EmptyList)),
+                Term::List(
+                    vec![
+                        Term::Unit(Unit::Int(1)),
+                        Term::Unit(Unit::Int(2)),
+                        Term::Unit(Unit::Int(3)),
+                    ],
+                    Box::new(Term::EmptyList),
+                ),
                 Term::EmptyList,
-                Term::List(vec![Term::EmptyList], Box::new(Term::Unit(q.clone())))
+                Term::List(vec![Term::EmptyList], Box::new(Term::Unit(q.clone()))),
             ],
             Box::new(Term::Unit(q.clone())),
         );
@@ -1257,9 +1273,9 @@ mod encode_tests {
                 EMPTY_LIS,
                 (Tag::Arg, 0),
                 (Tag::Lis, 0),
-                (Tag::Lis,10),
+                (Tag::Lis, 10),
                 EMPTY_LIS,
-                (Tag::Lis,12),
+                (Tag::Lis, 12),
                 (Tag::Lis, 6),
                 (Tag::Arg, 0),
                 (Tag::Lis, 8),
@@ -1327,9 +1343,16 @@ mod encode_tests {
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::List(
             vec![
-                Term::List(vec![Term::Unit(Unit::Int(1)),Term::Unit(Unit::Int(2)),Term::Unit(Unit::Int(3))], Box::new(Term::EmptyList)),
+                Term::List(
+                    vec![
+                        Term::Unit(Unit::Int(1)),
+                        Term::Unit(Unit::Int(2)),
+                        Term::Unit(Unit::Int(3)),
+                    ],
+                    Box::new(Term::EmptyList),
+                ),
                 Term::EmptyList,
-                Term::List(vec![Term::EmptyList], Box::new(Term::Unit(q.clone())))
+                Term::List(vec![Term::EmptyList], Box::new(Term::Unit(q.clone()))),
             ],
             Box::new(Term::Unit(q.clone())),
         );
@@ -1348,14 +1371,13 @@ mod encode_tests {
                 EMPTY_LIS,
                 (Tag::Ref, 7),
                 (Tag::Lis, 0),
-                (Tag::Lis,10),
+                (Tag::Lis, 10),
                 EMPTY_LIS,
-                (Tag::Lis,12),
+                (Tag::Lis, 12),
                 (Tag::Lis, 6),
                 (Tag::Ref, 7),
                 (Tag::Lis, 8),
             ]
         );
     }
-
 }

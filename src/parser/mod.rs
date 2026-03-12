@@ -6,6 +6,6 @@
 //! ([`execute_tree`](crate::parser::execute_tree)).
 
 pub mod build_tree;
+pub mod execute_tree;
 mod term;
 pub mod tokeniser;
-pub mod execute_tree;

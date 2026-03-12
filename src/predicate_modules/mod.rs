@@ -39,13 +39,8 @@ impl PredReturn {
 /// - `usize` — heap address of the goal term being resolved
 /// - `&PredicateTable` — the program's predicate table
 /// - `Config` — engine configuration
-pub type PredicateFunction = for<'a> fn(
-    &mut QueryHeap<'a>,
-    &mut Hypothesis,
-    usize,
-    &PredicateTable,
-    Config,
-) -> PredReturn;
+pub type PredicateFunction =
+    for<'a> fn(&mut QueryHeap<'a>, &mut Hypothesis, usize, &PredicateTable, Config) -> PredReturn;
 
 /// A predicate module: a static slice of `(name, arity, function)` entries.
 ///
@@ -74,9 +69,7 @@ pub fn load_predicate_module(
 }
 
 /// Built-in maths predicates: `is/2` for arithmetic evaluation.
-pub static MATHS: PredicateModule = &[
-    ("is", 2, maths::is_pred),
-];
+pub static MATHS: PredicateModule = &[("is", 2, maths::is_pred)];
 
 /// Built-in meta-predicates: `not/1` (negation as failure).
 pub static META_PREDICATES: PredicateModule = &[("not", 1, meta_predicates::not)];

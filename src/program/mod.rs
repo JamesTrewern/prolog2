@@ -5,6 +5,6 @@
 //! built-in predicate functions. During proof search, learned clauses are
 //! collected in a [`Hypothesis`](crate::program::hypothesis::Hypothesis).
 
-pub mod predicate_table;
 pub mod clause;
 pub mod hypothesis;
+pub mod predicate_table;

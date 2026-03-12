@@ -12,10 +12,25 @@ use std::{
 use lazy_static::lazy_static;
 
 const KNOWN_SYMBOLS: &[&str] = &[
-    "false", "true",  // indices 0, 1
-    "+", "-", "*", "/", "**",  // indices 2-6
-    "cos", "sin", "tan", "acos", "asin", "atan",  // indices 7-12
-    "log", "abs", "round", "sqrt", "to_degrees", "to_radians",  // indices 13-18
+    "false",
+    "true", // indices 0, 1
+    "+",
+    "-",
+    "*",
+    "/",
+    "**", // indices 2-6
+    "cos",
+    "sin",
+    "tan",
+    "acos",
+    "asin",
+    "atan", // indices 7-12
+    "log",
+    "abs",
+    "round",
+    "sqrt",
+    "to_degrees",
+    "to_radians", // indices 13-18
 ];
 
 /// Compute the symbol ID for a known symbol at compile time
@@ -25,10 +40,13 @@ pub const fn known_symbol_id(index: usize) -> usize {
 
 lazy_static! {
     static ref SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
-    const_symbols: KNOWN_SYMBOLS.iter().map(|&symbol| symbol.to_string().into()).collect(),
-    var_symbol_map: HashMap::new(),
-    strings: Vec::new(),
-});
+        const_symbols: KNOWN_SYMBOLS
+            .iter()
+            .map(|&symbol| symbol.to_string().into())
+            .collect(),
+        var_symbol_map: HashMap::new(),
+        strings: Vec::new(),
+    });
 }
 
 /// Global symbol table.
@@ -86,7 +104,6 @@ impl SymbolDB {
         write_gaurd.strings.push(value.into());
         write_gaurd.strings.len() - 1
     }
-
 
     pub fn _see_var_map() {
         let symbols = SYMBOLS.read().unwrap();
