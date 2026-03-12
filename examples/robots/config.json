@@ -1,0 +1,17 @@
+{
+    "config" : {
+        "max_depth": 20,
+        "max_clause": 1,
+        "max_pred": 0,
+        "debug": false
+    },
+    "body_predicates" : [
+        
+    ],
+    "examples" : {
+        "pos" : [],
+        "neg" : []
+    },
+    "top_prog" : true,
+    "files" : ["examples/robots/robots.pl"]
+}

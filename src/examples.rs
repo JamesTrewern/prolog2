@@ -2,6 +2,8 @@
 
 use std::fs;
 
+use std::process::ExitCode;
+
 use crate::{
     BodyClause, Config, Examples, SetUp, heap::{heap::Cell, query_heap::QueryHeap, symbol_db::SymbolDB}, parser::{
         build_tree::TokenStream,
@@ -216,4 +218,26 @@ fn fsm_parity(){
     } else {
         panic!("No examples in FSM Parity config");
     }
+}
+
+// ── Top Program Construction tests ──
+
+#[test]
+fn top_prog_robots() {
+    let (config, predicate_table, heap, examples) =
+        load_setup("examples/robots/tpc_config.json");
+
+    let examples = examples.expect("No examples in robots tpc_config");
+    let result = crate::top_prog::run(examples, &predicate_table, heap, config);
+    assert_eq!(result, ExitCode::SUCCESS);
+}
+
+#[test]
+fn top_prog_trains() {
+    let (config, predicate_table, heap, examples) =
+        load_setup("examples/trains/config.json");
+
+    let examples = examples.expect("No examples in trains config");
+    let result = crate::top_prog::run(examples, &predicate_table, heap, config);
+    assert_eq!(result, ExitCode::SUCCESS);
 }

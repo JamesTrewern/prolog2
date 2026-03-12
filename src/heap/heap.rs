@@ -178,7 +178,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         addr + 1..=addr + self[addr].1
     }
 
-    fn normalise_args(&mut self, addr: usize, args: &[usize]) {
+    fn normalise_args(&mut self, addr: usize, args: &mut Vec<usize>) {
         match self[addr] {
             (Tag::Str, pointer) => self.normalise_args(pointer, args),
             (Tag::Func, _) => {
@@ -192,7 +192,15 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.normalise_args(pointer, args);
                 self.normalise_args(pointer + 1, args);
             }
-            (Tag::Arg, value) => self[addr].1 = args.iter().position(|i| value == *i).unwrap(),
+            (Tag::Arg, value) => {
+                if let Some(pos) = args.iter().position(|i| value == *i) {
+                    self[addr].1 = pos;
+                } else {
+                    let pos = args.len();
+                    args.push(value);
+                    self[addr].1 = pos;
+                }
+            }
             _ => (),
         }
     }

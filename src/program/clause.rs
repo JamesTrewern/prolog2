@@ -1,6 +1,6 @@
 //! Clause representation and metadata.
 
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use smallvec::SmallVec;
 
@@ -104,5 +104,11 @@ impl Deref for Clause {
 
     fn deref(&self) -> &[usize] {
         &self.literals
+    }
+}
+
+impl DerefMut for Clause {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.literals
     }
 }

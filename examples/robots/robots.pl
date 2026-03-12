@@ -1,42 +1,8 @@
-:- ['examples/robots/examples'].
-
-P(X,Y):- Q(M,X,Z), R(Z,Y) {X,Y,Z}.
-P(X,Y):- Q(X,Z), R(M,Z,Y) {X,Y,Z}.
-P(X,Y):- Q(M,X,Z), R(N,Z,Y) {X,Y,Z}.
-P(X,Y):- Q(X,Z), R(Z,Y) {X,Y,Z}. 
-P(X,Y):- Q(M,X,Y) {X,Y}.
-
-
-:- max_h_clause(1), max_h_preds(0), debug(false).
-
-:- load_module(top_prog).
-
-:- background_knowledge([
-	move_right/2,
-	move_left/2,
-	move_up/2,
-	move_down/2,
-	double_move/3,
-	triple_move/3,
-	quadruple_move/3,
-	move_right_twice/2,
-	move_left_twice/2,
-	move_up_twice/2,
-	move_down_twice/2,
-	move_right_then_up/2,
-	move_right_then_down/2,
-	move_left_then_up/2,
-	move_left_then_down/2,
-	move_up_then_right/2,
-	move_up_then_left/2,
-	move_down_then_right/2,
-	move_down_then_left/2
-]).
-
-
-test:-
-	pos_examples(Pos),
-	learn(Pos,[],H).
+P(X,Y):- Q(M,X,Z), R(Z,Y), {P,Q,R}.
+P(X,Y):- Q(X,Z), R(M,Z,Y), {P,Q,R}.
+P(X,Y):- Q(M,X,Z), R(N,Z,Y), {P,Q,R}.
+P(X,Y):- Q(X,Z), R(Z,Y), {P,Q,R}. 
+P(X,Y):- Q(M,X,Y), {P,Q}.
 
 higher_order_move(L):-
 	higher_order_moves(Ms),

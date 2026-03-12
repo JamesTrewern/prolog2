@@ -1,0 +1,61 @@
+{
+    "config" : {
+        "max_depth": 20,
+        "max_clause": 1,
+        "max_pred": 0,
+        "debug": false
+    },
+    "body_predicates" : [
+        {"symbol" : "move_right", "arity": 2},
+        {"symbol" : "move_left", "arity": 2},
+        {"symbol" : "move_up", "arity": 2},
+        {"symbol" : "move_down", "arity": 2},
+        {"symbol" : "double_move", "arity": 3},
+        {"symbol" : "triple_move", "arity": 3},
+        {"symbol" : "quadruple_move", "arity": 3},
+        {"symbol" : "move_right_twice", "arity": 2},
+        {"symbol" : "move_left_twice", "arity": 2},
+        {"symbol" : "move_up_twice", "arity": 2},
+        {"symbol" : "move_down_twice", "arity": 2},
+        {"symbol" : "move_right_then_up", "arity": 2},
+        {"symbol" : "move_right_then_down", "arity": 2},
+        {"symbol" : "move_left_then_up", "arity": 2},
+        {"symbol" : "move_left_then_down", "arity": 2},
+        {"symbol" : "move_up_then_right", "arity": 2},
+        {"symbol" : "move_up_then_left", "arity": 2},
+        {"symbol" : "move_down_then_right", "arity": 2},
+        {"symbol" : "move_down_then_left", "arity": 2}
+    ],
+    "examples" : {
+        "pos" : [
+            "move([0/0,0/0,4 - 4],[0/0,0/0,4 - 4])",
+            "move([0/0,0/1,4 - 4],[0/1,0/1,4 - 4])",
+            "move([0/0,0/2,4 - 4],[0/2,0/2,4 - 4])",
+            "move([0/0,0/3,4 - 4],[0/3,0/3,4 - 4])",
+            "move([0/0,0/4,4 - 4],[0/4,0/4,4 - 4])",
+            "move([0/0,1/0,4 - 4],[1/0,1/0,4 - 4])",
+            "move([0/0,1/1,4 - 4],[1/1,1/1,4 - 4])",
+            "move([0/0,1/2,4 - 4],[1/2,1/2,4 - 4])",
+            "move([0/0,1/3,4 - 4],[1/3,1/3,4 - 4])",
+            "move([0/0,1/4,4 - 4],[1/4,1/4,4 - 4])",
+            "move([0/0,2/0,4 - 4],[2/0,2/0,4 - 4])",
+            "move([0/0,2/1,4 - 4],[2/1,2/1,4 - 4])",
+            "move([0/0,2/2,4 - 4],[2/2,2/2,4 - 4])",
+            "move([0/0,2/3,4 - 4],[2/3,2/3,4 - 4])",
+            "move([0/0,2/4,4 - 4],[2/4,2/4,4 - 4])",
+            "move([0/0,3/0,4 - 4],[3/0,3/0,4 - 4])",
+            "move([0/0,3/1,4 - 4],[3/1,3/1,4 - 4])",
+            "move([0/0,3/2,4 - 4],[3/2,3/2,4 - 4])",
+            "move([0/0,3/3,4 - 4],[3/3,3/3,4 - 4])",
+            "move([0/0,3/4,4 - 4],[3/4,3/4,4 - 4])",
+            "move([0/0,4/0,4 - 4],[4/0,4/0,4 - 4])",
+            "move([0/0,4/1,4 - 4],[4/1,4/1,4 - 4])",
+            "move([0/0,4/2,4 - 4],[4/2,4/2,4 - 4])",
+            "move([0/0,4/3,4 - 4],[4/3,4/3,4 - 4])",
+            "move([0/0,4/4,4 - 4],[4/4,4/4,4 - 4])"
+        ],
+        "neg" : []
+    },
+    "top_prog" : true,
+    "files" : ["examples/robots/robots.pl", "examples/robots/examples.pl"]
+}

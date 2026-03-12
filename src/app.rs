@@ -62,6 +62,9 @@ pub struct SetUp {
     pub body_predicates: Vec<BodyClause>,
     pub files: Vec<String>,
     pub examples: Option<Examples>,
+    /// When true, run Top Program Construction instead of a direct query.
+    #[serde(default)]
+    pub top_prog: bool,
 }
 
 impl Examples {
@@ -158,19 +161,22 @@ impl App {
     /// If the config contains examples, they are run as a query.
     /// Otherwise an interactive REPL is started.
     pub fn run(self) -> ExitCode {
-        let (config, predicate_table, heap, examples) = self.load_setup();
+        let (config, predicate_table, heap, examples, top_prog) = self.load_setup();
 
-        match examples {
-            Some(examples) => {
+        match (examples, top_prog) {
+            (Some(examples), true) => {
+                crate::top_prog::run(examples, &predicate_table, heap, config)
+            }
+            (Some(examples), false) => {
                 start_query(&examples.to_query(), &predicate_table, &heap, config, self.auto)
                     .unwrap();
                 ExitCode::SUCCESS
             }
-            None => main_loop(config, predicate_table, &heap),
+            (None, _) => main_loop(config, predicate_table, &heap),
         }
     }
 
-    fn load_setup(&self) -> (Config, PredicateTable, Vec<Cell>, Option<Examples>) {
+    fn load_setup(&self) -> (Config, PredicateTable, Vec<Cell>, Option<Examples>, bool) {
         let mut heap = Vec::new();
         let mut predicate_table = PredicateTable::new();
 
@@ -198,7 +204,7 @@ impl App {
                 .unwrap_or_else(|e| panic!("{e}: {symbol}/{arity}"));
         }
 
-        (config, predicate_table, heap, setup.examples)
+        (config, predicate_table, heap, setup.examples, setup.top_prog)
     }
 }
 
