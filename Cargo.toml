@@ -8,7 +8,7 @@ repository = "https://github.com/JamesTrewern/prolog2"
 readme = "README.md"
 keywords = ["prolog", "logic-programming", "machine-learning", "ilp",]
 categories = ["science", "mathematics"]
-exclude = ["src/top_prog.rs", ".DS_Store"]
+exclude = [".DS_Store"]
 authors = ["James Trewern"]
 
 [lib]
