@@ -1,0 +1,36 @@
+{
+    "config": {
+        "max_depth": 5,
+        "max_clause": 3,
+        "max_pred": 1,
+        "debug": false
+    },
+
+    "body_predicates": [
+        {"symbol": "short", "arity": 1},
+        {"symbol": "closed", "arity": 1},
+        {"symbol": "long", "arity": 1},
+        {"symbol": "open_car", "arity": 1},
+        {"symbol": "has_car", "arity": 2}
+    ],
+    "examples": {
+        "pos": [
+            "e(east1)",
+            "e(east2)",
+            "e(east3)",
+            "e(east4)",
+            "e(east5)"
+        ],
+        "neg": [
+            "e(west6)",
+            "e(west7)",
+            "e(west8)",
+            "e(west9)",
+            "e(west10)"
+        ]
+    },
+    "top_prog": true,
+    "files": [
+        "examples/trains/trains.pl"
+    ]
+}

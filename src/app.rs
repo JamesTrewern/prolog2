@@ -65,6 +65,9 @@ pub struct SetUp {
     /// When true, run Top Program Construction instead of a direct query.
     #[serde(default)]
     pub top_prog: bool,
+    /// When true, skip the reduction step in Top Program Construction.
+    #[serde(default)]
+    pub no_reduce: bool,
 }
 
 impl Examples {
@@ -161,11 +164,11 @@ impl App {
     /// If the config contains examples, they are run as a query.
     /// Otherwise an interactive REPL is started.
     pub fn run(self) -> ExitCode {
-        let (config, predicate_table, heap, examples, top_prog) = self.load_setup();
+        let (config, predicate_table, heap, examples, top_prog, no_reduce) = self.load_setup();
 
         match (examples, top_prog) {
             (Some(examples), true) => {
-                crate::top_prog::run(examples, &predicate_table, heap, config)
+                crate::top_prog::run(examples, &predicate_table, heap, config, no_reduce)
             }
             (Some(examples), false) => {
                 start_query(&examples.to_query(), &predicate_table, &heap, config, self.auto)
@@ -176,7 +179,7 @@ impl App {
         }
     }
 
-    fn load_setup(&self) -> (Config, PredicateTable, Vec<Cell>, Option<Examples>, bool) {
+    fn load_setup(&self) -> (Config, PredicateTable, Vec<Cell>, Option<Examples>, bool, bool) {
         let mut heap = Vec::new();
         let mut predicate_table = PredicateTable::new();
 
@@ -204,7 +207,7 @@ impl App {
                 .unwrap_or_else(|e| panic!("{e}: {symbol}/{arity}"));
         }
 
-        (config, predicate_table, heap, setup.examples, setup.top_prog)
+        (config, predicate_table, heap, setup.examples, setup.top_prog, setup.no_reduce)
     }
 }
 

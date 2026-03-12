@@ -39,6 +39,7 @@ pub fn run(
     predicate_table: &PredicateTable,
     mut heap: Vec<Cell>,
     config: Config,
+    no_reduce: bool,
 ) -> ExitCode {
     println!("=== Top Program Construction ===");
     println!(
@@ -67,26 +68,78 @@ pub fn run(
         surviving_count, rejected_count
     );
 
-    // Build final top program: union all surviving clauses, deduplicated
+    // Build final top program from surviving hypotheses
     let mut seen = HashSet::new();
     let mut top_program: Vec<&Clause> = Vec::new();
-    for (hypothesis, &alive) in hypotheses.iter().zip(retained.iter()) {
-        if alive {
-            for clause in hypothesis {
+
+    if no_reduce {
+        // Simple union without reduction
+        for (hypothesis, &alive) in hypotheses.iter().zip(retained.iter()) {
+            if alive {
+                for clause in hypothesis {
+                    let key = clause.to_string(&heap);
+                    if seen.insert(key) {
+                        top_program.push(clause);
+                    }
+                }
+            }
+        }
+
+        println!("\n=== Top Program ({} clauses) ===", top_program.len());
+        for clause in &top_program {
+            println!("  {}", clause.to_string(&heap));
+        }
+    } else {
+        // Step 2b: Per-hypothesis reduction — remove redundant clauses within each
+        // sub-hypothesis before union, so specific clauses don't drown out general ones.
+        let surviving: Vec<&Vec<Clause>> = hypotheses.iter()
+            .zip(retained.iter())
+            .filter_map(|(h, &alive)| if alive { Some(h) } else { None })
+            .collect();
+        let sub_total = surviving.len();
+
+        // Reduce each sub-hypothesis and score by coverage (number of positives entailed)
+        let mut scored: Vec<(usize, Vec<&Clause>)> = Vec::new();
+        for (idx, hypothesis) in surviving.iter().enumerate() {
+            eprint!("\rSub-reduce: {}/{sub_total}    ", idx + 1);
+            let _ = io::stderr().flush();
+            let clauses: Vec<&Clause> = hypothesis.iter().collect();
+            let reduced = reduce(&examples.pos, clauses, &heap, predicate_table, config, false);
+            let coverage = count_coverage(&examples.pos, &reduced, &heap, predicate_table, config);
+            scored.push((coverage, reduced));
+        }
+        eprintln!("\rSub-reduce: {sub_total}/{sub_total} ...done    ");
+
+        // Sort by coverage ascending — specific hypotheses first in the union.
+        // Plotkin's reduction checks clauses front-to-back: specific clauses get
+        // checked first and removed (the general ones behind them cover the same
+        // examples). By the time we reach the general clauses, the specific ones
+        // are gone and the general ones become essential.
+        scored.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // Union all reduced sub-hypothesis clauses, deduplicated
+        for (_coverage, reduced_h) in &scored {
+            for &clause in reduced_h {
                 let key = clause.to_string(&heap);
                 if seen.insert(key) {
                     top_program.push(clause);
                 }
             }
         }
-    }
 
-    println!("\n=== Top Program ({} clauses) ===", top_program.len());
-    for clause in &top_program {
-        println!("  {}", clause.to_string(&heap));
-    }
+        println!("\n=== Top Program ({} clauses) ===", top_program.len());
+        for clause in &top_program {
+            println!("  {}", clause.to_string(&heap));
+        }
 
-    // TODO: Step 3 — Reduce
+        // Step 3: Final reduction on the union
+        let reduced = reduce(&examples.pos, top_program, &heap, predicate_table, config, true);
+
+        println!("\n=== Reduced Program ({} clauses) ===", reduced.len());
+        for clause in &reduced {
+            println!("  {}", clause.to_string(&heap));
+        }
+    }
 
     ExitCode::SUCCESS
 }
@@ -310,4 +363,96 @@ fn specialise_thread(
         h = std::mem::replace(&mut proof.hypothesis, Hypothesis::new());
     }
     true
+}
+
+/// Count how many positive examples a set of clauses can prove.
+fn count_coverage(
+    pos_examples: &[String],
+    clauses: &[&Clause],
+    heap: &[Cell],
+    predicate_table: &PredicateTable,
+    config: Config,
+) -> usize {
+    let config = Config {
+        max_depth: config.max_depth,
+        max_clause: 0,
+        max_pred: 0,
+        debug: false,
+    };
+
+    let mut h = Hypothesis::new();
+    for clause in clauses {
+        h.push_clause((*clause).clone(), SmallVec::new());
+    }
+
+    pos_examples.iter().filter(|example| {
+        let mut query_heap = QueryHeap::new(heap, None);
+        let goal = match parse_example(example, &mut query_heap) {
+            Ok(g) => g,
+            Err(_) => return false,
+        };
+        let mut proof = Proof::with_hypothesis(query_heap, &[goal], h.clone());
+        proof.prove(predicate_table, config)
+    }).count()
+}
+
+/// Plotkin's program reduction (Algorithm 3).
+/// Sequentially tries removing each clause; if all positives are still provable
+/// without it, the clause is redundant and permanently removed.
+fn reduce<'a>(
+    pos_examples: &[String],
+    mut top_program: Vec<&'a Clause>,
+    heap: &[Cell],
+    predicate_table: &PredicateTable,
+    config: Config,
+    verbose: bool,
+) -> Vec<&'a Clause> {
+    let config = Config {
+        max_depth: config.max_depth,
+        max_clause: 0,
+        max_pred: 0,
+        debug: false,
+    };
+
+    let total = top_program.len();
+    let mut removed = 0usize;
+    let mut i = 0;
+    while i < top_program.len() {
+        if verbose {
+            eprint!("\rReduce: {}/{total} checked, {removed} removed    ", i + removed + 1);
+            let _ = io::stderr().flush();
+        }
+
+        // Build hypothesis from all clauses except the one at index i
+        let mut h = Hypothesis::new();
+        for (j, clause) in top_program.iter().enumerate() {
+            if j != i {
+                h.push_clause((*clause).clone(), SmallVec::new());
+            }
+        }
+
+        // Check if all positive examples are still provable without clause i
+        let redundant = pos_examples.iter().all(|example| {
+            let mut query_heap = QueryHeap::new(heap, None);
+            let goal = match parse_example(example, &mut query_heap) {
+                Ok(g) => g,
+                Err(_) => return true, // skip unparseable examples
+            };
+            let mut proof = Proof::with_hypothesis(query_heap, &[goal], h.clone());
+            proof.prove(predicate_table, config)
+        });
+
+        if redundant {
+            top_program.remove(i);
+            removed += 1;
+            // Don't increment i — next clause slides into this position
+        } else {
+            i += 1;
+        }
+    }
+    if verbose {
+        eprintln!(" ...done");
+    }
+
+    top_program
 }

@@ -96,6 +96,48 @@ cargo run -- --all
 ```
 
 If the config file includes an `examples` field, Prolog<sup>2</sup> will immediately attempt to prove the examples as a query and output any learned hypotheses. If `examples` is omitted, an interactive REPL is started where queries can be entered manually.
+
+# Top Program Construction
+
+Prolog<sup>2</sup> supports Top Program Construction (TPC) as an alternative to the standard iterative-deepening hypothesis search. TPC constructs the Top program — the set of clauses in all correct hypotheses — directly in polynomial time, then reduces it to remove redundant clauses using Plotkin's program reduction algorithm. This approach is based on the work of [Patsantzis and Muggleton (2021)](https://link.springer.com/article/10.1007/s10994-020-05945-w).
+
+The TPC pipeline has three stages: **Generalise** searches each positive example in parallel to collect all constructible clauses, **Specialise** removes any clause that entails a negative example, and **Reduce** applies Plotkin's reduction to eliminate redundant clauses while preferring general patterns over specific ones.
+
+To enable TPC, add `"top_prog": true` to your config file:
+
+``` json
+{
+    "config" : {
+        "max_depth": 5,
+        "max_clause": 3,
+        "max_pred": 1
+    },
+    "body_predicates" : [
+        {"symbol" : "short", "arity": 1},
+        {"symbol" : "closed", "arity": 1},
+        {"symbol" : "long", "arity": 1},
+        {"symbol" : "open_car", "arity": 1},
+        {"symbol" : "has_car", "arity": 2}
+    ],
+    "examples" : {
+        "pos" : ["e(east1)", "e(east2)", "e(east3)", "e(east4)", "e(east5)"],
+        "neg" : ["e(west6)", "e(west7)", "e(west8)", "e(west9)", "e(west10)"]
+    },
+    "top_prog" : true,
+    "files" : ["examples/trains/trains.pl"]
+}
+```
+
+Running this on Michalski's trains problem produces:
+
+```
+=== Reduced Program (2 clauses) ===
+  e(Arg_0):-has_car(Arg_0,Arg_1),pred_1(Arg_1).
+  pred_1(Arg_0):-short(Arg_0),closed(Arg_0).
+```
+
+To skip the reduction step (useful for profiling or inspecting the raw top program), add `"no_reduce": true` to the config.
+
 # Step by Step Demonstration of New Clause Generation
 
 1. First, we define a higher-order clause in our program

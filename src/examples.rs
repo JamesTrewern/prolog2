@@ -228,16 +228,16 @@ fn top_prog_robots() {
         load_setup("examples/robots/tpc_config.json");
 
     let examples = examples.expect("No examples in robots tpc_config");
-    let result = crate::top_prog::run(examples, &predicate_table, heap, config);
+    let result = crate::top_prog::run(examples, &predicate_table, heap, config, false);
     assert_eq!(result, ExitCode::SUCCESS);
 }
 
 #[test]
 fn top_prog_trains() {
     let (config, predicate_table, heap, examples) =
-        load_setup("examples/trains/config.json");
+        load_setup("examples/trains/tpc_config.json");
 
-    let examples = examples.expect("No examples in trains config");
-    let result = crate::top_prog::run(examples, &predicate_table, heap, config);
+    let examples = examples.expect("No examples in trains tpc config");
+    let result = crate::top_prog::run(examples, &predicate_table, heap, config, false);
     assert_eq!(result, ExitCode::SUCCESS);
 }
