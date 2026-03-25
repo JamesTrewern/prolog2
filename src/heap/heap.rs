@@ -33,10 +33,12 @@ pub enum Tag {
     Int,
     /// Float: value is the raw bits of an `fsize`.
     Flt,
-    /// Indirection to a structure: value is the heap address of the Func cell.
+    /// Indirection to a structure: value is the heap address of a Func/Tup/Set cell.
     Str,
     /// String literal: value is an index into [`super::symbol_db::SymbolDB`] strings.
     Stri,
+    /// Anonymous variable: terms starting with '_' which unify with any term but don't bind
+    AVar
 }
 
 impl std::fmt::Display for Tag {
@@ -258,7 +260,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             (Tag::Tup, _len) => unimplemented!("_copy_term for Tup"),
             (Tag::Set, _len) => unimplemented!("_copy_term for Set"),
             (Tag::Ref, _pointer) => panic!(),
-            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri | Tag::ELis, _) => {
+            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri | Tag::ELis | Tag::AVar, _) => {
                 self.heap_push(other[addr]);
                 self.heap_len() - 1
             }
@@ -551,6 +553,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             Tag::Set => self.set_string(addr),
             Tag::Str => self.term_string(self[addr].1),
             Tag::Stri => SymbolDB::get_string(self[addr].1).to_string(),
+            Tag::AVar => "_".into()
         }
     }
 }

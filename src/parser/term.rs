@@ -14,6 +14,7 @@ pub enum Unit {
     Int(isize),
     Float(fsize),
     String(String),
+    AnonVar,
 }
 
 impl Unit {
@@ -39,22 +40,40 @@ impl Unit {
     }
 
     pub fn parse_unit(token: &str) -> Option<Self> {
-        if Unit::is_variable(token) {
-            Some(Unit::Variable(token.into()))
-        } else if Unit::is_atom(token) {
-            if token.chars().next().unwrap() == '\'' {
-                Some(Unit::Constant(token[1..token.len() - 1].into()))
-            } else {
-                Some(Unit::Constant(token.into()))
+        let c = token.chars().next()?;
+        // if Unit::is_variable(token) {
+        //     Some(Unit::Variable(token.into()))
+        // } else if Unit::is_atom(token) {
+        //     if token.chars().next().unwrap() == '\'' {
+        //         Some(Unit::Constant(token[1..token.len() - 1].into()))
+        //     } else {
+        //         Some(Unit::Constant(token.into()))
+        //     }
+        // } else if Unit::is_string(token) {
+        //     Some(Unit::String(token.to_string()))
+        // } else if let Ok(num) = token.parse::<isize>() {
+        //     Some(Unit::Int(num))
+        // } else if let Ok(num) = token.parse::<fsize>() {
+        //     Some(Unit::Float(num))
+        // } else {
+        //     None
+        // }
+        match c {
+            '\'' => Some(Unit::Constant(token[1..token.len() - 1].into())),
+            '"' => Some(Unit::String(token.to_string())),
+            '_' => Some(Unit::AnonVar),
+            c if c.is_lowercase() => Some(Unit::Constant(token.into())),
+            c if c.is_uppercase() => Some(Unit::Variable(token.into())),
+            c if c == '-' || c.is_numeric() => {
+                if let Ok(num) = token.parse::<isize>() {
+                    Some(Unit::Int(num))
+                } else if let Ok(num) = token.parse::<fsize>() {
+                    Some(Unit::Float(num))
+                } else {
+                    None
+                }
             }
-        } else if Unit::is_string(token) {
-            Some(Unit::String(token.to_string()))
-        } else if let Ok(num) = token.parse::<isize>() {
-            Some(Unit::Int(num))
-        } else if let Ok(num) = token.parse::<fsize>() {
-            Some(Unit::Float(num))
-        } else {
-            None
+            _ => None,
         }
     }
 }
@@ -117,6 +136,7 @@ impl Unit {
                 let str_id = SymbolDB::set_string(text.clone());
                 heap.heap_push((Tag::Stri, str_id))
             }
+            Unit::AnonVar => heap.heap_push((Tag::AVar, 0)),
         }
     }
 }

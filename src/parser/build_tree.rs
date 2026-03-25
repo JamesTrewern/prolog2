@@ -187,8 +187,7 @@ impl TokenStream {
                             Ok(Term::Unit(unit))
                         }
                     }
-                    Some(num @ (Unit::Float(_) | Unit::Int(_))) => Ok(Term::Unit(num)),
-                    Some(unit @ Unit::String(_)) => Ok(Term::Unit(unit)),
+                    Some(unit ) => Ok(Term::Unit(unit)),
                     None => unimplemented!("parse_expression: unhandled token '{token}'"),
                 }
             }
