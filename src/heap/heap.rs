@@ -609,8 +609,8 @@ mod tests {
     fn encode_constant() {
         let mut heap = QueryHeap::new(&[], None);
 
-        let a = SymbolDB::set_const("a".into());
-        let b = SymbolDB::set_const("b".into());
+        let a = SymbolDB::set_const("a");
+        let b = SymbolDB::set_const("b");
 
         let addr1 = heap.set_const(a);
         let addr2 = heap.set_const(b);
@@ -621,9 +621,9 @@ mod tests {
 
     #[test]
     fn encode_functor() {
-        let p = SymbolDB::set_const("p".into());
-        let f = SymbolDB::set_const("f".into());
-        let a = SymbolDB::set_const("a".into());
+        let p = SymbolDB::set_const("p");
+        let f = SymbolDB::set_const("f");
+        let a = SymbolDB::set_const("a");
 
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
@@ -693,8 +693,8 @@ mod tests {
 
     #[test]
     fn encode_tuple() {
-        let f = SymbolDB::set_const("f".into());
-        let a = SymbolDB::set_const("a".into());
+        let f = SymbolDB::set_const("f");
+        let a = SymbolDB::set_const("a");
 
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
@@ -757,8 +757,8 @@ mod tests {
 
     #[test]
     fn encode_list() {
-        let f = SymbolDB::set_const("f".into());
-        let a = SymbolDB::set_const("a".into());
+        let f = SymbolDB::set_const("f");
+        let a = SymbolDB::set_const("a");
 
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
@@ -826,8 +826,8 @@ mod tests {
 
     #[test]
     fn encode_set() {
-        let f = SymbolDB::set_const("f".into());
-        let a = SymbolDB::set_const("a".into());
+        let f = SymbolDB::set_const("f");
+        let a = SymbolDB::set_const("a");
 
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
@@ -890,8 +890,8 @@ mod tests {
 
     #[test]
     fn dereference() {
-        let f = SymbolDB::set_const("f".into());
-        let a = SymbolDB::set_const("a".into());
+        let f = SymbolDB::set_const("f");
+        let a = SymbolDB::set_const("a");
 
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![

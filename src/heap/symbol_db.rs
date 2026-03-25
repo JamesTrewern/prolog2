@@ -61,7 +61,7 @@ pub struct SymbolDB {
 }
 
 impl SymbolDB {
-    pub fn set_const(symbol: String) -> usize {
+    pub fn set_const(symbol: impl Into<Arc<str>>) -> usize {
         let mut symbols = SYMBOLS.write().unwrap();
         let symbol: Arc<str> = symbol.into();
         match symbols.const_symbols.iter().position(|e| *e == symbol) {
@@ -73,7 +73,7 @@ impl SymbolDB {
         }
     }
 
-    pub fn set_var(symbol: String, addr: usize, heap_id: usize) {
+    pub fn set_var(symbol: impl Into<Arc<str>>, addr: usize, heap_id: usize) {
         SYMBOLS
             .write()
             .unwrap()
@@ -126,17 +126,17 @@ mod tests {
 
     #[test]
     fn insert_constant_symbol() {
-        let id = SymbolDB::set_const("a".into());
+        let id = SymbolDB::set_const("a");
 
         assert_eq!(&*SymbolDB::get_const(id), "a");
-        assert_eq!(SymbolDB::set_const("a".into()), id);
+        assert_eq!(SymbolDB::set_const("a"), id);
     }
 
     #[test]
     fn insert_variable_symbol() {
-        SymbolDB::set_var("X".into(), 100, 0);
-        SymbolDB::set_var("Y".into(), 200, 1);
-        SymbolDB::set_var("Z".into(), 200, 2);
+        SymbolDB::set_var("X", 100, 0);
+        SymbolDB::set_var("Y", 200, 1);
+        SymbolDB::set_var("Z", 200, 2);
 
         assert_eq!(*SymbolDB::get_var(100, 0).unwrap(), *"X");
         assert_eq!(*SymbolDB::get_var(200, 1).unwrap(), *"Y");

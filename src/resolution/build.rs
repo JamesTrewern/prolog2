@@ -160,8 +160,8 @@ mod tests {
 
     #[test]
     fn args() {
-        let p = SymbolDB::set_const("p".into());
-        let f = SymbolDB::set_const("f".into());
+        let p = SymbolDB::set_const("p");
+        let f = SymbolDB::set_const("f");
 
         let mut heap = vec![
             (Tag::Func, 4),
@@ -224,10 +224,10 @@ mod tests {
 
     #[test]
     fn lists() {
-        let p = SymbolDB::set_const("p".into());
-        let a = SymbolDB::set_const("a".into());
-        let b = SymbolDB::set_const("b".into());
-        let c = SymbolDB::set_const("c".into());
+        let p = SymbolDB::set_const("p");
+        let a = SymbolDB::set_const("a");
+        let b = SymbolDB::set_const("b");
+        let c = SymbolDB::set_const("c");
 
         let mut heap = vec![
             (Tag::Con, a), //0
@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn test1() {
-        let p = SymbolDB::set_const("p".into());
+        let p = SymbolDB::set_const("p");
         let mut heap = vec![
             (Tag::Ref, 0),  //0
             (Tag::Lis, 2),  //1
@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn test2() {
-        let p = SymbolDB::set_const("p".into());
+        let p = SymbolDB::set_const("p");
         let mut heap = vec![
             (Tag::Ref, 0),  //0
             (Tag::Lis, 2),  //1

@@ -355,28 +355,28 @@ mod tests {
     #[test]
     fn parse_number_term() {
         //Positive Integer
-        let text = tokenise("10".into()).unwrap();
+        let text = tokenise("10").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Int(10)));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::Int(10)));
 
         //Negative Integer
-        let text = tokenise("-10".into()).unwrap();
+        let text = tokenise("-10").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Int(-10)));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::Int(-10)));
 
         //Positive Float
-        let text = tokenise("1.01".into()).unwrap();
+        let text = tokenise("1.01").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Float(1.01)));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::Float(1.01)));
 
         //Negative Float
-        let text = tokenise("-1.01".into()).unwrap();
+        let text = tokenise("-1.01").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Float(-1.01)));
         let term = TokenStream::new(text).parse_expression().unwrap();
@@ -385,25 +385,25 @@ mod tests {
 
     #[test]
     fn parse_constant_term() {
-        let text = tokenise("constant".into()).unwrap();
+        let text = tokenise("constant").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Constant("constant".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::Constant("constant".into())));
 
-        let text = tokenise("constant_1".into()).unwrap();
+        let text = tokenise("constant_1").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Constant("constant_1".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::Constant("constant_1".into())));
 
-        let text = tokenise("'file/path'".into()).unwrap();
+        let text = tokenise("'file/path'").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Constant("file/path".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::Constant("file/path".into())));
 
-        let text = tokenise("'c*o/n\"s-t'".into()).unwrap();
+        let text = tokenise("'c*o/n\"s-t'").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Constant("c*o/n\"s-t".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
@@ -412,25 +412,25 @@ mod tests {
 
     #[test]
     fn parse_variable_term() {
-        let text = tokenise("Var".into()).unwrap();
+        let text = tokenise("Var").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Variable("Var".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::Variable("Var".into())));
 
-        let text = tokenise("VAR_Under".into()).unwrap();
+        let text = tokenise("VAR_Under").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Variable("VAR_Under".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::Variable("VAR_Under".into())));
 
-        let text = tokenise("VAR10".into()).unwrap();
+        let text = tokenise("VAR10").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Variable("VAR10".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::Variable("VAR10".into())));
 
-        let text = tokenise("VAR_Under2".into()).unwrap();
+        let text = tokenise("VAR_Under2").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::Variable("VAR_Under2".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
@@ -439,19 +439,19 @@ mod tests {
 
     #[test]
     fn parse_string_term() {
-        let text = tokenise("\"A String\"".into()).unwrap();
+        let text = tokenise("\"A String\"").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::String("\"A String\"".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::String("\"A String\"".into())));
 
-        let text = tokenise("\"A \\\"String\"".into()).unwrap();
+        let text = tokenise("\"A \\\"String\"").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::String("\"A \"String\"".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Unit(Unit::String("\"A \"String\"".into())));
 
-        let text = tokenise("\"A *+-=: String\"".into()).unwrap();
+        let text = tokenise("\"A *+-=: String\"").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Unit(Unit::String("\"A *+-=: String\"".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
@@ -467,7 +467,7 @@ mod tests {
         let a = Unit::Constant("a".into());
         let b = Unit::Constant("b".into());
 
-        let text = tokenise("p(X,a)".into()).unwrap();
+        let text = tokenise("p(X,a)").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(
             term,
@@ -485,7 +485,7 @@ mod tests {
             )
         );
 
-        let text = tokenise("Q(b,Y)".into()).unwrap();
+        let text = tokenise("Q(b,Y)").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(
             term,
@@ -512,7 +512,7 @@ mod tests {
         let t = Term::Unit(Unit::Variable("T".into()));
         let p = Unit::Constant("p".into());
 
-        let text = tokenise("[a,b,c]".into()).unwrap();
+        let text = tokenise("[a,b,c]").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(
             term,
@@ -530,7 +530,7 @@ mod tests {
             )
         );
 
-        let text = tokenise("[a,b,c|[]]".into()).unwrap();
+        let text = tokenise("[a,b,c|[]]").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(
             term,
@@ -548,13 +548,13 @@ mod tests {
             )
         );
 
-        let text = tokenise("[a|T]".into()).unwrap();
+        let text = tokenise("[a|T]").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::List(vec![a.clone()], Box::new(t.clone())));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::List(vec![a.clone()], Box::new(t.clone())));
 
-        let text = tokenise("[a,[b,c]]".into()).unwrap();
+        let text = tokenise("[a,[b,c]]").unwrap();
         let sub_list = Term::List(vec![b.clone(), c.clone()], Box::new(Term::EmptyList));
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(
@@ -567,7 +567,7 @@ mod tests {
             Term::List(vec![a.clone(), sub_list.clone()], Box::new(Term::EmptyList))
         );
 
-        let text = tokenise("p([a,[b,c|T]])".into()).unwrap();
+        let text = tokenise("p([a,[b,c|T]])").unwrap();
         let sub_list = Term::List(vec![b.clone(), c.clone()], Box::new(t.clone()));
         let list = Term::List(vec![a.clone(), sub_list.clone()], Box::new(Term::EmptyList));
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
@@ -575,7 +575,7 @@ mod tests {
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Atom(p.clone(), vec![list]));
 
-        let text = tokenise("[]".into()).unwrap();
+        let text = tokenise("[]").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::EmptyList);
         let term = TokenStream::new(text).parse_expression().unwrap();
@@ -591,19 +591,19 @@ mod tests {
 
         let abc = Term::Set(vec![a.clone(), b.clone(), c.clone()]);
 
-        let text = tokenise("{a,b,c}".into()).unwrap();
+        let text = tokenise("{a,b,c}").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, abc.clone());
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, abc.clone());
 
-        let text = tokenise("p({a,b,c})".into()).unwrap();
+        let text = tokenise("p({a,b,c})").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Atom(p.clone(), vec![abc.clone()]));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Atom(p.clone(), vec![abc.clone()]));
 
-        let text = tokenise("{a,{b,c}}".into()).unwrap();
+        let text = tokenise("{a,{b,c}}").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(
             term,
@@ -615,7 +615,7 @@ mod tests {
             Term::Set(vec![a.clone(), Term::Set(vec![b.clone(), c.clone()])])
         );
 
-        let text = tokenise("{a,{}}".into()).unwrap();
+        let text = tokenise("{a,{}}").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(term, Term::Set(vec![a.clone(), Term::Set(vec![])]));
         let term = TokenStream::new(text).parse_expression().unwrap();
@@ -632,20 +632,20 @@ mod tests {
         let abc = Term::Tuple(vec![a.clone(), b.clone(), c.clone()]);
         let bc = Term::Tuple(vec![b.clone(), c.clone()]);
 
-        let text = tokenise("(a,b,c)".into()).unwrap();
+        let text = tokenise("(a,b,c)").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, abc.clone());
 
-        let text = tokenise("(a,(b,c))".into()).unwrap();
+        let text = tokenise("(a,(b,c))").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Tuple(vec![a.clone(), bc.clone()]));
 
         //This test fails
-        let text = tokenise("(a,())".into()).unwrap();
+        let text = tokenise("(a,())").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Tuple(vec![a.clone(), Term::Tuple(vec![])]));
 
-        let text = tokenise("p((a,b,c))".into()).unwrap();
+        let text = tokenise("p((a,b,c))").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Atom(p, vec![abc.clone()]));
     }
@@ -653,25 +653,25 @@ mod tests {
     // TODO: Improve error messaging for unclosed structures
     #[test]
     fn unclosed_atom() {
-        let mut tokens = TokenStream::new(tokenise("p(X,Y".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("p(X,Y").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected End of File"),
         }
 
-        let mut tokens = TokenStream::new(tokenise("p(X,Y.".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("p(X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
         }
 
-        let mut tokens = TokenStream::new(tokenise("p(X,(Y)".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("p(X,(Y)").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected End of File"),
         }
 
-        let mut tokens = TokenStream::new(tokenise("p(X,(Y).".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("p(X,(Y).").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
@@ -680,25 +680,25 @@ mod tests {
 
     #[test]
     fn unclosed_list() {
-        let mut tokens = TokenStream::new(tokenise("[X,Y".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("[X,Y").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected End of File"),
         }
 
-        let mut tokens = TokenStream::new(tokenise("[X,Y.".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("[X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
         }
 
-        let mut tokens = TokenStream::new(tokenise("[X,[Y]".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("[X,[Y]").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected End of File"),
         }
 
-        let mut tokens = TokenStream::new(tokenise("[X,[Y].".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("[X,[Y].").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
@@ -707,25 +707,25 @@ mod tests {
 
     #[test]
     fn unclosed_set() {
-        let mut tokens = TokenStream::new(tokenise("{X,Y".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("{X,Y").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected End of File"),
         }
 
-        let mut tokens = TokenStream::new(tokenise("{X,Y.".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("{X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
         }
 
-        let mut tokens = TokenStream::new(tokenise("{X,{Y}".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("{X,{Y}").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected End of File"),
         }
 
-        let mut tokens = TokenStream::new(tokenise("{X,{Y}.".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("{X,{Y}.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
@@ -734,25 +734,25 @@ mod tests {
 
     #[test]
     fn unclosed_tuple() {
-        let mut tokens = TokenStream::new(tokenise("(X,Y".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("(X,Y").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected End of File"),
         }
 
-        let mut tokens = TokenStream::new(tokenise("(X,Y.".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("(X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
         }
 
-        let mut tokens = TokenStream::new(tokenise("(X,(Y)".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("(X,(Y)").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected End of File"),
         }
 
-        let mut tokens = TokenStream::new(tokenise("(X,(Y).".into()).unwrap());
+        let mut tokens = TokenStream::new(tokenise("(X,(Y).").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
             Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
@@ -774,7 +774,7 @@ mod tests {
         let power = Unit::Constant("**".into());
         let eqauls = Unit::Constant("=:=".into());
 
-        let text = tokenise("X =:= 1 + 2 / 1.5**3".into()).unwrap();
+        let text = tokenise("X =:= 1 + 2 / 1.5**3").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(
             term,
@@ -818,7 +818,7 @@ mod tests {
         let power = Unit::Constant("**".into());
         let equals = Unit::Constant("=:=".into());
 
-        let text = tokenise("X =:= 1 + (2 / 1.5)**3".into()).unwrap();
+        let text = tokenise("X =:= 1 + (2 / 1.5)**3").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
 
         assert_eq!(
@@ -858,7 +858,7 @@ mod tests {
         let power = Unit::Constant("**".into());
         let equals = Unit::Constant("=:=".into());
 
-        let text = tokenise("(a,X =:= 1 + (2 / 1.5)**(3,Y))".into()).unwrap();
+        let text = tokenise("(a,X =:= 1 + (2 / 1.5)**(3,Y))").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
 
         assert_eq!(
@@ -890,7 +890,7 @@ mod tests {
 
     #[test]
     fn parse_rule() {
-        let mut token_stream = TokenStream::new(tokenise("gt1(X):-X>1.".into()).unwrap());
+        let mut token_stream = TokenStream::new(tokenise("gt1(X):-X>1.").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
         let head = Term::Atom(
             Unit::Constant("gt1".into()),
@@ -910,7 +910,7 @@ mod tests {
 
     #[test]
     fn parse_fact() {
-        let mut token_stream = TokenStream::new(tokenise("man(plato).".into()).unwrap());
+        let mut token_stream = TokenStream::new(tokenise("man(plato).").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
         let head = Term::Atom(
             Unit::Constant("man".into()),
@@ -923,7 +923,7 @@ mod tests {
 
     #[test]
     fn parse_meta_rule() {
-        let mut token_stream = TokenStream::new(tokenise("P(X,Y):-Q(X,Y),{P,Q}.".into()).unwrap());
+        let mut token_stream = TokenStream::new(tokenise("P(X,Y):-Q(X,Y),{P,Q}.").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
         let head = Term::Atom(
             Unit::Variable("P".into()),
@@ -952,7 +952,7 @@ mod tests {
     fn parse_meta_rule_with_unconstrained_list() {
         // {El},[Q1,Q2] — El is constrained, Q1 and Q2 are unconstrained
         let mut token_stream =
-            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].".into()).unwrap());
+            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
         let head = Term::Atom(
             Unit::Constant("edge".into()),
@@ -990,7 +990,7 @@ mod tests {
     fn parse_meta_rule_list_only() {
         // [Q1,Q2] only — no constrained variables
         let mut token_stream =
-            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].".into()).unwrap());
+            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
         let head = Term::Atom(
             Unit::Constant("edge".into()),
@@ -1026,7 +1026,7 @@ mod tests {
 
     #[test]
     fn parse_meta_fact() {
-        let mut token_stream = TokenStream::new(tokenise("Map([],[],X),{Map}.".into()).unwrap());
+        let mut token_stream = TokenStream::new(tokenise("Map([],[],X),{Map}.").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
         let head = Term::Atom(
             Unit::Variable("Map".into()),
@@ -1045,7 +1045,7 @@ mod tests {
     #[test]
     fn parse_directive() {
         let mut token_stream =
-            TokenStream::new(tokenise(":-test(a),['file/path'].".into()).unwrap());
+            TokenStream::new(tokenise(":-test(a),['file/path'].").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
         let body = Term::Atom(
             Unit::Constant("test".into()),

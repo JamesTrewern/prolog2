@@ -173,11 +173,11 @@ mod tests {
     fn facts() {
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
-        let facts = TokenStream::new(tokenise("p(a,b).q(c).".into()).unwrap())
+        let facts = TokenStream::new(tokenise("p(a,b).q(c).").unwrap())
             .parse_all()
             .unwrap();
 
-        let [p, q, a, b, c] = ["p", "q", "a", "b", "c"].map(|s| SymbolDB::set_const(s.into()));
+        let [p, q, a, b, c] = ["p", "q", "a", "b", "c"].map(|s| SymbolDB::set_const(s));
 
         execute_tree(facts, &mut heap, &mut pred_table);
 
@@ -207,12 +207,12 @@ mod tests {
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
         let facts = TokenStream::new(
-            tokenise("p(X,Y):-q(X,a),q(Y,b). q(X):-r(X). q(X):-p(X).".into()).unwrap(),
+            tokenise("p(X,Y):-q(X,a),q(Y,b). q(X):-r(X). q(X):-p(X).").unwrap(),
         )
         .parse_all()
         .unwrap();
 
-        let [p, q, r, a, b] = ["p", "q", "r", "a", "b"].map(|s| SymbolDB::set_const(s.into()));
+        let [p, q, r, a, b] = ["p", "q", "r", "a", "b"].map(|s| SymbolDB::set_const(s));
 
         execute_tree(facts, &mut heap, &mut pred_table);
 
@@ -263,11 +263,11 @@ mod tests {
     fn meta_rules() {
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
-        let facts = TokenStream::new(tokenise("p(X,Y):-Q(X,a),R(Y,b),{Q,R}.".into()).unwrap())
+        let facts = TokenStream::new(tokenise("p(X,Y):-Q(X,a),R(Y,b),{Q,R}.").unwrap())
             .parse_all()
             .unwrap();
 
-        let [p, _q, _r, a, b] = ["p", "q", "r", "a", "b"].map(|s| SymbolDB::set_const(s.into()));
+        let [p, _q, _r, a, b] = ["p", "q", "r", "a", "b"].map(|s| SymbolDB::set_const(s));
 
         execute_tree(facts, &mut heap, &mut pred_table);
 
@@ -306,12 +306,12 @@ mod tests {
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
         let facts =
-            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].".into()).unwrap())
+            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].").unwrap())
                 .parse_all()
                 .unwrap();
 
-        let edge = SymbolDB::set_const("edge".into());
-        let _q = SymbolDB::set_const("q".into());
+        let edge = SymbolDB::set_const("edge");
+        let _q = SymbolDB::set_const("q");
 
         execute_tree(facts, &mut heap, &mut pred_table);
 
@@ -339,12 +339,12 @@ mod tests {
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
         let facts =
-            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].".into()).unwrap())
+            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].").unwrap())
                 .parse_all()
                 .unwrap();
 
-        let edge = SymbolDB::set_const("edge".into());
-        let _q = SymbolDB::set_const("q".into());
+        let edge = SymbolDB::set_const("edge");
+        let _q = SymbolDB::set_const("q");
 
         execute_tree(facts, &mut heap, &mut pred_table);
 
@@ -367,7 +367,7 @@ mod tests {
     fn meta_facts() {
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
-        let facts = TokenStream::new(tokenise("Map([],[],X),{Map}.".into()).unwrap())
+        let facts = TokenStream::new(tokenise("Map([],[],X),{Map}.").unwrap())
             .parse_all()
             .unwrap();
 

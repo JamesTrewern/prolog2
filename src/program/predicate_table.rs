@@ -230,9 +230,9 @@ mod tests {
     /// Build a test predicate table with four entries sorted by symbol_arity.
     /// Returns (table, p, q, pred_func) so tests can use the actual symbol IDs.
     fn setup() -> (PredicateTable, usize, usize, usize) {
-        let p = SymbolDB::set_const("p".into());
-        let q = SymbolDB::set_const("q".into());
-        let pred_func = SymbolDB::set_const("func".into());
+        let p = SymbolDB::set_const("p");
+        let q = SymbolDB::set_const("q");
+        let pred_func = SymbolDB::set_const("func");
 
         let p_entry = PredicateEntry {
             symbol_arity: (p, 2),
@@ -284,7 +284,7 @@ mod tests {
     fn find_predicate() {
         let (pred_table, p, _q, _pred_func) = setup();
 
-        let symbol = SymbolDB::set_const("find_predicate_test_symbol".into());
+        let symbol = SymbolDB::set_const("find_predicate_test_symbol");
         let p_idx = pred_table
             .iter()
             .position(|e| e.symbol_arity == (p, 2))
@@ -352,7 +352,7 @@ mod tests {
     #[test]
     fn add_clause_to_predicate() {
         let (mut pred_table, p, _q, pred_func) = setup();
-        let r = SymbolDB::set_const("r".into());
+        let r = SymbolDB::set_const("r");
 
         pred_table
             .add_clause_to_predicate(Clause::new(vec![], Some(vec![]), None), (p, 2))

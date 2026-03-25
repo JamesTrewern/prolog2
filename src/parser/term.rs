@@ -343,7 +343,7 @@ mod encode_tests {
 
     #[test]
     fn encode_unit() {
-        let a = SymbolDB::set_const("a".into());
+        let a = SymbolDB::set_const("a");
 
         let mut heap = QueryHeap::new(&[], None);
         let unit = Unit::Constant("a".into());
@@ -391,9 +391,9 @@ mod encode_tests {
 
     #[test]
     fn program_encode_functor() {
-        let p_id = SymbolDB::set_const("p".into());
-        let a_id = SymbolDB::set_const("a".into());
-        let f_id = SymbolDB::set_const("f".into());
+        let p_id = SymbolDB::set_const("p");
+        let a_id = SymbolDB::set_const("a");
+        let f_id = SymbolDB::set_const("f");
 
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
@@ -536,9 +536,9 @@ mod encode_tests {
 
     #[test]
     fn query_encode_functor() {
-        let p_id = SymbolDB::set_const("p".into());
-        let a_id = SymbolDB::set_const("a".into());
-        let f_id = SymbolDB::set_const("f".into());
+        let p_id = SymbolDB::set_const("p");
+        let a_id = SymbolDB::set_const("a");
+        let f_id = SymbolDB::set_const("f");
 
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
@@ -680,9 +680,9 @@ mod encode_tests {
 
     #[test]
     fn program_encode_tuple() {
-        let p_id = SymbolDB::set_const("p".into());
-        let a_id = SymbolDB::set_const("a".into());
-        let f_id = SymbolDB::set_const("f".into());
+        let p_id = SymbolDB::set_const("p");
+        let a_id = SymbolDB::set_const("a");
+        let f_id = SymbolDB::set_const("f");
 
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
@@ -818,9 +818,9 @@ mod encode_tests {
 
     #[test]
     fn query_encode_tuple() {
-        let p_id = SymbolDB::set_const("p".into());
-        let a_id = SymbolDB::set_const("a".into());
-        let f_id = SymbolDB::set_const("f".into());
+        let p_id = SymbolDB::set_const("p");
+        let a_id = SymbolDB::set_const("a");
+        let f_id = SymbolDB::set_const("f");
 
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
@@ -956,9 +956,9 @@ mod encode_tests {
 
     #[test]
     fn program_encode_set() {
-        let p_id = SymbolDB::set_const("p".into());
-        let a_id = SymbolDB::set_const("a".into());
-        let f_id = SymbolDB::set_const("f".into());
+        let p_id = SymbolDB::set_const("p");
+        let a_id = SymbolDB::set_const("a");
+        let f_id = SymbolDB::set_const("f");
 
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
@@ -1084,9 +1084,9 @@ mod encode_tests {
 
     #[test]
     fn query_encode_set() {
-        let p_id = SymbolDB::set_const("p".into());
-        let a_id = SymbolDB::set_const("a".into());
-        let f_id = SymbolDB::set_const("f".into());
+        let p_id = SymbolDB::set_const("p");
+        let a_id = SymbolDB::set_const("a");
+        let f_id = SymbolDB::set_const("f");
 
         let p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());
@@ -1212,7 +1212,7 @@ mod encode_tests {
 
     #[test]
     fn program_encode_list() {
-        let a_id = SymbolDB::set_const("a".into());
+        let a_id = SymbolDB::set_const("a");
 
         let q = Unit::Variable("Q".into());
         let x = Unit::Variable("X".into());
@@ -1305,9 +1305,9 @@ mod encode_tests {
 
     #[test]
     fn query_encode_list() {
-        let _p_id = SymbolDB::set_const("p".into());
-        let a_id = SymbolDB::set_const("a".into());
-        let _f_id = SymbolDB::set_const("f".into());
+        let _p_id = SymbolDB::set_const("p");
+        let a_id = SymbolDB::set_const("a");
+        let _f_id = SymbolDB::set_const("f");
 
         let _p = Unit::Constant("p".into());
         let q = Unit::Variable("Q".into());

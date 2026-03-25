@@ -211,7 +211,8 @@ fn form_known_symbols(tokens: &mut Vec<String>) {
     }
 }
 
-pub fn tokenise(text: String) -> Result<Vec<String>, String> {
+pub fn tokenise<'a>(text: impl AsRef<str>) -> Result<Vec<String>, String> {
+    let text = text.as_ref();
     let mut tokens = Vec::<String>::new();
     let mut last_i = 0;
     let characters: Vec<char> = text.chars().collect();
@@ -342,109 +343,109 @@ mod tests {
 
     #[test]
     fn string_tokenisation() {
-        assert_eq!(tokenise("\"a.b\'/c\"".into()).unwrap(), ["\"a.b'/c\""]);
-        assert_eq!(tokenise("'a.b\"/c'".into()).unwrap(), ["'a.b\"/c'"]);
+        assert_eq!(tokenise("\"a.b\'/c\"").unwrap(), ["\"a.b'/c\""]);
+        assert_eq!(tokenise("'a.b\"/c'").unwrap(), ["'a.b\"/c'"]);
 
         assert_eq!(
-            tokenise("p(\"a.b\'/c\").".into()).unwrap(),
+            tokenise("p(\"a.b\'/c\").").unwrap(),
             ["p", "(", "\"a.b'/c\"", ")", "."]
         );
     }
 
     #[test]
     fn string_escape_characters() {
-        assert_eq!(tokenise("\"a\\\"b\"".into()).unwrap(), ["\"a\"b\""]);
+        assert_eq!(tokenise("\"a\\\"b\"").unwrap(), ["\"a\"b\""]);
 
-        assert_eq!(tokenise("'a\\'b'".into()).unwrap(), ["'a'b'"]);
+        assert_eq!(tokenise("'a\\'b'").unwrap(), ["'a'b'"]);
 
         assert_eq!(
-            tokenise("\" \\n \\t \\\\ \"".into()).unwrap(),
+            tokenise("\" \\n \\t \\\\ \"").unwrap(),
             ["\" \n \t \\ \""]
         );
     }
 
     #[test]
     fn float_tokenisation() {
-        assert_eq!(tokenise("123.123".into()).unwrap(), ["123.123"]);
+        assert_eq!(tokenise("123.123").unwrap(), ["123.123"]);
         assert_eq!(
-            tokenise("123.123.123".into()).unwrap(),
+            tokenise("123.123.123").unwrap(),
             ["123.123", ".", "123"]
         );
-        assert_eq!(tokenise("123 . 123".into()).unwrap(), ["123", ".", "123"]);
+        assert_eq!(tokenise("123 . 123").unwrap(), ["123", ".", "123"]);
     }
 
     #[test]
     fn negative_number_tokenisation() {
-        assert_eq!(tokenise("-123 - 123".into()).unwrap(), ["-123", "-", "123"]);
-        assert_eq!(tokenise("-123.123".into()).unwrap(), ["-123.123"]);
-        assert_eq!(tokenise("- 123.123".into()).unwrap(), ["-", "123.123"]);
-        assert_eq!(tokenise("-123 . 123".into()).unwrap(), ["-123", ".", "123"]);
+        assert_eq!(tokenise("-123 - 123").unwrap(), ["-123", "-", "123"]);
+        assert_eq!(tokenise("-123.123").unwrap(), ["-123.123"]);
+        assert_eq!(tokenise("- 123.123").unwrap(), ["-", "123.123"]);
+        assert_eq!(tokenise("-123 . 123").unwrap(), ["-123", ".", "123"]);
     }
 
     #[test]
     fn list_tokenisation() {
         assert_eq!(
-            tokenise("[123,abc, VAR]".into()).unwrap(),
+            tokenise("[123,abc, VAR]").unwrap(),
             ["[", "123", ",", "abc", ",", "VAR", "]"]
         );
         assert_eq!(
-            tokenise("[123,abc, VAR|T]".into()).unwrap(),
+            tokenise("[123,abc, VAR|T]").unwrap(),
             ["[", "123", ",", "abc", ",", "VAR", "|", "T", "]"]
         );
         assert_eq!(
-            tokenise("[123,abc, VAR | T]".into()).unwrap(),
+            tokenise("[123,abc, VAR | T]").unwrap(),
             ["[", "123", ",", "abc", ",", "VAR", "|", "T", "]"]
         );
     }
 
     #[test]
     fn empty_list_token() {
-        assert_eq!(tokenise("[]".into()).unwrap(), ["[]"]);
-        assert_eq!(tokenise("[ ]".into()).unwrap(), ["[]"]);
-        assert_eq!(tokenise("[\n]".into()).unwrap(), ["[]", "\n"]);
-        assert_eq!(tokenise("[\n\n]".into()).unwrap(), ["[]", "\n", "\n"]);
-        assert_eq!(tokenise("[\t]".into()).unwrap(), ["[]"]);
-        assert_eq!(tokenise("[  \n\t\n ]".into()).unwrap(), ["[]", "\n", "\n"]);
+        assert_eq!(tokenise("[]").unwrap(), ["[]"]);
+        assert_eq!(tokenise("[ ]").unwrap(), ["[]"]);
+        assert_eq!(tokenise("[\n]").unwrap(), ["[]", "\n"]);
+        assert_eq!(tokenise("[\n\n]").unwrap(), ["[]", "\n", "\n"]);
+        assert_eq!(tokenise("[\t]").unwrap(), ["[]"]);
+        assert_eq!(tokenise("[  \n\t\n ]").unwrap(), ["[]", "\n", "\n"]);
     }
 
     #[test]
     fn empty_set_token() {
-        assert_eq!(tokenise("{}".into()).unwrap(), ["{}"]);
-        assert_eq!(tokenise("{ }".into()).unwrap(), ["{}"]);
-        assert_eq!(tokenise("{\n}".into()).unwrap(), ["{}", "\n"]);
-        assert_eq!(tokenise("{\n\n}".into()).unwrap(), ["{}", "\n", "\n"]);
-        assert_eq!(tokenise("{\t}".into()).unwrap(), ["{}"]);
-        assert_eq!(tokenise("{  \n\t\n }".into()).unwrap(), ["{}", "\n", "\n"]);
+        assert_eq!(tokenise("{}").unwrap(), ["{}"]);
+        assert_eq!(tokenise("{ }").unwrap(), ["{}"]);
+        assert_eq!(tokenise("{\n}").unwrap(), ["{}", "\n"]);
+        assert_eq!(tokenise("{\n\n}").unwrap(), ["{}", "\n", "\n"]);
+        assert_eq!(tokenise("{\t}").unwrap(), ["{}"]);
+        assert_eq!(tokenise("{  \n\t\n }").unwrap(), ["{}", "\n", "\n"]);
     }
 
     #[test]
     fn known_symbol_formation() {
-        assert_eq!(tokenise(":-".into()).unwrap(), [":-"]);
-        assert_eq!(tokenise(": -".into()).unwrap(), [":", "-"]);
+        assert_eq!(tokenise(":-").unwrap(), [":-"]);
+        assert_eq!(tokenise(": -").unwrap(), [":", "-"]);
 
-        assert_eq!(tokenise("==".into()).unwrap(), ["=="]);
-        assert_eq!(tokenise("= =".into()).unwrap(), ["=", "="]);
+        assert_eq!(tokenise("==").unwrap(), ["=="]);
+        assert_eq!(tokenise("= =").unwrap(), ["=", "="]);
 
-        assert_eq!(tokenise("=/=".into()).unwrap(), ["=/="]);
-        assert_eq!(tokenise("= / =".into()).unwrap(), ["=", "/", "="]);
+        assert_eq!(tokenise("=/=").unwrap(), ["=/="]);
+        assert_eq!(tokenise("= / =").unwrap(), ["=", "/", "="]);
 
-        assert_eq!(tokenise("/=".into()).unwrap(), ["/="]);
-        assert_eq!(tokenise("/ =".into()).unwrap(), ["/", "="]);
+        assert_eq!(tokenise("/=").unwrap(), ["/="]);
+        assert_eq!(tokenise("/ =").unwrap(), ["/", "="]);
 
-        assert_eq!(tokenise("=:=".into()).unwrap(), ["=:="]);
-        assert_eq!(tokenise("=  : =".into()).unwrap(), ["=", ":", "="]);
+        assert_eq!(tokenise("=:=").unwrap(), ["=:="]);
+        assert_eq!(tokenise("=  : =").unwrap(), ["=", ":", "="]);
 
-        assert_eq!(tokenise("**".into()).unwrap(), ["**"]);
-        assert_eq!(tokenise("* *".into()).unwrap(), ["*", "*",]);
+        assert_eq!(tokenise("**").unwrap(), ["**"]);
+        assert_eq!(tokenise("* *").unwrap(), ["*", "*",]);
 
-        assert_eq!(tokenise("<=".into()).unwrap(), ["<="]);
-        assert_eq!(tokenise("< =".into()).unwrap(), ["<", "=",]);
+        assert_eq!(tokenise("<=").unwrap(), ["<="]);
+        assert_eq!(tokenise("< =").unwrap(), ["<", "=",]);
 
-        assert_eq!(tokenise(">=".into()).unwrap(), [">="]);
-        assert_eq!(tokenise("> =".into()).unwrap(), [">", "=",]);
+        assert_eq!(tokenise(">=").unwrap(), [">="]);
+        assert_eq!(tokenise("> =").unwrap(), [">", "=",]);
 
-        assert_eq!(tokenise("<=".into()).unwrap(), ["<="]);
-        assert_eq!(tokenise("< =".into()).unwrap(), ["<", "=",]);
+        assert_eq!(tokenise("<=").unwrap(), ["<="]);
+        assert_eq!(tokenise("< =").unwrap(), ["<", "=",]);
     }
 
     #[test]

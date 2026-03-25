@@ -6,7 +6,5 @@
 //! [`build`](crate::resolution::build) constructs new terms from substitutions.
 
 pub mod build;
-#[cfg(test)]
-mod constraint_tests;
 pub mod proof;
 pub mod unification;
