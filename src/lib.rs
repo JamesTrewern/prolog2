@@ -29,12 +29,12 @@
 //!     config: Config,
 //! ) -> PredReturn {
 //!     // Custom predicate logic here
-//!     PredReturn::True
+//!     true.into()
 //! }
 //!
-//! static MY_MODULE: PredicateModule = &[
+//! static MY_MODULE: PredicateModule = (&[
 //!     ("my_pred", 1, my_pred),
-//! ];
+//! ],&[]);
 //!
 //! fn main() -> ExitCode {
 //!     App::from_args()

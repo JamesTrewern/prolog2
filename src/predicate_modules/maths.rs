@@ -1,6 +1,6 @@
-use super::PredReturn;
-use crate::program::hypothesis::Hypothesis;
+use super::{PredReturn,PredicateModule};
 use crate::{
+    program::hypothesis::Hypothesis,
     heap::{
         heap::{Cell, Heap, Tag},
         query_heap::QueryHeap,
@@ -311,7 +311,11 @@ pub fn is_pred(
         _ => {
             // LHS is bound - check equality
             let lhs = evaluate_term(lhs_addr, heap);
-            PredReturn::bool(lhs == rhs)
+            (lhs == rhs).into()
         }
     }
 }
+
+
+/// Built-in maths predicates: `is/2` for arithmetic evaluation.
+pub static MATHS: PredicateModule = (&[("is", 2, is_pred)], &[]);

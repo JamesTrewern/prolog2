@@ -33,7 +33,7 @@ fn load_setup(config_path: &str) -> (Config, PredicateTable, Vec<Cell>, Option<E
     let mut heap = Vec::new();
     let mut predicate_table = PredicateTable::new();
 
-    load_all_modules(&mut predicate_table);
+    load_all_modules(&mut predicate_table, &mut heap);
 
     let setup: SetUp = serde_json::from_str(
         &fs::read_to_string(config_path)

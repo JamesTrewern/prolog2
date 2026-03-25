@@ -165,6 +165,7 @@ impl Env {
                         heap.bind(&self.bindings);
                         return Some(Vec::new());
                     }
+                    PredReturn::Goal(bindings,goals) => todo!()
                 }
             }
         }

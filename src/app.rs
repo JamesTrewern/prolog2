@@ -18,7 +18,7 @@ use crate::{
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
     },
-    predicate_modules::{load_predicate_module, PredicateModule},
+    predicate_modules::{LISTS, MATHS, META_PREDICATES, PredicateModule, load_predicate_module},
     program::predicate_table::PredicateTable,
     resolution::proof::Proof,
 };
@@ -106,6 +106,12 @@ pub struct App {
     modules: Vec<&'static PredicateModule>,
     config_path: String,
     auto: bool,
+}
+
+impl Default for App{
+    fn default() -> Self {
+        Self { modules: vec![&MATHS,&META_PREDICATES,&LISTS], config_path: "setup.json".into(), auto: true }
+    }
 }
 
 impl App {
@@ -199,7 +205,7 @@ impl App {
         let mut predicate_table = PredicateTable::new();
 
         for module in &self.modules {
-            load_predicate_module(&mut predicate_table, module);
+            load_predicate_module(&mut predicate_table, &mut heap, module);
         }
 
         let setup: SetUp = serde_json::from_str(
@@ -210,7 +216,7 @@ impl App {
         let config = setup.config;
 
         for file_path in setup.files {
-            load_file(file_path, &mut predicate_table, &mut heap);
+            load_file(&file_path, &mut predicate_table, &mut heap);
         }
 
         for BodyClause { symbol, arity } in setup.body_predicates {
@@ -231,8 +237,8 @@ impl App {
     }
 }
 
-fn load_file(file_path: String, predicate_table: &mut PredicateTable, heap: &mut Vec<Cell>) {
-    let file = fs::read_to_string(&file_path)
+pub fn load_file(file_path: &str, predicate_table: &mut PredicateTable, heap: &mut Vec<Cell>) {
+    let file = fs::read_to_string(file_path)
         .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path));
     let syntax_tree = TokenStream::new(tokenise(file).unwrap())
         .parse_all()

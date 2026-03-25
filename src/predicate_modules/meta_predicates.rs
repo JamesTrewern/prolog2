@@ -5,7 +5,7 @@ use crate::{
     Config,
 };
 
-use super::PredReturn;
+use super::{PredReturn,PredicateModule};
 
 /// Negation as failure: succeeds if the inner goal cannot be proven
 pub fn not(
@@ -81,3 +81,6 @@ pub fn not(
         PredReturn::True
     }
 }
+
+/// Built-in meta-predicates: `not/1` (negation as failure).
+pub static META_PREDICATES: PredicateModule = (&[("not", 1, not)], &[]);
