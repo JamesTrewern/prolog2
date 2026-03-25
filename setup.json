@@ -1,0 +1,10 @@
+{
+    "config" : {
+        "max_depth": 10,
+        "max_clause": 4,
+        "max_pred": 1,
+        "debug": true
+    },
+    "body_predicates" : [],
+    "files" : []
+}

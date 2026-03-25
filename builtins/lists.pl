@@ -2,16 +2,16 @@ member(El, [El]).
 member(El, [El|T]).
 member(El, [H|T]):-member(El,T).
 
-forall([],P).
-forall([H|T],P):-
+map_list([],_).
+map_list([H|T],P):-
     P(H),
-    forall(T,P).
-forall([H|T],P(A)):-
-    P(H,A),
-    forall(T,P(A)).
-forall([H|T],P(A,B)):-
-    P(H,A,B),
-    forall(T,P(A,B)).
-forall([H|T],P(A,B,C)):-
-    P(H,A,B,C),
-    forall(T,P(A,B,C)).
+    map_list(T,P).
+
+map_list([],[],_).
+map_list([H1|T1],[H2|T2],P):-
+    P(H1,H2),
+    map_list(T1,T2,P).
+
+is_list([]).
+is_list([_|T]):-
+    is_list(T).

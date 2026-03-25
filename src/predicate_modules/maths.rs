@@ -1,16 +1,17 @@
-use super::{PredReturn,PredicateModule};
+use super::{PredReturn, PredicateModule};
 use crate::{
-    program::hypothesis::Hypothesis,
     heap::{
         heap::{Cell, Heap, Tag},
         query_heap::QueryHeap,
         symbol_db::known_symbol_id,
     },
+    program::hypothesis::Hypothesis,
     program::predicate_table::PredicateTable,
     Config,
 };
 
 use fsize::fsize;
+use serde_json::value;
 
 type MathFn = fn(usize, &QueryHeap) -> Number;
 
@@ -43,7 +44,7 @@ const FUNCTIONS: [(usize, MathFn); 17] = [
 ];
 
 #[derive(Debug, Clone, Copy)]
-enum Number {
+pub(super) enum Number {
     Flt(fsize),
     Int(isize),
 }
@@ -84,6 +85,24 @@ impl Number {
             Number::Flt(value) => Number::Int(value.round() as isize),
             Number::Int(value) => Number::Int(value),
         }
+    }
+
+    pub fn from_cell((tag,value): Cell) -> Self{
+        match tag {
+            Tag::Flt => Self::flt_from_value(value),
+            Tag::Int => Number::Int(usize::cast_signed(value)),
+            _ => panic!()
+        }
+    }
+
+    pub fn flt_from_value(value: usize) -> Self {
+        #[cfg(target_pointer_width = "32")]
+        let float_value = fsize::from_bits(value as u32);
+
+        #[cfg(target_pointer_width = "64")]
+        let float_value = fsize::from_bits(value as u64);
+
+        Number::Flt(float_value)
     }
 }
 
@@ -265,16 +284,7 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Number {
     match heap[addr] {
         (Tag::Func, _) => evaluate_str(addr, heap),
         (Tag::Str, ptr) => evaluate_str(ptr, heap),
-        (Tag::Int, value) => Number::Int(usize::cast_signed(value)),
-        (Tag::Flt, value) => {
-            #[cfg(target_pointer_width = "32")]
-            let float_value = fsize::from_bits(value as u32);
-
-            #[cfg(target_pointer_width = "64")]
-            let float_value = fsize::from_bits(value as u64);
-
-            Number::Flt(float_value)
-        }
+        (tag @ (Tag::Int | Tag::Flt), value) => Number::from_cell((tag,value)),
         _ => panic!(
             "{:?} : {} not a valid mathematical expression",
             heap[addr],
@@ -315,7 +325,6 @@ pub fn is_pred(
         }
     }
 }
-
 
 /// Built-in maths predicates: `is/2` for arithmetic evaluation.
 pub static MATHS: PredicateModule = (&[("is", 2, is_pred)], &[]);

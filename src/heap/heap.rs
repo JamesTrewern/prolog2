@@ -68,6 +68,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn truncate(&mut self, len: usize);
 
+    fn heap_last(&mut self) -> &mut Cell;
+
     fn get_id(&self) -> usize {
         0
     }
@@ -571,6 +573,10 @@ impl Heap for Vec<Cell> {
 
     fn truncate(&mut self, len: usize) {
         self.resize(len, (Tag::Ref, 0));
+    }
+
+    fn heap_last(&mut self) -> &mut Cell{
+        self.last_mut().unwrap()
     }
 }
 

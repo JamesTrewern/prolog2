@@ -81,6 +81,10 @@ impl Heap for QueryHeap<'_> {
         self.id
     }
 
+    fn heap_last(&mut self) -> &mut Cell{
+        self.cells.last_mut().unwrap()
+    }
+
     /** Create String to represent cell, can be recursively used to format complex structures or list */
     fn term_string(&self, addr: usize) -> String {
         // println!("[{addr}]:{:?}", self[addr]);
