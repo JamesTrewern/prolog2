@@ -183,6 +183,7 @@ fn unify_rec(
     }
 
     match (heap[addr_1].0, heap[addr_2].0) {
+        (Tag::AVar, _) | (_,Tag::AVar) | (Tag::ELis, Tag::ELis) => Some(binding),
         (Tag::Str, Tag::Str) => unify_rec(heap, binding, heap[addr_1].1, heap[addr_2].1),
         (_, Tag::Str) => unify_rec(heap, binding, addr_1, heap[addr_2].1),
         (Tag::Str, _) => unify_rec(heap, binding, heap[addr_1].1, addr_2),
@@ -212,7 +213,6 @@ fn unify_rec(
         }
         (Tag::Set, Tag::Set) => unfiy_set(heap, binding, addr_1, addr_2),
         (Tag::Lis, Tag::Lis) => unify_list(heap, binding, addr_1, addr_2),
-        (Tag::ELis, Tag::ELis) => Some(binding),
         _ => None,
     }
 }
@@ -267,8 +267,8 @@ mod tests {
 
     #[test]
     fn arg_to_ref() {
-        let p = SymbolDB::set_const("p".into());
-        let a = SymbolDB::set_const("p".into());
+        let p = SymbolDB::set_const("p");
+        let a = SymbolDB::set_const("p");
 
         let heap = vec![
             (Tag::Arg, 0),
@@ -310,8 +310,8 @@ mod tests {
 
     #[test]
     fn arg() {
-        let p = SymbolDB::set_const("p".into());
-        let a = SymbolDB::set_const("p".into());
+        let p = SymbolDB::set_const("p");
+        let a = SymbolDB::set_const("p");
 
         let heap = vec![
             (Tag::Arg, 0),
@@ -327,8 +327,8 @@ mod tests {
 
     #[test]
     fn binding_chain_ref() {
-        let p = SymbolDB::set_const("p".into());
-        let a = SymbolDB::set_const("a".into());
+        let p = SymbolDB::set_const("p");
+        let a = SymbolDB::set_const("a");
 
         let heap = vec![
             (Tag::Ref, 0),
@@ -364,8 +364,8 @@ mod tests {
 
     #[test]
     fn func() {
-        let p = SymbolDB::set_const("p".into());
-        let a = SymbolDB::set_const("a".into());
+        let p = SymbolDB::set_const("p");
+        let a = SymbolDB::set_const("a");
 
         let heap = vec![
             (Tag::Func, 2),
@@ -389,8 +389,8 @@ mod tests {
 
     #[test]
     fn tup() {
-        let p = SymbolDB::set_const("p".into());
-        let a = SymbolDB::set_const("a".into());
+        let p = SymbolDB::set_const("p");
+        let a = SymbolDB::set_const("a");
 
         let heap = vec![
             (Tag::Tup, 2),
@@ -414,11 +414,11 @@ mod tests {
 
     #[test]
     fn list() {
-        let p = SymbolDB::set_const("p".into());
-        let a = SymbolDB::set_const("a".into());
-        let b = SymbolDB::set_const("b".into());
-        let c = SymbolDB::set_const("c".into());
-        let t = SymbolDB::set_const("t".into());
+        let p = SymbolDB::set_const("p");
+        let a = SymbolDB::set_const("a");
+        let b = SymbolDB::set_const("b");
+        let c = SymbolDB::set_const("c");
+        let t = SymbolDB::set_const("t");
 
         let heap = vec![
             (Tag::Lis, 1),  //0
