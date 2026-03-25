@@ -41,7 +41,7 @@ struct HypothesisMsg {
 
 /// Top Program Construction entry point
 pub fn run(
-    examples: Examples,
+    examples: &Examples,
     predicate_table: &PredicateTable,
     mut heap: Vec<Cell>,
     config: Config,

@@ -61,7 +61,7 @@ pub mod resolution;
 pub mod top_prog;
 
 // Re-export commonly used types at crate root.
-pub use app::{BodyClause, Config, Examples, SetUp};
+pub use app::{BodyPred, Config, Examples, SetUp};
 
 #[cfg(test)]
 mod examples;

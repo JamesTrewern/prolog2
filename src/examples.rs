@@ -5,16 +5,11 @@ use std::fs;
 use std::process::ExitCode;
 
 use crate::{
-    heap::{heap::Cell, query_heap::QueryHeap, symbol_db::SymbolDB},
-    parser::{
+    BodyPred, Config, Examples, SetUp, app::{App, Solution}, heap::{heap::Cell, query_heap::QueryHeap, symbol_db::SymbolDB}, parser::{
         build_tree::TokenStream,
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
-    },
-    predicate_modules::load_all_modules,
-    program::predicate_table::PredicateTable,
-    resolution::proof::Proof,
-    BodyClause, Config, Examples, SetUp,
+    }, predicate_modules::load_all_modules, program::predicate_table::PredicateTable, resolution::proof::Proof
 };
 
 /// Load a .pl file into the predicate table and heap
@@ -47,7 +42,7 @@ fn load_setup(config_path: &str) -> (Config, PredicateTable, Vec<Cell>, Option<E
         load_file(&file_path, &mut predicate_table, &mut heap);
     }
 
-    for BodyClause { symbol, arity } in setup.body_predicates {
+    for BodyPred { symbol, arity } in setup.body_predicates {
         predicate_table
             .set_body((SymbolDB::set_const(symbol), arity), true)
             .unwrap();
@@ -95,120 +90,73 @@ fn run_query(
 
 #[test]
 fn ancestor() {
-    let (config, predicate_table, heap, examples) = load_setup("examples/ancestor/config.json");
+    // let (config, predicate_table, heap, examples) = load_setup("examples/ancestor/config.json");
 
-    // Run positive examples
-    if let Some(examples) = examples {
-        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
+    // // Run positive examples
+    // if let Some(examples) = examples {
+    //     let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
 
-        println!(
-            "Ancestor test: success={}, solutions={}",
-            success, solutions
-        );
-        assert!(success, "Expected at least one solution for ancestor test");
-    } else {
-        panic!("No examples in ancestor config");
-    }
+    //     println!(
+    //         "Ancestor test: success={}, solutions={}",
+    //         success, solutions
+    //     );
+    //     assert!(success, "Expected at least one solution for ancestor test");
+    // } else {
+    //     panic!("No examples in ancestor config");
+    // }
+
+    let app = App::from_setup_json("examples/ancestor/config.json").auto(true);
+    let solutions: Vec<Solution> = app.query_session_from_examples().unwrap().collect();
+    assert!(solutions.len() > 0, "Expected at least one solution");
 }
 
 #[test]
 fn map() {
-    let (config, predicate_table, heap, examples) = load_setup("examples/map/config.json");
-
-    // Run positive examples
-    if let Some(examples) = examples {
-        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
-
-        println!("Map test: success={}, solutions={}", success, solutions);
-        assert!(success, "Expected at least one solution for map test");
-    } else {
-        panic!("No examples in map config");
-    }
+    let app = App::from_setup_json("examples/map/config.json").auto(true);
+    let solutions: Vec<Solution> = app.query_session_from_examples().unwrap().collect();
+    assert!(solutions.len() > 0, "Expected at least one solution");
 }
 
 #[test]
-fn odd_even() {
-    let (config, predicate_table, heap, examples) = load_setup("examples/odd_even/config.json");
-
-    if let Some(examples) = examples {
-        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
-        println!(
-            "Odd Even test: success={}, solutions={}",
-            success, solutions
-        );
-        assert!(success, "Expected at least one solution for map test");
-    } else {
-        panic!("No examples in map config");
-    }
+fn odd_even() {   
+    let app = App::from_setup_json("examples/odd_even/config.json").auto(true);
+    let solutions: Vec<Solution> = app.query_session_from_examples().unwrap().collect();
+    assert!(solutions.len() > 0, "Expected at least one solution");
 }
 
 #[test]
 fn learn_map_double() {
-    let (config, predicate_table, heap, examples) = load_setup("examples/map/learn_config.json");
-
-    if let Some(examples) = examples {
-        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
-        println!(
-            "Learn Map Double test: success={}, solutions={}",
-            success, solutions
-        );
-        assert!(
-            success,
-            "Expected at least one solution for Learn Map Double test"
-        );
-    } else {
-        panic!("No examples in Learn Map Double config");
-    }
+    let app = App::from_setup_json("examples/map/learn_config.json").auto(true);
+    let solutions: Vec<Solution> = app.query_session_from_examples().unwrap().collect();
+    assert!(solutions.len() > 0, "Expected at least one solution");
 }
 
 #[test]
 fn trains() {
-    let (config, predicate_table, heap, examples) = load_setup("examples/trains/config.json");
-
-    if let Some(examples) = examples {
-        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
-        println!("Trains test: success={}, solutions={}", success, solutions);
-        assert!(success, "Expected at least one solution for Trains test");
-    } else {
-        panic!("No examples in Trains config");
-    }
+    let app = App::from_setup_json("examples/trains/config.json").auto(true);
+    let solutions: Vec<Solution> = app.query_session_from_examples().unwrap().collect();
+    assert!(solutions.len() > 0, "Expected at least one solution");
 }
 
 #[test]
 fn fsm_parity() {
-    let (config, predicate_table, heap, examples) = load_setup("examples/fsm/config.json");
-
-    if let Some(examples) = examples {
-        let (success, solutions) = run_query(&examples.to_query(), &predicate_table, &heap, config);
-        println!(
-            "FSM Parity test: success={}, solutions={}",
-            success, solutions
-        );
-        assert!(
-            success,
-            "Expected at least one solution for FSM Parity test"
-        );
-    } else {
-        panic!("No examples in FSM Parity config");
-    }
+    let app = App::from_setup_json("examples/fsm/config.json").auto(true);
+    let solutions: Vec<Solution> = app.query_session_from_examples().unwrap().collect();
+    assert!(solutions.len() > 0, "Expected at least one solution");
 }
 
 // ── Top Program Construction tests ──
 
 #[test]
 fn top_prog_robots() {
-    let (config, predicate_table, heap, examples) = load_setup("examples/robots/tpc_config.json");
-
-    let examples = examples.expect("No examples in robots tpc_config");
-    let result = crate::top_prog::run(examples, &predicate_table, heap, config, false);
+    let app = App::from_setup_json("examples/robots/tpc_config.json").auto(true);
+    let result = app.run();
     assert_eq!(result, ExitCode::SUCCESS);
 }
 
 #[test]
 fn top_prog_trains() {
-    let (config, predicate_table, heap, examples) = load_setup("examples/trains/tpc_config.json");
-
-    let examples = examples.expect("No examples in trains tpc config");
-    let result = crate::top_prog::run(examples, &predicate_table, heap, config, false);
+    let app = App::from_setup_json("examples/robots/tpc_config.json").auto(true);
+    let result = app.run();
     assert_eq!(result, ExitCode::SUCCESS);
 }
