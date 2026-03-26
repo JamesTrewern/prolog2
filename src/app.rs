@@ -50,12 +50,60 @@ impl Default for Config {
 }
 
 /// A body predicate declaration in the setup file.
-#[derive(Serialize, Deserialize, Debug)]
+///
+/// Can be deserialized from either an object `{"symbol": "dad", "arity": 2}`
+/// or a compact string `"dad/2"`.
+#[derive(Serialize, Debug)]
 pub struct BodyPred {
     /// Predicate name.
     pub symbol: String,
     /// Predicate arity.
     pub arity: usize,
+}
+
+impl<'de> serde::Deserialize<'de> for BodyPred {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::{self, MapAccess, Visitor};
+        use std::fmt;
+
+        struct BodyPredVisitor;
+
+        impl<'de> Visitor<'de> for BodyPredVisitor {
+            type Value = BodyPred;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(r#"a string like "dad/2" or an object {"symbol": "dad", "arity": 2}"#)
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<BodyPred, E> {
+                let (symbol, arity_str) = v
+                    .rsplit_once('/')
+                    .ok_or_else(|| E::custom(format!("expected \"symbol/arity\", got {v:?}")))?;
+                let arity = arity_str
+                    .parse()
+                    .map_err(|_| E::custom(format!("arity must be a non-negative integer, got {arity_str:?}")))?;
+                Ok(BodyPred { symbol: symbol.to_string(), arity })
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<BodyPred, A::Error> {
+                let mut symbol = None;
+                let mut arity = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "symbol" => symbol = Some(map.next_value()?),
+                        "arity"  => arity  = Some(map.next_value()?),
+                        other    => return Err(de::Error::unknown_field(other, &["symbol", "arity"])),
+                    }
+                }
+                Ok(BodyPred {
+                    symbol: symbol.ok_or_else(|| de::Error::missing_field("symbol"))?,
+                    arity:  arity .ok_or_else(|| de::Error::missing_field("arity"))?,
+                })
+            }
+        }
+
+        deserializer.deserialize_any(BodyPredVisitor)
+    }
 }
 
 /// Positive and negative training examples.
@@ -395,6 +443,9 @@ impl<'a> Iterator for QuerySession<'a>{
                 .map(|(name, addr)| (name.clone(), self.proof.heap.term_string(*addr)))
                 .collect();
             let hypothesis = if self.proof.hypothesis.len() > 0 {
+                for clause in self.proof.hypothesis.iter(){
+                    clause.normalise_clause_vars(&mut self.proof.heap);
+                }
                 self.proof.hypothesis.to_string(&self.proof.heap)
             } else {
                 String::new()

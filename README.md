@@ -63,7 +63,7 @@ Configured in a JSON file (default: `setup.json`):
         "max_pred": 2
     },
 
-    "body_predicates" : [{"symbol" : "dad", "arity": 2},{"symbol" : "mum", "arity": 2}],
+    "body_predicates" : ["dad/2","mum/2"],
     "examples" : {
         "pos" : ["ancestor(ken,james)", "ancestor(christine,james)"],
         "neg" : []
@@ -94,11 +94,11 @@ To enable TPC, add `"top_prog": true` to your config file:
         "max_pred": 1
     },
     "body_predicates" : [
-        {"symbol" : "short", "arity": 1},
-        {"symbol" : "closed", "arity": 1},
-        {"symbol" : "long", "arity": 1},
-        {"symbol" : "open_car", "arity": 1},
-        {"symbol" : "has_car", "arity": 2}
+        "short/1",
+        "closed/1",
+        "long/1",
+        "open_car/1",
+        "has_car/2"
     ],
     "examples" : {
         "pos" : ["e(east1)", "e(east2)", "e(east3)", "e(east4)", "e(east5)"],
@@ -169,8 +169,8 @@ We must then define our learning parameters in a config file
         "debug": false
     },
     "body_predicates" : [
-        {"symbol" : "dad", "arity": 2},
-        {"symbol" : "mum", "arity": 2}
+        "dad/2",
+        "mum/2"
     ],
     "examples" : {
         "pos" : ["ancestor(ken,james)", "ancestor(christine,james)"],
