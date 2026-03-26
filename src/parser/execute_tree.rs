@@ -149,9 +149,6 @@ pub(crate) fn execute_tree(
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
-            TreeClause::Directive(_terms) => {
-                unimplemented!("directive execution not yet supported")
-            }
         }
     }
 }

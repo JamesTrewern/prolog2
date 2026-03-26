@@ -79,10 +79,15 @@ impl<'de> serde::Deserialize<'de> for BodyPred {
                 let (symbol, arity_str) = v
                     .rsplit_once('/')
                     .ok_or_else(|| E::custom(format!("expected \"symbol/arity\", got {v:?}")))?;
-                let arity = arity_str
-                    .parse()
-                    .map_err(|_| E::custom(format!("arity must be a non-negative integer, got {arity_str:?}")))?;
-                Ok(BodyPred { symbol: symbol.to_string(), arity })
+                let arity = arity_str.parse().map_err(|_| {
+                    E::custom(format!(
+                        "arity must be a non-negative integer, got {arity_str:?}"
+                    ))
+                })?;
+                Ok(BodyPred {
+                    symbol: symbol.to_string(),
+                    arity,
+                })
             }
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<BodyPred, A::Error> {
@@ -91,13 +96,13 @@ impl<'de> serde::Deserialize<'de> for BodyPred {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "symbol" => symbol = Some(map.next_value()?),
-                        "arity"  => arity  = Some(map.next_value()?),
-                        other    => return Err(de::Error::unknown_field(other, &["symbol", "arity"])),
+                        "arity" => arity = Some(map.next_value()?),
+                        other => return Err(de::Error::unknown_field(other, &["symbol", "arity"])),
                     }
                 }
                 Ok(BodyPred {
                     symbol: symbol.ok_or_else(|| de::Error::missing_field("symbol"))?,
-                    arity:  arity .ok_or_else(|| de::Error::missing_field("arity"))?,
+                    arity: arity.ok_or_else(|| de::Error::missing_field("arity"))?,
                 })
             }
         }
@@ -294,9 +299,9 @@ impl App {
 
     pub fn query_session(&self, query: impl AsRef<str>) -> Result<QuerySession<'_>, String> {
         let query = query.as_ref();
-        let literals = match TokenStream::new(tokenise(format!(":-{query}"))?).parse_clause()? {
-            Some(TreeClause::Directive(literals)) => literals,
-            _ => return Err(format!("Query: '{query}' incorrectly formatted")),
+        let literals = match TokenStream::new(tokenise(query)?).parse_goals() {
+            Ok(literals) => literals,
+            Err(err) => return Err(format!("Error: [{err}] in query string: [query]")),
         };
 
         let mut query_heap = QueryHeap::new(&self.prog_heap, None);
@@ -432,7 +437,7 @@ impl<'a> QuerySession<'a> {
     }
 }
 
-impl<'a> Iterator for QuerySession<'a>{
+impl<'a> Iterator for QuerySession<'a> {
     type Item = Solution;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -443,7 +448,7 @@ impl<'a> Iterator for QuerySession<'a>{
                 .map(|(name, addr)| (name.clone(), self.proof.heap.term_string(*addr)))
                 .collect();
             let hypothesis = if self.proof.hypothesis.len() > 0 {
-                for clause in self.proof.hypothesis.iter(){
+                for clause in self.proof.hypothesis.iter() {
                     clause.normalise_clause_vars(&mut self.proof.heap);
                 }
                 self.proof.hypothesis.to_string(&self.proof.heap)

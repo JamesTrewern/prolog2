@@ -17,7 +17,6 @@ pub enum TreeClause {
     Rule(Vec<Term>),
     MetaRule(Vec<Term>),
     MetaFact(Term, Term), // head and set of existentially quantified variables
-    Directive(Vec<Term>),
 }
 
 pub struct TokenStream {
@@ -118,9 +117,6 @@ impl TokenStream {
         }
     }
 
-    /**
-     *
-     */
     pub(super) fn parse_term(&mut self) -> Result<Term, String> {
         match self.peek().ok_or("Unexpected end of file")? {
             "{" => {
@@ -187,7 +183,7 @@ impl TokenStream {
                             Ok(Term::Unit(unit))
                         }
                     }
-                    Some(unit ) => Ok(Term::Unit(unit)),
+                    Some(unit) => Ok(Term::Unit(unit)),
                     None => unimplemented!("parse_expression: unhandled token '{token}'"),
                 }
             }
@@ -250,10 +246,6 @@ impl TokenStream {
     pub fn parse_clause(&mut self) -> Result<Option<TreeClause>, String> {
         match self.peek() {
             None => return Ok(None),
-            Some(":-") => {
-                self.next();
-                return Ok(Some(TreeClause::Directive(self.parse_body_literals()?)));
-            }
             Some(_) => {
                 let mut literals = vec![self.parse_expression()?];
                 match self.next() {
@@ -332,6 +324,20 @@ impl TokenStream {
                 }
             }
         }
+    }
+
+    pub fn parse_goals(&mut self) -> Result<Vec<Term>,String> {
+        let mut literals = vec![self.parse_expression()?];
+        loop{
+            match self.next() {
+            Some(",") => literals.push(self.parse_expression()?),
+            Some(".") => break,
+            Some(token) => return Err(format!("Unexpecte token: \"{token}\"")),
+            None => return Err(format!("Unexpected end of goals string"))
+        }
+        }
+        
+        Ok(literals)
     }
 
     pub fn parse_all(&mut self) -> Result<Vec<TreeClause>, String> {
@@ -1044,26 +1050,31 @@ mod tests {
 
     #[test]
     fn parse_directive() {
-        let mut token_stream =
-            TokenStream::new(tokenise(":-test(a),['file/path'].").unwrap());
-        let clause = token_stream.parse_clause().unwrap().unwrap();
+        let mut token_stream = TokenStream::new(tokenise("test(a),goal([_|T],1).").unwrap());
+        let clause = token_stream.parse_goals().unwrap();
         let body = Term::Atom(
             Unit::Constant("test".into()),
             vec![Term::Unit(Unit::Constant("a".into()))],
         );
-        let body2 = Term::List(
-            vec![Term::Unit(Unit::Constant("file/path".into()))],
-            Box::new(Term::EmptyList),
+        let body2 = Term::Atom(
+            Unit::Constant("goal".into()),
+            vec![
+                Term::List(
+                    vec![Term::Unit(Unit::AnonVar)],
+                    Box::new(Term::Unit(Unit::Variable("T".into()))),
+                ),
+                Term::Unit(Unit::Int(1)),
+            ],
         );
 
-        assert_eq!(clause, TreeClause::Directive(vec![body, body2]));
+        assert_eq!(clause, vec![body, body2]);
         assert_eq!(token_stream.parse_clause().unwrap(), None);
     }
 
     #[test]
     fn parse_all_clauses() {
         let text =
-            "gt1(X):-X>1.\nman(plato).\nP(X,Y):-\n\tQ(X,Y),\n\t{P,Q}.\n:-test(a),['file/path']."
+            "gt1(X):-X>1.\nman(plato).\nP(X,Y):-\n\tQ(X,Y),\n\t{P,Q}."
                 .to_string();
         let mut token_stream = TokenStream::new(tokenise(text).unwrap());
         let clauses = token_stream.parse_all().unwrap();
@@ -1109,15 +1120,5 @@ mod tests {
             clauses[2],
             TreeClause::MetaRule(vec![head, body, meta_data])
         );
-
-        let body = Term::Atom(
-            Unit::Constant("test".into()),
-            vec![Term::Unit(Unit::Constant("a".into()))],
-        );
-        let body2 = Term::List(
-            vec![Term::Unit(Unit::Constant("file/path".into()))],
-            Box::new(Term::EmptyList),
-        );
-        assert_eq!(clauses[3], TreeClause::Directive(vec![body, body2]));
     }
 }
