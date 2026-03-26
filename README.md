@@ -27,7 +27,7 @@ P(X,Y):- Q(X,A), R(Y,B), {P,Q,R}, [A,B].
 P(A,B), [A,B] % Meta fact
 ```
 
-With this more flexible notation many we can create many more interesting second-order clauses </br> 
+With this notation many we can create many interesting second-order clauses </br> 
 for example, we can introduce certain constant predicate symbols either in the head or body to allow us to have greater control over the clauses that will be learnt.
 We can also create second-order clauses with only constant predicate symbols but existentially and universally quantified variables to denote the introduction of some constants
 
@@ -47,6 +47,12 @@ P(X,Y):- X > Y, Q(Y), {P,Q}.
 P(X,Y):- Z is X + Y, Q(Z), {P,Q}.
 ```
 
+# Running Prolog<sup>2</sup>
+
+```
+cargo run [CONFIG_FILE]
+```
+
 # Configuration Options
 Configured in a JSON file (default: `setup.json`):
 ``` json
@@ -62,44 +68,19 @@ Configured in a JSON file (default: `setup.json`):
         "pos" : ["ancestor(ken,james)", "ancestor(christine,james)"],
         "neg" : []
     },
-    "files" : ["examples/simple_family.pl"]
+    "files" : ["examples/simple_family.pl"],
+    "auto" : true,
+    "top_prog" : false,
+    "reduce" : false
 }
 ```
-
-# Running Prolog<sup>2</sup>
-
-```
-cargo run [[CONFIG_FILE] -- [OPTIONS]]
-```
-
-**Arguments:**
-
-| Argument | Description |
-|---|---|
-| `CONFIG_FILE` | Path to a JSON config file. Defaults to `setup.json` if not provided. |
-| `--all`, `-a` | Automatically enumerate all solutions instead of prompting after each one. |
-
-**Examples:**
-
-```bash
-# Interactive REPL using default setup.json
-cargo run
-
-# Run the ancestor learning problem
-cargo run examples/ancestor/config.json
-
-# Run ancestor and automatically find all solutions
-cargo run examples/ancestor/config.json -- --all
-
-# Just the --all flag with default config
-cargo run -- --all
-```
-
+`examples`, `auto`, `top_prog`, and `reduce` are all optional fields.
 If the config file includes an `examples` field, Prolog<sup>2</sup> will immediately attempt to prove the examples as a query and output any learned hypotheses. If `examples` is omitted, an interactive REPL is started where queries can be entered manually.
+The auto option makes the program iterate through all possible proofs in a query. By default this is off and after each proof the program awaits user input (Space: continue, Enter: stop).
 
 # Top Program Construction
 
-Prolog<sup>2</sup> supports Top Program Construction (TPC) as an alternative to the standard iterative-deepening hypothesis search. TPC constructs the Top program — the set of clauses in all correct hypotheses — directly in polynomial time, then reduces it to remove redundant clauses using Plotkin's program reduction algorithm. This approach is based on the work of [Patsantzis and Muggleton (2021)](https://link.springer.com/article/10.1007/s10994-020-05945-w).
+Prolog<sup>2</sup> supports Top Program Construction (TPC) as an alternative to the standard second order SLD-Resolution hypothesis search. TPC constructs the Top program — the set of clauses in all correct hypotheses — directly in polynomial time, then reduces it to remove redundant clauses using Plotkin's program reduction algorithm. This approach is based on the work of [Patsantzis and Muggleton (2021)](https://link.springer.com/article/10.1007/s10994-020-05945-w).
 
 The TPC pipeline has three stages: **Generalise** searches each positive example in parallel to collect all constructible clauses, **Specialise** removes any clause that entails a negative example, and **Reduce** applies Plotkin's reduction to eliminate redundant clauses while preferring general patterns over specific ones.
 
@@ -136,7 +117,7 @@ Running this on Michalski's trains problem produces:
   pred_1(Arg_0):-short(Arg_0),closed(Arg_0).
 ```
 
-To skip the reduction step (useful for profiling or inspecting the raw top program), add `"no_reduce": true` to the config.
+The reduction step is turned off by default (useful for profiling or inspecting the raw top program), to include the reduction step add `"reduce": true` to the config.
 
 # Step by Step Demonstration of New Clause Generation
 
@@ -202,7 +183,7 @@ We must then define our learning parameters in a config file
 Then we can execute the binary with an argument for the path of the config file
 
 ```
-$ target/debug/prolog2 examples/ancestor/config.json -- --all
+$ target/debug/prolog2 examples/ancestor/config.json
 TRUE
 ancestor(Arg_1,Arg_2):-dad(Arg_1,Arg_4),ancestor(Arg_4,Arg_2).
 ancestor(Arg_1,Arg_2):-dad(Arg_1,Arg_2).
