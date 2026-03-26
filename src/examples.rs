@@ -127,12 +127,6 @@ fn trains() {
 
 #[test]
 fn fsm_parity() {
-    const H1: &[&str] = &[
-        "edge(0,even,even):-q(even),q(even).",
-        "edge(1,even,odd):-q(even),q(odd).",
-        "edge(0,odd,odd):-q(odd),q(odd).",
-        "edge(1,odd,even):-q(odd),q(even)."
-    ];
     let app = App::from_setup_json("examples/fsm/parity.json").expect("failed to load config").auto(true);
     test_solutions(app, &[]);
 }

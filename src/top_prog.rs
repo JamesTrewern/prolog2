@@ -20,7 +20,7 @@ use crate::{
         query_heap::QueryHeap,
     },
     parser::{
-        build_tree::{TokenStream, TreeClause},
+        build_tree::TokenStream,
         execute_tree::build_clause,
         tokeniser::tokenise,
     },

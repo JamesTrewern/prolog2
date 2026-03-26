@@ -68,7 +68,9 @@ impl Number {
     pub fn power(self, rhs: Self) -> Number {
         match (self, rhs) {
             (Number::Int(v1), Number::Int(v2)) if v2 > 0 => {
-                Number::Int(v1.pow(v2.try_into().unwrap()))
+                // Saturate the exponent to u32::MAX; values that large will
+                // overflow to 0 or 1 anyway, which is the correct behaviour.
+                Number::Int(v1.pow(v2.min(u32::MAX as isize) as u32))
             }
             (lhs, rhs) => Number::Flt(lhs.float().powf(rhs.float())),
         }

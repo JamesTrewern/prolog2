@@ -1,6 +1,5 @@
 use std::{
-    fs::{self, metadata},
-    io,
+    fs,
     path::Path,
     process::ExitCode,
     sync::Arc,
@@ -18,7 +17,7 @@ use crate::{
         symbol_db::SymbolDB,
     },
     parser::{
-        build_tree::{TokenStream, TreeClause},
+        build_tree::TokenStream,
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
     },
@@ -79,6 +78,32 @@ impl TryFrom<&str> for BodyPred {
             symbol: symbol.into(),
             arity,
         })
+    }
+}
+
+/// Conversion into a [`BodyPred`] that may fail with a [`crate::Error`].
+///
+/// Implemented for:
+/// - [`BodyPred`] itself — infallible identity conversion.
+/// - Any string-like type implementing [`AsRef<str>`] (e.g. `&str`, `&&str`,
+///   `String`) — parses the `"name/arity"` format.
+///
+/// This trait is the bound on [`App::add_body_predicates`], so you can pass
+/// either a `Vec<BodyPred>` or a plain string slice like `&["p/2", "q/1"]`
+/// without any intermediate allocation.
+pub trait TryIntoBodyPred {
+    fn try_into_body_pred(self) -> crate::Result<BodyPred>;
+}
+
+impl TryIntoBodyPred for BodyPred {
+    fn try_into_body_pred(self) -> crate::Result<BodyPred> {
+        Ok(self)
+    }
+}
+
+impl<S: AsRef<str>> TryIntoBodyPred for S {
+    fn try_into_body_pred(self) -> crate::Result<BodyPred> {
+        BodyPred::try_from(self.as_ref()).map_err(crate::Error::BodyPred)
     }
 }
 
@@ -363,21 +388,36 @@ impl App {
     /// Marks a set of predicates as *body predicates* for Meta-Interpretive
     /// Learning.
     ///
+    /// Mark a set of predicates as body predicates available to the MIL engine.
+    ///
     /// Body predicates are the background knowledge predicates that the MIL
     /// engine is permitted to use in the body of learned clauses. Any predicate
     /// listed here must already be present in the program (loaded via
     /// [`App::load_code`], [`App::load_file`], or [`App::load_module`]).
     ///
-    /// # Panics
+    /// The argument accepts anything that iterates over [`TryIntoBodyPred`]
+    /// items, so you can pass a `Vec<BodyPred>` or a string slice directly:
     ///
-    /// Panics if a predicate named in `body_preds` does not exist in the
-    /// predicate table.
-    pub fn add_body_predicates<'a>(mut self, body_preds: impl AsRef<[BodyPred]>) -> Result<Self> {
-        for BodyPred { symbol, arity } in body_preds.as_ref() {
+    /// ```no_run
+    /// # use prolog2::app::App;
+    /// # let app = App::default();
+    /// let app = app.add_body_predicates(&["succ/2", "plus/3"]).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::BodyPred`] if a specification string is
+    /// malformed or if a named predicate does not exist in the predicate table.
+    pub fn add_body_predicates(
+        mut self,
+        body_preds: impl IntoIterator<Item = impl TryIntoBodyPred>,
+    ) -> Result<Self> {
+        for item in body_preds {
+            let BodyPred { symbol, arity } = item.try_into_body_pred()?;
             let sym = SymbolDB::set_const(symbol.clone());
             self.predicate_table
-                .set_body((sym, *arity), true)
-                .unwrap_or_else(|e| panic!("{e}: {symbol}/{arity}"));
+                .set_body((sym, arity), true)
+                .map_err(|e| Error::BodyPred(format!("{e}: {symbol}/{arity}")))?;
         }
         Ok(self)
     }

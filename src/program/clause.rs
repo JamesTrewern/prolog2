@@ -37,9 +37,10 @@ impl Clause {
     fn meta_vars_to_bit_flags(meta_vars: Vec<usize>) -> BitFlag64 {
         let mut bit_flags = BitFlag64::default();
         for meta_var in meta_vars {
-            if meta_var > 63 {
-                panic!("Cant have more than 64 variables in meta clause")
-            }
+            assert!(
+                meta_var <= 63,
+                "meta clause cannot have more than 64 variables (variable index {meta_var} exceeds limit)"
+            );
             bit_flags.set(meta_var);
         }
         bit_flags

@@ -72,7 +72,7 @@ pub fn sort(
                         .into_iter()
                         .map(|(tag, value)| ((tag, value), Number::from_cell((tag,value))))
                         .collect();
-                    element_values.sort_by(|(_,n1),(_,n2)| n1.partial_cmp(n2).unwrap());
+                    element_values.sort_by(|(_,n1),(_,n2)| n1.partial_cmp(n2).unwrap_or(std::cmp::Ordering::Equal));
                     //
                     let list_addr = heap.heap_push((Tag::Lis,heap.heap_len()+1));
                     for (cell,_) in element_values{
@@ -96,7 +96,7 @@ pub fn sort(
                         .map(|(tag, value)| ((tag, value), match tag {
                             Tag::Stri => SymbolDB::get_string(value),
                             Tag::Con => SymbolDB::get_const(value),
-                            _ => panic!()
+                            _ => unreachable!("sort: expected Stri or Con tag after outer guard"),
                         }))
                         .collect();
                     element_values.sort_by(|(_,str1),(_,str2)| str1.cmp(str2));

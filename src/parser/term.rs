@@ -18,46 +18,8 @@ pub enum Unit {
 }
 
 impl Unit {
-    fn is_atom(token: &str) -> bool {
-        token.chars().next().map_or(false, |c| {
-            c.is_lowercase() || c == '\'' && token.chars().last().map_or(false, |c| c == '\'')
-        })
-    }
-
-    fn is_string(token: &str) -> bool {
-        token.chars().next().map_or(false, |c| {
-            c == '"' && token.chars().last().map_or(false, |c| c == '"')
-        })
-    }
-
-    //Is variable if begins with _ or uppercase
-    fn is_variable(token: &str) -> bool {
-        token
-            .chars()
-            .next()
-            .map_or(false, |c| c.is_uppercase() || c == '_')
-            && token.chars().all(|c| c.is_alphanumeric() || c == '_')
-    }
-
     pub fn parse_unit(token: &str) -> Option<Self> {
         let c = token.chars().next()?;
-        // if Unit::is_variable(token) {
-        //     Some(Unit::Variable(token.into()))
-        // } else if Unit::is_atom(token) {
-        //     if token.chars().next().unwrap() == '\'' {
-        //         Some(Unit::Constant(token[1..token.len() - 1].into()))
-        //     } else {
-        //         Some(Unit::Constant(token.into()))
-        //     }
-        // } else if Unit::is_string(token) {
-        //     Some(Unit::String(token.to_string()))
-        // } else if let Ok(num) = token.parse::<isize>() {
-        //     Some(Unit::Int(num))
-        // } else if let Ok(num) = token.parse::<fsize>() {
-        //     Some(Unit::Float(num))
-        // } else {
-        //     None
-        // }
         match c {
             '\'' => Some(Unit::Constant(token[1..token.len() - 1].into())),
             '"' => Some(Unit::String(token.to_string())),

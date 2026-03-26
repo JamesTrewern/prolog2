@@ -114,9 +114,10 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         for (src, target) in binding {
             // println!("{}", self.term_string(*src));
             let pointer = &mut self[*src].1;
-            if *pointer != *src {
-                panic!("Tried to reset bound ref: {} \n Binding: {binding:?}", src)
-            }
+            debug_assert!(
+                *pointer == *src,
+                "bind: tried to rebind already-bound ref at {src} (binding: {binding:?})"
+            );
             *pointer = *target;
         }
     }
@@ -142,14 +143,13 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             match self[self.deref_addr(addr + 1)] {
                 (Tag::Arg | Tag::Ref, _) => (0, arity - 1),
                 (Tag::Con, id) => (id, arity - 1),
-                _ => panic!("Functor of structure not constant of variable"),
+                _ => unreachable!("str_symbol_arity: functor cell is not a constant or variable"),
             }
         } else if let (Tag::Con, symbol) = self[addr] {
             (symbol, 0)
         } else {
-            panic!(
-                "No str arity for {}, {:?}",
-                self.term_string(addr),
+            unreachable!(
+                "str_symbol_arity: expected structure or constant at {addr}, got {:?}",
                 self[addr]
             )
         }
@@ -261,7 +261,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             }
             (Tag::Tup, _len) => unimplemented!("_copy_term for Tup"),
             (Tag::Set, _len) => unimplemented!("_copy_term for Set"),
-            (Tag::Ref, _pointer) => panic!(),
+            (Tag::Ref, _pointer) => unreachable!("_copy_simple: Ref cells must be dereferenced before copying"),
             (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri | Tag::ELis | Tag::AVar, _) => {
                 self.heap_push(other[addr]);
                 self.heap_len() - 1
@@ -339,7 +339,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.heap_push(other[addr]);
                 self.heap_len() - 1
             }
-            (tag, val) => panic!("copy_term_with_ref_map: unhandled ({tag:?}, {val})"),
+            (tag, val) => unreachable!("copy_term_with_ref_map: unhandled cell ({tag:?}, {val})"),
         }
     }
 
@@ -586,7 +586,7 @@ mod tests {
 
     use super::{
         super::symbol_db::SymbolDB,
-        {Cell, Heap, Tag, EMPTY_LIS},
+        {Heap, Tag, EMPTY_LIS},
     };
 
     #[test]

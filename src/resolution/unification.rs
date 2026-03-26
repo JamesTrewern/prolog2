@@ -187,7 +187,7 @@ fn unify_rec(
         (Tag::Str, Tag::Str) => unify_rec(heap, binding, heap[addr_1].1, heap[addr_2].1),
         (_, Tag::Str) => unify_rec(heap, binding, addr_1, heap[addr_2].1),
         (Tag::Str, _) => unify_rec(heap, binding, heap[addr_1].1, addr_2),
-        (_, Tag::Arg) => panic!("Undefined Unification behaviour"),
+        (_, Tag::Arg) => unreachable!("unification: Arg cell in non-Arg position — clause args should only appear on the left"),
         (Tag::Arg, _) => match binding.get_arg(heap[addr_1].1) {
             Some(addr) => unify_rec(heap, binding, addr, addr_2),
             None => {

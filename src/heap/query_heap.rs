@@ -121,9 +121,11 @@ impl Heap for QueryHeap<'_> {
     }
 
     fn truncate(&mut self, mut len: usize) {
-        if len < self.prog_cells.len() {
-            panic!("Can't truncate to prog cells")
-        }
+        debug_assert!(
+            len >= self.prog_cells.len(),
+            "truncate: target length {len} is below prog_cells boundary {}",
+            self.prog_cells.len()
+        );
         len -= self.prog_cells.len();
         self.cells.resize(len, (Tag::Ref, 0));
     }
@@ -155,14 +157,14 @@ impl Index<usize> for QueryHeap<'_> {
 impl IndexMut<usize> for QueryHeap<'_> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         if index < self.prog_cells.len() {
-            panic!("Can't get mutable reference to program heap cell");
+            unreachable!("IndexMut: attempted mutable access to program heap cell at index {index}");
         } else {
             if let Some(root) = self.root {
                 let root = unsafe { &*root };
                 let root_heap_len = root.heap_len(); // prog_cells.len() + root.cells.len()
                 if index < root_heap_len {
                     // Index is in root's query cells - deny mutable access
-                    panic!("Can't get mutable reference to root heap cell");
+                    unreachable!("IndexMut: attempted mutable access to parent heap cell at index {index}");
                 } else {
                     // Index is in our own cells
                     &mut self.cells[index - root_heap_len]
@@ -185,7 +187,7 @@ impl Index<Range<usize>> for QueryHeap<'_> {
         } else if index.start >= len && self.root.is_none() {
             &self.cells[index.start - len..index.end - len]
         } else {
-            panic!("Range splits static and mutable heap")
+            unreachable!("Index<Range>: range {index:?} spans the static program heap and mutable query cells")
         }
     }
 }

@@ -10,8 +10,7 @@ pub use maths::MATHS;
 pub use meta_predicates::META_PREDICATES;
 
 use crate::{
-    heap::{heap::Cell, query_heap::QueryHeap, symbol_db::SymbolDB},
-    parser::{build_tree::TokenStream, execute_tree::execute_tree, tokeniser::tokenise},
+    heap::query_heap::QueryHeap,
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
 };
@@ -100,33 +99,5 @@ pub type PredicateModule = (
     &'static [(&'static str, usize, PredicateFunction)],
     &'static [&'static str],
 );
-
-/// Register all entries from a predicate module into the predicate table.
-pub fn load_predicate_module(
-    predicate_table: &mut PredicateTable,
-    heap: &mut Vec<Cell>,
-    predicate_module: &PredicateModule,
-) {
-    for (symbol, arity, pred_fn) in predicate_module.0.iter() {
-        let _ = predicate_table.insert_predicate_function(
-            (SymbolDB::set_const((*symbol).to_string()), *arity),
-            *pred_fn,
-        );
-    }
-    for &file in predicate_module.1.iter() {
-        let syntax_tree = TokenStream::new(tokenise(&file).unwrap())
-            .parse_all()
-            .unwrap();
-
-        execute_tree(syntax_tree, heap, predicate_table);
-    }
-}
-
-/// Load all built-in predicate modules into the predicate table.
-pub fn load_all_modules(predicate_table: &mut PredicateTable, heap: &mut Vec<Cell>) {
-    load_predicate_module(predicate_table, heap, &MATHS);
-    load_predicate_module(predicate_table, heap, &META_PREDICATES);
-    load_predicate_module(predicate_table, heap, &LISTS);
-}
 
 pub static DEFAULT_MODULES: &[PredicateModule] = &[MATHS, META_PREDICATES, LISTS];
