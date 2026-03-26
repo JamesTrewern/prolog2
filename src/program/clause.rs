@@ -93,7 +93,7 @@ impl Clause {
 
     pub fn to_string(&self, heap: &impl Heap) -> String {
         if self.len() == 1{
-            return heap.term_string(self.head())
+            return heap.term_string(self.head()) + "."
         }
         let mut buffer = format!("{}:-", heap.term_string(self.head()));
         for body_literal in self.body() {
