@@ -77,9 +77,19 @@ Configured in a JSON file (default: `setup.json`):
     "reduce" : false
 }
 ```
+`config` is used by the solver, to limit the possible search size.<br> 
+`max_depth`: how many sub_goals deep the solver is allowed to go.<br>
+`max_clause`: number of clauses that can be added to hypothesis.<br>
+`max_pred`: number of invented predicates within the hypothesis.<br>
+
 `examples`, `auto`, `top_prog`, and `reduce` are all optional fields.
-If the config file includes an `examples` field, Prolog<sup>2</sup> will immediately attempt to prove the examples as a query and output any learned hypotheses. If `examples` is omitted, an interactive REPL is started where queries can be entered manually.
-The auto option makes the program iterate through all possible proofs in a query. By default this is off and after each proof the program awaits user input (Space/;: continue, Enter: stop).
+
+If the config file includes an `examples` field, Prolog<sup>2</sup> will immediately attempt to prove the examples as a query and output any learned hypotheses. 
+If `examples` is omitted, an interactive REPL is started where queries can be entered manually.
+
+The `auto` option makes the program iterate through all possible proofs in a query. By default this is off and after each proof the program awaits user input (Space/;: continue, Enter: stop).
+
+`files`: a list of either directory or file paths. If a directory is found it recursively searches subdirectories and loads all files with a .pl extension
 
 # Top Program Construction
 
@@ -87,13 +97,14 @@ Prolog<sup>2</sup> supports Top Program Construction (TPC) as an alternative to 
 
 The TPC pipeline has three stages: **Generalise** searches each positive example in parallel to collect all constructible clauses, **Specialise** removes any clause that entails a negative example, and **Reduce** applies Plotkin's reduction to eliminate redundant clauses while preferring general patterns over specific ones.
 
-To enable TPC, add `"top_prog": true` to your config file:
+To enable TPC, add `"top_prog": true` to your config file:<br>
+The reduction step is turned off by default (useful for profiling or inspecting the raw top program), to include the reduction step add `"reduce": true` to the config.
 
 ``` json
 {
     "config" : {
         "max_depth": 5,
-        "max_clause": 3,
+        "max_clause": 2,
         "max_pred": 1
     },
     "body_predicates" : [
@@ -108,6 +119,7 @@ To enable TPC, add `"top_prog": true` to your config file:
         "neg" : ["e(west6)", "e(west7)", "e(west8)", "e(west9)", "e(west10)"]
     },
     "top_prog" : true,
+    "reduce" : true,
     "files" : ["examples/trains/trains.pl"]
 }
 ```
@@ -119,8 +131,6 @@ Running this on Michalski's trains problem produces:
   e(Arg_0):-has_car(Arg_0,Arg_1),pred_1(Arg_1).
   pred_1(Arg_0):-short(Arg_0),closed(Arg_0).
 ```
-
-The reduction step is turned off by default (useful for profiling or inspecting the raw top program), to include the reduction step add `"reduce": true` to the config.
 
 # Step by Step Demonstration of New Clause Generation
 
