@@ -26,7 +26,7 @@ pub fn length(
         match heap[heap.deref_addr(goal + 3)] {
             (Tag::Ref, addr) => {
                 let bind_addr = heap.heap_push((Tag::Int, length));
-                PredReturn::Binding(vec![(addr, bind_addr)])
+                PredReturn::Success(vec![(addr, bind_addr)], vec![])
             }
             (Tag::Int, value) => (length == value).into(),
             _ => false.into(),
@@ -80,7 +80,7 @@ pub fn sort(
                         heap.heap_push((Tag::Lis,heap.heap_len()+1));
                     }
                     *heap.heap_last() = (Tag::ELis,0);
-                    PredReturn::Binding(vec![(src_addr,list_addr)])
+                    PredReturn::Success(vec![(src_addr,list_addr)], vec![])
                 } else {
                     false.into()
                 }
@@ -107,7 +107,7 @@ pub fn sort(
                         heap.heap_push((Tag::Lis,heap.heap_len()+1));
                     }
                     *heap.heap_last() = (Tag::ELis,0);
-                    PredReturn::Binding(vec![(src_addr,list_addr)])
+                    PredReturn::Success(vec![(src_addr,list_addr)], vec![])
                 } else {
                     false.into()
                 }

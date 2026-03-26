@@ -6,13 +6,29 @@
 //!
 //! ## Library usage
 //!
-//! The primary use case for the library is writing custom predicate modules and
-//! hooking them into the engine. The [`app::App`] builder handles configuration
-//! loading, module registration, and execution.
+//! The main extension point is the **predicate module** system. A
+//! [`predicate_modules::PredicateModule`] bundles native Rust predicate functions
+//! together with optional Prolog source code. Modules are registered with the
+//! [`app::App`] builder, which also handles configuration loading and execution.
+//!
+//! ### Writing a native predicate
+//!
+//! A native predicate is a Rust function with the signature defined by
+//! [`predicate_modules::PredicateFunction`]. It receives the current heap, the
+//! hypothesis being constructed, the heap address of the goal term, the predicate
+//! table, and the engine configuration. It returns a [`predicate_modules::PredReturn`]
+//! indicating:
+//!
+//! - [`PredReturn::True`] — success with no heap side-effects.
+//! - [`PredReturn::False`] — deterministic failure; the engine backtracks.
+//! - [`PredReturn::Success`] — success with a list of `(source, target)` variable
+//!   bindings to apply on the heap, and an optional list of new sub-goals to resolve.
+//!
+//! For the common case of a simple boolean check, `bool` converts directly via
+//! `Into<PredReturn>`.
 //!
 //! ```no_run
 //! use std::process::ExitCode;
-//! use std::sync::Arc;
 //! use prolog2::{app::App, Config};
 //! use prolog2::predicate_modules::{
 //!     MATHS, META_PREDICATES, PredReturn, PredicateFunction, PredicateModule,
@@ -34,16 +50,31 @@
 //!
 //! static MY_MODULE: PredicateModule = (&[
 //!     ("my_pred", 1, my_pred),
-//! ],&[]);
+//! ], &[]);
 //!
 //! fn main() -> ExitCode {
-//!     App::from_args()
-//!         .add_module(&MATHS)
-//!         .add_module(&META_PREDICATES)
-//!         .add_module(&MY_MODULE)
-//!         .run()
+//!     let app = App::new()
+//!         .load_module(&MATHS).expect("failed to load MATHS")
+//!         .load_module(&META_PREDICATES).expect("failed to load META_PREDICATES")
+//!         .load_module(&MY_MODULE).expect("failed to load MY_MODULE");
+//!     app.run()
 //! }
 //! ```
+//!
+//! ## Error handling
+//!
+//! Fallible operations return [`Result<T>`], a type alias for
+//! `std::result::Result<T, `[`Error`]`>`. The [`Error`] enum covers all error
+//! categories the engine can produce:
+//!
+//! - [`Error::IO`] — I/O errors when reading source files.
+//! - [`Error::Setup`] — JSON deserialisation failures for `setup.json`.
+//! - [`Error::Parser`] — structured parse errors from the Prolog parser; wraps a
+//!   [`parser::ParserError`] which carries source-line information via its
+//!   `AtLine` variant.
+//! - [`Error::Query`] — a query could not be executed (e.g. bad goal syntax).
+//! - [`Error::BodyPred`] — a body-predicate specification in the setup is invalid.
+//! - [`Error::Module`] — a predicate module could not be loaded (e.g. duplicate predicate).
 
 /// Application builder and configuration types.
 pub mod app;

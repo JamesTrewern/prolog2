@@ -19,13 +19,34 @@ use crate::{
 /// Return type for predicate functions.
 ///
 /// A predicate either succeeds ([`PredReturn::True`]), fails ([`PredReturn::False`]),
-/// or succeeds with variable bindings ([`PredReturn::Binding`]).
+/// or succeeds with heap mutations and/or new sub-goals ([`PredReturn::Success`]).
+///
+/// # Variants
+///
+/// The three variants cover the full range of outcomes a native predicate can produce:
+///
+/// - [`PredReturn::True`] — pure success with no heap side-effects; equivalent to
+///   `Success(vec![], vec![])` but avoids allocating empty vecs for the common case.
+/// - [`PredReturn::False`] — deterministic failure; the engine backtracks.
+/// - [`PredReturn::Success`] — success with optional variable bindings and/or new
+///   sub-goals to schedule. Either field may be empty:
+///   - `Success(bindings, vec![])` — binds heap cells and succeeds (the former `Binding` case).
+///   - `Success(vec![], goals)` — schedules new sub-goals without touching the heap.
+///   - `Success(bindings, goals)` — both; the engine applies the bindings *then* resolves
+///     the additional goals as if they had been in the clause body.
+///
+/// > **Note:** sub-goal scheduling via `Success(_, goals)` is not yet implemented in the
+/// > resolution engine. Returning a non-empty `goals` vec will currently panic with
+/// > `todo!()`. The variant is present so the API does not need to change once the
+/// > feature is added.
 pub enum PredReturn {
     True,
     False,
-    /// Success with a list of `(source_addr, target_addr)` bindings to apply on the heap.
-    Binding(Vec<(usize, usize)>),
-    Goal(Vec<(usize, usize)>, Vec<usize>),
+    /// Success with variable bindings to apply and new sub-goals to resolve.
+    ///
+    /// - First field: `(source_addr, target_addr)` heap bindings.
+    /// - Second field: heap addresses of additional sub-goals to schedule (may be empty).
+    Success(Vec<(usize, usize)>, Vec<usize>),
 }
 
 impl From<bool> for PredReturn {
@@ -51,9 +72,20 @@ pub type PredicateFunction =
 
 /// A predicate module: a tuple of native predicate entries and built-in Prolog source code.
 ///
-/// - The first element is a static slice of `(name, arity, function)` entries for native predicates.
-/// - The second element is a static slice of Prolog source strings, typically embedded at compile
-///   time via `include_str!` from the `builtins/` directory.
+/// The two components let you extend the engine in two complementary ways:
+///
+/// 1. **Native predicates** — a static slice of `(name, arity, function)` triples wired
+///    directly into the engine. Use these for anything that needs to inspect or mutate heap
+///    memory, perform I/O, or call into Rust logic that cannot be expressed in Prolog.
+///    Each function returns a [`PredReturn`] describing whether the predicate succeeded,
+///    failed, or succeeded with variable bindings.
+///
+/// 2. **Prolog source** — a static slice of `&str` source snippets (typically embedded at
+///    compile time with `include_str!`). These are parsed and loaded as ordinary clauses
+///    when the module is registered, so they can call each other or any native predicates
+///    in the module.
+///
+/// Either slice may be empty if the module only uses one mechanism.
 ///
 /// # Example
 ///
@@ -62,7 +94,7 @@ pub type PredicateFunction =
 ///
 /// static MY_MODULE: PredicateModule = (&[
 ///     ("always_true", 0, |_heap, _hyp, _goal, _pt, _cfg| PredReturn::True),
-/// ], &[include_str!("../../builtins/my_module.pl")]);
+/// ], &[]);
 /// ```
 pub type PredicateModule = (
     &'static [(&'static str, usize, PredicateFunction)],

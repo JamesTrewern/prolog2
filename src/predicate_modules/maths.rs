@@ -11,9 +11,10 @@ use crate::{
 };
 
 use fsize::fsize;
-use serde_json::value;
 
-type MathFn = fn(usize, &QueryHeap) -> Number;
+/// Signature for functions in the [`FUNCTIONS`] table.
+/// Returns `None` if any sub-expression is not a valid arithmetic term.
+type MathFn = fn(usize, &QueryHeap) -> Option<Number>;
 
 // Minus symbol ID for distinguishing unary negation from binary subtraction
 const MINUS_SYMBOL: usize = known_symbol_id(3);
@@ -87,11 +88,18 @@ impl Number {
         }
     }
 
-    pub fn from_cell((tag,value): Cell) -> Self{
+    /// Convert a heap cell known to be `Int` or `Flt` into a `Number`.
+    ///
+    /// # Panics
+    ///
+    /// This is an internal helper and should only ever be called with a cell
+    /// whose tag is `Int` or `Flt`. Calling it with any other tag is a
+    /// programmer error and will hit the `unreachable!` branch.
+    pub fn from_cell((tag, value): Cell) -> Self {
         match tag {
             Tag::Flt => Self::flt_from_value(value),
             Tag::Int => Number::Int(usize::cast_signed(value)),
-            _ => panic!()
+            _ => unreachable!("from_cell called with non-numeric tag {:?}", tag),
         }
     }
 
@@ -136,13 +144,10 @@ impl std::ops::Mul for Number {
     type Output = Number;
     fn mul(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Number::Int(v1), Number::Int(v2)) => {
-                // Use checked multiplication to avoid overflow panic
-                match v1.checked_mul(v2) {
-                    Some(result) => Number::Int(result),
-                    None => Number::Flt(v1 as f64 * v2 as f64), // Fallback to float on overflow
-                }
-            }
+            (Number::Int(v1), Number::Int(v2)) => match v1.checked_mul(v2) {
+                Some(result) => Number::Int(result),
+                None => Number::Flt(v1 as f64 * v2 as f64),
+            },
             (lhs, rhs) => Number::Flt(lhs.float() * rhs.float()),
         }
     }
@@ -154,7 +159,7 @@ impl std::ops::Div for Number {
         match (self, rhs) {
             (Number::Int(v1), Number::Int(v2)) => {
                 if v2 == 0 {
-                    Number::Flt(f64::NAN) // Return NaN for division by zero
+                    Number::Flt(f64::NAN)
                 } else {
                     Number::Int(v1 / v2)
                 }
@@ -182,91 +187,97 @@ impl PartialOrd for Number {
     }
 }
 
-// Math operation functions
-fn add(addr: usize, heap: &QueryHeap) -> Number {
-    evaluate_term(addr + 2, heap) + evaluate_term(addr + 3, heap)
+// ---------------------------------------------------------------------------
+// Math operation functions — all return Option<Number> so that a bad
+// sub-expression propagates as None rather than panicking.
+// ---------------------------------------------------------------------------
+
+fn add(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(evaluate_term(addr + 2, heap)? + evaluate_term(addr + 3, heap)?)
 }
 
-fn sub(addr: usize, heap: &QueryHeap) -> Number {
-    evaluate_term(addr + 2, heap) - evaluate_term(addr + 3, heap)
+fn sub(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(evaluate_term(addr + 2, heap)? - evaluate_term(addr + 3, heap)?)
 }
 
-fn mul(addr: usize, heap: &QueryHeap) -> Number {
-    evaluate_term(addr + 2, heap) * evaluate_term(addr + 3, heap)
+fn mul(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(evaluate_term(addr + 2, heap)? * evaluate_term(addr + 3, heap)?)
 }
 
-fn div(addr: usize, heap: &QueryHeap) -> Number {
-    evaluate_term(addr + 2, heap) / evaluate_term(addr + 3, heap)
+fn div(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(evaluate_term(addr + 2, heap)? / evaluate_term(addr + 3, heap)?)
 }
 
-fn pow(addr: usize, heap: &QueryHeap) -> Number {
-    evaluate_term(addr + 2, heap).power(evaluate_term(addr + 3, heap))
+fn pow(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(evaluate_term(addr + 2, heap)?.power(evaluate_term(addr + 3, heap)?))
 }
 
-fn cos(addr: usize, heap: &QueryHeap) -> Number {
-    Number::Flt(evaluate_term(addr + 2, heap).float().cos())
+fn cos(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().cos()))
 }
 
-fn sin(addr: usize, heap: &QueryHeap) -> Number {
-    Number::Flt(evaluate_term(addr + 2, heap).float().sin())
+fn sin(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().sin()))
 }
 
-fn tan(addr: usize, heap: &QueryHeap) -> Number {
-    Number::Flt(evaluate_term(addr + 2, heap).float().tan())
+fn tan(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().tan()))
 }
 
-fn acos(addr: usize, heap: &QueryHeap) -> Number {
-    Number::Flt(evaluate_term(addr + 2, heap).float().acos())
+fn acos(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().acos()))
 }
 
-fn asin(addr: usize, heap: &QueryHeap) -> Number {
-    Number::Flt(evaluate_term(addr + 2, heap).float().asin())
+fn asin(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().asin()))
 }
 
-fn atan(addr: usize, heap: &QueryHeap) -> Number {
-    Number::Flt(evaluate_term(addr + 2, heap).float().atan())
+fn atan(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().atan()))
 }
 
-fn log(addr: usize, heap: &QueryHeap) -> Number {
-    Number::Flt(
-        evaluate_term(addr + 2, heap)
+fn log(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(Number::Flt(
+        evaluate_term(addr + 2, heap)?
             .float()
-            .log(evaluate_term(addr + 3, heap).float()),
-    )
+            .log(evaluate_term(addr + 3, heap)?.float()),
+    ))
 }
 
-fn abs(addr: usize, heap: &QueryHeap) -> Number {
-    evaluate_term(addr + 2, heap).abs()
+fn abs(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(evaluate_term(addr + 2, heap)?.abs())
 }
 
-fn round(addr: usize, heap: &QueryHeap) -> Number {
-    evaluate_term(addr + 2, heap).round()
+fn round(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(evaluate_term(addr + 2, heap)?.round())
 }
 
-fn to_radians(addr: usize, heap: &QueryHeap) -> Number {
-    Number::Flt(evaluate_term(addr + 2, heap).float().to_radians())
+fn to_radians(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().to_radians()))
 }
 
-fn to_degrees(addr: usize, heap: &QueryHeap) -> Number {
-    Number::Flt(evaluate_term(addr + 2, heap).float().to_degrees())
+fn to_degrees(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().to_degrees()))
 }
 
-fn neg(addr: usize, heap: &QueryHeap) -> Number {
-    match evaluate_term(addr + 2, heap) {
+fn neg(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(match evaluate_term(addr + 2, heap)? {
         Number::Int(v) => Number::Int(-v),
         Number::Flt(v) => Number::Flt(-v),
-    }
+    })
 }
 
-fn sqrt(addr: usize, heap: &QueryHeap) -> Number {
-    Number::Flt(evaluate_term(addr + 2, heap).float().sqrt())
+fn sqrt(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().sqrt()))
 }
 
-fn evaluate_str(addr: usize, heap: &QueryHeap) -> Number {
+/// Evaluate a functor/structure term as an arithmetic expression.
+/// Returns `None` if the functor is not a known arithmetic operator.
+fn evaluate_str(addr: usize, heap: &QueryHeap) -> Option<Number> {
     let symbol = heap[addr + 1].1;
     let arity = heap[addr].1;
 
-    // Handle unary minus: -(X) has arity 2 (functor + 1 arg)
+    // Unary minus: -(X) has arity 2 (functor cell + 1 arg)
     if symbol == MINUS_SYMBOL && arity == 2 {
         return neg(addr, heap);
     }
@@ -276,24 +287,50 @@ fn evaluate_str(addr: usize, heap: &QueryHeap) -> Number {
             return funct(addr, heap);
         }
     }
-    panic!("Unknown function {}", heap.term_string(addr));
+    None
 }
 
-fn evaluate_term(addr: usize, heap: &QueryHeap) -> Number {
+/// Evaluate a heap term as an arithmetic expression.
+/// Returns `None` if the term is not a number or a known arithmetic expression.
+fn evaluate_term(addr: usize, heap: &QueryHeap) -> Option<Number> {
     let addr = heap.deref_addr(addr);
     match heap[addr] {
         (Tag::Func, _) => evaluate_str(addr, heap),
         (Tag::Str, ptr) => evaluate_str(ptr, heap),
-        (tag @ (Tag::Int | Tag::Flt), value) => Number::from_cell((tag,value)),
-        _ => panic!(
-            "{:?} : {} not a valid mathematical expression",
-            heap[addr],
-            heap.term_string(addr),
-        ),
+        (tag @ (Tag::Int | Tag::Flt), value) => Some(Number::from_cell((tag, value))),
+        _ => None,
     }
 }
 
-/// is/2 predicate: evaluates RHS and unifies with LHS
+// ---------------------------------------------------------------------------
+// Shared helper for comparison predicates
+// ---------------------------------------------------------------------------
+
+/// Resolve the goal to its functor address and evaluate both arguments as numbers.
+/// Returns `None` if the goal is malformed or either argument is not a valid
+/// arithmetic expression — the caller should treat this as failure.
+fn eval_comparison(heap: &QueryHeap, goal: usize) -> Option<(Number, Number)> {
+    let goal_addr = heap.deref_addr(goal);
+    let func_addr = match heap[goal_addr] {
+        (Tag::Str, ptr) => ptr,
+        (Tag::Func, _) => goal_addr,
+        _ => return None,
+    };
+    Some((
+        evaluate_term(func_addr + 2, heap)?,
+        evaluate_term(func_addr + 3, heap)?,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Predicate functions
+// ---------------------------------------------------------------------------
+
+/// `is/2`: evaluate the RHS as an arithmetic expression and unify with the LHS.
+///
+/// - If LHS is an unbound variable, it is bound to the result.
+/// - If LHS is already bound, the predicate succeeds only if LHS equals the result.
+/// - Fails (rather than panicking) if either side is not a valid arithmetic expression.
 pub fn is_pred(
     heap: &mut QueryHeap,
     _hypothesis: &mut Hypothesis,
@@ -301,30 +338,116 @@ pub fn is_pred(
     _pred_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // Goal structure: Func(3) | Con("is") | LHS | RHS
     let goal_addr = heap.deref_addr(goal);
     let func_addr = match heap[goal_addr] {
         (Tag::Str, ptr) => ptr,
         (Tag::Func, _) => goal_addr,
-        _ => panic!("is/2: expected structure, got {:?}", heap[goal_addr]),
+        _ => return PredReturn::False,
     };
 
-    let rhs = evaluate_term(func_addr + 3, heap);
+    let Some(rhs) = evaluate_term(func_addr + 3, heap) else {
+        return PredReturn::False;
+    };
     let lhs_addr = heap.deref_addr(func_addr + 2);
 
     match heap[lhs_addr] {
         (Tag::Ref, _) => {
-            // LHS is unbound - create binding
+            // LHS is unbound — bind it to the result
             let result_addr = heap.heap_push(rhs.to_cell());
-            PredReturn::Binding(vec![(lhs_addr, result_addr)])
+            PredReturn::Success(vec![(lhs_addr, result_addr)], vec![])
         }
         _ => {
-            // LHS is bound - check equality
-            let lhs = evaluate_term(lhs_addr, heap);
-            (lhs == rhs).into()
+            // LHS is already bound — check numeric equality
+            match evaluate_term(lhs_addr, heap) {
+                Some(lhs) => (lhs == rhs).into(),
+                None => PredReturn::False,
+            }
         }
     }
 }
 
-/// Built-in maths predicates: `is/2` for arithmetic evaluation.
-pub static MATHS: PredicateModule = (&[("is", 2, is_pred)], &[]);
+/// `</2`: succeeds if LHS evaluates to a number strictly less than RHS.
+pub fn lt_pred(
+    heap: &mut QueryHeap,
+    _: &mut Hypothesis,
+    goal: usize,
+    _: &PredicateTable,
+    _: Config,
+) -> PredReturn {
+    match eval_comparison(heap, goal) {
+        Some((lhs, rhs)) => (lhs < rhs).into(),
+        None => PredReturn::False,
+    }
+}
+
+/// `>/2`: succeeds if LHS evaluates to a number strictly greater than RHS.
+pub fn gt_pred(
+    heap: &mut QueryHeap,
+    _: &mut Hypothesis,
+    goal: usize,
+    _: &PredicateTable,
+    _: Config,
+) -> PredReturn {
+    match eval_comparison(heap, goal) {
+        Some((lhs, rhs)) => (lhs > rhs).into(),
+        None => PredReturn::False,
+    }
+}
+
+/// `=</2`: succeeds if LHS evaluates to a number less than or equal to RHS.
+pub fn le_pred(
+    heap: &mut QueryHeap,
+    _: &mut Hypothesis,
+    goal: usize,
+    _: &PredicateTable,
+    _: Config,
+) -> PredReturn {
+    match eval_comparison(heap, goal) {
+        Some((lhs, rhs)) => (lhs <= rhs).into(),
+        None => PredReturn::False,
+    }
+}
+
+/// `>=/2`: succeeds if LHS evaluates to a number greater than or equal to RHS.
+pub fn ge_pred(
+    heap: &mut QueryHeap,
+    _: &mut Hypothesis,
+    goal: usize,
+    _: &PredicateTable,
+    _: Config,
+) -> PredReturn {
+    match eval_comparison(heap, goal) {
+        Some((lhs, rhs)) => (lhs >= rhs).into(),
+        None => PredReturn::False,
+    }
+}
+
+/// `=:=/2`: succeeds if both sides evaluate to numerically equal values.
+///
+/// Unlike `is/2`, this never binds variables — both sides must already be
+/// ground arithmetic expressions.
+pub fn arith_eq_pred(
+    heap: &mut QueryHeap,
+    _: &mut Hypothesis,
+    goal: usize,
+    _: &PredicateTable,
+    _: Config,
+) -> PredReturn {
+    match eval_comparison(heap, goal) {
+        Some((lhs, rhs)) => (lhs == rhs).into(),
+        None => PredReturn::False,
+    }
+}
+
+/// Built-in maths predicates.
+pub static MATHS: PredicateModule = (
+    &[
+        ("is", 2, is_pred),
+        ("<", 2, lt_pred),
+        (">", 2, gt_pred),
+        ("=<", 2, le_pred),
+        (">=", 2, ge_pred),
+        ("=:=", 2, arith_eq_pred),
+    ],
+    &[],
+);

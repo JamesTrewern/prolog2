@@ -155,6 +155,37 @@ impl Examples {
     }
 }
 
+/// The top-level Prolog² engine.
+///
+/// `App` owns the program heap and predicate table and exposes a builder API
+/// for constructing an engine, loading code, and running queries.
+///
+/// # Building an engine
+///
+/// Use [`App::new`] for a bare engine with no built-in predicates, or
+/// [`App::default`] to include the standard built-in modules. Chain builder
+/// methods to configure the engine before running:
+///
+/// ```no_run
+/// use prolog2::app::App;
+/// use prolog2::predicate_modules::MATHS;
+///
+/// let app = App::default()
+///     .load_module(&MATHS).unwrap()
+///     .load_file("facts.pl".as_ref()).unwrap();
+/// ```
+///
+/// Alternatively, load the full configuration from a JSON setup file with
+/// [`App::from_setup_json`].
+///
+/// # Running queries
+///
+/// - [`App::run`] is the high-level entry point used by the binary; it starts
+///   an interactive REPL or runs configured examples depending on state.
+/// - [`App::start_query`] runs a single query string and prints solutions
+///   interactively to stdout.
+/// - [`App::query_session`] returns a [`QuerySession`] for programmatic
+///   iteration over solutions without any I/O side-effects.
 pub struct App {
     predicate_table: PredicateTable,
     prog_heap: Vec<Cell>,
@@ -176,6 +207,10 @@ impl Default for App {
 }
 
 impl App {
+    /// Creates a bare engine with no predicates loaded.
+    ///
+    /// Use [`App::default`] instead if you want the standard built-in modules
+    /// (arithmetic, meta-predicates, etc.) included automatically.
     pub fn new() -> Self {
         App {
             predicate_table: PredicateTable::new(),
@@ -187,18 +222,25 @@ impl App {
         }
     }
 
+    /// Sets the engine configuration (search depth, clause limits, debug mode).
     pub fn config(self, config: Config) -> Self {
         App { config, ..self }
     }
 
+    /// When `true`, solution search runs without pausing to ask the user
+    /// whether to continue — equivalent to always pressing `;`.
     pub fn auto(self, auto: bool) -> Self {
         App { auto, ..self }
     }
 
+    /// Configures whether Top Program Construction is run instead of a direct
+    /// query, and whether the learned program is reduced afterwards.
     pub fn top_prog(self, top_prog: TopProg) -> Self {
         App { top_prog, ..self }
     }
 
+    /// Sets the positive and negative training examples used by [`App::run`]
+    /// when no interactive REPL is desired.
     pub fn examples(self, examples: Examples) -> Self {
         App {
             examples: Some(examples),
@@ -206,6 +248,17 @@ impl App {
         }
     }
 
+    /// Loads and fully initialises an engine from a JSON setup file.
+    ///
+    /// The setup file controls the [`Config`], which `.pl` source files to
+    /// load, which predicates are available as body predicates for MIL, and
+    /// any training examples. See [`SetUp`] for the full schema.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IO`] if the file cannot be read, [`Error::Setup`] if
+    /// the JSON is malformed, or [`Error::Parser`] if any of the loaded `.pl`
+    /// files contain a syntax error.
     pub fn from_setup_json(path: impl AsRef<str>) -> Result<Self> {
         let path = path.as_ref();
         let setup: SetUp = serde_json::from_str(&fs::read_to_string(path)?)?;
@@ -240,16 +293,36 @@ impl App {
         app.add_body_predicates(setup.body_predicates)
     }
 
+    /// Parses a Prolog source string and adds all clauses to the program.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Parser`] if the source contains a syntax error.
     pub fn load_code(mut self, code: impl AsRef<str>) -> Result<Self> {
         let syntax_tree = TokenStream::new(tokenise(code)?).parse_all()?;
         execute_tree(syntax_tree, &mut self.prog_heap, &mut self.predicate_table);
         Ok(self)
     }
 
+    /// Reads a `.pl` file from disk and loads it with [`App::load_code`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IO`] if the file cannot be read, or [`Error::Parser`]
+    /// if it contains a syntax error.
     pub fn load_file(self, file: &Path) -> Result<Self> {
         self.load_code(fs::read_to_string(file)?)
     }
 
+    /// Recursively loads all `.pl` files found under `dir_path`.
+    ///
+    /// Subdirectories are traversed depth-first. Files with extensions other
+    /// than `.pl` are silently skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IO`] on filesystem errors or [`Error::Parser`] if any
+    /// file contains a syntax error.
     pub fn load_dir(mut self, dir_path: &Path) -> Result<Self> {
         let paths = fs::read_dir(&dir_path)?;
         for path_result in paths {
@@ -265,7 +338,14 @@ impl App {
         Ok(self)
     }
 
-    pub fn load_module(mut self, predicate_module: &PredicateModule) -> Result<Self>{
+    /// Registers a [`PredicateModule`], making its built-in predicates and
+    /// any bundled Prolog source available to the engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Parser`] if the module's bundled source contains a
+    /// syntax error.
+    pub fn load_module(mut self, predicate_module: &PredicateModule) -> Result<Self> {
         for (symbol, arity, pred_fn) in predicate_module.0.iter() {
             self.predicate_table
                 .insert_predicate_function(
@@ -280,6 +360,18 @@ impl App {
         Ok(self)
     }
 
+    /// Marks a set of predicates as *body predicates* for Meta-Interpretive
+    /// Learning.
+    ///
+    /// Body predicates are the background knowledge predicates that the MIL
+    /// engine is permitted to use in the body of learned clauses. Any predicate
+    /// listed here must already be present in the program (loaded via
+    /// [`App::load_code`], [`App::load_file`], or [`App::load_module`]).
+    ///
+    /// # Panics
+    ///
+    /// Panics if a predicate named in `body_preds` does not exist in the
+    /// predicate table.
     pub fn add_body_predicates<'a>(mut self, body_preds: impl AsRef<[BodyPred]>) -> Result<Self> {
         for BodyPred { symbol, arity } in body_preds.as_ref() {
             let sym = SymbolDB::set_const(symbol.clone());
@@ -290,6 +382,27 @@ impl App {
         Ok(self)
     }
 
+    /// Runs a Prolog query and prints each solution to stdout interactively.
+    ///
+    /// After each solution the user is prompted to press `;` or Space to
+    /// search for the next solution, or Enter/`.` to stop. When
+    /// [`App::auto`] is `true` the engine finds all solutions without
+    /// prompting.
+    ///
+    /// Output format per solution:
+    /// ```text
+    /// TRUE
+    /// VarName = value
+    /// ```
+    /// Followed by `FALSE` once the search space is exhausted or the user
+    /// stops early.
+    ///
+    /// For programmatic access to solutions without any I/O, use
+    /// [`App::query_session`] instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Parser`] if `query` contains a syntax error.
     pub fn start_query(&self, query: impl AsRef<str>) -> Result<()> {
         let mut session = self.query_session(query)?;
         loop {
@@ -312,6 +425,18 @@ impl App {
         Ok(())
     }
 
+    /// Opens a [`QuerySession`] for a Prolog query string.
+    ///
+    /// Unlike [`App::start_query`], this method performs no I/O. Solutions are
+    /// retrieved by calling [`QuerySession::next_solution`] (or by iterating,
+    /// since [`QuerySession`] implements [`Iterator`]).
+    ///
+    /// The session borrows `self` for its lifetime, so the engine cannot be
+    /// mutated while a session is open.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Parser`] if `query` contains a syntax error.
     pub fn query_session(&self, query: impl AsRef<str>) -> Result<QuerySession<'_>> {
         let query = query.as_ref();
         let literals = TokenStream::new(tokenise(query)?).parse_goals()?;
@@ -336,6 +461,17 @@ impl App {
         })
     }
 
+    /// Opens a [`QuerySession`] built from the training examples set on this
+    /// engine.
+    ///
+    /// Positive examples become goals; negative examples are wrapped in
+    /// `not(...)`. This is a convenience wrapper around [`App::query_session`]
+    /// using [`Examples::to_query`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Query`] if no examples have been set, or
+    /// [`Error::Parser`] if the generated query string is malformed.
     pub fn query_session_from_examples(&self) -> Result<QuerySession<'_>> {
         self.query_session(
             self.examples
@@ -345,8 +481,15 @@ impl App {
         )
     }
 
-    /// If examples are provided run automatic query
-    /// otherwise await console input query
+    /// High-level entry point — runs the engine and returns an exit code.
+    ///
+    /// Behaviour depends on the engine state:
+    ///
+    /// - **No examples set** — starts the interactive REPL ([`App::main_loop`]).
+    /// - **Examples set, no Top Program Construction** — runs
+    ///   [`App::start_query`] on the examples and exits.
+    /// - **Examples set, Top Program Construction enabled** — runs the TPC
+    ///   algorithm and prints any learned clauses.
     pub fn run(self) -> ExitCode {
         match &self.examples {
             Some(examples) => match self.top_prog {
@@ -369,6 +512,15 @@ impl App {
         }
     }
 
+    /// Runs the interactive read-eval-print loop.
+    ///
+    /// Presents a `?- ` prompt and accepts Prolog queries terminated by `.`.
+    /// Multi-line queries are supported; a `|  ` continuation prompt is shown
+    /// until a `.` is seen.
+    ///
+    /// Input history is persisted to `~/.prolog2_history` across sessions.
+    /// Arrow keys provide cursor movement (left/right) and history navigation
+    /// (up/down). Press Ctrl+C or Ctrl+D to exit.
     pub fn main_loop(&self) -> ExitCode {
         let mut rl = rustyline::DefaultEditor::new().expect("Failed to initialise line editor");
 
@@ -434,6 +586,17 @@ fn continue_proof(auto: bool) -> bool {
     }
 }
 
+/// An active proof-search session for a single Prolog query.
+///
+/// Created by [`App::query_session`] or [`App::query_session_from_examples`].
+/// Borrows the engine for its lifetime.
+///
+/// Solutions are retrieved one at a time via [`QuerySession::next_solution`].
+/// `QuerySession` also implements [`Iterator`]`<Item = `[`Solution`]`>`, so it
+/// can be used directly in `for` loops or with iterator adaptors.
+///
+/// Backtracking state is maintained between calls, so each call to
+/// `next_solution` resumes the proof search from where it left off.
 pub struct QuerySession<'a> {
     proof: Proof<'a>,
     vars: Vec<(Arc<str>, usize)>, // (variable_name, heap_address)
@@ -441,13 +604,23 @@ pub struct QuerySession<'a> {
     config: Config,
 }
 
+/// A single solution returned by [`QuerySession`].
 pub struct Solution {
-    pub bindings: Vec<(Arc<str>, String)>, // (var_name, value_string)
-    pub hypothesis: String,                // learned clauses as text
+    /// Variable bindings as `(name, display_string)` pairs, in the order the
+    /// variables appear in the query.
+    pub bindings: Vec<(Arc<str>, String)>,
+    /// Any clauses learned during this proof step via Top Program Construction,
+    /// rendered as a Prolog source string. Empty if no hypothesis was formed.
+    pub hypothesis: String,
 }
 
 impl<'a> QuerySession<'a> {
-    /// Step to the next solution. Returns None when exhausted.
+    /// Advances to the next solution, returning `None` when the search space
+    /// is exhausted.
+    ///
+    /// Each call resumes backtracking from where the previous call left off.
+    /// Variable bindings are returned as display strings; the hypothesis field
+    /// contains any clauses learned via MIL during this proof step.
     pub fn next_solution(&mut self) -> Option<Solution> {
         if self.proof.prove(self.predicate_table, self.config) {
             let bindings = self

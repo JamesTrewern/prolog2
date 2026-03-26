@@ -160,12 +160,14 @@ impl Env {
                     PredReturn::False => {
                         // Fall through to try clause-based choices
                     }
-                    PredReturn::Binding(bindings) => {
+                    PredReturn::Success(bindings, goals) => {
+                        if !goals.is_empty() {
+                            todo!("sub-goal scheduling from native predicates is not yet implemented")
+                        }
                         self.bindings = bindings.into_boxed_slice();
                         heap.bind(&self.bindings);
                         return Some(Vec::new());
                     }
-                    PredReturn::Goal(_bindings,_goals) => todo!()
                 }
             }
         }
