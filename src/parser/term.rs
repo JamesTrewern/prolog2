@@ -22,7 +22,7 @@ impl Unit {
         let c = token.chars().next()?;
         match c {
             '\'' => Some(Unit::Constant(token[1..token.len() - 1].into())),
-            '"' => Some(Unit::String(token.to_string())),
+            '"' => Some(Unit::String(token[1..token.len() - 1].into())),
             '_' => Some(Unit::AnonVar),
             c if c.is_lowercase() => Some(Unit::Constant(token.into())),
             c if c.is_uppercase() => Some(Unit::Variable(token.into())),

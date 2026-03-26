@@ -441,21 +441,21 @@ mod tests {
     fn parse_string_term() {
         let text = tokenise("\"A String\"").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("\"A String\"".into())));
+        assert_eq!(term, Term::Unit(Unit::String("A String".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("\"A String\"".into())));
+        assert_eq!(term, Term::Unit(Unit::String("A String".into())));
 
         let text = tokenise("\"A \\\"String\"").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("\"A \"String\"".into())));
+        assert_eq!(term, Term::Unit(Unit::String("A \"String".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("\"A \"String\"".into())));
+        assert_eq!(term, Term::Unit(Unit::String("A \"String".into())));
 
         let text = tokenise("\"A *+-=: String\"").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("\"A *+-=: String\"".into())));
+        assert_eq!(term, Term::Unit(Unit::String("A *+-=: String".into())));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("\"A *+-=: String\"".into())));
+        assert_eq!(term, Term::Unit(Unit::String("A *+-=: String".into())));
     }
 
     #[test]

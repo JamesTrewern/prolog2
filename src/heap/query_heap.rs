@@ -115,7 +115,7 @@ impl Heap for QueryHeap<'_> {
             Tag::Tup => self.tuple_string(addr),
             Tag::Set => self.set_string(addr),
             Tag::Str => self.term_string(self[addr].1),
-            Tag::Stri => SymbolDB::get_string(self[addr].1).to_string(),
+            Tag::Stri => format!("\"{}\"", SymbolDB::get_string(self[addr].1)),
             Tag::AVar => "_".into()
         }
     }

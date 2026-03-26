@@ -4,10 +4,13 @@ pub mod maths;
 pub mod meta_predicates;
 
 pub mod lists;
+/// Built-in string and atom predicates.
+pub mod strings;
 
 pub use lists::LISTS;
 pub use maths::MATHS;
 pub use meta_predicates::META_PREDICATES;
+pub use strings::STRINGS;
 
 use crate::{
     heap::query_heap::QueryHeap,
@@ -100,4 +103,4 @@ pub type PredicateModule = (
     &'static [&'static str],
 );
 
-pub static DEFAULT_MODULES: &[PredicateModule] = &[MATHS, META_PREDICATES, LISTS];
+pub static DEFAULT_MODULES: &[PredicateModule] = &[MATHS, META_PREDICATES, LISTS, STRINGS];
