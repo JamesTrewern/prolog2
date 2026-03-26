@@ -167,10 +167,9 @@ pub fn run(
 
 /// Parse a single example string into a goal on the given query heap.
 fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, String> {
-    let literals = match TokenStream::new(tokenise(example)?).parse_goals() {
-        Ok(literals) => literals,
-        Err(err) => return Err(format!("Example '{example}' incorrectly formatted, Error: [{err}]")),
-    };
+    let literals = TokenStream::new(tokenise(example).map_err(|e| e.to_string())?)
+        .parse_goals()
+        .map_err(|e| format!("Example '{example}' incorrectly formatted: {e}"))?;
     let clause = build_clause(literals, None, None, query_heap, true);
     Ok(clause[0])
 }

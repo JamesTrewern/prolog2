@@ -3,6 +3,7 @@
 // TODO: Handle sets
 
 use super::term::{Term, Unit};
+use super::ParserError;
 
 const INFIX_ORDER: &[&[&str]] = &[
     &["**"],
@@ -94,15 +95,15 @@ fn resolve_infix(term_stack: &mut Vec<Term>, op_stack: &mut Vec<String>, max_pre
 }
 
 impl TokenStream {
-    fn expect(&mut self, value: &str) -> Result<(), String> {
+    fn expect(&mut self, value: &str) -> Result<(), ParserError> {
         match self.next() {
             Some(token) if token == value => Ok(()),
-            Some(token) => Err(format!("Expected \"{value}\" recieved \"{token}\"")),
-            None => Err(format!("Unexpected end of file in expect {value}")),
+            Some(token) => Err(ParserError::Expected { expected: value.into(), got: Some(token.into()) }),
+            None => Err(ParserError::Expected { expected: value.into(), got: None }),
         }
     }
 
-    fn consume_args(&mut self) -> Result<Vec<Term>, String> {
+    fn consume_args(&mut self) -> Result<Vec<Term>, ParserError> {
         let mut args = Vec::new();
         loop {
             args.push(self.parse_expression()?);
@@ -111,34 +112,34 @@ impl TokenStream {
                 Some(",") => {
                     self.next();
                 }
-                Some(token) => return Err(format!("Unexpected token in arguments: \"{token}\"")),
-                None => return Err("Unexpected End of File".into()),
+                Some(token) => return Err(ParserError::UnexpectedToken { token: token.to_string() }),
+                None => return Err(ParserError::UnexpectedEof),
             }
         }
     }
 
-    pub(super) fn parse_term(&mut self) -> Result<Term, String> {
-        match self.peek().ok_or("Unexpected end of file")? {
+    pub(super) fn parse_term(&mut self) -> Result<Term, ParserError> {
+        match self.peek().ok_or(ParserError::UnexpectedEof)? {
             "{" => {
                 self.next();
                 let args = self.consume_args()?;
                 if self.next() == Some("}") {
                     Ok(Term::Set(args))
                 } else {
-                    Err("Incorrectly formatted set".into())
+                    Err(ParserError::MalformedSet)
                 }
             }
             "[" => {
                 self.next();
                 let head = self.consume_args()?;
-                match self.next().ok_or("Unexpected end of file")? {
+                match self.next().ok_or(ParserError::UnexpectedEof)? {
                     "|" => {
                         let tail = Box::new(self.parse_expression()?);
                         self.expect("]")?;
                         Ok(Term::List(head, tail))
                     }
                     "]" => Ok(Term::List(head, Box::new(Term::EmptyList))),
-                    token => return Err(format!("Unexpected token in list: \"{token}\"")),
+                    token => return Err(ParserError::UnexpectedToken { token: token.to_string() }),
                 }
             }
             "[]" => {
@@ -184,13 +185,13 @@ impl TokenStream {
                         }
                     }
                     Some(unit) => Ok(Term::Unit(unit)),
-                    None => Err(format!("parse_expression: unhandled token '{token}'")),
+                    None => Err(ParserError::UnexpectedToken { token: token.to_string() }),
                 }
             }
         }
     }
 
-    pub(super) fn parse_expression(&mut self) -> Result<Term, String> {
+    pub(super) fn parse_expression(&mut self) -> Result<Term, ParserError> {
         let mut op_stack = Vec::<String>::new();
         let mut term_stack = Vec::<Term>::new();
         loop {
@@ -222,10 +223,10 @@ impl TokenStream {
         }
 
         resolve_infix(&mut term_stack, &mut op_stack, INFIX_ORDER.len());
-        term_stack.pop().ok_or("Empty expression".into())
+        term_stack.pop().ok_or(ParserError::UnexpectedEof)
     }
 
-    fn parse_body_literals(&mut self) -> Result<Vec<Term>, String> {
+    fn parse_body_literals(&mut self) -> Result<Vec<Term>, ParserError> {
         let mut body = Vec::new();
         loop {
             body.push(self.parse_expression()?);
@@ -233,17 +234,15 @@ impl TokenStream {
                 Some(",") => continue,
                 Some(".") => break,
                 Some(token) => {
-                    return Err(format!(
-                        "Unexpected token \"{token}\" after literal, expected either ',' or '.'"
-                    ))
+                    return Err(ParserError::Expected { expected: "',' or '.'".into(), got: Some(token.to_string()) })
                 }
-                None => return Err("Unexpected end of file".into()),
+                None => return Err(ParserError::UnexpectedEof),
             }
         }
         Ok(body)
     }
 
-    pub fn parse_clause(&mut self) -> Result<Option<TreeClause>, String> {
+    pub fn parse_clause(&mut self) -> Result<Option<TreeClause>, ParserError> {
         match self.peek() {
             None => return Ok(None),
             Some(_) => {
@@ -259,7 +258,7 @@ impl TokenStream {
                                     .iter()
                                     .any(|eq_var| !matches!(eq_var, Term::Unit(Unit::Variable(_))))
                                 {
-                                    return Err(format!("Incorrectly formatted existentially quantified variables  {:?}", eq_vars));
+                                    return Err(ParserError::MalformedMetaRule { detail: format!("incorrectly formatted existentially quantified variables: {:?}", eq_vars) });
                                 }
                                 true
                             }
@@ -271,7 +270,7 @@ impl TokenStream {
                                     .iter()
                                     .any(|v| !matches!(v, Term::Unit(Unit::Variable(_))))
                                 {
-                                    return Err(format!("Unconstrained variable list should only contain variables, got {:?}", vars));
+                                    return Err(ParserError::MalformedMetaRule { detail: format!("unconstrained variable list should only contain variables, got {:?}", vars) });
                                 }
                                 // Case 2: ...{P},[Q1,Q2]. — check if second-to-last is a constrained set
                                 if len >= 2 {
@@ -279,7 +278,7 @@ impl TokenStream {
                                         if eq_vars.iter().any(|eq_var| {
                                             !matches!(eq_var, Term::Unit(Unit::Variable(_)))
                                         }) {
-                                            return Err(format!("Incorrectly formatted existentially quantified variables {:?}", eq_vars));
+                                            return Err(ParserError::MalformedMetaRule { detail: format!("incorrectly formatted existentially quantified variables: {:?}", eq_vars) });
                                         }
                                     }
                                 }
@@ -302,10 +301,7 @@ impl TokenStream {
                                 .iter()
                                 .any(|eq_var| !matches!(eq_var, Term::Unit(Unit::Variable(_))))
                             {
-                                return Err(format!(
-                                    "Incorrectly formatted existentially quantified variables {:?}",
-                                    eq_vars
-                                ));
+                                return Err(ParserError::MalformedMetaRule { detail: format!("incorrectly formatted existentially quantified variables: {:?}", eq_vars) });
                             }
                             self.expect(".")?;
                             Ok(Some(TreeClause::MetaFact(
@@ -313,40 +309,38 @@ impl TokenStream {
                                 meta_data,
                             )))
                         } else {
-                            Err(format!("Expected set of existentially quantified variables after comma in meta-fact, got {:?}", meta_data))
+                            Err(ParserError::MalformedMetaRule { detail: format!("expected set of existentially quantified variables after comma in meta-fact, got {:?}", meta_data) })
                         }
                     }
                     Some(".") => Ok(Some(TreeClause::Fact(literals[0].clone()))),
-                    Some(token) => Err(format!(
-                        "Expected \".\", \",\", or \":-\", recieved {token}"
-                    )),
-                    None => Err("Unexpected end of file".into()),
+                    Some(token) => Err(ParserError::Expected { expected: "'.' or ',' or ':-'".into(), got: Some(token.to_string()) }),
+                    None => Err(ParserError::UnexpectedEof),
                 }
             }
         }
     }
 
-    pub fn parse_goals(&mut self) -> Result<Vec<Term>,String> {
+    pub fn parse_goals(&mut self) -> Result<Vec<Term>, ParserError> {
         let mut literals = vec![self.parse_expression()?];
         loop{
             match self.next() {
             Some(",") => literals.push(self.parse_expression()?),
             Some(".") => break,
-            Some(token) => return Err(format!("Unexpecte token: \"{token}\"")),
-            None => return Err(format!("Unexpected end of goals string"))
+            Some(token) => return Err(ParserError::UnexpectedToken { token: token.to_string() }),
+            None => return Err(ParserError::UnexpectedEof)
         }
         }
-        
+
         Ok(literals)
     }
 
-    pub fn parse_all(&mut self) -> Result<Vec<TreeClause>, String> {
+    pub fn parse_all(&mut self) -> Result<Vec<TreeClause>, ParserError> {
         let mut clauses = Vec::<TreeClause>::new();
         loop {
             match self.parse_clause() {
                 Ok(Some(clause)) => clauses.push(clause),
                 Ok(None) => return Ok(clauses),
-                Err(msg) => return Err(format!("Line {}:  {msg}", self.line)),
+                Err(msg) => return Err(ParserError::AtLine { line: self.line, cause: Box::new(msg) }),
             }
         }
     }
@@ -355,7 +349,7 @@ impl TokenStream {
 #[cfg(test)]
 mod tests {
     use super::{
-        super::tokeniser::tokenise,
+        super::{tokeniser::tokenise, ParserError},
         {Term, TokenStream, TreeClause, Unit},
     };
     #[test]
@@ -662,25 +656,25 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("p(X,Y").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected End of File"),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedEof)),
         }
 
         let mut tokens = TokenStream::new(tokenise("p(X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
         }
 
         let mut tokens = TokenStream::new(tokenise("p(X,(Y)").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected End of File"),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedEof)),
         }
 
         let mut tokens = TokenStream::new(tokenise("p(X,(Y).").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
         }
     }
 
@@ -689,25 +683,25 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("[X,Y").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected End of File"),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedEof)),
         }
 
         let mut tokens = TokenStream::new(tokenise("[X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
         }
 
         let mut tokens = TokenStream::new(tokenise("[X,[Y]").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected End of File"),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedEof)),
         }
 
         let mut tokens = TokenStream::new(tokenise("[X,[Y].").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
         }
     }
 
@@ -716,25 +710,25 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("{X,Y").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected End of File"),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedEof)),
         }
 
         let mut tokens = TokenStream::new(tokenise("{X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
         }
 
         let mut tokens = TokenStream::new(tokenise("{X,{Y}").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected End of File"),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedEof)),
         }
 
         let mut tokens = TokenStream::new(tokenise("{X,{Y}.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
         }
     }
 
@@ -743,25 +737,25 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("(X,Y").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected End of File"),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedEof)),
         }
 
         let mut tokens = TokenStream::new(tokenise("(X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
         }
 
         let mut tokens = TokenStream::new(tokenise("(X,(Y)").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected End of File"),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedEof)),
         }
 
         let mut tokens = TokenStream::new(tokenise("(X,(Y).").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
+            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
         }
     }
 

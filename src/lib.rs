@@ -63,5 +63,63 @@ pub mod top_prog;
 // Re-export commonly used types at crate root.
 pub use app::{BodyPred, Config, Examples, SetUp};
 
+use std::fmt;
+use crate::parser::ParserError;
+
+#[derive(Debug)]
+pub enum Error {
+    IO(std::io::Error),
+    Setup(serde_json::Error),
+    Parser(ParserError),
+    Query(String),
+    BodyPred(String),
+    Module(String),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::IO(e)      => write!(f, "IO error: {e}"),
+            Self::Setup(e)   => write!(f, "setup error: {e}"),
+            Self::Parser(e)  => write!(f, "parse error: {e}"),
+            Self::Query(msg) => write!(f, "query error: {msg}"),
+            Self::BodyPred(msg) => write!(f, "body predicate error: {msg}"),
+            Self::Module(msg)   => write!(f, "module error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::IO(e)     => Some(e),
+            Self::Setup(e)  => Some(e),
+            Self::Parser(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Error::IO(value)
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(value: serde_json::Error) -> Self {
+        Error::Setup(value)
+    }
+}
+
+impl From<ParserError> for Error {
+    fn from(value: ParserError) -> Self {
+        Error::Parser(value)
+    }
+}
+
+
 #[cfg(test)]
 mod examples;

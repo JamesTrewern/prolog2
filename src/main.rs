@@ -11,5 +11,11 @@ fn setup_path() -> String {
 }
 
 fn main() -> ExitCode {
-    App::from_setup_json(setup_path()).run()
+    match App::from_setup_json(setup_path()) {
+        Ok(app) => app.run(),
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }

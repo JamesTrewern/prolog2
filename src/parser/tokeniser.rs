@@ -1,5 +1,7 @@
 //! Lexer: converts Prolog source text into a token stream.
 
+use super::ParserError;
+
 const DELIMINATORS: &[char] = &[
     '(', ')', ',', '.', ' ', '\r', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|',
     '>', '<', '{', '}',
@@ -101,7 +103,7 @@ fn walk_string(
     characters: &Vec<char>,
     mut i: usize,
     mark: char,
-) -> Result<(String, usize), String> {
+) -> Result<(String, usize), ParserError> {
     // TODO: more complex escape character processing
     let mut str = vec![mark];
     while let Some(&c) = characters.get(i) {
@@ -117,7 +119,7 @@ fn walk_string(
                     Some('\\') => str.push('\\'),
                     Some('"') => str.push('"'),
                     Some('\'') => str.push('\''),
-                    Some(_) => return Err("'\\' used without proper escape character".into()),
+                    Some(_) => return Err(ParserError::InvalidEscapeSequence),
                     None => break,
                 }
                 i += 2
@@ -128,10 +130,10 @@ fn walk_string(
             }
         }
     }
-    Err(format!("Unexpected end of file, missing closing {mark}"))
+    Err(ParserError::UnclosedStringLiteral { delimiter: mark })
 }
 
-fn walk_multi_line_comment(characters: &Vec<char>, mut i: usize) -> Result<(usize, usize), String> {
+fn walk_multi_line_comment(characters: &Vec<char>, mut i: usize) -> Result<(usize, usize), ParserError> {
     let mut newlines = 0;
     while i <= characters.len() - 2 {
         if characters[i] == '\n' {
@@ -142,7 +144,7 @@ fn walk_multi_line_comment(characters: &Vec<char>, mut i: usize) -> Result<(usiz
         }
         i += 1;
     }
-    Err("Unclosed multi line comment".into())
+    Err(ParserError::UnclosedComment)
 }
 
 fn walk_single_line_comment(characters: &Vec<char>, mut i: usize) -> Result<usize, ()> {
@@ -211,7 +213,7 @@ fn form_known_symbols(tokens: &mut Vec<String>) {
     }
 }
 
-pub fn tokenise<'a>(text: impl AsRef<str>) -> Result<Vec<String>, String> {
+pub fn tokenise<'a>(text: impl AsRef<str>) -> Result<Vec<String>, ParserError> {
     let text = text.as_ref();
     let mut tokens = Vec::<String>::new();
     let mut last_i = 0;
@@ -278,7 +280,7 @@ pub fn tokenise<'a>(text: impl AsRef<str>) -> Result<Vec<String>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::tokenise;
+    use super::{tokenise, ParserError};
 
     #[test]
     fn single_line_comments() {
@@ -320,7 +322,7 @@ mod tests {
 
         match tokenise(file) {
             Ok(tokens) => panic!("Should have thrown error\nTokens: {tokens:?}"),
-            Err(message) => assert_eq!(message, "Unclosed multi line comment"),
+            Err(e) => assert!(matches!(e, ParserError::UnclosedComment)),
         }
     }
 
@@ -330,14 +332,14 @@ mod tests {
 
         match tokenise(file) {
             Ok(tokens) => panic!("Should have thrown error\nTokens: {tokens:?}"),
-            Err(message) => assert_eq!(message, "Unexpected end of file, missing closing \""),
+            Err(e) => assert!(matches!(e, ParserError::UnclosedStringLiteral { delimiter: '"' })),
         }
 
         let file = "'a string".to_string();
 
         match tokenise(file) {
             Ok(tokens) => panic!("Should have thrown error\nTokens: {tokens:?}"),
-            Err(message) => assert_eq!(message, "Unexpected end of file, missing closing '"),
+            Err(e) => assert!(matches!(e, ParserError::UnclosedStringLiteral { delimiter: '\'' })),
         }
     }
 

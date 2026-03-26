@@ -66,13 +66,13 @@ fn ancestor() {
         "pred_1(Arg_0,Arg_1):-mum(Arg_0,Arg_1).",
     ];
 
-    let app = App::from_setup_json("examples/ancestor/config.json").auto(true);
+    let app = App::from_setup_json("examples/ancestor/config.json").expect("failed to load config").auto(true);
     test_solutions(app, &[H1,H2]);
 }
 
 #[test]
 fn map() {
-    let app = App::from_setup_json("examples/map/config.json").auto(true);
+    let app = App::from_setup_json("examples/map/config.json").expect("failed to load config").auto(true);
     let solutions: Vec<Solution> = app.query_session_from_examples().unwrap().collect();
     assert!(solutions.len() > 0, "Expected at least one solution");
 }
@@ -91,7 +91,7 @@ fn odd_even() {
         "even(Arg_0):-zero(Arg_0)."
     ];
 
-    let app = App::from_setup_json("examples/odd_even/config.json").auto(true);
+    let app = App::from_setup_json("examples/odd_even/config.json").expect("failed to load config").auto(true);
     test_solutions(app, &[H1,H2]);
 }
 
@@ -102,7 +102,7 @@ fn learn_map_double() {
         "double(Arg_0,Arg_1):-add(Arg_0,Arg_0,Arg_1).",
         "map_double([],[],Arg_0)."
     ];
-    let app = App::from_setup_json("examples/map/learn_config.json").auto(true);
+    let app = App::from_setup_json("examples/map/learn_config.json").expect("failed to load config").auto(true);
     test_solutions(app, &[H1]);
     
 }
@@ -121,7 +121,7 @@ fn trains() {
         "e(Arg_0):-pred_1(Arg_0,Arg_1),short(Arg_1).",
         "pred_1(Arg_0,Arg_1):-has_car(Arg_0,Arg_1),closed(Arg_1).",
     ];
-    let app = App::from_setup_json("examples/trains/config.json").auto(true);
+    let app = App::from_setup_json("examples/trains/config.json").expect("failed to load config").auto(true);
     test_solutions(app, &[H1,H2,H3]);
 }
 
@@ -133,7 +133,7 @@ fn fsm_parity() {
         "edge(0,odd,odd):-q(odd),q(odd).",
         "edge(1,odd,even):-q(odd),q(even)."
     ];
-    let app = App::from_setup_json("examples/fsm/parity.json").auto(true);
+    let app = App::from_setup_json("examples/fsm/parity.json").expect("failed to load config").auto(true);
     test_solutions(app, &[]);
 }
 
@@ -141,14 +141,14 @@ fn fsm_parity() {
 
 #[test]
 fn top_prog_robots() {
-    let app = App::from_setup_json("examples/robots/tpc_config.json").auto(true);
+    let app = App::from_setup_json("examples/robots/tpc_config.json").expect("failed to load config").auto(true);
     let result = app.run();
     assert_eq!(result, ExitCode::SUCCESS);
 }
 
 #[test]
 fn top_prog_trains() {
-    let app = App::from_setup_json("examples/robots/tpc_config.json").auto(true);
+    let app = App::from_setup_json("examples/robots/tpc_config.json").expect("failed to load config").auto(true);
     let result = app.run();
     assert_eq!(result, ExitCode::SUCCESS);
 }

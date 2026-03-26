@@ -25,6 +25,8 @@ use crate::{
     predicate_modules::{PredicateModule, DEFAULT_MODULES},
     program::predicate_table::PredicateTable,
     resolution::proof::Proof,
+    Error,
+    Result,
 };
 
 /// Engine configuration loaded from a JSON setup file.
@@ -53,9 +55,8 @@ impl Default for Config {
 }
 
 /// A body predicate declaration in the setup file.
-///
-/// Can be deserialized from either an object `{"symbol": "dad", "arity": 2}`
-/// or a compact string `"dad/2"`.
+/// Deserialized from a string whith predicate and arity seperated by '/'
+/// e.g `"p/2"`.
 #[derive(Serialize, Debug)]
 pub struct BodyPred {
     /// Predicate name.
@@ -64,8 +65,25 @@ pub struct BodyPred {
     pub arity: usize,
 }
 
+impl TryFrom<&str> for BodyPred {
+    type Error = String;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        let (symbol, arity_str) = value
+            .rsplit_once('/')
+            .ok_or_else(|| format!("expected \"symbol/arity\", got {value:?}"))?;
+        let arity = arity_str
+            .parse()
+            .map_err(|_| format!("arity must be a non-negative integer, got {arity_str:?}"))?;
+        Ok(Self {
+            symbol: symbol.into(),
+            arity,
+        })
+    }
+}
+
 impl<'de> serde::Deserialize<'de> for BodyPred {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
         use serde::de::{self, Visitor};
         use std::fmt;
 
@@ -78,19 +96,8 @@ impl<'de> serde::Deserialize<'de> for BodyPred {
                 f.write_str(r#"a string like "p/2""#)
             }
 
-            fn visit_str<E: de::Error>(self, v: &str) -> Result<BodyPred, E> {
-                let (symbol, arity_str) = v
-                    .rsplit_once('/')
-                    .ok_or_else(|| E::custom(format!("expected \"symbol/arity\", got {v:?}")))?;
-                let arity = arity_str.parse().map_err(|_| {
-                    E::custom(format!(
-                        "arity must be a non-negative integer, got {arity_str:?}"
-                    ))
-                })?;
-                Ok(BodyPred {
-                    symbol: symbol.to_string(),
-                    arity,
-                })
+            fn visit_str<E: de::Error>(self, v: &str) -> std::result::Result<BodyPred, E> {
+                v.try_into().map_err(|err|E::custom(err))
             }
         }
 
@@ -162,7 +169,7 @@ impl Default for App {
     fn default() -> Self {
         let mut app = App::new();
         for predicate_module in DEFAULT_MODULES {
-            app.load_module(predicate_module);
+            app = app.load_module(predicate_module).expect("built-in module should always load");
         }
         app
     }
@@ -199,18 +206,16 @@ impl App {
         }
     }
 
-    pub fn from_setup_json(path: impl AsRef<str>) -> Self {
+    pub fn from_setup_json(path: impl AsRef<str>) -> Result<Self> {
         let path = path.as_ref();
-        let setup: SetUp = serde_json::from_str(
-            &fs::read_to_string(path)
-                .unwrap_or_else(|_| panic!("Failed to read config file: {}", path)),
-        )
-        .unwrap_or_else(|e| panic!("Failed to parse config file '{}': {}", path, e));
+        let setup: SetUp = serde_json::from_str(&fs::read_to_string(path)?)?;
+
         let top_prog = if setup.top_prog {
             TopProg::True(setup.reduce)
         } else {
             TopProg::False
         };
+
         let mut app = App {
             predicate_table: PredicateTable::new(),
             prog_heap: Vec::<Cell>::new(),
@@ -221,50 +226,46 @@ impl App {
         };
 
         for predicate_module in DEFAULT_MODULES {
-            app.load_module(predicate_module);
+            app = app.load_module(predicate_module).expect("built-in module should always load");
         }
 
         for path in setup.files {
             let path = Path::new(&path);
-            if path.metadata().unwrap().is_dir() {
-                app.load_dir(path).unwrap();
+            if path.metadata()?.is_dir() {
+                app = app.load_dir(path)?;
             } else {
-                app.load_file(&path);
+                app = app.load_file(&path)?;
             }
         }
-        app.add_body_predicates(setup.body_predicates);
-
-        app
+        app.add_body_predicates(setup.body_predicates)
     }
 
-    pub fn load_code(&mut self, code: impl AsRef<str>) {
-        let syntax_tree = TokenStream::new(tokenise(code).unwrap())
-            .parse_all()
-            .unwrap();
-
+    pub fn load_code(mut self, code: impl AsRef<str>) -> Result<Self> {
+        let syntax_tree = TokenStream::new(tokenise(code)?).parse_all()?;
         execute_tree(syntax_tree, &mut self.prog_heap, &mut self.predicate_table);
+        Ok(self)
     }
 
-    pub fn load_file(&mut self, file: &Path) {
-        self.load_code(fs::read_to_string(file).unwrap());
+    pub fn load_file(self, file: &Path) -> Result<Self> {
+        self.load_code(fs::read_to_string(file)?)
     }
 
-    pub fn load_dir(&mut self, dir_path: &Path) -> io::Result<()> {
+    pub fn load_dir(mut self, dir_path: &Path) -> Result<Self> {
         let paths = fs::read_dir(&dir_path)?;
         for path_result in paths {
             let path = path_result?.path();
             if path.metadata()?.is_dir() {
-                self.load_dir(&path)?
+                self = self.load_dir(&path)?
             } else {
                 if path.extension().map(|extension| extension.to_str()) == Some("pl".into()) {
-                    self.load_file(&path);
+                    self = self.load_file(&path)?;
                 }
             }
         }
-        Ok(())
+        Ok(self)
     }
 
-    pub fn load_module(&mut self, predicate_module: &PredicateModule) {
+    pub fn load_module(mut self, predicate_module: &PredicateModule) -> Result<Self>{
         for (symbol, arity, pred_fn) in predicate_module.0.iter() {
             self.predicate_table
                 .insert_predicate_function(
@@ -274,20 +275,22 @@ impl App {
                 .unwrap();
         }
         for &code in predicate_module.1 {
-            self.load_code(code);
+            self = self.load_code(code)?;
         }
+        Ok(self)
     }
 
-    pub fn add_body_predicates(&mut self, body_preds: impl AsRef<[BodyPred]>) {
+    pub fn add_body_predicates<'a>(mut self, body_preds: impl AsRef<[BodyPred]>) -> Result<Self> {
         for BodyPred { symbol, arity } in body_preds.as_ref() {
             let sym = SymbolDB::set_const(symbol.clone());
             self.predicate_table
                 .set_body((sym, *arity), true)
                 .unwrap_or_else(|e| panic!("{e}: {symbol}/{arity}"));
         }
+        Ok(self)
     }
 
-    pub fn start_query(&self, query: impl AsRef<str>) -> Result<(), String> {
+    pub fn start_query(&self, query: impl AsRef<str>) -> Result<()> {
         let mut session = self.query_session(query)?;
         loop {
             if let Some(solution) = session.next_solution() {
@@ -309,12 +312,9 @@ impl App {
         Ok(())
     }
 
-    pub fn query_session(&self, query: impl AsRef<str>) -> Result<QuerySession<'_>, String> {
+    pub fn query_session(&self, query: impl AsRef<str>) -> Result<QuerySession<'_>> {
         let query = query.as_ref();
-        let literals = match TokenStream::new(tokenise(query)?).parse_goals() {
-            Ok(literals) => literals,
-            Err(err) => return Err(format!("Error: [{err}] in query string: [query]")),
-        };
+        let literals = TokenStream::new(tokenise(query)?).parse_goals()?;
 
         let mut query_heap = QueryHeap::new(&self.prog_heap, None);
         let goals = build_clause(literals, None, None, &mut query_heap, true);
@@ -336,12 +336,12 @@ impl App {
         })
     }
 
-    pub fn query_session_from_examples(&self) -> Result<QuerySession<'_>, String> {
+    pub fn query_session_from_examples(&self) -> Result<QuerySession<'_>> {
         self.query_session(
             self.examples
                 .as_ref()
                 .map(|examples| examples.to_query())
-                .ok_or("No examples in app state")?,
+                .ok_or(Error::Query("No examples in app state".into()))?,
         )
     }
 
