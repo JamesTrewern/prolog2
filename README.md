@@ -49,11 +49,14 @@ P(X,Y):- Z is X + Y, Q(Z), {P,Q}.
 
 # Running Prolog<sup>2</sup>
 
-```
-cargo run [CONFIG_FILE]
+```bash
+#Inside the Prolog2 Repo
+$ cargo run [CONFIG_FILE]
+#Using the binary
+$ prolog2 [CONFIG_FILE]
 ```
 
-# Configuration Options
+## Configuration Options
 Configured in a JSON file (default: `setup.json`):
 ``` json
 {
@@ -76,7 +79,7 @@ Configured in a JSON file (default: `setup.json`):
 ```
 `examples`, `auto`, `top_prog`, and `reduce` are all optional fields.
 If the config file includes an `examples` field, Prolog<sup>2</sup> will immediately attempt to prove the examples as a query and output any learned hypotheses. If `examples` is omitted, an interactive REPL is started where queries can be entered manually.
-The auto option makes the program iterate through all possible proofs in a query. By default this is off and after each proof the program awaits user input (Space: continue, Enter: stop).
+The auto option makes the program iterate through all possible proofs in a query. By default this is off and after each proof the program awaits user input (Space/;: continue, Enter: stop).
 
 # Top Program Construction
 
@@ -225,8 +228,19 @@ double(X,Y):-
         "max_pred": 0,
         "debug": false
     },
-    "body_predicates" : [],
+    "body_predicates" : ["double/2"],
     "files" : ["examples/map/learn_map_double.pl"]
 }
 ```
 
+```
+$ prolog2 "examples/map/bind_double.json"
+?- map([1,2],[2,4],double).
+TRUE
+FALSE
+?- map([1,2],[2,4],X).
+TRUE
+X = double
+FALSE
+?- 
+```

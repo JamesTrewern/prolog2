@@ -111,7 +111,7 @@ impl TokenStream {
                 Some(",") => {
                     self.next();
                 }
-                Some(token) => return Err(format!("Unexpected token in arguments: {token}")),
+                Some(token) => return Err(format!("Unexpected token in arguments: \"{token}\"")),
                 None => return Err("Unexpected End of File".into()),
             }
         }
@@ -138,7 +138,7 @@ impl TokenStream {
                         Ok(Term::List(head, tail))
                     }
                     "]" => Ok(Term::List(head, Box::new(Term::EmptyList))),
-                    token => return Err(format!("Unexpected token in list: {token}")),
+                    token => return Err(format!("Unexpected token in list: \"{token}\"")),
                 }
             }
             "[]" => {
@@ -184,7 +184,7 @@ impl TokenStream {
                         }
                     }
                     Some(unit) => Ok(Term::Unit(unit)),
-                    None => unimplemented!("parse_expression: unhandled token '{token}'"),
+                    None => Err(format!("parse_expression: unhandled token '{token}'")),
                 }
             }
         }
@@ -234,7 +234,7 @@ impl TokenStream {
                 Some(".") => break,
                 Some(token) => {
                     return Err(format!(
-                        "Unexpected token ({token}) after literal, expected either ',' or '.'"
+                        "Unexpected token \"{token}\" after literal, expected either ',' or '.'"
                     ))
                 }
                 None => return Err("Unexpected end of file".into()),
@@ -668,7 +668,7 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("p(X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
+            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
         }
 
         let mut tokens = TokenStream::new(tokenise("p(X,(Y)").unwrap());
@@ -680,7 +680,7 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("p(X,(Y).").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
+            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
         }
     }
 
@@ -695,7 +695,7 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("[X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
+            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
         }
 
         let mut tokens = TokenStream::new(tokenise("[X,[Y]").unwrap());
@@ -707,7 +707,7 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("[X,[Y].").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
+            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
         }
     }
 
@@ -722,7 +722,7 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("{X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
+            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
         }
 
         let mut tokens = TokenStream::new(tokenise("{X,{Y}").unwrap());
@@ -734,7 +734,7 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("{X,{Y}.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
+            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
         }
     }
 
@@ -749,7 +749,7 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("(X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
+            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
         }
 
         let mut tokens = TokenStream::new(tokenise("(X,(Y)").unwrap());
@@ -761,7 +761,7 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("(X,(Y).").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert_eq!(message, "Unexpected token in arguments: ."),
+            Err(message) => assert_eq!(message, "Unexpected token in arguments: \".\""),
         }
     }
 

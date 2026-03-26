@@ -6,6 +6,7 @@
         "debug": false
     },
     "body_predicates" : [
+        "double/2"
     ],
     "files" : ["examples/map/map.pl"]
 }

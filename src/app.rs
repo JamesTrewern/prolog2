@@ -1,9 +1,6 @@
-use std::{
-    fs,
-    io::{stdin, stdout, Write},
-    process::ExitCode,
-    sync::Arc,
-};
+use std::{fs, process::ExitCode, sync::Arc};
+
+use rustyline::error::ReadlineError;
 
 use console::Term;
 use serde::{Deserialize, Serialize};
@@ -282,15 +279,20 @@ impl App {
 
     pub fn start_query(&self, query: impl AsRef<str>) -> Result<(), String> {
         let mut session = self.query_session(query)?;
-        while let Some(solution) = session.next_solution() {
-            println!("TRUE");
-            for (name, value) in &solution.bindings {
-                println!("{name} = {value}");
-            }
-            if !solution.hypothesis.is_empty() {
-                println!("{}", solution.hypothesis);
-            }
-            if !continue_proof(self.auto) {
+        loop {
+            if let Some(solution) = session.next_solution() {
+                println!("TRUE");
+                for (name, value) in &solution.bindings {
+                    println!("{name} = {value}");
+                }
+                if !solution.hypothesis.is_empty() {
+                    println!("{}", solution.hypothesis);
+                }
+                if !continue_proof(self.auto) {
+                    break;
+                }
+            } else {
+                println!("FALSE");
                 break;
             }
         }
@@ -358,22 +360,38 @@ impl App {
     }
 
     pub fn main_loop(&self) -> ExitCode {
+        let mut rl = rustyline::DefaultEditor::new().expect("Failed to initialise line editor");
+
+        let history_path = home::home_dir().map(|p| p.join(".prolog2_history"));
+        if let Some(path) = &history_path {
+            let _ = rl.load_history(path); // silently ignore if file doesn't exist yet
+        }
+
         let mut buffer = String::new();
         loop {
-            if buffer.is_empty() {
-                print!("?-");
-                stdout().flush().unwrap();
-            }
-            match stdin().read_line(&mut buffer) {
-                Ok(_) => {
+            let prompt = if buffer.is_empty() { "?- " } else { "|  " };
+            match rl.readline(prompt) {
+                Ok(line) => {
+                    buffer.push_str(&line);
+                    buffer.push('\n');
                     if buffer.contains('.') {
+                        // Store the full query in history, collapsing newlines for readability
+                        let entry = buffer.trim().replace('\n', " ");
+                        let _ = rl.add_history_entry(&entry);
                         match self.start_query(&buffer) {
-                            Ok(_) => buffer.clear(),
+                            Ok(_) => {}
                             Err(error) => println!("{error}"),
                         }
-                    } else {
-                        continue;
+                        buffer.clear();
                     }
+                }
+                Err(ReadlineError::Interrupted) => {
+                    // Ctrl+C — quit the REPL
+                    break;
+                }
+                Err(ReadlineError::Eof) => {
+                    // Ctrl+D — quit the REPL
+                    break;
                 }
                 Err(error) => {
                     println!("error: {error}");
@@ -381,6 +399,11 @@ impl App {
                 }
             }
         }
+
+        if let Some(path) = &history_path {
+            let _ = rl.save_history(path);
+        }
+
         ExitCode::SUCCESS
     }
 }
