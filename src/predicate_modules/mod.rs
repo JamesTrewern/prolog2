@@ -49,6 +49,12 @@ pub enum PredReturn {
     /// - First field: `(source_addr, target_addr)` heap bindings.
     /// - Second field: heap addresses of additional sub-goals to schedule (may be empty).
     Success(Vec<(usize, usize)>, Vec<usize>),
+    /// Multiple alternative results — each tried on backtracking, like clause choices.
+    ///
+    /// Each element is a `(bindings, sub_goals)` pair, identical in meaning to
+    /// [`Success`](PredReturn::Success). The engine stores these alternatives and
+    /// pops one per attempt, undoing bindings on backtrack just like clause choices.
+    Choices(Vec<(Vec<(usize, usize)>, Vec<usize>)>),
 }
 
 impl From<bool> for PredReturn {

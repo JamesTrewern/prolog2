@@ -6,5 +6,6 @@
 //! [`build`](crate::resolution::build) constructs new terms from substitutions.
 
 pub mod build;
+pub mod env;
 pub mod proof;
 pub mod unification;
