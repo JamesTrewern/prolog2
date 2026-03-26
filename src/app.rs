@@ -1,4 +1,10 @@
-use std::{fs, process::ExitCode, sync::Arc};
+use std::{
+    fs::{self, metadata},
+    io,
+    path::Path,
+    process::ExitCode,
+    sync::Arc,
+};
 
 use rustyline::error::ReadlineError;
 
@@ -60,7 +66,7 @@ pub struct BodyPred {
 
 impl<'de> serde::Deserialize<'de> for BodyPred {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::{self, MapAccess, Visitor};
+        use serde::de::{self, Visitor};
         use std::fmt;
 
         struct BodyPredVisitor;
@@ -69,7 +75,7 @@ impl<'de> serde::Deserialize<'de> for BodyPred {
             type Value = BodyPred;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str(r#"a string like "dad/2" or an object {"symbol": "dad", "arity": 2}"#)
+                f.write_str(r#"a string like "p/2""#)
             }
 
             fn visit_str<E: de::Error>(self, v: &str) -> Result<BodyPred, E> {
@@ -84,22 +90,6 @@ impl<'de> serde::Deserialize<'de> for BodyPred {
                 Ok(BodyPred {
                     symbol: symbol.to_string(),
                     arity,
-                })
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<BodyPred, A::Error> {
-                let mut symbol = None;
-                let mut arity = None;
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "symbol" => symbol = Some(map.next_value()?),
-                        "arity" => arity = Some(map.next_value()?),
-                        other => return Err(de::Error::unknown_field(other, &["symbol", "arity"])),
-                    }
-                }
-                Ok(BodyPred {
-                    symbol: symbol.ok_or_else(|| de::Error::missing_field("symbol"))?,
-                    arity: arity.ok_or_else(|| de::Error::missing_field("arity"))?,
                 })
             }
         }
@@ -234,8 +224,13 @@ impl App {
             app.load_module(predicate_module);
         }
 
-        for file in setup.files {
-            app.load_file(file);
+        for path in setup.files {
+            let path = Path::new(&path);
+            if path.metadata().unwrap().is_dir() {
+                app.load_dir(path).unwrap();
+            } else {
+                app.load_file(&path);
+            }
         }
         app.add_body_predicates(setup.body_predicates);
 
@@ -250,8 +245,23 @@ impl App {
         execute_tree(syntax_tree, &mut self.prog_heap, &mut self.predicate_table);
     }
 
-    pub fn load_file(&mut self, file: impl AsRef<str>) {
-        self.load_code(fs::read_to_string(file.as_ref()).unwrap());
+    pub fn load_file(&mut self, file: &Path) {
+        self.load_code(fs::read_to_string(file).unwrap());
+    }
+
+    pub fn load_dir(&mut self, dir_path: &Path) -> io::Result<()> {
+        let paths = fs::read_dir(&dir_path)?;
+        for path_result in paths {
+            let path = path_result?.path();
+            if path.metadata()?.is_dir() {
+                self.load_dir(&path)?
+            } else {
+                if path.extension().map(|extension| extension.to_str()) == Some("pl".into()) {
+                    self.load_file(&path);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn load_module(&mut self, predicate_module: &PredicateModule) {

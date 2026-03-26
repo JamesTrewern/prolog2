@@ -8,10 +8,6 @@
     "body_predicates" : [
         
     ],
-    "examples" : {
-        "pos" : [],
-        "neg" : []
-    },
-    "top_prog" : true,
-    "files" : ["examples/robots/robots.pl"]
+    "top_prog" : false,
+    "files" : ["examples/robots/"]
 }
