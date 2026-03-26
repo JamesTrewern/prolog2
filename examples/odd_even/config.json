@@ -3,11 +3,11 @@
         "max_depth": 6,
         "max_clause": 3,
         "max_pred": 1,
-        "debug": true
+        "debug": false
     },
     "body_predicates" : [
-        {"symbol" : "zero", "arity": 1},
-        {"symbol" : "prev", "arity": 2}
+        "zero/1",
+        "prev/2"
     ],
     "examples" : {
         "pos" : ["even(4)"],

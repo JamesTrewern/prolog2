@@ -1,17 +1,22 @@
 {
-    "config" : {
+    "config": {
         "max_depth": 10,
         "max_clause": 4,
         "max_pred": 1,
         "debug": false
     },
-    "body_predicates" : [
-        {"symbol" : "dad", "arity": 2},
-        {"symbol" : "mum", "arity": 2}
+    "body_predicates": [
+        "dad/2",
+        "mum/2"
     ],
-    "examples" : {
-        "pos" : ["ancestor(ken,james)", "ancestor(christine,james)"],
-        "neg" : []
+    "examples": {
+        "pos": [
+            "ancestor(ken,james)",
+            "ancestor(christine,james)"
+        ],
+        "neg": []
     },
-    "files" : ["examples/ancestor/family.pl"]
+    "files": [
+        "examples/ancestor/family.pl"
+    ]
 }

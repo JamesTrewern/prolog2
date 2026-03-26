@@ -7,9 +7,5 @@
     },
     "body_predicates" : [
     ],
-    "examples" : {
-        "pos" : ["map([1,2,3],[2,4,6],double)"],
-        "neg" : []
-    },
     "files" : ["examples/map/map.pl"]
 }

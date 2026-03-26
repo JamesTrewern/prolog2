@@ -3,10 +3,10 @@
         "max_depth": 5,
         "max_clause": 3,
         "max_pred": 1,
-        "debug": true
+        "debug": false
     },
     "body_predicates" : [
-        {"symbol" : "add", "arity": 3}
+        "add/3"
     ],
     "examples" : {
         "pos" : ["map_double([1,2,3],[2,4,6],double)"],
