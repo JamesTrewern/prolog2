@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU8, Ordering};
+
 use super::{PredReturn, PredicateModule};
 use crate::{
     heap::{
@@ -11,6 +13,25 @@ use crate::{
 };
 
 use fsize::fsize;
+
+/// Tolerance for the `=~=` (approximately-equal) operator, stored as an
+/// integer percentage (e.g. `10` means within 10 %).
+///
+/// The relative difference formula used is:
+/// `|a − b| ≤ (pct / 100) × max(|a|, |b|)`
+/// (exact equality passes when both values are zero).
+///
+/// Updated by [`set_approx_tolerance`] or from `setup.json`.
+static APPROX_TOLERANCE_PCT: AtomicU8 = AtomicU8::new(10);
+
+/// Update the global approximate-equality tolerance.
+///
+/// `pct` is an integer percentage — `5` means "within 5 %". The change takes
+/// effect immediately for all subsequent `=~=` queries in the same process.
+/// The default is `10`.
+pub(crate) fn set_approx_tolerance(pct: u8) {
+    APPROX_TOLERANCE_PCT.store(pct, Ordering::Relaxed);
+}
 
 /// Signature for functions in the [`FUNCTIONS`] table.
 /// Returns `None` if any sub-expression is not a valid arithmetic term.
@@ -441,6 +462,35 @@ pub fn arith_eq_pred(
     }
 }
 
+/// `=~=/2`: succeeds if both sides evaluate to approximately equal values.
+///
+/// "Approximately equal" means the relative difference is within the
+/// configured tolerance: `|a − b| ≤ (pct / 100) × max(|a|, |b|)`.
+/// When both values are zero the predicate always succeeds.
+///
+/// The tolerance percentage is set globally via [`set_approx_tolerance`]
+/// (default 10 %) or via the `approx_tolerance_pct` field in `setup.json`.
+pub fn approx_eq_pred(
+    heap: &mut QueryHeap,
+    _: &mut Hypothesis,
+    goal: usize,
+    _: &PredicateTable,
+    _: Config,
+) -> PredReturn {
+    let Some((lhs, rhs)) = eval_comparison(heap, goal) else {
+        return PredReturn::False;
+    };
+    let pct = APPROX_TOLERANCE_PCT.load(Ordering::Relaxed);
+    let tolerance = pct as fsize / 100.0;
+    let a = lhs.float();
+    let b = rhs.float();
+    let diff = (a - b).abs();
+    let scale = a.abs().max(b.abs());
+    // Both zero → exact equality, always succeeds.
+    // Otherwise succeed when the relative difference is within tolerance.
+    (scale == 0.0 || diff <= tolerance * scale).into()
+}
+
 /// Built-in maths predicates.
 pub static MATHS: PredicateModule = (
     &[
@@ -450,6 +500,276 @@ pub static MATHS: PredicateModule = (
         ("=<", 2, le_pred),
         (">=", 2, ge_pred),
         ("=:=", 2, arith_eq_pred),
+        ("=~=", 2, approx_eq_pred),
     ],
-    &[],
+    &[include_str!("../../builtins/maths.pl")],
 );
+
+#[cfg(test)]
+mod tests {
+    use crate::app::App;
+    use super::MATHS;
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    /// Load a fresh App with only the MATHS module registered.
+    fn maths_app() -> App {
+        App::new().load_module(&MATHS).expect("MATHS module should always load")
+    }
+
+    /// Run a query and return the display string bound to `var` in the first
+    /// solution, or `None` if the query fails.
+    fn binding(query: &str, var: &str) -> Option<String> {
+        maths_app()
+            .query_session(query).expect("query should parse")
+            .next_solution()
+            .and_then(|sol| {
+                sol.bindings
+                    .into_iter()
+                    .find(|(n, _)| n.as_ref() == var)
+                    .map(|(_, v)| v)
+            })
+    }
+
+    /// Run a query and return whether it has at least one solution.
+    fn succeeds(query: &str) -> bool {
+        maths_app()
+            .query_session(query).expect("query should parse")
+            .next_solution()
+            .is_some()
+    }
+
+    /// Collect all values bound to `var` across every solution of a query.
+    fn all_bindings(query: &str, var: &str) -> Vec<String> {
+        maths_app()
+            .query_session(query).expect("query should parse")
+            .filter_map(|sol| {
+                sol.bindings
+                    .into_iter()
+                    .find(|(n, _)| n.as_ref() == var)
+                    .map(|(_, v)| v)
+            })
+            .collect()
+    }
+
+    // ── is/2 ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_binds_result() {
+        assert_eq!(binding("Z is 2 + 3.", "Z").as_deref(), Some("5"));
+    }
+
+    #[test]
+    fn is_checks_bound_lhs() {
+        assert!(succeeds("5 is 2 + 3."));
+        assert!(!succeeds("6 is 2 + 3."));
+    }
+
+    // ── comparison predicates ─────────────────────────────────────────────────
+
+    #[test]
+    fn less_than() {
+        assert!(succeeds("3 < 5."));
+        assert!(!succeeds("5 < 3."));
+        assert!(!succeeds("3 < 3."));
+    }
+
+    #[test]
+    fn greater_than() {
+        assert!(succeeds("5 > 3."));
+        assert!(!succeeds("3 > 5."));
+        assert!(!succeeds("3 > 3."));
+    }
+
+    #[test]
+    fn less_than_or_equal() {
+        assert!(succeeds("3 =< 5."));
+        assert!(succeeds("3 =< 3."));
+        assert!(!succeeds("5 =< 3."));
+    }
+
+    #[test]
+    fn greater_than_or_equal() {
+        assert!(succeeds("5 >= 3."));
+        assert!(succeeds("3 >= 3."));
+        assert!(!succeeds("3 >= 5."));
+    }
+
+    #[test]
+    fn arith_eq() {
+        assert!(succeeds("3 =:= 3."));
+        assert!(!succeeds("3 =:= 4."));
+    }
+
+    // ── succ/2 ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn succ_forward() {
+        assert_eq!(binding("succ(4, Y).", "Y").as_deref(), Some("5"));
+    }
+
+    #[test]
+    fn succ_backward() {
+        assert_eq!(binding("succ(X, 5).", "X").as_deref(), Some("4"));
+    }
+
+    // ── plus/3 ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn plus_forward() {
+        assert_eq!(binding("plus(3, 4, Z).", "Z").as_deref(), Some("7"));
+    }
+
+    #[test]
+    fn plus_backward_x() {
+        assert_eq!(binding("plus(X, 4, 7).", "X").as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn plus_backward_y() {
+        assert_eq!(binding("plus(3, Y, 7).", "Y").as_deref(), Some("4"));
+    }
+
+    // ── minus/3 ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn minus_forward() {
+        assert_eq!(binding("minus(10, 3, Z).", "Z").as_deref(), Some("7"));
+    }
+
+    #[test]
+    fn minus_backward_x() {
+        assert_eq!(binding("minus(X, 3, 7).", "X").as_deref(), Some("10"));
+    }
+
+    #[test]
+    fn minus_backward_y() {
+        assert_eq!(binding("minus(10, Y, 3).", "Y").as_deref(), Some("7"));
+    }
+
+    // ── times/3 ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn times_forward() {
+        assert_eq!(binding("times(3, 4, Z).", "Z").as_deref(), Some("12"));
+    }
+
+    #[test]
+    fn times_backward_x() {
+        assert_eq!(binding("times(X, 4, 12).", "X").as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn times_backward_y() {
+        assert_eq!(binding("times(3, Y, 12).", "Y").as_deref(), Some("4"));
+    }
+
+    // ── divide/3 ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn divide_forward() {
+        assert_eq!(binding("divide(12, 4, Z).", "Z").as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn divide_backward_x() {
+        assert_eq!(binding("divide(X, 4, 3).", "X").as_deref(), Some("12"));
+    }
+
+    // ── pow/3 ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn pow_forward() {
+        assert_eq!(binding("pow(2, 10, Z).", "Z").as_deref(), Some("1024"));
+    }
+
+    // ── mod/3 ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn mod_forward() {
+        assert_eq!(binding("mod(7, 3, Z).", "Z").as_deref(), Some("1"));
+        assert_eq!(binding("mod(9, 3, Z).", "Z").as_deref(), Some("0"));
+    }
+
+    // ── max/3 and min/3 ──────────────────────────────────────────────────────
+
+    #[test]
+    fn max_picks_larger() {
+        assert_eq!(binding("max(3, 7, Z).", "Z").as_deref(), Some("7"));
+        assert_eq!(binding("max(7, 3, Z).", "Z").as_deref(), Some("7"));
+        assert_eq!(binding("max(5, 5, Z).", "Z").as_deref(), Some("5"));
+    }
+
+    #[test]
+    fn min_picks_smaller() {
+        assert_eq!(binding("min(3, 7, Z).", "Z").as_deref(), Some("3"));
+        assert_eq!(binding("min(7, 3, Z).", "Z").as_deref(), Some("3"));
+        assert_eq!(binding("min(5, 5, Z).", "Z").as_deref(), Some("5"));
+    }
+
+    // ── between/3 ────────────────────────────────────────────────────────────
+    // Check mode only: all arguments must be bound. Floats are supported.
+
+    #[test]
+    fn between_check() {
+        assert!(succeeds("between(1, 5, 3)."));
+        assert!(succeeds("between(1, 5, 1)."));
+        assert!(succeeds("between(1, 5, 5)."));
+        assert!(!succeeds("between(1, 5, 0)."));
+        assert!(!succeeds("between(1, 5, 6)."));
+        // floats work too
+        assert!(succeeds("between(1.0, 5.0, 2.5)."));
+        assert!(!succeeds("between(1.0, 5.0, 5.1)."));
+    }
+
+    // ── negate/2 ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn negate_forward() {
+        assert_eq!(binding("negate(5, Y).", "Y").as_deref(), Some("-5"));
+    }
+
+    #[test]
+    fn negate_backward() {
+        assert_eq!(binding("negate(X, -5).", "X").as_deref(), Some("5"));
+    }
+
+    // ── =~= (approximately equal) ────────────────────────────────────────────
+
+    #[test]
+    fn approx_eq_within_tolerance() {
+        // 100 and 109 differ by 9 %; within the default 10 % tolerance.
+        assert!(succeeds("100 =~= 109."));
+        assert!(succeeds("109 =~= 100."));
+    }
+
+    #[test]
+    fn approx_eq_at_boundary() {
+        // 100 and 110 differ by exactly 10 %; should succeed at the boundary.
+        assert!(succeeds("100 =~= 110."));
+    }
+
+    #[test]
+    fn approx_eq_outside_tolerance() {
+        // |100 - 112| / max(100, 112) = 12/112 ≈ 10.7 %; outside 10 % tolerance.
+        assert!(!succeeds("100 =~= 112."));
+    }
+
+    #[test]
+    fn approx_eq_exact() {
+        assert!(succeeds("42 =~= 42."));
+        assert!(succeeds("0 =~= 0."));
+    }
+
+    #[test]
+    fn approx_eq_floats() {
+        assert!(succeeds("1.0 =~= 1.05."));
+        assert!(!succeeds("1.0 =~= 1.15."));
+    }
+
+    #[test]
+    fn approx_eq_expressions() {
+        // Both sides may be arithmetic expressions.
+        assert!(succeeds("10 * 10 =~= 99."));
+    }
+}

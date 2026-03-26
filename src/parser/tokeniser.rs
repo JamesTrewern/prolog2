@@ -6,7 +6,7 @@ const DELIMINATORS: &[char] = &[
     '(', ')', ',', '.', ' ', '\r', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|',
     '>', '<', '{', '}',
 ];
-const KNOWN_SYMBOLS: &[&str] = &[":-", "==", "=/=", "/=", "=:=", "**", "<=", ">=", "/*", "*/"];
+const KNOWN_SYMBOLS: &[&str] = &[":-", "==", "=/=", "/=", "=:=", "=~=", "**", "=<", ">=", "/*", "*/"];
 
 // --------------------------------------------------------------------------------------
 // Tokenise File
@@ -440,14 +440,11 @@ mod tests {
         assert_eq!(tokenise("**").unwrap(), ["**"]);
         assert_eq!(tokenise("* *").unwrap(), ["*", "*",]);
 
-        assert_eq!(tokenise("<=").unwrap(), ["<="]);
-        assert_eq!(tokenise("< =").unwrap(), ["<", "=",]);
+        assert_eq!(tokenise("=<").unwrap(), ["=<"]);
+        assert_eq!(tokenise("= <").unwrap(), ["=", "<",]);
 
         assert_eq!(tokenise(">=").unwrap(), [">="]);
         assert_eq!(tokenise("> =").unwrap(), [">", "=",]);
-
-        assert_eq!(tokenise("<=").unwrap(), ["<="]);
-        assert_eq!(tokenise("< =").unwrap(), ["<", "=",]);
     }
 
     #[test]

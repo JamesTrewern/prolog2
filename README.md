@@ -74,15 +74,18 @@ Configured in a JSON file (default: `setup.json`):
     "files" : ["examples/simple_family.pl"],
     "auto" : true,
     "top_prog" : false,
-    "reduce" : false
+    "reduce" : false,
+    "approx_tolerance_pct" : 10
 }
 ```
-`config` is used by the solver, to limit the possible search size.<br> 
+`config` is used by the solver, to limit the possible search size.<br>
 `max_depth`: how many sub_goals deep the solver is allowed to go.<br>
 `max_clause`: number of clauses that can be added to hypothesis.<br>
 `max_pred`: number of invented predicates within the hypothesis.<br>
 
 `examples`, `auto`, `top_prog`, and `reduce` are all optional fields.
+
+`approx_tolerance_pct` sets the tolerance for the `=~=` (approximately-equal) operator. The value is an integer percentage — `10` means the two sides may differ by up to 10 % relative to the larger magnitude. Defaults to `10` if omitted. Can also be set programmatically via `App::approx_tolerance(pct)`.
 
 If the config file includes an `examples` field, Prolog<sup>2</sup> will immediately attempt to prove the examples as a query and output any learned hypotheses. 
 If `examples` is omitted, an interactive REPL is started where queries can be entered manually.

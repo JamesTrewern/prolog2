@@ -21,7 +21,7 @@ use crate::{
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
     },
-    predicate_modules::{PredicateModule, DEFAULT_MODULES},
+    predicate_modules::{maths::set_approx_tolerance, PredicateModule, DEFAULT_MODULES},
     program::predicate_table::PredicateTable,
     resolution::proof::Proof,
     Error,
@@ -159,7 +159,13 @@ pub struct SetUp {
     /// When true, skip the reduction step in Top Program Construction.
     #[serde(default)]
     pub reduce: bool,
+    /// Tolerance for the `=~=` (approximately-equal) operator, as an integer
+    /// percentage. `5` means "within 5 %". Defaults to `10`.
+    #[serde(default = "default_approx_tolerance")]
+    pub approx_tolerance_pct: u8,
 }
+
+fn default_approx_tolerance() -> u8 { 10 }
 
 impl Examples {
     /// Convert the examples into a single Prolog query string.
@@ -252,6 +258,15 @@ impl App {
         App { config, ..self }
     }
 
+    /// Sets the tolerance for the `=~=` (approximately-equal) operator.
+    ///
+    /// `pct` is an integer percentage: `5` means "within 5 %". The value is
+    /// stored globally and takes effect immediately. The default is `10`.
+    pub fn approx_tolerance(self, pct: u8) -> Self {
+        set_approx_tolerance(pct);
+        self
+    }
+
     /// When `true`, solution search runs without pausing to ask the user
     /// whether to continue — equivalent to always pressing `;`.
     pub fn auto(self, auto: bool) -> Self {
@@ -287,6 +302,8 @@ impl App {
     pub fn from_setup_json(path: impl AsRef<str>) -> Result<Self> {
         let path = path.as_ref();
         let setup: SetUp = serde_json::from_str(&fs::read_to_string(path)?)?;
+
+        set_approx_tolerance(setup.approx_tolerance_pct);
 
         let top_prog = if setup.top_prog {
             TopProg::True(setup.reduce)
