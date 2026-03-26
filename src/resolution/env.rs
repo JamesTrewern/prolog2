@@ -47,6 +47,7 @@ pub(crate) enum Strategy {
         /// Whether the predicate function has been called yet.
         called: bool,
     },
+    Unset
 }
 
 /// A goal environment in the proof search.
@@ -74,12 +75,7 @@ impl Env {
             got_choices: false,
             heap_point,
             // Default to an empty clause strategy; overwritten by get_choices.
-            strategy: Strategy::Clause {
-                choices: Vec::new(),
-                new_clause: false,
-                invent_pred: false,
-                total_choice_count: 0,
-            },
+            strategy: Strategy::Unset,
         }
     }
 
@@ -90,6 +86,7 @@ impl Env {
         match &self.strategy {
             Strategy::Clause { new_clause, .. } => *new_clause,
             Strategy::Native { .. } => false,
+            Strategy::Unset => false,
         }
     }
 
@@ -98,6 +95,7 @@ impl Env {
         match &self.strategy {
             Strategy::Clause { invent_pred, .. } => *invent_pred,
             Strategy::Native { .. } => false,
+            Strategy::Unset => false,
         }
     }
 
@@ -229,6 +227,7 @@ impl Env {
                 *called = false;
                 alternatives.clear();
             }
+            Strategy::Unset => (),
         }
     }
 
@@ -268,6 +267,7 @@ impl Env {
                 config,
                 debug,
             ),
+            Strategy::Unset => unreachable!("Shouldn't be able to try choices before getting them"),
         }
     }
 
