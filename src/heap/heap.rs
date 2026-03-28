@@ -70,6 +70,10 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn heap_last(&mut self) -> &mut Cell;
 
+    fn prog_addr(&self, _: usize) -> bool{
+        true
+    }
+
     fn get_id(&self) -> usize {
         0
     }

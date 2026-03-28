@@ -81,6 +81,10 @@ impl Heap for QueryHeap<'_> {
         self.id
     }
 
+    fn prog_addr(&self, addr: usize) -> bool {
+        addr >= self.prog_cells.len()
+    }
+
     fn heap_last(&mut self) -> &mut Cell{
         self.cells.last_mut().unwrap()
     }
