@@ -66,7 +66,7 @@ const FUNCTIONS: [(usize, MathFn); 17] = [
 ];
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum Number {
+pub enum Number {
     Flt(fsize),
     Int(isize),
 }
@@ -522,7 +522,7 @@ mod tests {
     fn binding(query: &str, var: &str) -> Option<String> {
         maths_app()
             .query_session(query).expect("query should parse")
-            .next_solution()
+            .next()
             .and_then(|sol| {
                 sol.bindings
                     .into_iter()
@@ -535,7 +535,7 @@ mod tests {
     fn succeeds(query: &str) -> bool {
         maths_app()
             .query_session(query).expect("query should parse")
-            .next_solution()
+            .next()
             .is_some()
     }
 

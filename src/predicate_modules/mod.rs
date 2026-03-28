@@ -1,21 +1,24 @@
-/// Built-in maths predicates (`is/2`).
+/// Built-in defaults
+pub mod defaults;
+/// Built-in list predicates
+pub mod lists;
+/// Built-in maths predicates.
 pub mod maths;
 /// Built-in meta-predicates (`not/1`).
 pub mod meta_predicates;
-
-pub mod lists;
+/// Built-in set predicates
+pub mod sets;
 /// Built-in string and atom predicates.
 pub mod strings;
 
+pub use defaults::DEFAULTS;
 pub use lists::LISTS;
 pub use maths::MATHS;
 pub use meta_predicates::META_PREDICATES;
 pub use strings::STRINGS;
 
 use crate::{
-    heap::query_heap::QueryHeap,
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
-    Config,
+    Config, heap::query_heap::QueryHeap, predicate_modules::sets::SETS, program::{hypothesis::Hypothesis, predicate_table::PredicateTable}
 };
 
 /// Return type for predicate functions.
@@ -109,4 +112,37 @@ pub type PredicateModule = (
     &'static [&'static str],
 );
 
-pub static DEFAULT_MODULES: &[PredicateModule] = &[MATHS, META_PREDICATES, LISTS, STRINGS];
+pub static STANDARD_MODULES: &[PredicateModule] =
+    &[DEFAULTS, MATHS, META_PREDICATES, LISTS, STRINGS, SETS];
+
+/// Helper functions for predicate modules
+pub mod helpers {
+    use crate::heap::{
+        heap::{Heap, Tag},
+        query_heap::QueryHeap,
+    };
+    /// Dereferenced heap address of the nth argument (0-indexed) of `goal`.
+    pub fn goal_arg(heap: &QueryHeap, goal: usize, n: usize) -> usize {
+        heap.deref_addr(resolve(heap, goal) + 2 + n)
+    }
+
+    /// True if `addr` holds an unbound variable (self-referential `Ref`).
+    pub fn is_var(heap: &QueryHeap, addr: usize) -> bool {
+        matches!(heap[addr], (Tag::Ref, r) if r == addr)
+    }
+
+    /// Resolve any `Str` indirection and return the structure's base address.
+    pub fn resolve(heap: &QueryHeap, addr: usize) -> usize {
+        match heap[addr] {
+            (Tag::Str, ptr) => ptr,
+            _ => addr,
+        }
+    }
+
+    pub fn read_int(heap: &QueryHeap, addr: usize) -> Option<isize>{
+        match heap[addr] {
+            (Tag::Int, value) => Some(usize::cast_signed(value)),
+            _ => None
+        }
+    }
+}

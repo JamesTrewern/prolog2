@@ -47,7 +47,7 @@ pub(crate) enum Strategy {
         /// Whether the predicate function has been called yet.
         called: bool,
     },
-    Unset
+    Unset,
 }
 
 /// A goal environment in the proof search.
@@ -205,9 +205,9 @@ impl Env {
                     *invent_pred = false;
                 }
             }
+            heap.truncate(self.heap_point);
         }
         heap.unbind(&self.bindings);
-        heap.truncate(self.heap_point);
         self.children
     }
 
@@ -215,7 +215,8 @@ impl Env {
 
     /// Reset this env when backtracking past it, so it gets fresh choices on
     /// a future visit via a different proof path.
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self, heap: &mut QueryHeap) {
+        heap.truncate(self.heap_point);
         self.got_choices = false;
         match &mut self.strategy {
             Strategy::Clause { choices, .. } => choices.clear(),
@@ -309,11 +310,9 @@ impl Env {
                             .collect(),
                     );
                 }
-                PredReturn::Choices(mut alts) => {
-                    // Reverse so we can pop in order (first alternative last in vec).
-                    alts.reverse();
+                PredReturn::Choices(alts) => {
                     *alternatives = alts;
-                    // Fall through to pop the first alternative below.
+                    
                 }
             }
         }

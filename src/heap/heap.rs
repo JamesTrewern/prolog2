@@ -191,7 +191,11 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 }
             }
             (Tag::Tup, _) => unimplemented!("_normalise_args for Tup"),
-            (Tag::Set, _) => unimplemented!("_normalise_args for Set"),
+            (Tag::Set, _) => {
+                for i in self.str_iterator(addr) {
+                    self.normalise_args(i, args)
+                }
+            }
             (Tag::Lis, pointer) => {
                 self.normalise_args(pointer, args);
                 self.normalise_args(pointer + 1, args);
@@ -259,8 +263,19 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self._copy_simple(other, pointer + 1, &mut update_addr[1]);
                 h
             }
-            (Tag::Tup, _len) => unimplemented!("_copy_term for Tup"),
-            (Tag::Set, _len) => unimplemented!("_copy_term for Set"),
+            (Tag::Tup | Tag::Set, length) => {
+                let tag = other[addr].0;
+                let mut update_addr: Vec<usize> = vec![0; length];
+                for (i, a) in other.str_iterator(addr).enumerate() {
+                    self._copy_complex(other, a, &mut update_addr[i])
+                }
+                let h = self.heap_len();
+                self.heap_push((tag, length));
+                for (i, a) in other.str_iterator(addr).enumerate() {
+                    self._copy_simple(other, a, &update_addr[i]);
+                }
+                h
+            }
             (Tag::Ref, _pointer) => unreachable!("_copy_simple: Ref cells must be dereferenced before copying"),
             (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri | Tag::ELis | Tag::AVar, _) => {
                 self.heap_push(other[addr]);
@@ -402,8 +417,18 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self._term_equal(p1, p2) && self._term_equal(p1 + 1, p2 + 1)
             }
             ((Tag::Str, p1), (Tag::Str, p2)) => self._term_equal(p1, p2),
-            ((Tag::Tup, _len1), (Tag::Tup, _len2)) => unimplemented!("_term_equal for Tup"),
-            ((Tag::Set, _len1), (Tag::Set, _len2)) => unimplemented!("_term_equal for Set"),
+            ((Tag::Tup, len1), (Tag::Tup, len2)) if len1 == len2 => self
+                .str_iterator(addr1)
+                .zip(self.str_iterator(addr2))
+                .all(|(a1, a2)| self._term_equal(a1, a2)),
+            ((Tag::Set, len1), (Tag::Set, len2)) if len1 == len2 => {
+                // Set equality: every element in set1 must have a match in set2
+                // and vice-versa (lengths already equal, so one direction suffices
+                // given no duplicates — sets are deduplicated at parse time).
+                let r1 = addr1 + 1..=addr1 + len1;
+                let r2 = addr2 + 1..=addr2 + len2;
+                r1.clone().all(|a| r2.clone().any(|b| self._term_equal(a, b)))
+            }
             ((Tag::Stri, i1), (Tag::Stri, i2)) => {
                 SymbolDB::get_string(i1) == SymbolDB::get_string(i2)
             }
@@ -452,9 +477,9 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     let value: fsize = unsafe { mem::transmute_copy(&value) };
                     println!("[{i:3}]|{tag:w$?}|{value:w$}|")
                 }
-                Tag::Tup => unimplemented!("_print_heap for Tup"),
-                Tag::Set => unimplemented!("_print_heap for Set"),
-                Tag::Stri => unimplemented!("_print_heap for Stri"),
+                Tag::Tup => println!("[{i:3}]| Tup |{value:w$}| {}", self.tuple_string(i)),
+                Tag::Set => println!("[{i:3}]| Set |{value:w$}| {}", self.set_string(i)),
+                Tag::Stri => println!("[{i:3}]|Stri |{value:w$}| \"{}\"", SymbolDB::get_string(value)),
                 _ => println!("[{i:3}]|{tag:w$?}|{value:w$}|"),
             };
             println!("{:-<w$}--------{:-<w$}", "", "");
@@ -516,6 +541,9 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     /**Create a string for a set*/
     fn set_string(&self, addr: usize) -> String {
+        if self[addr].1 == 0{
+            return "{}".into();
+        }
         let mut buf = String::from("{");
         for i in 1..self[addr].1 + 1 {
             buf += &self.term_string(addr + i);

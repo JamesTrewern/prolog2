@@ -21,7 +21,7 @@ use crate::{
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
     },
-    predicate_modules::{maths::set_approx_tolerance, PredicateModule, DEFAULT_MODULES},
+    predicate_modules::{maths::set_approx_tolerance, PredicateModule, STANDARD_MODULES},
     program::predicate_table::PredicateTable,
     resolution::proof::Proof,
     Error,
@@ -230,7 +230,7 @@ pub struct App {
 impl Default for App {
     fn default() -> Self {
         let mut app = App::new();
-        for predicate_module in DEFAULT_MODULES {
+        for predicate_module in STANDARD_MODULES {
             app = app.load_module(predicate_module).expect("built-in module should always load");
         }
         app
@@ -320,7 +320,7 @@ impl App {
             top_prog,
         };
 
-        for predicate_module in DEFAULT_MODULES {
+        for predicate_module in STANDARD_MODULES {
             app = app.load_module(predicate_module).expect("built-in module should always load");
         }
 
@@ -463,7 +463,7 @@ impl App {
     pub fn start_query(&self, query: impl AsRef<str>) -> Result<()> {
         let mut session = self.query_session(query)?;
         loop {
-            if let Some(solution) = session.next_solution() {
+            if let Some(solution) = session.next() {
                 println!("TRUE");
                 for (name, value) in &solution.bindings {
                     println!("{name} = {value}");
@@ -662,6 +662,7 @@ pub struct QuerySession<'a> {
 }
 
 /// A single solution returned by [`QuerySession`].
+#[derive(Debug)]
 pub struct Solution {
     /// Variable bindings as `(name, display_string)` pairs, in the order the
     /// variables appear in the query.
@@ -669,35 +670,6 @@ pub struct Solution {
     /// Any clauses learned during this proof step via Top Program Construction,
     /// rendered as a Prolog source string. Empty if no hypothesis was formed.
     pub hypothesis: String,
-}
-
-impl<'a> QuerySession<'a> {
-    /// Advances to the next solution, returning `None` when the search space
-    /// is exhausted.
-    ///
-    /// Each call resumes backtracking from where the previous call left off.
-    /// Variable bindings are returned as display strings; the hypothesis field
-    /// contains any clauses learned via MIL during this proof step.
-    pub fn next_solution(&mut self) -> Option<Solution> {
-        if self.proof.prove(self.predicate_table, self.config) {
-            let bindings = self
-                .vars
-                .iter()
-                .map(|(name, addr)| (name.clone(), self.proof.heap.term_string(*addr)))
-                .collect();
-            let hypothesis = if self.proof.hypothesis.len() > 0 {
-                self.proof.hypothesis.to_string(&self.proof.heap)
-            } else {
-                String::new()
-            };
-            Some(Solution {
-                bindings,
-                hypothesis,
-            })
-        } else {
-            None
-        }
-    }
 }
 
 impl<'a> Iterator for QuerySession<'a> {

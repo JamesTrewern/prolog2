@@ -132,7 +132,7 @@ impl<'a> Proof<'a> {
                         return false;
                     }
                     // Reset this goal so it gets fresh choices on a future visit
-                    self.stack[self.pointer].reset();
+                    self.stack[self.pointer].reset(&mut self.heap);
 
                     self.pointer -= 1;
                     let children = self.stack[self.pointer].undo_try(

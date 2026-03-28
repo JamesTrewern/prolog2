@@ -48,6 +48,7 @@ pub enum Term {
     Tuple(Vec<Term>),
     Set(Vec<Term>),
     EmptyList,
+    EmptySet,
 }
 
 impl Unit {
@@ -105,7 +106,7 @@ impl Unit {
 
 impl Term {
     fn unit(&self) -> bool {
-        matches!(self, Term::Unit(_) | Term::EmptyList)
+        matches!(self, Term::Unit(_) | Term::EmptyList | Term::EmptySet)
     }
 
     pub fn encode(
@@ -121,6 +122,7 @@ impl Term {
             Term::Tuple(terms) => Self::encode_tup(terms, heap, var_values, query),
             Term::Set(terms) => Self::encode_set(terms, heap, var_values, query),
             Term::EmptyList => heap.heap_push(EMPTY_LIS),
+            Term::EmptySet => heap.heap_push((Tag::Set, 0))
         }
     }
 

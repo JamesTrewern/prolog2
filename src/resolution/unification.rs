@@ -234,13 +234,34 @@ fn unify_func_or_tup(
     Some(binding)
 }
 
+/// Set unification: equality check only.
+///
+/// Two sets unify iff they have the same length and every element in one has a
+/// structurally equal counterpart in the other. No variable bindings are
+/// created — this is a deliberate design choice because with two or more
+/// unbound variables the lack of element ordering makes correct binding
+/// impossible.
 fn unfiy_set(
-    _heap: &impl Heap,
-    mut _binding: Substitution,
-    _addr_1: usize,
-    _addr_2: usize,
+    heap: &impl Heap,
+    binding: Substitution,
+    addr_1: usize,
+    addr_2: usize,
 ) -> Option<Substitution> {
-    unimplemented!("set unification not yet supported")
+    let len_1 = heap[addr_1].1;
+    let len_2 = heap[addr_2].1;
+    if len_1 != len_2 {
+        return None;
+    }
+
+    let mut r1 = addr_1 + 1..=addr_1 + len_1;
+    let r2 = addr_2 + 1..=addr_2 + len_2;
+
+    // Every element in set1 must match some element in set2.
+    if r1.all(|a| r2.clone().any(|b| heap._term_equal(a, b))) {
+        Some(binding)
+    } else {
+        None
+    }
 }
 
 /**Unfiy two lists together */

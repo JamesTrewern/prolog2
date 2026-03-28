@@ -9,7 +9,7 @@ const INFIX_ORDER: &[&[&str]] = &[
     &["**"],
     &["*", "/"],
     &["+", "-"],
-    &["==", "=/=", "/=", "=:=", "=~=", "is", ">", ">=", "<", "=<"],
+    &["==", "=\\=", "\\=", "=:=", "=~=", "is", ">", ">=", "<", "=<", "="],
 ];
 
 #[derive(Debug, PartialEq, Clone)]
@@ -148,7 +148,7 @@ impl TokenStream {
             }
             "{}" => {
                 self.next();
-                Ok(Term::Set(vec![]))
+                Ok(Term::EmptySet)
             }
             "()" => {
                 self.next();
@@ -1115,4 +1115,6 @@ mod tests {
             TreeClause::MetaRule(vec![head, body, meta_data])
         );
     }
+
+
 }

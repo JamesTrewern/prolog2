@@ -859,7 +859,7 @@ mod tests {
     fn binding(query: &str, var: &str) -> Option<String> {
         strings_app()
             .query_session(query).expect("query should parse")
-            .next_solution()
+            .next()
             .and_then(|sol| {
                 sol.bindings.into_iter().find(|(n, _)| n.as_ref() == var).map(|(_, v)| v)
             })
@@ -868,7 +868,7 @@ mod tests {
     fn succeeds(query: &str) -> bool {
         strings_app()
             .query_session(query).expect("query should parse")
-            .next_solution().is_some()
+            .next().is_some()
     }
 
     // ── Type checks ───────────────────────────────────────────────────────────
