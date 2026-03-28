@@ -279,7 +279,7 @@ pub fn term_string_pred(
 ) -> PredReturn {
     let term_a = arg(heap, goal, 0);
     let str_a  = arg(heap, goal, 1);
-    let (Tag::Ref, r) = heap[str_a] else { return PredReturn::False; };
+    let (Tag::Ref, r) = heap[str_a] else { return false.into(); };
     let text = heap.term_string(term_a);
     let result = push_string(heap, text.into());
     PredReturn::Success(vec![(r, result)], vec![])
@@ -347,7 +347,7 @@ pub fn atom_length_pred(
 ) -> PredReturn {
     let atom_a = arg(heap, goal, 0);
     let len_a  = arg(heap, goal, 1);
-    let (Tag::Con, id) = heap[atom_a] else { return PredReturn::False; };
+    let (Tag::Con, id) = heap[atom_a] else { return false.into(); };
     let len = SymbolDB::get_const(id).chars().count();
     match heap[len_a] {
         (Tag::Ref, r) => {
@@ -368,7 +368,7 @@ pub fn string_length_pred(
 ) -> PredReturn {
     let str_a = arg(heap, goal, 0);
     let len_a = arg(heap, goal, 1);
-    let (Tag::Stri, idx) = heap[str_a] else { return PredReturn::False; };
+    let (Tag::Stri, idx) = heap[str_a] else { return false.into(); };
     let len = SymbolDB::get_string(idx).chars().count();
     match heap[len_a] {
         (Tag::Ref, r) => {
@@ -401,7 +401,7 @@ fn concat_impl(
     match (a_text, b_text, c_text) {
         // A ++ B → C
         (Some(at), Some(bt), None) if is_var(heap, c) => {
-            let (Tag::Ref, r) = heap[c] else { return PredReturn::False; };
+            let (Tag::Ref, r) = heap[c] else { return false.into(); };
             let concat = format!("{at}{bt}");
             let result = make_result(heap, &concat);
             PredReturn::Success(vec![(r, result)], vec![])
@@ -413,7 +413,7 @@ fn concat_impl(
         }
         // C - A = B (strip prefix from C)
         (Some(at), None, Some(ct)) if is_var(heap, b) => {
-            let (Tag::Ref, r) = heap[b] else { return PredReturn::False; };
+            let (Tag::Ref, r) = heap[b] else { return false.into(); };
             match ct.strip_prefix(at.as_ref()) {
                 Some(suffix) => {
                     let result = make_result(heap, suffix);
@@ -424,7 +424,7 @@ fn concat_impl(
         }
         // C - B = A (strip suffix from C)
         (None, Some(bt), Some(ct)) if is_var(heap, a) => {
-            let (Tag::Ref, r) = heap[a] else { return PredReturn::False; };
+            let (Tag::Ref, r) = heap[a] else { return false.into(); };
             match ct.strip_suffix(bt.as_ref()) {
                 Some(prefix) => {
                     let result = make_result(heap, prefix);
@@ -466,7 +466,7 @@ pub fn string_concat_pred(
 fn upcase_impl(heap: &mut QueryHeap, goal: usize, string_mode: bool) -> PredReturn {
     let in_a  = arg(heap, goal, 0);
     let out_a = arg(heap, goal, 1);
-    let Some(text) = read_text(heap, in_a) else { return PredReturn::False; };
+    let Some(text) = read_text(heap, in_a) else { return false.into(); };
     let upper: String = text.to_uppercase();
     match heap[out_a] {
         (Tag::Ref, r) => {
@@ -487,7 +487,7 @@ fn upcase_impl(heap: &mut QueryHeap, goal: usize, string_mode: bool) -> PredRetu
 fn downcase_impl(heap: &mut QueryHeap, goal: usize, string_mode: bool) -> PredReturn {
     let in_a  = arg(heap, goal, 0);
     let out_a = arg(heap, goal, 1);
-    let Some(text) = read_text(heap, in_a) else { return PredReturn::False; };
+    let Some(text) = read_text(heap, in_a) else { return false.into(); };
     let lower: String = text.to_lowercase();
     match heap[out_a] {
         (Tag::Ref, r) => {
@@ -543,7 +543,7 @@ fn chars_impl(
     match (read_text(heap, text_a), is_var(heap, list_a)) {
         // Forward: text → char list
         (Some(text), true) => {
-            let (Tag::Ref, r) = heap[list_a] else { return PredReturn::False; };
+            let (Tag::Ref, r) = heap[list_a] else { return false.into(); };
             let cells: Vec<_> = text.chars().map(|c| {
                 let id = SymbolDB::set_const(c.to_string());
                 (Tag::Con, id)
@@ -553,16 +553,16 @@ fn chars_impl(
         }
         // Reverse: char list → text
         (None, _) if is_var(heap, text_a) => {
-            let (Tag::Ref, r) = heap[text_a] else { return PredReturn::False; };
-            let Some(cells) = read_list(heap, list_a) else { return PredReturn::False; };
+            let (Tag::Ref, r) = heap[text_a] else { return false.into(); };
+            let Some(cells) = read_list(heap, list_a) else { return false.into(); };
             let mut buf = String::new();
             for (tag, v) in cells {
-                let Tag::Con = tag else { return PredReturn::False; };
+                let Tag::Con = tag else { return false.into(); };
                 let name = SymbolDB::get_const(v);
                 let mut iter = name.chars();
                 match (iter.next(), iter.next()) {
                     (Some(c), None) => buf.push(c),
-                    _ => return PredReturn::False,
+                    _ => return false.into(),
                 }
             }
             let result = make_result(heap, &buf);
@@ -570,18 +570,18 @@ fn chars_impl(
         }
         // Check: both bound
         (Some(text), false) => {
-            let Some(cells) = read_list(heap, list_a) else { return PredReturn::False; };
+            let Some(cells) = read_list(heap, list_a) else { return false.into(); };
             let chars: Vec<char> = text.chars().collect();
             if chars.len() != cells.len() {
-                return PredReturn::False;
+                return false.into();
             }
             for (c, (tag, v)) in chars.into_iter().zip(cells) {
-                let Tag::Con = tag else { return PredReturn::False; };
+                let Tag::Con = tag else { return false.into(); };
                 let name = SymbolDB::get_const(v);
                 let mut iter = name.chars();
                 match (iter.next(), iter.next()) {
                     (Some(c2), None) if c2 == c => {}
-                    _ => return PredReturn::False,
+                    _ => return false.into(),
                 }
             }
             PredReturn::True
@@ -619,21 +619,21 @@ fn codes_impl(
     match (read_text(heap, text_a), is_var(heap, list_a)) {
         // Forward: text → code list
         (Some(text), true) => {
-            let (Tag::Ref, r) = heap[list_a] else { return PredReturn::False; };
+            let (Tag::Ref, r) = heap[list_a] else { return false.into(); };
             let cells: Vec<_> = text.chars().map(|c| (Tag::Int, c as usize)).collect();
             let list_addr = push_list(heap, cells);
             PredReturn::Success(vec![(r, list_addr)], vec![])
         }
         // Reverse: code list → text
         (None, _) if is_var(heap, text_a) => {
-            let (Tag::Ref, r) = heap[text_a] else { return PredReturn::False; };
-            let Some(cells) = read_list(heap, list_a) else { return PredReturn::False; };
+            let (Tag::Ref, r) = heap[text_a] else { return false.into(); };
+            let Some(cells) = read_list(heap, list_a) else { return false.into(); };
             let mut buf = String::new();
             for (tag, v) in cells {
-                let Tag::Int = tag else { return PredReturn::False; };
+                let Tag::Int = tag else { return false.into(); };
                 match char::from_u32(v as u32) {
                     Some(c) => buf.push(c),
-                    None => return PredReturn::False,
+                    None => return false.into(),
                 }
             }
             let result = make_result(heap, &buf);
@@ -641,15 +641,15 @@ fn codes_impl(
         }
         // Check: both bound
         (Some(text), false) => {
-            let Some(cells) = read_list(heap, list_a) else { return PredReturn::False; };
+            let Some(cells) = read_list(heap, list_a) else { return false.into(); };
             let chars: Vec<char> = text.chars().collect();
             if chars.len() != cells.len() {
-                return PredReturn::False;
+                return false.into();
             }
             for (c, (tag, v)) in chars.into_iter().zip(cells) {
-                let Tag::Int = tag else { return PredReturn::False; };
+                let Tag::Int = tag else { return false.into(); };
                 if c as usize != v {
-                    return PredReturn::False;
+                    return false.into();
                 }
             }
             PredReturn::True
@@ -698,7 +698,7 @@ fn sub_impl(
     let after_a  = arg(heap, goal, 3);
     let sub_a    = arg(heap, goal, 4);
 
-    let Some(whole_text) = read_text(heap, whole_a) else { return PredReturn::False; };
+    let Some(whole_text) = read_text(heap, whole_a) else { return false.into(); };
     let total_chars: Vec<char> = whole_text.chars().collect();
     let total = total_chars.len();
 
@@ -715,7 +715,7 @@ fn sub_impl(
 
     if let (Some(before), Some(length)) = (before_val, length_val) {
         if before + length > total {
-            return PredReturn::False;
+            return false.into();
         }
         let sub_str: String = total_chars[before..before + length].iter().collect();
         let after = total - before - length;
@@ -730,17 +730,17 @@ fn sub_impl(
         let mut bindings = Vec::new();
 
         if is_var(heap, sub_a) {
-            let (Tag::Ref, r) = heap[sub_a] else { return PredReturn::False; };
+            let (Tag::Ref, r) = heap[sub_a] else { return false.into(); };
             bindings.push((r, make_result(heap, &sub_str)));
         } else if sub_text.map_or(true, |t| t.as_ref() != sub_str.as_str()) {
-            return PredReturn::False;
+            return false.into();
         }
 
         if is_var(heap, after_a) {
-            let (Tag::Ref, r) = heap[after_a] else { return PredReturn::False; };
+            let (Tag::Ref, r) = heap[after_a] else { return false.into(); };
             bindings.push((r, push_int(heap, after as isize)));
         } else if !matches!(heap[after_a], (Tag::Int, v) if v == after) {
-            return PredReturn::False;
+            return false.into();
         }
 
         return PredReturn::Success(bindings, vec![]);
@@ -755,26 +755,26 @@ fn sub_impl(
 
             let mut bindings = Vec::new();
             if is_var(heap, before_a) {
-                let (Tag::Ref, r) = heap[before_a] else { return PredReturn::False; };
+                let (Tag::Ref, r) = heap[before_a] else { return false.into(); };
                 bindings.push((r, push_int(heap, before as isize)));
             } else if !matches!(heap[before_a], (Tag::Int, v) if v == before) {
-                return PredReturn::False;
+                return false.into();
             }
             if is_var(heap, length_a) {
-                let (Tag::Ref, r) = heap[length_a] else { return PredReturn::False; };
+                let (Tag::Ref, r) = heap[length_a] else { return false.into(); };
                 bindings.push((r, push_int(heap, length as isize)));
             } else if !matches!(heap[length_a], (Tag::Int, v) if v == length) {
-                return PredReturn::False;
+                return false.into();
             }
             if is_var(heap, after_a) {
-                let (Tag::Ref, r) = heap[after_a] else { return PredReturn::False; };
+                let (Tag::Ref, r) = heap[after_a] else { return false.into(); };
                 bindings.push((r, push_int(heap, after as isize)));
             } else if !matches!(heap[after_a], (Tag::Int, v) if v == after) {
-                return PredReturn::False;
+                return false.into();
             }
             return PredReturn::Success(bindings, vec![]);
         }
-        return PredReturn::False;
+        return false.into();
     }
 
     PredReturn::False

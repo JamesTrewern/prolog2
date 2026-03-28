@@ -11,13 +11,11 @@
 
 use super::{helpers::*, PredReturn, PredicateModule};
 use crate::{
-    heap::{
+    Config, heap::{
         heap::{Heap, Tag},
         query_heap::QueryHeap,
         symbol_db::SymbolDB,
-    },
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
-    Config,
+    }, predicate_modules::maths::Number, program::{hypothesis::Hypothesis, predicate_table::PredicateTable}
 };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -175,7 +173,7 @@ pub fn set_member_pred(
     let elem_addr = goal_arg(heap, goal, 0);
     let set_arg = goal_arg(heap, goal, 1);
     let Some((base, len)) = read_set(heap, set_arg) else {
-        return PredReturn::False;
+        return false.into();
     };
 
     if is_var(heap, elem_addr) {
@@ -214,19 +212,16 @@ pub fn subset_sized(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    let Some(length) = read_int(heap, goal_arg(heap, goal, 2)) else {
-        return false.into();
+    let k = match Number::try_from(heap[goal_arg(heap, goal, 2)]) {
+        Ok(Number::Int(value)) => value as usize,
+        _ => return false.into()
     };
-    if length < 0 {
-        return PredReturn::False;
-    }
-    let k = length as usize;
 
     let Some(set) = read_set(heap, goal_arg(heap, goal, 1)) else {
         return false.into();
     };
     if k > set.1 {
-        return PredReturn::False;
+        return false.into();
     }
 
     let subset_arg = goal_arg(heap, goal, 0);
@@ -240,7 +235,7 @@ pub fn subset_sized(
         let elems = set_elements(heap, set.0, set.1);
         let combos = combinations(&elems, k);
         if combos.is_empty() {
-            return PredReturn::False;
+            return false.into();
         }
         // Push all subset structures onto the heap upfront, then wrap each in a
         // single-binding choice. Heap cells from unchosen alternatives are harmless
@@ -274,10 +269,10 @@ pub fn set_union_pred(
     _config: Config,
 ) -> PredReturn {
     let Some((base1, len1)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let Some((base2, len2)) = read_set(heap, goal_arg(heap, goal, 1)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let result_addr = goal_arg(heap, goal, 2);
 
@@ -311,10 +306,10 @@ pub fn set_intersection_pred(
     _config: Config,
 ) -> PredReturn {
     let Some((base1, len1)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let Some((base2, len2)) = read_set(heap, goal_arg(heap, goal, 1)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let result_addr = goal_arg(heap, goal, 2);
 
@@ -341,10 +336,10 @@ pub fn set_difference_pred(
     _config: Config,
 ) -> PredReturn {
     let Some((base1, len1)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let Some((base2, len2)) = read_set(heap, goal_arg(heap, goal, 1)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let result_addr = goal_arg(heap, goal, 2);
 
@@ -371,10 +366,10 @@ pub fn set_symdiff_pred(
     _config: Config,
 ) -> PredReturn {
     let Some((base1, len1)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let Some((base2, len2)) = read_set(heap, goal_arg(heap, goal, 1)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let result_addr = goal_arg(heap, goal, 2);
 
@@ -406,7 +401,7 @@ pub fn set_size_pred(
     _config: Config,
 ) -> PredReturn {
     let Some((_base, len)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let n_addr = goal_arg(heap, goal, 1);
 
@@ -430,7 +425,7 @@ pub fn set_add_pred(
     _config: Config,
 ) -> PredReturn {
     let Some((base, len)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let elem_addr = goal_arg(heap, goal, 1);
     let result_addr = goal_arg(heap, goal, 2);
@@ -470,7 +465,7 @@ pub fn set_del_pred(
     _config: Config,
 ) -> PredReturn {
     let Some((base, len)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let elem_addr = goal_arg(heap, goal, 1);
     let result_addr = goal_arg(heap, goal, 2);
@@ -497,7 +492,7 @@ pub fn set_to_list_pred(
     _config: Config,
 ) -> PredReturn {
     let Some((base, len)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-        return PredReturn::False;
+        return false.into();
     };
     let list_addr_arg = goal_arg(heap, goal, 1);
 
@@ -523,7 +518,7 @@ pub fn list_to_set_pred(
     let set_arg = goal_arg(heap, goal, 1);
 
     let Some(addrs) = read_list_addrs(heap, list_arg) else {
-        return PredReturn::False;
+        return false.into();
     };
 
     let new_set = push_set_from_addrs(heap, &addrs);

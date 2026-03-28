@@ -381,11 +381,11 @@ pub fn is_pred(
     let func_addr = match heap[goal_addr] {
         (Tag::Str, ptr) => ptr,
         (Tag::Comp, _) => goal_addr,
-        _ => return PredReturn::False,
+        _ => return false.into(),
     };
 
     let Some(rhs) = evaluate_term(func_addr + 3, heap) else {
-        return PredReturn::False;
+        return false.into();
     };
     let lhs_addr = heap.deref_addr(func_addr + 2);
 
@@ -494,7 +494,7 @@ pub fn approx_eq_pred(
     _: Config,
 ) -> PredReturn {
     let Some((lhs, rhs)) = eval_comparison(heap, goal) else {
-        return PredReturn::False;
+        return false.into();
     };
     let pct = APPROX_TOLERANCE_PCT.load(Ordering::Relaxed);
     let tolerance = pct as fsize / 100.0;
