@@ -91,7 +91,7 @@ impl Heap for QueryHeap<'_> {
         let addr = self.deref_addr(addr);
         match self[addr].0 {
             Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
-            Tag::Func => self.func_string(addr),
+            Tag::Comp => self.func_string(addr),
             Tag::Lis => self.list_string(addr),
             Tag::ELis => "[]".into(),
             Tag::Arg => match SymbolDB::get_var(addr, self.get_symbol_db_id(addr)) {

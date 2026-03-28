@@ -195,11 +195,11 @@ fn unify_rec(
                 Some(binding)
             }
         },
-        (Tag::Ref, Tag::Lis | Tag::Func | Tag::Set | Tag::Tup) => {
+        (Tag::Ref, Tag::Lis | Tag::Comp | Tag::Set | Tag::Tup) => {
             Some(binding.push((addr_1, addr_2, true)))
         }
         (Tag::Ref, _) => Some(binding.push((addr_1, addr_2, false))),
-        (Tag::Lis | Tag::Func | Tag::Set | Tag::Tup, Tag::Ref) => {
+        (Tag::Lis | Tag::Comp | Tag::Set | Tag::Tup, Tag::Ref) => {
             Some(binding.push((addr_2, addr_1, true)))
         }
         (_, Tag::Ref) => Some(binding.push((addr_2, addr_1, false))),
@@ -208,7 +208,7 @@ fn unify_rec(
         {
             Some(binding)
         }
-        (Tag::Func, Tag::Func) | (Tag::Tup, Tag::Tup) => {
+        (Tag::Comp, Tag::Comp) | (Tag::Tup, Tag::Tup) => {
             unify_func_or_tup(heap, binding, addr_1, addr_2)
         }
         (Tag::Set, Tag::Set) => unfiy_set(heap, binding, addr_1, addr_2),
@@ -296,7 +296,7 @@ mod tests {
             (Tag::Ref, 1),
             (Tag::Ref, 2),
             (Tag::Str, 4),
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, p),
             (Tag::Con, a),
         ];
@@ -337,7 +337,7 @@ mod tests {
         let heap = vec![
             (Tag::Arg, 0),
             (Tag::Str, 2),
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, p),
             (Tag::Con, a),
         ];
@@ -356,7 +356,7 @@ mod tests {
             (Tag::Ref, 1),
             (Tag::Ref, 2),
             (Tag::Str, 4),
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, p),
             (Tag::Con, a),
         ];
@@ -389,7 +389,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
 
         let heap = vec![
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, p),
             (Tag::Con, a),
             (Tag::Tup, 2),
@@ -417,7 +417,7 @@ mod tests {
             (Tag::Tup, 2),
             (Tag::Con, p),
             (Tag::Con, a),
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, p),
             (Tag::Con, a),
             (Tag::Ref, 6),
@@ -508,10 +508,10 @@ mod tests {
         assert_eq!(binding.get_arg(3), Some(13));
 
         let heap = vec![
-            (Tag::Func, 2), //0
+            (Tag::Comp, 2), //0
             (Tag::Con, p),  //1
             (Tag::Lis, 6),  //2
-            (Tag::Func, 2), //3
+            (Tag::Comp, 2), //3
             (Tag::Con, p),  //4
             (Tag::Lis, 12), //5
             (Tag::Arg, 0),  //6
@@ -567,7 +567,7 @@ mod tests {
     fn integers() {
         let prev = SymbolDB::set_const("prev".to_string());
         let prog = vec![
-            (Tag::Func, 3),
+            (Tag::Comp, 3),
             (Tag::Con, prev),
             (Tag::Int, 4),
             (Tag::Int, 3),
@@ -575,7 +575,7 @@ mod tests {
         let mut heap = QueryHeap::new(&prog, None);
         //possible failure to deref before comparing numbers
         heap.cells.extend(vec![
-            (Tag::Func, 3),
+            (Tag::Comp, 3),
             (Tag::Ref, 5),
             (Tag::Int, 4),
             (Tag::Ref, 7),

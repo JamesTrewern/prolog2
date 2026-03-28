@@ -121,7 +121,7 @@ impl Number {
     pub fn from_cell((tag, value): Cell) -> Self {
         match tag {
             Tag::Flt => Self::flt_from_value(value),
-            Tag::Int => Number::Int(usize::cast_signed(value)),
+            Tag::Int => Self::int_from_value(value),
             _ => unreachable!("from_cell called with non-numeric tag {:?}", tag),
         }
     }
@@ -134,6 +134,22 @@ impl Number {
         let float_value = fsize::from_bits(value as u64);
 
         Number::Flt(float_value)
+    }
+
+    pub fn int_from_value(value: usize) -> Self{
+        Number::Int(usize::cast_signed(value))
+    }
+}
+
+impl TryFrom<Cell> for Number{
+    type Error = Tag;
+
+    fn try_from(value: Cell) -> Result<Self, Self::Error> {
+        match value.0 {
+            Tag::Flt => Ok(Self::flt_from_value(value.1)),
+            Tag::Int => Ok(Self::int_from_value(value.1)),
+            tag => Err(tag)
+        }
     }
 }
 
@@ -318,7 +334,7 @@ fn evaluate_str(addr: usize, heap: &QueryHeap) -> Option<Number> {
 fn evaluate_term(addr: usize, heap: &QueryHeap) -> Option<Number> {
     let addr = heap.deref_addr(addr);
     match heap[addr] {
-        (Tag::Func, _) => evaluate_str(addr, heap),
+        (Tag::Comp, _) => evaluate_str(addr, heap),
         (Tag::Str, ptr) => evaluate_str(ptr, heap),
         (tag @ (Tag::Int | Tag::Flt), value) => Some(Number::from_cell((tag, value))),
         _ => None,
@@ -336,7 +352,7 @@ fn eval_comparison(heap: &QueryHeap, goal: usize) -> Option<(Number, Number)> {
     let goal_addr = heap.deref_addr(goal);
     let func_addr = match heap[goal_addr] {
         (Tag::Str, ptr) => ptr,
-        (Tag::Func, _) => goal_addr,
+        (Tag::Comp, _) => goal_addr,
         _ => return None,
     };
     Some((
@@ -364,7 +380,7 @@ pub fn is_pred(
     let goal_addr = heap.deref_addr(goal);
     let func_addr = match heap[goal_addr] {
         (Tag::Str, ptr) => ptr,
-        (Tag::Func, _) => goal_addr,
+        (Tag::Comp, _) => goal_addr,
         _ => return PredReturn::False,
     };
 

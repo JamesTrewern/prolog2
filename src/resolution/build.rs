@@ -37,7 +37,7 @@ pub fn build(
             heap.heap_push((tag, value))
         }
         (Tag::Arg, _arg_id) => build_arg(heap, substitution, meta_vars, src_addr),
-        (Tag::Func | Tag::Tup | Tag::Set, _) => build_str(heap, substitution, meta_vars, src_addr),
+        (Tag::Comp | Tag::Tup | Tag::Set, _) => build_str(heap, substitution, meta_vars, src_addr),
         (Tag::Lis, ptr) => {
             let new_ptr = build_list(heap, substitution, meta_vars, ptr);
             heap.heap_push((Tag::Lis, new_ptr))
@@ -121,7 +121,7 @@ fn build_complex_term(
     src_addr: usize,
 ) -> Option<Cell> {
     match heap[heap.deref_addr(src_addr)] {
-        (Tag::Func | Tag::Tup | Tag::Set, _) => {
+        (Tag::Comp | Tag::Tup | Tag::Set, _) => {
             Some((Tag::Str, build_str(heap, substitution, meta_vars, src_addr)))
         }
         (Tag::Str, ptr) => Some((Tag::Str, build_str(heap, substitution, meta_vars, ptr))),
@@ -164,7 +164,7 @@ mod tests {
         let f = SymbolDB::set_const("f");
 
         let mut heap = vec![
-            (Tag::Func, 4),
+            (Tag::Comp, 4),
             (Tag::Con, p),
             (Tag::Arg, 0),
             (Tag::Arg, 0),
@@ -175,7 +175,7 @@ mod tests {
         assert_eq!(
             heap[addr..(addr + 4)],
             [
-                (Tag::Func, 4),
+                (Tag::Comp, 4),
                 (Tag::Con, p),
                 (Tag::Ref, addr + 2),
                 (Tag::Ref, addr + 2),
@@ -190,7 +190,7 @@ mod tests {
         assert_eq!(
             heap[addr..(addr + 5)],
             [
-                (Tag::Func, 4),
+                (Tag::Comp, 4),
                 (Tag::Con, p),
                 (Tag::Ref, addr + 2),
                 (Tag::Ref, addr + 2),
@@ -199,10 +199,10 @@ mod tests {
         );
 
         heap = vec![
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, f),
             (Tag::Ref, 2),
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, p),
             (Tag::Arg, 0),
         ];
@@ -212,10 +212,10 @@ mod tests {
         assert_eq!(
             heap[addr - 3..(addr + 3)],
             [
-                (Tag::Func, 2),
+                (Tag::Comp, 2),
                 (Tag::Con, f),
                 (Tag::Ref, 2),
-                (Tag::Func, 2),
+                (Tag::Comp, 2),
                 (Tag::Con, p),
                 (Tag::Str, addr - 3),
             ]
@@ -234,7 +234,7 @@ mod tests {
             (Tag::Lis, 2), //1
             (Tag::Con, b), //2
             (Tag::Arg, 0), //3
-            (Tag::Func, 2), //4
+            (Tag::Comp, 2), //4
             (Tag::Con, p), //5
             (Tag::Lis, 0), //6
             (Tag::Con, a), //7
@@ -243,7 +243,7 @@ mod tests {
             (Tag::Lis, 11), //10
             (Tag::Con, c), //11
             (Tag::ELis, 0), //12
-            (Tag::Func, 2), //13
+            (Tag::Comp, 2), //13
             (Tag::Con, p), //14
             (Tag::Lis, 7), //15
         ];
@@ -257,7 +257,7 @@ mod tests {
             (Tag::Lis, 2), //1
             (Tag::Con, b), //2
             (Tag::Ref, 3), //3
-            (Tag::Func, 2), //4
+            (Tag::Comp, 2), //4
             (Tag::Con, p), //5
             (Tag::Lis, 0), //6
             (Tag::Con, a), //7
@@ -266,7 +266,7 @@ mod tests {
             (Tag::Lis, 11), //10
             (Tag::Arg, 0), //11
             (Tag::ELis, 0), //12
-            (Tag::Func, 2), //13
+            (Tag::Comp, 2), //13
             (Tag::Con, p), //14
             (Tag::Lis, 7), //15
         ];
@@ -288,11 +288,11 @@ mod tests {
             (Tag::Lis, 2),  //1
             (Tag::Ref, 2),  //2
             (Tag::ELis, 0), //3
-            (Tag::Func, 3), //4
+            (Tag::Comp, 3), //4
             (Tag::Con, p),  //5
             (Tag::Ref, 6),  //6
             (Tag::Lis, 0),  //7
-            (Tag::Func, 3), //8
+            (Tag::Comp, 3), //8
             (Tag::Con, p),  //9
             (Tag::Arg, 0),  //10
             (Tag::Arg, 0),  //11
@@ -313,11 +313,11 @@ mod tests {
             (Tag::Lis, 2),  //1
             (Tag::Ref, 2),  //2
             (Tag::ELis, 0), //3
-            (Tag::Func, 3), //4
+            (Tag::Comp, 3), //4
             (Tag::Con, p),  //5
             (Tag::Ref, 6),  //6
             (Tag::Lis, 0),  //7
-            (Tag::Func, 3), //8
+            (Tag::Comp, 3), //8
             (Tag::Con, p),  //9
             (Tag::Arg, 0),  //10
             (Tag::Arg, 0),  //11

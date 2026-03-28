@@ -138,11 +138,4 @@ pub mod helpers {
             _ => addr,
         }
     }
-
-    pub fn read_int(heap: &QueryHeap, addr: usize) -> Option<isize>{
-        match heap[addr] {
-            (Tag::Int, value) => Some(usize::cast_signed(value)),
-            _ => None
-        }
-    }
 }

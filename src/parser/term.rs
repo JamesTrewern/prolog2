@@ -208,7 +208,7 @@ impl Term {
             .iter()
             .map(|term| term.pre_encode_complex(heap, var_values, query))
             .collect();
-        let addr = heap.heap_push((Tag::Func, terms.len() + 1));
+        let addr = heap.heap_push((Tag::Comp, terms.len() + 1));
         unit.encode(heap, var_values, query);
         for (complex, term) in complex_terms.iter().zip(terms.iter()) {
             match complex {
@@ -377,7 +377,7 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Arg, 0),
                 (Tag::Con, a_id),
@@ -394,7 +394,7 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Arg, 0),
                 (Tag::Con, a_id),
                 (Tag::Arg, 0),
@@ -414,10 +414,10 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Func, 2),
+                (Tag::Comp, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Str, 0),
                 (Tag::Arg, 0),
@@ -440,7 +440,7 @@ mod encode_tests {
                 (Tag::Tup, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Str, 0),
                 (Tag::Arg, 0),
@@ -463,7 +463,7 @@ mod encode_tests {
                 (Tag::Set, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Str, 0),
                 (Tag::Arg, 0),
@@ -490,7 +490,7 @@ mod encode_tests {
                 (Tag::Lis, 2),
                 (Tag::Arg, 0),
                 EMPTY_LIS,
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Lis, 0),
                 (Tag::Arg, 0),
@@ -521,7 +521,7 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Ref, 2),
                 (Tag::Con, a_id),
@@ -538,7 +538,7 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Ref, 1),
                 (Tag::Con, a_id),
                 (Tag::Ref, 1),
@@ -558,10 +558,10 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Func, 2),
+                (Tag::Comp, 2),
                 (Tag::Con, f_id),
                 (Tag::Ref, 2),
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Str, 0),
                 (Tag::Ref, 2),
@@ -584,7 +584,7 @@ mod encode_tests {
                 (Tag::Tup, 2),
                 (Tag::Con, f_id),
                 (Tag::Ref, 2),
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Str, 0),
                 (Tag::Ref, 2),
@@ -607,7 +607,7 @@ mod encode_tests {
                 (Tag::Set, 2),
                 (Tag::Con, f_id),
                 (Tag::Ref, 2),
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Str, 0),
                 (Tag::Ref, 2),
@@ -634,7 +634,7 @@ mod encode_tests {
                 (Tag::Lis, 2),
                 (Tag::Ref, 2),
                 EMPTY_LIS,
-                (Tag::Func, 3),
+                (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Lis, 0),
                 (Tag::Ref, 2),
@@ -702,7 +702,7 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Func, 2),
+                (Tag::Comp, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
                 (Tag::Tup, 3),
@@ -840,7 +840,7 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Func, 2),
+                (Tag::Comp, 2),
                 (Tag::Con, f_id),
                 (Tag::Ref, 2),
                 (Tag::Tup, 3),
@@ -968,7 +968,7 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Func, 2),
+                (Tag::Comp, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
                 (Tag::Set, 3),
@@ -1096,7 +1096,7 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Func, 2),
+                (Tag::Comp, 2),
                 (Tag::Con, f_id),
                 (Tag::Ref, 2),
                 (Tag::Set, 3),

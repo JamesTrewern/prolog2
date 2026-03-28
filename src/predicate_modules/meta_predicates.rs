@@ -5,7 +5,7 @@ use crate::{
     Config,
 };
 
-use super::{PredReturn,PredicateModule};
+use super::{PredReturn, PredicateModule};
 
 /// Negation as failure: succeeds if the inner goal cannot be proven
 pub fn not(
@@ -82,5 +82,88 @@ pub fn not(
     }
 }
 
+///forall(:Cond, :Action) - is true where all bindings for Cond are true for Action
+pub fn for_all(
+    heap: &mut QueryHeap,
+    hypothesis: &mut Hypothesis,
+    goal: usize,
+    predicate_table: &PredicateTable,
+    config: Config,
+) -> PredReturn {
+    todo!()
+}
+
+///for_one(:Cond, :Action) - true when one binding for Cond is true for Action
+pub fn for_one(
+    heap: &mut QueryHeap,
+    hypothesis: &mut Hypothesis,
+    goal: usize,
+    predicate_table: &PredicateTable,
+    config: Config,
+) -> PredReturn {
+    todo!()
+}
+
+///find_all(+Template,:Goal,-Bag)
+pub fn findall(
+    heap: &mut QueryHeap,
+    hypothesis: &mut Hypothesis,
+    goal: usize,
+    predicate_table: &PredicateTable,
+    config: Config,
+) -> PredReturn {
+    todo!()
+}
+
+pub fn univ(
+    heap: &mut QueryHeap,
+    hypothesis: &mut Hypothesis,
+    goal: usize,
+    predicate_table: &PredicateTable,
+    config: Config,    
+) -> PredReturn {
+    todo!()
+}
+
+pub fn is_var(
+    heap: &mut QueryHeap,
+    hypothesis: &mut Hypothesis,
+    goal: usize,
+    predicate_table: &PredicateTable,
+    config: Config,    
+) -> PredReturn {
+    todo!()
+}
+
+pub fn is_const(
+    heap: &mut QueryHeap,
+    hypothesis: &mut Hypothesis,
+    goal: usize,
+    predicate_table: &PredicateTable,
+    config: Config,    
+) -> PredReturn {
+    todo!()
+}
+
+pub fn is_str(
+    heap: &mut QueryHeap,
+    hypothesis: &mut Hypothesis,
+    goal: usize,
+    predicate_table: &PredicateTable,
+    config: Config,    
+) -> PredReturn {
+    todo!()
+}
+
+
+
 /// Built-in meta-predicates: `not/1` (negation as failure).
-pub static META_PREDICATES: PredicateModule = (&[("not", 1, not)], &[]);
+pub static META_PREDICATES: PredicateModule = (
+    &[
+        ("not", 1, not),
+        ("forall", 2, for_all),
+        ("for_one", 2, for_one),
+        ("findall", 3, findall),
+    ],
+    &[],
+);

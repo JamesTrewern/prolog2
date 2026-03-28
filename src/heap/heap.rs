@@ -17,8 +17,8 @@ pub enum Tag {
     Ref,
     /// Clause variable (index into substitution).
     Arg,
-    /// Functor: value is the arity (following cells are symbol + arguments).
-    Func,
+    /// Compound: value is the arity (following cells are functor + arguments).
+    Comp,
     /// Tuple.
     Tup,
     /// Set.
@@ -139,7 +139,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         if let (Tag::Str, pointer) = self[addr] {
             addr = pointer
         }
-        if let (Tag::Func, arity) = self[addr] {
+        if let (Tag::Comp, arity) = self[addr] {
             match self[self.deref_addr(addr + 1)] {
                 (Tag::Arg | Tag::Ref, _) => (0, arity - 1),
                 (Tag::Con, id) => (id, arity - 1),
@@ -168,7 +168,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.term_vars(self[addr].1 + 1, args),
             ]
             .concat(),
-            Tag::Func => self
+            Tag::Comp => self
                 .str_iterator(addr)
                 .map(|addr| self.term_vars(addr, args))
                 .collect::<Vec<Vec<usize>>>()
@@ -185,7 +185,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     fn normalise_args(&mut self, addr: usize, args: &mut Vec<usize>) {
         match self[addr] {
             (Tag::Str, pointer) => self.normalise_args(pointer, args),
-            (Tag::Func, _) => {
+            (Tag::Comp, _) => {
                 for i in self.str_iterator(addr) {
                     self.normalise_args(i, args)
                 }
@@ -241,13 +241,13 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.heap_push((Tag::Str, pointer));
                 self.heap_len() - 1
             }
-            (Tag::Func, arity) => {
+            (Tag::Comp, arity) => {
                 let mut update_addr: Vec<usize> = vec![0; arity];
                 for (i, a) in other.str_iterator(addr).enumerate() {
                     self._copy_complex(other, a, &mut update_addr[i])
                 }
                 let h = self.heap_len();
-                self.heap_push((Tag::Func, arity));
+                self.heap_push((Tag::Comp, arity));
                 for (i, a) in other.str_iterator(addr).enumerate() {
                     self._copy_simple(other, a, &update_addr[i]);
                 }
@@ -302,7 +302,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.heap_push((Tag::Str, new_ptr));
                 self.heap_len() - 1
             }
-            (Tag::Func | Tag::Tup | Tag::Set, length) => {
+            (Tag::Comp | Tag::Tup | Tag::Set, length) => {
                 // Pre-pass: recursively copy complex sub-terms
                 let mut pre: Vec<Option<Cell>> = Vec::with_capacity(length);
                 for i in 1..=length {
@@ -368,7 +368,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     ) -> Option<Cell> {
         let addr = other.deref_addr(addr);
         match other[addr] {
-            (Tag::Func | Tag::Tup | Tag::Set, _) => {
+            (Tag::Comp | Tag::Tup | Tag::Set, _) => {
                 Some((Tag::Str, self.copy_term_with_ref_map(other, addr, ref_map)))
             }
             (Tag::Str, ptr) => Some((Tag::Str, self.copy_term_with_ref_map(other, ptr, ref_map))),
@@ -409,7 +409,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             (EMPTY_LIS, EMPTY_LIS) => true,
             (EMPTY_LIS, _) => false,
             (_, EMPTY_LIS) => false,
-            ((Tag::Func, a1), (Tag::Func, a2)) if a1 == a2 => self
+            ((Tag::Comp, a1), (Tag::Comp, a2)) if a1 == a2 => self
                 .str_iterator(addr1)
                 .zip(self.str_iterator(addr2))
                 .all(|(addr1, addr2)| self._term_equal(addr1, addr2)),
@@ -443,7 +443,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             (Tag::Arg, _) => true,
             (Tag::Lis, ptr) => self.contains_args(ptr) || self.contains_args(ptr + 1),
             (Tag::Str, ptr) => self.contains_args(ptr),
-            (Tag::Func | Tag::Set | Tag::Tup, length) => {
+            (Tag::Comp | Tag::Set | Tag::Tup, length) => {
                 (addr + 1..addr + 1 + length).any(|addr| self.contains_args(addr))
             }
             _ => false,
@@ -560,7 +560,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         let addr = self.deref_addr(addr);
         match self[addr].0 {
             Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
-            Tag::Func => self.func_string(addr),
+            Tag::Comp => self.func_string(addr),
             Tag::Lis => self.list_string(addr),
             Tag::ELis => "[]".into(),
             Tag::Arg => match SymbolDB::get_var(addr, self.get_id()) {
@@ -662,7 +662,7 @@ mod tests {
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
-            (Tag::Func, 3),
+            (Tag::Comp, 3),
             (Tag::Con, p),
             (Tag::Arg, 0),
             (Tag::Con, a),
@@ -673,11 +673,11 @@ mod tests {
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
-            (Tag::Func, 3),
+            (Tag::Comp, 3),
             (Tag::Con, p),
             (Tag::Str, 5),
             (Tag::Con, a),
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, f),
             (Tag::Ref, 7),
         ]);
@@ -686,7 +686,7 @@ mod tests {
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
-            (Tag::Func, 3),
+            (Tag::Comp, 3),
             (Tag::Con, p),
             (Tag::Str, 5),
             (Tag::Con, a),
@@ -699,7 +699,7 @@ mod tests {
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
-            (Tag::Func, 3),
+            (Tag::Comp, 3),
             (Tag::Con, p),
             (Tag::Str, 5),
             (Tag::Con, a),
@@ -713,7 +713,7 @@ mod tests {
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
             (Tag::Str, 1),
-            (Tag::Func, 3),
+            (Tag::Comp, 3),
             (Tag::Con, p),
             (Tag::Lis, 5),
             (Tag::Con, a),
@@ -745,7 +745,7 @@ mod tests {
             (Tag::Tup, 2),
             (Tag::Str, 4),
             (Tag::Con, a),
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, f),
             (Tag::Ref, 6),
         ]);
@@ -811,7 +811,7 @@ mod tests {
             (Tag::Lis, 3),
             (Tag::Con, a),
             EMPTY_LIS,
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, f),
             (Tag::Ref, 7),
         ]);
@@ -878,7 +878,7 @@ mod tests {
             (Tag::Set, 2),
             (Tag::Str, 4),
             (Tag::Con, a),
-            (Tag::Func, 2),
+            (Tag::Comp, 2),
             (Tag::Con, f),
             (Tag::Ref, 6),
         ]);
@@ -960,7 +960,7 @@ mod tests {
             (Tag::Ref, 2),
             (Tag::Ref, 3),
             (Tag::Str, 4),
-            (Tag::Func, 3),
+            (Tag::Comp, 3),
             (Tag::Con, f),
             (Tag::Con, a),
             (Tag::Ref, 7),

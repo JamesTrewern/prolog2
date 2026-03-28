@@ -182,7 +182,7 @@ mod tests {
             let fact = &clauses[0];
             assert_eq!(
                 &heap[fact[0]..fact[0] + 4],
-                &[(Tag::Func, 3), (Tag::Con, p), (Tag::Con, a), (Tag::Con, b),]
+                &[(Tag::Comp, 3), (Tag::Con, p), (Tag::Con, a), (Tag::Con, b),]
             );
         } else {
             panic!()
@@ -192,7 +192,7 @@ mod tests {
             let fact = &clauses[0];
             assert_eq!(
                 &heap[fact[0]..fact[0] + 3],
-                &[(Tag::Func, 2), (Tag::Con, q), (Tag::Con, c),]
+                &[(Tag::Comp, 2), (Tag::Con, q), (Tag::Con, c),]
             );
         } else {
             panic!()
@@ -217,15 +217,15 @@ mod tests {
             let rule = &clauses[0];
             assert_eq!(
                 &heap[rule[0]..rule[0] + 4],
-                &[(Tag::Func, 3), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 1),]
+                &[(Tag::Comp, 3), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 1),]
             );
             assert_eq!(
                 &heap[rule[1]..rule[1] + 4],
-                &[(Tag::Func, 3), (Tag::Con, q), (Tag::Arg, 0), (Tag::Con, a),]
+                &[(Tag::Comp, 3), (Tag::Con, q), (Tag::Arg, 0), (Tag::Con, a),]
             );
             assert_eq!(
                 &heap[rule[2]..rule[2] + 4],
-                &[(Tag::Func, 3), (Tag::Con, q), (Tag::Arg, 1), (Tag::Con, b),]
+                &[(Tag::Comp, 3), (Tag::Con, q), (Tag::Arg, 1), (Tag::Con, b),]
             );
         } else {
             panic!()
@@ -235,21 +235,21 @@ mod tests {
             let rule = &clauses[0];
             assert_eq!(
                 &heap[rule[0]..rule[0] + 3],
-                &[(Tag::Func, 2), (Tag::Con, q), (Tag::Arg, 0),]
+                &[(Tag::Comp, 2), (Tag::Con, q), (Tag::Arg, 0),]
             );
             assert_eq!(
                 &heap[rule[1]..rule[1] + 3],
-                &[(Tag::Func, 2), (Tag::Con, r), (Tag::Arg, 0),]
+                &[(Tag::Comp, 2), (Tag::Con, r), (Tag::Arg, 0),]
             );
 
             let rule = &clauses[1];
             assert_eq!(
                 &heap[rule[0]..rule[0] + 3],
-                &[(Tag::Func, 2), (Tag::Con, q), (Tag::Arg, 0),]
+                &[(Tag::Comp, 2), (Tag::Con, q), (Tag::Arg, 0),]
             );
             assert_eq!(
                 &heap[rule[1]..rule[1] + 3],
-                &[(Tag::Func, 2), (Tag::Con, p), (Tag::Arg, 0),]
+                &[(Tag::Comp, 2), (Tag::Con, p), (Tag::Arg, 0),]
             );
         } else {
             panic!()
@@ -272,15 +272,15 @@ mod tests {
             let meta_rule = &clauses[0];
             assert_eq!(
                 &heap[meta_rule[0]..meta_rule[0] + 4],
-                &[(Tag::Func, 3), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 1),]
+                &[(Tag::Comp, 3), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 1),]
             );
             assert_eq!(
                 &heap[meta_rule[1]..meta_rule[1] + 4],
-                &[(Tag::Func, 3), (Tag::Arg, 2), (Tag::Arg, 0), (Tag::Con, a),]
+                &[(Tag::Comp, 3), (Tag::Arg, 2), (Tag::Arg, 0), (Tag::Con, a),]
             );
             assert_eq!(
                 &heap[meta_rule[2]..meta_rule[2] + 4],
-                &[(Tag::Func, 3), (Tag::Arg, 3), (Tag::Arg, 1), (Tag::Con, b),]
+                &[(Tag::Comp, 3), (Tag::Arg, 3), (Tag::Arg, 1), (Tag::Con, b),]
             );
             assert!(meta_rule.meta_var(2).unwrap());
             assert!(meta_rule.meta_var(3).unwrap());
@@ -380,7 +380,7 @@ mod tests {
 
         // The head should be: (Func, 4), (Arg, 0), (ELis), (ELis), (Arg, 1)
         // where Arg 0 is the Map variable and Arg 1 is X
-        assert_eq!(heap[0], (Tag::Func, 4));
+        assert_eq!(heap[0], (Tag::Comp, 4));
         assert_eq!(heap[1], (Tag::Arg, 0)); // Map variable
         assert_eq!(heap[2].0, Tag::ELis); // Empty list
         assert_eq!(heap[3].0, Tag::ELis); // Empty list
