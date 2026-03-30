@@ -523,49 +523,30 @@ pub static MATHS: PredicateModule = (
 
 #[cfg(test)]
 mod tests {
-    use crate::app::App;
+    use crate::{app::App, predicate_modules::helpers::TestWrapper};
     use super::MATHS;
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
     /// Load a fresh App with only the MATHS module registered.
-    fn maths_app() -> App {
-        App::new().load_module(&MATHS).expect("MATHS module should always load")
+    fn test_wrapper() -> TestWrapper {
+        TestWrapper::new(&[MATHS])
     }
 
     /// Run a query and return the display string bound to `var` in the first
     /// solution, or `None` if the query fails.
     fn binding(query: &str, var: &str) -> Option<String> {
-        maths_app()
-            .query_session(query).expect("query should parse")
-            .next()
-            .and_then(|sol| {
-                sol.bindings
-                    .into_iter()
-                    .find(|(n, _)| n.as_ref() == var)
-                    .map(|(_, v)| v)
-            })
+        test_wrapper().binding(query, var)
     }
 
     /// Run a query and return whether it has at least one solution.
     fn succeeds(query: &str) -> bool {
-        maths_app()
-            .query_session(query).expect("query should parse")
-            .next()
-            .is_some()
+        test_wrapper().succeeds(query)
     }
 
     /// Collect all values bound to `var` across every solution of a query.
     fn all_bindings(query: &str, var: &str) -> Vec<String> {
-        maths_app()
-            .query_session(query).expect("query should parse")
-            .filter_map(|sol| {
-                sol.bindings
-                    .into_iter()
-                    .find(|(n, _)| n.as_ref() == var)
-                    .map(|(_, v)| v)
-            })
-            .collect()
+        test_wrapper().all_bindings(query, var)
     }
 
     // ── is/2 ─────────────────────────────────────────────────────────────────

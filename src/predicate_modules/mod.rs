@@ -1,3 +1,5 @@
+/// Helper functions for predicate modules
+pub mod helpers;
 /// Built-in defaults
 pub mod defaults;
 /// Built-in list predicates
@@ -18,7 +20,10 @@ pub use meta_predicates::META_PREDICATES;
 pub use strings::STRINGS;
 
 use crate::{
-    Config, heap::query_heap::QueryHeap, predicate_modules::sets::SETS, program::{hypothesis::Hypothesis, predicate_table::PredicateTable}
+    heap::query_heap::QueryHeap,
+    predicate_modules::sets::SETS,
+    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    Config,
 };
 
 /// Return type for predicate functions.
@@ -115,27 +120,6 @@ pub type PredicateModule = (
 pub static STANDARD_MODULES: &[PredicateModule] =
     &[DEFAULTS, MATHS, META_PREDICATES, LISTS, STRINGS, SETS];
 
-/// Helper functions for predicate modules
-pub mod helpers {
-    use crate::heap::{
-        heap::{Heap, Tag},
-        query_heap::QueryHeap,
-    };
-    /// Dereferenced heap address of the nth argument (0-indexed) of `goal`.
-    pub fn goal_arg(heap: &QueryHeap, goal: usize, n: usize) -> usize {
-        heap.deref_addr(resolve(heap, goal) + 2 + n)
-    }
 
-    /// True if `addr` holds an unbound variable (self-referential `Ref`).
-    pub fn is_var(heap: &QueryHeap, addr: usize) -> bool {
-        matches!(heap[addr], (Tag::Ref, r) if r == addr)
-    }
+    
 
-    /// Resolve any `Str` indirection and return the structure's base address.
-    pub fn resolve(heap: &QueryHeap, addr: usize) -> usize {
-        match heap[addr] {
-            (Tag::Str, ptr) => ptr,
-            _ => addr,
-        }
-    }
-}

@@ -1,7 +1,11 @@
 use crate::{
-    heap::{heap::Heap, query_heap::QueryHeap},
+    heap::{
+        heap::{Heap, Tag},
+        query_heap::QueryHeap,
+    },
+    predicate_modules::helpers::*,
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
-    resolution::proof::Proof,
+    resolution::{proof::Proof, unification::unify},
     Config,
 };
 
@@ -114,48 +118,6 @@ pub fn findall(
 ) -> PredReturn {
     todo!()
 }
-
-pub fn univ(
-    heap: &mut QueryHeap,
-    hypothesis: &mut Hypothesis,
-    goal: usize,
-    predicate_table: &PredicateTable,
-    config: Config,    
-) -> PredReturn {
-    todo!()
-}
-
-pub fn is_var(
-    heap: &mut QueryHeap,
-    hypothesis: &mut Hypothesis,
-    goal: usize,
-    predicate_table: &PredicateTable,
-    config: Config,    
-) -> PredReturn {
-    todo!()
-}
-
-pub fn is_const(
-    heap: &mut QueryHeap,
-    hypothesis: &mut Hypothesis,
-    goal: usize,
-    predicate_table: &PredicateTable,
-    config: Config,    
-) -> PredReturn {
-    todo!()
-}
-
-pub fn is_str(
-    heap: &mut QueryHeap,
-    hypothesis: &mut Hypothesis,
-    goal: usize,
-    predicate_table: &PredicateTable,
-    config: Config,    
-) -> PredReturn {
-    todo!()
-}
-
-
 
 /// Built-in meta-predicates: `not/1` (negation as failure).
 pub static META_PREDICATES: PredicateModule = (

@@ -38,50 +38,10 @@ fn set_elements(heap: &QueryHeap, base: usize, len: usize) -> Vec<usize> {
 /// Check whether element at `elem_addr` exists in the set at `set_base` with
 /// `set_len` elements, using structural equality.
 fn set_contains(heap: &QueryHeap, set_base: usize, set_len: usize, elem_addr: usize) -> bool {
-    (set_base + 1..=set_base + set_len).any(|a| heap._term_equal(a, elem_addr))
+    (set_base + 1..=set_base + set_len).any(|a| heap.term_equal(a, elem_addr))
 }
 
-/// Push a new set onto the heap from a collection of element cells.
-/// Returns the heap address of the `(Set, len)` header cell.
-fn push_set(heap: &mut QueryHeap, elements: &[(Tag, usize)]) -> usize {
-    let addr = heap.heap_push((Tag::Set, elements.len()));
-    for &cell in elements {
-        heap.heap_push(cell);
-    }
-    addr
-}
 
-/// Push a new set onto the heap from element *addresses* (copies their cells).
-/// Deduplicates using structural equality.
-fn push_set_from_addrs(heap: &mut QueryHeap, addrs: &[usize]) -> usize {
-    // Collect cells, deduplicating
-    let mut cells: Vec<(Tag, usize)> = Vec::with_capacity(addrs.len());
-    let mut unique_addrs: Vec<usize> = Vec::with_capacity(addrs.len());
-    for &a in addrs {
-        if !unique_addrs.iter().any(|&u| heap._term_equal(a, u)) {
-            unique_addrs.push(a);
-            cells.push(heap[a]);
-        }
-    }
-    push_set(heap, &cells)
-}
-
-/// Build a proper list from element addresses.
-fn push_list_correct(heap: &mut QueryHeap, addrs: &[usize]) -> usize {
-    if addrs.is_empty() {
-        return heap.heap_push((Tag::ELis, 0));
-    }
-    let list_start = heap.heap_push((Tag::Lis, heap.heap_len() + 1));
-    for (i, &a) in addrs.iter().enumerate() {
-        heap.heap_push(heap[a]); // head element
-        if i < addrs.len() - 1 {
-            heap.heap_push((Tag::Lis, heap.heap_len() + 1)); // tail = next cons
-        } else {
-            heap.heap_push((Tag::ELis, 0)); // tail = empty list
-        }
-    }
-    list_start
-}
 
 fn factorial(mut n: usize) -> usize {
     let mut res = 1;
@@ -125,22 +85,6 @@ fn combo_rec(elems: &[usize], k: usize, sub_set: &mut Vec<usize>, result: &mut V
             sub_set.push(elems[i]);
             combo_rec(&elems[i+1..], k - 1, sub_set, result);
             sub_set.pop();
-        }
-    }
-}
-
-/// Read a list into a vector of element addresses.
-fn read_list_addrs(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>> {
-    let mut result = Vec::new();
-    let mut current = heap.deref_addr(addr);
-    loop {
-        match heap[current] {
-            (Tag::ELis, _) => return Some(result),
-            (Tag::Lis, ptr) => {
-                result.push(heap.deref_addr(ptr));
-                current = heap.deref_addr(ptr + 1);
-            }
-            _ => return None,
         }
     }
 }
@@ -243,7 +187,7 @@ pub fn subset_sized(
         let mut alternatives = Vec::with_capacity(combos.len()/k);
         let mut i = 0;
         while i < combos.len(){
-            let new_set = push_set_from_addrs(heap, &combos[i..i+k]);
+            let new_set = build_set_from_addrs(heap, &combos[i..i+k]);
             alternatives.push((vec![(subset_arg, new_set)], vec![]));
             i += k;
         }
@@ -281,19 +225,19 @@ pub fn set_union_pred(
     for a in set_elements(heap, base2, len2) {
         if !all_addrs
             .iter()
-            .any(|&existing| heap._term_equal(existing, a))
+            .any(|&existing| heap.term_equal(existing, a))
         {
             all_addrs.push(a);
         }
     }
 
-    let new_set = push_set_from_addrs(heap, &all_addrs);
+    let new_set = build_set_from_addrs(heap, &all_addrs);
 
     if is_var(heap, result_addr) {
         PredReturn::Success(vec![(result_addr, new_set)], vec![])
     } else {
         // Check mode: verify equality
-        heap._term_equal(result_addr, new_set).into()
+        heap.term_equal(result_addr, new_set).into()
     }
 }
 
@@ -318,12 +262,12 @@ pub fn set_intersection_pred(
         .filter(|&a| set_contains(heap, base2, len2, a))
         .collect();
 
-    let new_set = push_set_from_addrs(heap, &common);
+    let new_set = build_set_from_addrs(heap, &common);
 
     if is_var(heap, result_addr) {
         PredReturn::Success(vec![(result_addr, new_set)], vec![])
     } else {
-        heap._term_equal(result_addr, new_set).into()
+        heap.term_equal(result_addr, new_set).into()
     }
 }
 
@@ -348,12 +292,12 @@ pub fn set_difference_pred(
         .filter(|&a| !set_contains(heap, base2, len2, a))
         .collect();
 
-    let new_set = push_set_from_addrs(heap, &diff);
+    let new_set = build_set_from_addrs(heap, &diff);
 
     if is_var(heap, result_addr) {
         PredReturn::Success(vec![(result_addr, new_set)], vec![])
     } else {
-        heap._term_equal(result_addr, new_set).into()
+        heap.term_equal(result_addr, new_set).into()
     }
 }
 
@@ -383,12 +327,12 @@ pub fn set_symdiff_pred(
         }
     }
 
-    let new_set = push_set_from_addrs(heap, &sym);
+    let new_set = build_set_from_addrs(heap, &sym);
 
     if is_var(heap, result_addr) {
         PredReturn::Success(vec![(result_addr, new_set)], vec![])
     } else {
-        heap._term_equal(result_addr, new_set).into()
+        heap.term_equal(result_addr, new_set).into()
     }
 }
 
@@ -437,7 +381,7 @@ pub fn set_add_pred(
             let set_addr = resolve(heap, heap.deref_addr(goal_arg(heap, goal, 0)));
             PredReturn::Success(vec![(result_addr, set_addr)], vec![])
         } else {
-            heap._term_equal(
+            heap.term_equal(
                 result_addr,
                 resolve(heap, heap.deref_addr(goal_arg(heap, goal, 0))),
             )
@@ -447,11 +391,11 @@ pub fn set_add_pred(
         // Build new set with element added
         let mut addrs: Vec<usize> = set_elements(heap, base, len);
         addrs.push(elem_addr);
-        let new_set = push_set_from_addrs(heap, &addrs);
+        let new_set = build_set_from_addrs(heap, &addrs);
         if is_var(heap, result_addr) {
             PredReturn::Success(vec![(result_addr, new_set)], vec![])
         } else {
-            heap._term_equal(result_addr, new_set).into()
+            heap.term_equal(result_addr, new_set).into()
         }
     }
 }
@@ -472,14 +416,14 @@ pub fn set_del_pred(
 
     let remaining: Vec<usize> = set_elements(heap, base, len)
         .into_iter()
-        .filter(|&a| !heap._term_equal(a, elem_addr))
+        .filter(|&a| !heap.term_equal(a, elem_addr))
         .collect();
 
-    let new_set = push_set_from_addrs(heap, &remaining);
+    let new_set = build_set_from_addrs(heap, &remaining);
     if is_var(heap, result_addr) {
         PredReturn::Success(vec![(result_addr, new_set)], vec![])
     } else {
-        heap._term_equal(result_addr, new_set).into()
+        heap.term_equal(result_addr, new_set).into()
     }
 }
 
@@ -497,12 +441,12 @@ pub fn set_to_list_pred(
     let list_addr_arg = goal_arg(heap, goal, 1);
 
     let addrs = set_elements(heap, base, len);
-    let list = push_list_correct(heap, &addrs);
+    let list = build_list_from_addrs(heap, &addrs);
 
     if is_var(heap, list_addr_arg) {
         PredReturn::Success(vec![(list_addr_arg, list)], vec![])
     } else {
-        heap._term_equal(list_addr_arg, list).into()
+        heap.term_equal(list_addr_arg, list).into()
     }
 }
 
@@ -521,12 +465,12 @@ pub fn list_to_set_pred(
         return false.into();
     };
 
-    let new_set = push_set_from_addrs(heap, &addrs);
+    let new_set = build_set_from_addrs(heap, &addrs);
 
     if is_var(heap, set_arg) {
         PredReturn::Success(vec![(set_arg, new_set)], vec![])
     } else {
-        heap._term_equal(set_arg, new_set).into()
+        heap.term_equal(set_arg, new_set).into()
     }
 }
 
@@ -555,38 +499,22 @@ pub static SETS: PredicateModule = (
 #[cfg(test)]
 mod tests {
     use super::SETS;
-    use crate::app::App;
+    use crate::predicate_modules::{DEFAULTS, MATHS, helpers::TestWrapper};
 
-    fn query_result(query: &str) -> Vec<String> {
-        let app = App::default().load_module(&SETS).unwrap();
-        let mut session = app.query_session(query).unwrap();
-        let mut results = Vec::new();
-        while let Some(solution) = session.next() {
-            for (_var, val) in &solution.bindings {
-                results.push(val.clone());
-            }
-        }
-        results
+    pub fn test_wrapper() -> TestWrapper{
+        TestWrapper::new(&[DEFAULTS, MATHS, SETS])
     }
 
-    fn succeeds(query: &str) -> bool {
-        let app = App::default();
-        let mut session = app.query_session(query).unwrap();
-        session.next().is_some()
+    pub fn query_result(query: &str) -> Vec<String> {
+        test_wrapper().query_result(query)
     }
 
-    fn all_bindings(query: &str, var: &str) -> Vec<String> {
-        let app = App::default();
-        let mut session = app.query_session(query).unwrap();
-        let mut results = Vec::new();
-        while let Some(solution) = session.next() {
-            for (v, val) in &solution.bindings {
-                if v.as_ref() == var {
-                    results.push(val.clone());
-                }
-            }
-        }
-        results
+    pub fn succeeds(query: &str) -> bool {
+        test_wrapper().succeeds(query)
+    }
+
+    pub fn all_bindings(query: &str, var: &str) -> Vec<String> {
+        test_wrapper().all_bindings(query, var)
     }
 
     // ── is_set ──
@@ -885,5 +813,16 @@ mod tests {
         // {x} has exactly 2 subsets: {} and {x}
         let results = all_bindings("subset(X, {x}).", "X");
         assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn subset_compound() {
+        let results = all_bindings("subset(X, {f(a),g(b)}).", "X");
+        println!("{results:?}");
+        for expected in ["{}", "{g(b)}", "{f(a)}", "{f(a),g(b)}"]{
+            let expected: String = expected.into();
+            assert!(results.contains(&expected));
+        }
+        assert_eq!(results.len(), 4);
     }
 }

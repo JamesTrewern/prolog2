@@ -11,7 +11,3 @@ map_list([],[],_).
 map_list([H1|T1],[H2|T2],P):-
     P(H1,H2),
     map_list(T1,T2,P).
-
-is_list([]).
-is_list([_|T]):-
-    is_list(T).
