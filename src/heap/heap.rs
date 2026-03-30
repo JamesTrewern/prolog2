@@ -70,7 +70,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn heap_last(&mut self) -> &mut Cell;
 
-    fn prog_addr(&self, _: usize) -> bool{
+    fn prog_addr(&self, _addr: usize) -> bool{
         true
     }
 
@@ -172,11 +172,12 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 self.term_vars(self[addr].1 + 1, args),
             ]
             .concat(),
-            Tag::Comp => self
+            Tag::Comp | Tag::Tup | Tag::Set => self
                 .str_iterator(addr)
                 .map(|addr| self.term_vars(addr, args))
                 .collect::<Vec<Vec<usize>>>()
                 .concat(),
+            Tag::Str => self.term_vars(self[addr].1, args),
             _ => vec![],
         }
     }
