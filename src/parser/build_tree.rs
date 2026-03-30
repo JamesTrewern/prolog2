@@ -9,7 +9,9 @@ const INFIX_ORDER: &[&[&str]] = &[
     &["**"],
     &["*", "/"],
     &["+", "-"],
-    &["==", "=\\=", "\\=", "=:=", "=~=", "is", ">", ">=", "<", "=<", "=", "=.."],
+    &[
+        "==", "=\\=", "\\=", "=:=", "=~=", "is", ">", ">=", "<", "=<", "=", "=..",
+    ],
 ];
 
 #[derive(Debug, PartialEq, Clone)]
@@ -98,8 +100,14 @@ impl TokenStream {
     fn expect(&mut self, value: &str) -> Result<(), ParserError> {
         match self.next() {
             Some(token) if token == value => Ok(()),
-            Some(token) => Err(ParserError::Expected { expected: value.into(), got: Some(token.into()) }),
-            None => Err(ParserError::Expected { expected: value.into(), got: None }),
+            Some(token) => Err(ParserError::Expected {
+                expected: value.into(),
+                got: Some(token.into()),
+            }),
+            None => Err(ParserError::Expected {
+                expected: value.into(),
+                got: None,
+            }),
         }
     }
 
@@ -112,7 +120,11 @@ impl TokenStream {
                 Some(",") => {
                     self.next();
                 }
-                Some(token) => return Err(ParserError::UnexpectedToken { token: token.to_string() }),
+                Some(token) => {
+                    return Err(ParserError::UnexpectedToken {
+                        token: token.to_string(),
+                    })
+                }
                 None => return Err(ParserError::UnexpectedEof),
             }
         }
@@ -139,7 +151,11 @@ impl TokenStream {
                         Ok(Term::List(head, tail))
                     }
                     "]" => Ok(Term::List(head, Box::new(Term::EmptyList))),
-                    token => return Err(ParserError::UnexpectedToken { token: token.to_string() }),
+                    token => {
+                        return Err(ParserError::UnexpectedToken {
+                            token: token.to_string(),
+                        })
+                    }
                 }
             }
             "[]" => {
@@ -185,7 +201,9 @@ impl TokenStream {
                         }
                     }
                     Some(unit) => Ok(Term::Unit(unit)),
-                    None => Err(ParserError::UnexpectedToken { token: token.to_string() }),
+                    None => Err(ParserError::UnexpectedToken {
+                        token: token.to_string(),
+                    }),
                 }
             }
         }
@@ -234,7 +252,10 @@ impl TokenStream {
                 Some(",") => continue,
                 Some(".") => break,
                 Some(token) => {
-                    return Err(ParserError::Expected { expected: "',' or '.'".into(), got: Some(token.to_string()) })
+                    return Err(ParserError::Expected {
+                        expected: "',' or '.'".into(),
+                        got: Some(token.to_string()),
+                    })
                 }
                 None => return Err(ParserError::UnexpectedEof),
             }
@@ -313,7 +334,10 @@ impl TokenStream {
                         }
                     }
                     Some(".") => Ok(Some(TreeClause::Fact(literals[0].clone()))),
-                    Some(token) => Err(ParserError::Expected { expected: "'.' or ',' or ':-'".into(), got: Some(token.to_string()) }),
+                    Some(token) => Err(ParserError::Expected {
+                        expected: "'.' or ',' or ':-'".into(),
+                        got: Some(token.to_string()),
+                    }),
                     None => Err(ParserError::UnexpectedEof),
                 }
             }
@@ -322,13 +346,17 @@ impl TokenStream {
 
     pub fn parse_goals(&mut self) -> Result<Vec<Term>, ParserError> {
         let mut literals = vec![self.parse_expression()?];
-        loop{
+        loop {
             match self.next() {
-            Some(",") => literals.push(self.parse_expression()?),
-            Some(".") => break,
-            Some(token) => return Err(ParserError::UnexpectedToken { token: token.to_string() }),
-            None => return Err(ParserError::UnexpectedEof)
-        }
+                Some(",") => literals.push(self.parse_expression()?),
+                Some(".") => break,
+                Some(token) => {
+                    return Err(ParserError::UnexpectedToken {
+                        token: token.to_string(),
+                    })
+                }
+                None => return Err(ParserError::UnexpectedEof),
+            }
         }
 
         Ok(literals)
@@ -340,7 +368,12 @@ impl TokenStream {
             match self.parse_clause() {
                 Ok(Some(clause)) => clauses.push(clause),
                 Ok(None) => return Ok(clauses),
-                Err(msg) => return Err(ParserError::AtLine { line: self.line, cause: Box::new(msg) }),
+                Err(msg) => {
+                    return Err(ParserError::AtLine {
+                        line: self.line,
+                        cause: Box::new(msg),
+                    })
+                }
             }
         }
     }
@@ -617,9 +650,9 @@ mod tests {
 
         let text = tokenise("{a,{}}").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Set(vec![a.clone(), Term::Set(vec![])]));
+        assert_eq!(term, Term::Set(vec![a.clone(), Term::EmptySet]));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Set(vec![a.clone(), Term::Set(vec![])]));
+        assert_eq!(term, Term::Set(vec![a.clone(), Term::EmptySet]));
     }
 
     #[test]
@@ -662,7 +695,9 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("p(X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
+            Err(message) => {
+                assert!(matches!(message, ParserError::UnexpectedToken { token } if token == "."))
+            }
         }
 
         let mut tokens = TokenStream::new(tokenise("p(X,(Y)").unwrap());
@@ -674,7 +709,9 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("p(X,(Y).").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
+            Err(message) => {
+                assert!(matches!(message, ParserError::UnexpectedToken { token } if token == "."))
+            }
         }
     }
 
@@ -689,7 +726,9 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("[X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
+            Err(message) => {
+                assert!(matches!(message, ParserError::UnexpectedToken { token } if token == "."))
+            }
         }
 
         let mut tokens = TokenStream::new(tokenise("[X,[Y]").unwrap());
@@ -701,7 +740,9 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("[X,[Y].").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
+            Err(message) => {
+                assert!(matches!(message, ParserError::UnexpectedToken { token } if token == "."))
+            }
         }
     }
 
@@ -716,7 +757,9 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("{X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
+            Err(message) => {
+                assert!(matches!(message, ParserError::UnexpectedToken { token } if token == "."))
+            }
         }
 
         let mut tokens = TokenStream::new(tokenise("{X,{Y}").unwrap());
@@ -728,7 +771,9 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("{X,{Y}.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
+            Err(message) => {
+                assert!(matches!(message, ParserError::UnexpectedToken { token } if token == "."))
+            }
         }
     }
 
@@ -743,7 +788,9 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("(X,Y.").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
+            Err(message) => {
+                assert!(matches!(message, ParserError::UnexpectedToken { token } if token == "."))
+            }
         }
 
         let mut tokens = TokenStream::new(tokenise("(X,(Y)").unwrap());
@@ -755,7 +802,9 @@ mod tests {
         let mut tokens = TokenStream::new(tokenise("(X,(Y).").unwrap());
         match tokens.parse_expression() {
             Ok(_) => panic!("Should have thrown error"),
-            Err(message) => assert!(matches!(message, ParserError::UnexpectedToken { token } if token == ".")),
+            Err(message) => {
+                assert!(matches!(message, ParserError::UnexpectedToken { token } if token == "."))
+            }
         }
     }
 
@@ -1067,9 +1116,7 @@ mod tests {
 
     #[test]
     fn parse_all_clauses() {
-        let text =
-            "gt1(X):-X>1.\nman(plato).\nP(X,Y):-\n\tQ(X,Y),\n\t{P,Q}."
-                .to_string();
+        let text = "gt1(X):-X>1.\nman(plato).\nP(X,Y):-\n\tQ(X,Y),\n\t{P,Q}.".to_string();
         let mut token_stream = TokenStream::new(tokenise(text).unwrap());
         let clauses = token_stream.parse_all().unwrap();
 
@@ -1115,6 +1162,4 @@ mod tests {
             TreeClause::MetaRule(vec![head, body, meta_data])
         );
     }
-
-
 }
