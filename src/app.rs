@@ -1,9 +1,4 @@
-use std::{
-    fs,
-    path::Path,
-    process::ExitCode,
-    sync::Arc,
-};
+use std::{fs, path::Path, process::ExitCode, sync::Arc};
 
 use rustyline::error::ReadlineError;
 
@@ -24,8 +19,7 @@ use crate::{
     predicate_modules::{maths::set_approx_tolerance, PredicateModule, STANDARD_MODULES},
     program::predicate_table::PredicateTable,
     resolution::proof::Proof,
-    Error,
-    Result,
+    Error, Result,
 };
 
 /// Engine configuration loaded from a JSON setup file.
@@ -108,7 +102,9 @@ impl<S: AsRef<str>> TryIntoBodyPred for S {
 }
 
 impl<'de> serde::Deserialize<'de> for BodyPred {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
         use serde::de::{self, Visitor};
         use std::fmt;
 
@@ -122,7 +118,7 @@ impl<'de> serde::Deserialize<'de> for BodyPred {
             }
 
             fn visit_str<E: de::Error>(self, v: &str) -> std::result::Result<BodyPred, E> {
-                v.try_into().map_err(|err|E::custom(err))
+                v.try_into().map_err(|err| E::custom(err))
             }
         }
 
@@ -165,7 +161,9 @@ pub struct SetUp {
     pub approx_tolerance_pct: u8,
 }
 
-fn default_approx_tolerance() -> u8 { 10 }
+fn default_approx_tolerance() -> u8 {
+    10
+}
 
 impl Examples {
     /// Convert the examples into a single Prolog query string.
@@ -231,7 +229,9 @@ impl Default for App {
     fn default() -> Self {
         let mut app = App::new();
         for predicate_module in STANDARD_MODULES {
-            app = app.load_module(predicate_module).expect("built-in module should always load");
+            app = app
+                .load_module(predicate_module)
+                .expect("built-in module should always load");
         }
         app
     }
@@ -321,7 +321,9 @@ impl App {
         };
 
         for predicate_module in STANDARD_MODULES {
-            app = app.load_module(predicate_module).expect("built-in module should always load");
+            app = app
+                .load_module(predicate_module)
+                .expect("built-in module should always load");
         }
 
         for path in setup.files {

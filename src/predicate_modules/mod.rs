@@ -1,7 +1,7 @@
-/// Helper functions for predicate modules
-pub mod helpers;
 /// Built-in defaults
 pub mod defaults;
+/// Helper functions for predicate modules
+pub mod helpers;
 /// Built-in list predicates
 pub mod lists;
 /// Built-in maths predicates.
@@ -119,7 +119,3 @@ pub type PredicateModule = (
 
 pub static STANDARD_MODULES: &[PredicateModule] =
     &[DEFAULTS, MATHS, META_PREDICATES, LISTS, STRINGS, SETS];
-
-
-    
-

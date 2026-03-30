@@ -37,15 +37,13 @@ pub fn hypothesis_exists(solutions: &[Solution], expected_h: &[&str]) {
     }
 }
 
-pub fn test_solutions(app: App, expected_hypotheses: &[&[&str]]){
+pub fn test_solutions(app: App, expected_hypotheses: &[&[&str]]) {
     let solutions: Vec<Solution> = app
         .query_session_from_examples()
         .unwrap()
-        .inspect(
-            |solution| println!("{}", solution.hypothesis),
-        )
+        .inspect(|solution| println!("{}", solution.hypothesis))
         .collect();
-    for expected_h in expected_hypotheses{
+    for expected_h in expected_hypotheses {
         hypothesis_exists(&solutions, expected_h);
     }
 }
@@ -66,13 +64,17 @@ fn ancestor() {
         "pred_1(Arg_0,Arg_1):-mum(Arg_0,Arg_1).",
     ];
 
-    let app = App::from_setup_json("examples/ancestor/config.json").expect("failed to load config").auto(true);
-    test_solutions(app, &[H1,H2]);
+    let app = App::from_setup_json("examples/ancestor/config.json")
+        .expect("failed to load config")
+        .auto(true);
+    test_solutions(app, &[H1, H2]);
 }
 
 #[test]
 fn map() {
-    let app = App::from_setup_json("examples/map/config.json").expect("failed to load config").auto(true);
+    let app = App::from_setup_json("examples/map/config.json")
+        .expect("failed to load config")
+        .auto(true);
     let solutions: Vec<Solution> = app.query_session_from_examples().unwrap().collect();
     assert!(solutions.len() > 0, "Expected at least one solution");
 }
@@ -82,17 +84,19 @@ fn odd_even() {
     const H1: &[&str] = &[
         "even(Arg_0):-prev(Arg_0,Arg_1),pred_1(Arg_1).",
         "pred_1(Arg_0):-prev(Arg_0,Arg_1),even(Arg_1).",
-        "pred_1(Arg_0):-prev(Arg_0,Arg_1),zero(Arg_1)."
+        "pred_1(Arg_0):-prev(Arg_0,Arg_1),zero(Arg_1).",
     ];
 
     const H2: &[&str] = &[
         "even(Arg_0):-prev(Arg_0,Arg_1),pred_1(Arg_1).",
         "pred_1(Arg_0):-prev(Arg_0,Arg_1),even(Arg_1).",
-        "even(Arg_0):-zero(Arg_0)."
+        "even(Arg_0):-zero(Arg_0).",
     ];
 
-    let app = App::from_setup_json("examples/odd_even/config.json").expect("failed to load config").auto(true);
-    test_solutions(app, &[H1,H2]);
+    let app = App::from_setup_json("examples/odd_even/config.json")
+        .expect("failed to load config")
+        .auto(true);
+    test_solutions(app, &[H1, H2]);
 }
 
 #[test]
@@ -102,9 +106,10 @@ fn learn_map_double() {
         "double(Arg_0,Arg_1):-add(Arg_0,Arg_0,Arg_1).",
         "map_double([],[],Arg_0)."
     ];
-    let app = App::from_setup_json("examples/map/learn_config.json").expect("failed to load config").auto(true);
+    let app = App::from_setup_json("examples/map/learn_config.json")
+        .expect("failed to load config")
+        .auto(true);
     test_solutions(app, &[H1]);
-    
 }
 
 #[test]
@@ -112,7 +117,7 @@ fn trains() {
     const H1: &[&str] = &[
         "e(Arg_0):-has_car(Arg_0,Arg_1),pred_1(Arg_1).",
         "pred_1(Arg_0):-closed(Arg_0),short(Arg_0).",
-    ]; 
+    ];
     const H2: &[&str] = &[
         "e(Arg_0):-pred_1(Arg_0,Arg_1),closed(Arg_1).",
         "pred_1(Arg_0,Arg_1):-has_car(Arg_0,Arg_1),short(Arg_1).",
@@ -121,13 +126,17 @@ fn trains() {
         "e(Arg_0):-pred_1(Arg_0,Arg_1),short(Arg_1).",
         "pred_1(Arg_0,Arg_1):-has_car(Arg_0,Arg_1),closed(Arg_1).",
     ];
-    let app = App::from_setup_json("examples/trains/config.json").expect("failed to load config").auto(true);
-    test_solutions(app, &[H1,H2,H3]);
+    let app = App::from_setup_json("examples/trains/config.json")
+        .expect("failed to load config")
+        .auto(true);
+    test_solutions(app, &[H1, H2, H3]);
 }
 
 #[test]
 fn fsm_parity() {
-    let app = App::from_setup_json("examples/fsm/parity.json").expect("failed to load config").auto(true);
+    let app = App::from_setup_json("examples/fsm/parity.json")
+        .expect("failed to load config")
+        .auto(true);
     test_solutions(app, &[]);
 }
 
@@ -135,14 +144,18 @@ fn fsm_parity() {
 
 #[test]
 fn top_prog_robots() {
-    let app = App::from_setup_json("examples/robots/tpc_config.json").expect("failed to load config").auto(true);
+    let app = App::from_setup_json("examples/robots/tpc_config.json")
+        .expect("failed to load config")
+        .auto(true);
     let result = app.run();
     assert_eq!(result, ExitCode::SUCCESS);
 }
 
 #[test]
 fn top_prog_trains() {
-    let app = App::from_setup_json("examples/robots/tpc_config.json").expect("failed to load config").auto(true);
+    let app = App::from_setup_json("examples/robots/tpc_config.json")
+        .expect("failed to load config")
+        .auto(true);
     let result = app.run();
     assert_eq!(result, ExitCode::SUCCESS);
 }

@@ -523,7 +523,7 @@ pub static MATHS: PredicateModule = (
 
 #[cfg(test)]
 mod tests {
-    use crate::{app::App, predicate_modules::helpers::TestWrapper};
+    use crate::predicate_modules::helpers::TestWrapper;
     use super::MATHS;
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -542,11 +542,6 @@ mod tests {
     /// Run a query and return whether it has at least one solution.
     fn succeeds(query: &str) -> bool {
         test_wrapper().succeeds(query)
-    }
-
-    /// Collect all values bound to `var` across every solution of a query.
-    fn all_bindings(query: &str, var: &str) -> Vec<String> {
-        test_wrapper().all_bindings(query, var)
     }
 
     // ── is/2 ─────────────────────────────────────────────────────────────────

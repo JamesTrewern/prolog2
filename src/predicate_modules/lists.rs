@@ -9,13 +9,13 @@ use std::sync::Arc;
 
 use super::{helpers::*, maths::Number, PredReturn, PredicateModule};
 use crate::{
-    Config,
     heap::{
         heap::{Heap, Tag},
         query_heap::QueryHeap,
         symbol_db::SymbolDB,
     },
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    Config,
 };
 
 // ── Predicates ────────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ pub fn length(
     _: Config,
 ) -> PredReturn {
     let list_a = goal_arg(heap, goal, 0);
-    let len_a  = goal_arg(heap, goal, 1);
+    let len_a = goal_arg(heap, goal, 1);
 
     let Some(elements) = read_list_addrs(heap, list_a) else {
         return false.into();
@@ -67,7 +67,7 @@ pub fn sort(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    let list_a   = goal_arg(heap, goal, 0);
+    let list_a = goal_arg(heap, goal, 0);
     let sorted_a = goal_arg(heap, goal, 1);
 
     // Output must be an unbound variable.
@@ -87,7 +87,10 @@ pub fn sort(
     let first_tag = heap[element_addrs[0]].0;
     match first_tag {
         Tag::Flt | Tag::Int => {
-            if !element_addrs.iter().all(|&a| matches!(heap[a].0, Tag::Flt | Tag::Int)) {
+            if !element_addrs
+                .iter()
+                .all(|&a| matches!(heap[a].0, Tag::Flt | Tag::Int))
+            {
                 return false.into();
             }
             let mut indexed: Vec<(usize, Number)> = element_addrs
@@ -102,7 +105,10 @@ pub fn sort(
             PredReturn::Success(vec![(r, list_addr)], vec![])
         }
         Tag::Stri | Tag::Con => {
-            if !element_addrs.iter().all(|&a| matches!(heap[a].0, Tag::Stri | Tag::Con)) {
+            if !element_addrs
+                .iter()
+                .all(|&a| matches!(heap[a].0, Tag::Stri | Tag::Con))
+            {
                 return false.into();
             }
             let mut indexed: Vec<(usize, Arc<str>)> = element_addrs
@@ -110,7 +116,7 @@ pub fn sort(
                 .map(|a| {
                     let s = match heap[a] {
                         (Tag::Stri, idx) => SymbolDB::get_string(idx),
-                        (Tag::Con, id)   => SymbolDB::get_const(id),
+                        (Tag::Con, id) => SymbolDB::get_const(id),
                         _ => unreachable!("sort: tag changed unexpectedly"),
                     };
                     (a, s)
@@ -128,10 +134,7 @@ pub fn sort(
 // ── Module registration ───────────────────────────────────────────────────────
 
 pub static LISTS: PredicateModule = (
-    &[
-        ("length", 2, length),
-        ("sort",   2, sort),
-    ],
+    &[("length", 2, length), ("sort", 2, sort)],
     &[include_str!("../../builtins/lists.pl")],
 );
 
@@ -139,7 +142,10 @@ pub static LISTS: PredicateModule = (
 
 #[cfg(test)]
 mod tests {
-    use super::{super::{DEFAULTS, helpers::TestWrapper}, LISTS};
+    use super::{
+        super::{helpers::TestWrapper, DEFAULTS},
+        LISTS,
+    };
 
     fn tw() -> TestWrapper {
         TestWrapper::new(&[DEFAULTS, LISTS])

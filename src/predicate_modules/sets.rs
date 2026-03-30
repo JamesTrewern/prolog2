@@ -11,11 +11,13 @@
 
 use super::{helpers::*, PredReturn, PredicateModule};
 use crate::{
-    Config, heap::{
+    heap::{
         heap::{Heap, Tag},
         query_heap::QueryHeap,
-        symbol_db::SymbolDB,
-    }, predicate_modules::maths::Number, program::{hypothesis::Hypothesis, predicate_table::PredicateTable}
+    },
+    predicate_modules::maths::Number,
+    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    Config,
 };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -31,7 +33,7 @@ fn read_set(heap: &QueryHeap, addr: usize) -> Option<(usize, usize)> {
 }
 
 /// Collect the heap addresses of every element in a set.
-fn set_elements(heap: &QueryHeap, base: usize, len: usize) -> Vec<usize> {
+fn set_elements(base: usize, len: usize) -> Vec<usize> {
     (base + 1..=base + len).collect()
 }
 
@@ -40,8 +42,6 @@ fn set_elements(heap: &QueryHeap, base: usize, len: usize) -> Vec<usize> {
 fn set_contains(heap: &QueryHeap, set_base: usize, set_len: usize, elem_addr: usize) -> bool {
     (set_base + 1..=set_base + set_len).any(|a| heap.term_equal(a, elem_addr))
 }
-
-
 
 fn factorial(mut n: usize) -> usize {
     let mut res = 1;
@@ -81,9 +81,9 @@ fn combo_rec(elems: &[usize], k: usize, sub_set: &mut Vec<usize>, result: &mut V
             sub_set.pop();
         }
     } else {
-        for i in 0..elems.len()+1 - k {
+        for i in 0..elems.len() + 1 - k {
             sub_set.push(elems[i]);
-            combo_rec(&elems[i+1..], k - 1, sub_set, result);
+            combo_rec(&elems[i + 1..], k - 1, sub_set, result);
             sub_set.pop();
         }
     }
@@ -112,7 +112,7 @@ pub fn set_member_pred(
     if is_var(heap, elem_addr) {
         // Unbound — enumerate all elements as choices
         let var_addr = heap[elem_addr].1; // The Ref target (itself)
-        let alternatives: Vec<(Vec<(usize, usize)>, Vec<usize>)> = set_elements(heap, base, len)
+        let alternatives: Vec<(Vec<(usize, usize)>, Vec<usize>)> = set_elements( base, len)
             .into_iter()
             .map(|el_addr| (vec![(var_addr, el_addr)], vec![]))
             .collect();
@@ -147,7 +147,7 @@ pub fn subset_sized(
 ) -> PredReturn {
     let k = match Number::try_from(heap[goal_arg(heap, goal, 2)]) {
         Ok(Number::Int(value)) => value as usize,
-        _ => return false.into()
+        _ => return false.into(),
     };
 
     let Some(set) = read_set(heap, goal_arg(heap, goal, 1)) else {
@@ -161,11 +161,11 @@ pub fn subset_sized(
 
     if is_var(heap, subset_arg) {
         if k == 0 {
-            let set_addr = heap.heap_push((Tag::Set,0));
-            return PredReturn::Success(vec![(subset_arg,set_addr)], vec![]);
+            let set_addr = heap.heap_push((Tag::Set, 0));
+            return PredReturn::Success(vec![(subset_arg, set_addr)], vec![]);
         }
         // Generate mode: enumerate every k-element subset of Set.
-        let elems = set_elements(heap, set.0, set.1);
+        let elems = set_elements( set.0, set.1);
         let combos = combinations(&elems, k);
         if combos.is_empty() {
             return false.into();
@@ -173,10 +173,10 @@ pub fn subset_sized(
         // Push all subset structures onto the heap upfront, then wrap each in a
         // single-binding choice. Heap cells from unchosen alternatives are harmless
         // garbage — they will never be referenced once a different branch is taken.
-        let mut alternatives = Vec::with_capacity(combos.len()/k);
+        let mut alternatives = Vec::with_capacity(combos.len() / k);
         let mut i = 0;
-        while i < combos.len(){
-            let new_set = build_set_from_addrs(heap, &combos[i..i+k]);
+        while i < combos.len() {
+            let new_set = build_set_from_addrs(heap, &combos[i..i + k]);
             alternatives.push((vec![(subset_arg, new_set)], vec![]));
             i += k;
         }
@@ -184,7 +184,7 @@ pub fn subset_sized(
     } else if let Some(subset) = read_set(heap, subset_arg) {
         // Check mode: subset must have exactly k elements, all contained in Set.
         (subset.1 == k
-            && set_elements(heap, subset.0, subset.1)
+            && set_elements( subset.0, subset.1)
                 .iter()
                 .all(|elem_addr| set_contains(heap, set.0, set.1, *elem_addr)))
         .into()
@@ -210,8 +210,8 @@ pub fn set_union_pred(
     let result_addr = goal_arg(heap, goal, 2);
 
     // Collect all elements from set1, then add elements from set2 not already present
-    let mut all_addrs: Vec<usize> = set_elements(heap, base1, len1);
-    for a in set_elements(heap, base2, len2) {
+    let mut all_addrs: Vec<usize> = set_elements( base1, len1);
+    for a in set_elements( base2, len2) {
         if !all_addrs
             .iter()
             .any(|&existing| heap.term_equal(existing, a))
@@ -246,7 +246,7 @@ pub fn set_intersection_pred(
     };
     let result_addr = goal_arg(heap, goal, 2);
 
-    let common: Vec<usize> = set_elements(heap, base1, len1)
+    let common: Vec<usize> = set_elements( base1, len1)
         .into_iter()
         .filter(|&a| set_contains(heap, base2, len2, a))
         .collect();
@@ -276,7 +276,7 @@ pub fn set_difference_pred(
     };
     let result_addr = goal_arg(heap, goal, 2);
 
-    let diff: Vec<usize> = set_elements(heap, base1, len1)
+    let diff: Vec<usize> = set_elements( base1, len1)
         .into_iter()
         .filter(|&a| !set_contains(heap, base2, len2, a))
         .collect();
@@ -306,11 +306,11 @@ pub fn set_symdiff_pred(
     };
     let result_addr = goal_arg(heap, goal, 2);
 
-    let mut sym: Vec<usize> = set_elements(heap, base1, len1)
+    let mut sym: Vec<usize> = set_elements( base1, len1)
         .into_iter()
         .filter(|&a| !set_contains(heap, base2, len2, a))
         .collect();
-    for a in set_elements(heap, base2, len2) {
+    for a in set_elements( base2, len2) {
         if !set_contains(heap, base1, len1, a) {
             sym.push(a);
         }
@@ -378,7 +378,7 @@ pub fn set_add_pred(
         }
     } else {
         // Build new set with element added
-        let mut addrs: Vec<usize> = set_elements(heap, base, len);
+        let mut addrs: Vec<usize> = set_elements( base, len);
         addrs.push(elem_addr);
         let new_set = build_set_from_addrs(heap, &addrs);
         if is_var(heap, result_addr) {
@@ -403,7 +403,7 @@ pub fn set_del_pred(
     let elem_addr = goal_arg(heap, goal, 1);
     let result_addr = goal_arg(heap, goal, 2);
 
-    let remaining: Vec<usize> = set_elements(heap, base, len)
+    let remaining: Vec<usize> = set_elements( base, len)
         .into_iter()
         .filter(|&a| !heap.term_equal(a, elem_addr))
         .collect();
@@ -429,7 +429,7 @@ pub fn set_to_list_pred(
     };
     let list_addr_arg = goal_arg(heap, goal, 1);
 
-    let addrs = set_elements(heap, base, len);
+    let addrs = set_elements( base, len);
     let list = build_list_from_addrs(heap, &addrs);
 
     if is_var(heap, list_addr_arg) {
@@ -487,9 +487,9 @@ pub static SETS: PredicateModule = (
 #[cfg(test)]
 mod tests {
     use super::SETS;
-    use crate::predicate_modules::{DEFAULTS, MATHS, helpers::TestWrapper};
+    use crate::predicate_modules::{helpers::TestWrapper, DEFAULTS, MATHS};
 
-    pub fn test_wrapper() -> TestWrapper{
+    pub fn test_wrapper() -> TestWrapper {
         TestWrapper::new(&[DEFAULTS, MATHS, SETS])
     }
 
@@ -807,7 +807,7 @@ mod tests {
     fn subset_compound() {
         let results = all_bindings("subset(X, {f(a),g(b)}).", "X");
         println!("{results:?}");
-        for expected in ["{}", "{g(b)}", "{f(a)}", "{f(a),g(b)}"]{
+        for expected in ["{}", "{g(b)}", "{f(a)}", "{f(a),g(b)}"] {
             let expected: String = expected.into();
             assert!(results.contains(&expected));
         }

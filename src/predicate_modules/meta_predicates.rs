@@ -1,11 +1,10 @@
 use crate::{
     heap::{
-        heap::{Heap, Tag},
+        heap::Heap,
         query_heap::QueryHeap,
     },
-    predicate_modules::helpers::*,
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
-    resolution::{proof::Proof, unification::unify},
+    resolution::proof::Proof,
     Config,
 };
 
