@@ -184,7 +184,7 @@ fn extract_hypothesis_local(proof: &Proof) -> (Vec<Cell>, Vec<Clause>) {
         let new_literals: Vec<usize> = clause
             .iter()
             .map(|&lit_addr| {
-                local_cells.copy_term_with_ref_map(&proof.heap, lit_addr, &mut ref_map)
+                local_cells.copy_term(&proof.heap, lit_addr, &mut ref_map)
             })
             .collect();
         clauses.push(Clause::new(new_literals, None, None));

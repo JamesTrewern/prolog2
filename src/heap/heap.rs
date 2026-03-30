@@ -38,7 +38,7 @@ pub enum Tag {
     /// String literal: value is an index into [`super::symbol_db::SymbolDB`] strings.
     Stri,
     /// Anonymous variable: terms starting with '_' which unify with any term but don't bind
-    AVar
+    AVar,
 }
 
 impl std::fmt::Display for Tag {
@@ -70,7 +70,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn heap_last(&mut self) -> &mut Cell;
 
-    fn prog_addr(&self, _addr: usize) -> bool{
+    fn prog_addr(&self, _addr: usize) -> bool {
         true
     }
 
@@ -137,6 +137,117 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         }
     }
 
+    fn walk_term_mut<T>(
+        &mut self,
+        addr: usize,
+        accumulator: &mut T,
+        operation: fn(&mut Self, usize, &mut T) -> bool,
+    ) {
+        let addr = self.deref_addr(addr);
+        if operation(self, addr, accumulator) {
+            return;
+        }
+        match self[addr] {
+            (Tag::Lis, ptr) => {
+                self.walk_term_mut(ptr, accumulator, operation);
+                self.walk_term_mut(ptr + 1, accumulator, operation);
+            }
+            (Tag::Str, ptr) => self.walk_term_mut(ptr, accumulator, operation),
+            (Tag::Comp | Tag::Tup | Tag::Set, _) => {
+                for addr in self.str_iterator(addr) {
+                    self.walk_term_mut(addr, accumulator, operation);
+                }
+            }
+            _ => return,
+        }
+    }
+
+    fn walk_term<T>(
+        &self,
+        addr: usize,
+        accumulator: &mut T,
+        operation: fn(&Self, usize, &mut T) -> bool,
+    ) {
+        let addr = self.deref_addr(addr);
+        if operation(self, addr, accumulator) {
+            return;
+        }
+        match self[addr] {
+            (Tag::Lis, ptr) => {
+                self.walk_term(ptr, accumulator, operation);
+                self.walk_term(ptr + 1, accumulator, operation);
+            }
+            (Tag::Str, ptr) => self.walk_term(ptr, accumulator, operation),
+            (Tag::Comp | Tag::Tup | Tag::Set, _) => {
+                for addr in self.str_iterator(addr) {
+                    self.walk_term(addr, accumulator, operation);
+                }
+            }
+            _ => return,
+        }
+    }
+
+    fn contains_args_opp(&self, addr: usize, acc: &mut bool) -> bool {
+        let addr = self.deref_addr(addr);
+        match self[addr].0 {
+            Tag::Arg => {
+                *acc = true;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn contains_args(&self, addr: usize) -> bool {
+        let mut acc = false;
+        self.walk_term(addr, &mut acc, Self::contains_args_opp);
+        false
+    }
+
+    fn term_args_op(&self, addr: usize, args: &mut Vec<usize>) -> bool {
+        if self[addr].0 == Tag::Arg {
+            args.push(addr);
+        }
+        false
+    }
+
+    fn term_refs_op(&self, addr: usize, refs: &mut Vec<usize>) -> bool {
+        if self[addr].0 == Tag::Ref {
+            refs.push(addr);
+        }
+        false
+    }
+
+    /**Collect all REF, cells in structure or referenced by structure
+     * If cell at addr is a reference return that cell  
+     */
+    fn term_vars(&self, addr: usize, args: bool) -> Vec<usize> {
+        let mut acc = Vec::new();
+        if args {
+            self.walk_term(addr, &mut acc, Self::term_args_op);
+        } else {
+            self.walk_term(addr, &mut acc, Self::term_refs_op);
+        }
+        acc
+    }
+
+    fn normalise_args_opp(&mut self, addr: usize, args: &mut Vec<usize>) -> bool{
+        if let (Tag::Arg, id) = self[addr] {
+            if let Some(pos) = args.iter().position(|i| id == *i) {
+                self[addr].1 = pos;
+            } else {
+                let pos = args.len();
+                args.push(id);
+                self[addr].1 = pos;
+            }
+        }
+        false
+    }
+
+    fn normalise_args(&mut self, addr: usize, args: &mut Vec<usize>) {
+        self.walk_term_mut(addr, args, Self::normalise_args_opp);
+    }
+
     /**Get the symbol id and arity of functor structure */
     fn str_symbol_arity(&self, mut addr: usize) -> (usize, usize) {
         addr = self.deref_addr(addr);
@@ -159,134 +270,9 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         }
     }
 
-    /**Collect all REF, cells in structure or referenced by structure
-     * If cell at addr is a reference return that cell  
-     */
-    fn term_vars(&self, mut addr: usize, args: bool) -> Vec<usize> {
-        addr = self.deref_addr(addr);
-        match self[addr].0 {
-            Tag::Arg if args => vec![addr],
-            Tag::Ref if !args => vec![addr],
-            Tag::Lis => [
-                self.term_vars(self[addr].1, args),
-                self.term_vars(self[addr].1 + 1, args),
-            ]
-            .concat(),
-            Tag::Comp | Tag::Tup | Tag::Set => self
-                .str_iterator(addr)
-                .map(|addr| self.term_vars(addr, args))
-                .collect::<Vec<Vec<usize>>>()
-                .concat(),
-            Tag::Str => self.term_vars(self[addr].1, args),
-            _ => vec![],
-        }
-    }
-
     /** Given address to a str cell create an operator over the sub terms addresses, including functor/predicate */
     fn str_iterator(&self, addr: usize) -> RangeInclusive<usize> {
         addr + 1..=addr + self[addr].1
-    }
-
-    fn normalise_args(&mut self, addr: usize, args: &mut Vec<usize>) {
-        match self[addr] {
-            (Tag::Str, pointer) => self.normalise_args(pointer, args),
-            (Tag::Comp, _) => {
-                for i in self.str_iterator(addr) {
-                    self.normalise_args(i, args)
-                }
-            }
-            (Tag::Tup, _) => unimplemented!("_normalise_args for Tup"),
-            (Tag::Set, _) => {
-                for i in self.str_iterator(addr) {
-                    self.normalise_args(i, args)
-                }
-            }
-            (Tag::Lis, pointer) => {
-                self.normalise_args(pointer, args);
-                self.normalise_args(pointer + 1, args);
-            }
-            (Tag::Arg, value) => {
-                if let Some(pos) = args.iter().position(|i| value == *i) {
-                    self[addr].1 = pos;
-                } else {
-                    let pos = args.len();
-                    args.push(value);
-                    self[addr].1 = pos;
-                }
-            }
-            _ => (),
-        }
-    }
-
-    fn _copy_complex(&mut self, other: &impl Heap, mut addr: usize, update_addr: &mut usize) {
-        addr = other.deref_addr(addr);
-        match other[addr] {
-            (Tag::Str, pointer) => *update_addr = self._copy_term(other, pointer),
-            (Tag::Lis, _) => *update_addr = self._copy_term(other, addr),
-            _ => (),
-        }
-    }
-
-    fn _copy_simple(&mut self, other: &impl Heap, mut addr: usize, update_addr: &usize) {
-        addr = other.deref_addr(addr);
-        match other[addr] {
-            (Tag::Lis, _) => self.heap_push((Tag::Lis, *update_addr)),
-            (Tag::Str, _) => self.heap_push((Tag::Str, *update_addr)),
-            (Tag::Ref, _) => self.heap_push((Tag::Ref, self.heap_len())),
-            (_, _) => self.heap_push(other[addr]),
-        };
-    }
-
-    fn _copy_term(&mut self, other: &impl Heap, addr: usize) -> usize {
-        //Assume common static heap
-        let addr = other.deref_addr(addr);
-        match other[addr] {
-            (Tag::Str, mut pointer) => {
-                pointer = self._copy_term(other, pointer);
-                self.heap_push((Tag::Str, pointer));
-                self.heap_len() - 1
-            }
-            (Tag::Comp, arity) => {
-                let mut update_addr: Vec<usize> = vec![0; arity];
-                for (i, a) in other.str_iterator(addr).enumerate() {
-                    self._copy_complex(other, a, &mut update_addr[i])
-                }
-                let h = self.heap_len();
-                self.heap_push((Tag::Comp, arity));
-                for (i, a) in other.str_iterator(addr).enumerate() {
-                    self._copy_simple(other, a, &update_addr[i]);
-                }
-                h
-            }
-            (Tag::Lis, pointer) => {
-                let mut update_addr: Vec<usize> = vec![0; 2];
-                self._copy_complex(other, pointer, &mut update_addr[0]);
-                self._copy_complex(other, pointer + 1, &mut update_addr[1]);
-
-                let h = self.heap_len();
-                self._copy_simple(other, pointer, &mut update_addr[0]);
-                self._copy_simple(other, pointer + 1, &mut update_addr[1]);
-                h
-            }
-            (Tag::Tup | Tag::Set, length) => {
-                let tag = other[addr].0;
-                let mut update_addr: Vec<usize> = vec![0; length];
-                for (i, a) in other.str_iterator(addr).enumerate() {
-                    self._copy_complex(other, a, &mut update_addr[i])
-                }
-                let h = self.heap_len();
-                self.heap_push((tag, length));
-                for (i, a) in other.str_iterator(addr).enumerate() {
-                    self._copy_simple(other, a, &update_addr[i]);
-                }
-                h
-            }
-            (Tag::Ref, _pointer) => unreachable!("_copy_simple: Ref cells must be dereferenced before copying"),
-            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri | Tag::ELis | Tag::AVar, _) => {
-                self.heap_push(other[addr]);
-                self.heap_len() - 1
-            }
-        }
     }
 
     /// Copy a term from `other` heap into `self`, tracking variable identity
@@ -294,7 +280,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     /// cells in `self`; the same source Ref always maps to the same target Ref.
     /// Call with a shared `ref_map` across multiple terms to preserve variable
     /// sharing (e.g. across literals in a clause).
-    fn copy_term_with_ref_map(
+    fn copy_term(
         &mut self,
         other: &impl Heap,
         addr: usize,
@@ -303,7 +289,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         let addr = other.deref_addr(addr);
         match other[addr] {
             (Tag::Str, pointer) => {
-                let new_ptr = self.copy_term_with_ref_map(other, pointer, ref_map);
+                let new_ptr = self.copy_term(other, pointer, ref_map);
                 self.heap_push((Tag::Str, new_ptr));
                 self.heap_len() - 1
             }
@@ -311,7 +297,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 // Pre-pass: recursively copy complex sub-terms
                 let mut pre: Vec<Option<Cell>> = Vec::with_capacity(length);
                 for i in 1..=length {
-                    pre.push(self._copy_ref_map_complex(other, addr + i, ref_map));
+                    pre.push(self.copy_complex(other, addr + i, ref_map));
                 }
                 // Lay down structure header + sub-terms
                 let h = self.heap_len();
@@ -321,26 +307,26 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                         Some(cell) => {
                             self.heap_push(cell);
                         }
-                        None => self._copy_ref_map_simple(other, addr + 1 + i, ref_map),
+                        None => self.copy_simple(other, addr + 1 + i, ref_map),
                     }
                 }
                 h
             }
             (Tag::Lis, pointer) => {
-                let head = self._copy_ref_map_complex(other, pointer, ref_map);
-                let tail = self._copy_ref_map_complex(other, pointer + 1, ref_map);
+                let head = self.copy_complex(other, pointer, ref_map);
+                let tail = self.copy_complex(other, pointer + 1, ref_map);
                 let h = self.heap_len();
                 match head {
                     Some(cell) => {
                         self.heap_push(cell);
                     }
-                    None => self._copy_ref_map_simple(other, pointer, ref_map),
+                    None => self.copy_simple(other, pointer, ref_map),
                 }
                 match tail {
                     Some(cell) => {
                         self.heap_push(cell);
                     }
-                    None => self._copy_ref_map_simple(other, pointer + 1, ref_map),
+                    None => self.copy_simple(other, pointer + 1, ref_map),
                 }
                 h
             }
@@ -365,7 +351,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     /// Pre-pass helper for copy_term_with_ref_map: recursively copy complex
     /// sub-terms and return the Cell to later insert, or None for simple cells.
-    fn _copy_ref_map_complex(
+    fn copy_complex(
         &mut self,
         other: &impl Heap,
         addr: usize,
@@ -374,17 +360,17 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         let addr = other.deref_addr(addr);
         match other[addr] {
             (Tag::Comp | Tag::Tup | Tag::Set, _) => {
-                Some((Tag::Str, self.copy_term_with_ref_map(other, addr, ref_map)))
+                Some((Tag::Str, self.copy_term(other, addr, ref_map)))
             }
-            (Tag::Str, ptr) => Some((Tag::Str, self.copy_term_with_ref_map(other, ptr, ref_map))),
-            (Tag::Lis, _) => Some((Tag::Lis, self.copy_term_with_ref_map(other, addr, ref_map))),
+            (Tag::Str, ptr) => Some((Tag::Str, self.copy_term(other, ptr, ref_map))),
+            (Tag::Lis, _) => Some((Tag::Lis, self.copy_term(other, addr, ref_map))),
             _ => None,
         }
     }
 
     /// Post-pass helper for copy_term_with_ref_map: push a simple cell,
     /// handling Ref identity via ref_map.
-    fn _copy_ref_map_simple(
+    fn copy_simple(
         &mut self,
         other: &impl Heap,
         addr: usize,
@@ -407,51 +393,35 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         }
     }
 
-    fn _term_equal(&self, mut addr1: usize, mut addr2: usize) -> bool {
+    fn term_equal(&self, mut addr1: usize, mut addr2: usize) -> bool {
         addr1 = self.deref_addr(addr1);
         addr2 = self.deref_addr(addr2);
         match (self[addr1], self[addr2]) {
             (EMPTY_LIS, EMPTY_LIS) => true,
             (EMPTY_LIS, _) => false,
             (_, EMPTY_LIS) => false,
-            ((Tag::Comp, a1), (Tag::Comp, a2)) if a1 == a2 => self
+            (cell1@(Tag::Comp|Tag::Tup, _), cell2@(Tag::Comp|Tag::Tup, _)) if cell1 == cell2 => self
                 .str_iterator(addr1)
                 .zip(self.str_iterator(addr2))
-                .all(|(addr1, addr2)| self._term_equal(addr1, addr2)),
+                .all(|(addr1, addr2)| self.term_equal(addr1, addr2)),
             ((Tag::Lis, p1), (Tag::Lis, p2)) => {
-                self._term_equal(p1, p2) && self._term_equal(p1 + 1, p2 + 1)
+                self.term_equal(p1, p2) && self.term_equal(p1 + 1, p2 + 1)
             }
-            ((Tag::Str, p1), (Tag::Str, p2)) => self._term_equal(p1, p2),
-            ((Tag::Tup, len1), (Tag::Tup, len2)) if len1 == len2 => self
-                .str_iterator(addr1)
-                .zip(self.str_iterator(addr2))
-                .all(|(a1, a2)| self._term_equal(a1, a2)),
+            ((Tag::Str, p1), (Tag::Str, p2)) => self.term_equal(p1, p2),
             ((Tag::Set, len1), (Tag::Set, len2)) if len1 == len2 => {
                 // Set equality: every element in set1 must have a match in set2
                 // and vice-versa (lengths already equal, so one direction suffices
                 // given no duplicates — sets are deduplicated at parse time).
                 let r1 = addr1 + 1..=addr1 + len1;
                 let r2 = addr2 + 1..=addr2 + len2;
-                r1.clone().all(|a| r2.clone().any(|b| self._term_equal(a, b)))
+                r1.clone()
+                    .all(|a| r2.clone().any(|b| self.term_equal(a, b)))
             }
             ((Tag::Stri, i1), (Tag::Stri, i2)) => {
                 SymbolDB::get_string(i1) == SymbolDB::get_string(i2)
             }
 
             _ => self[addr1] == self[addr2],
-        }
-    }
-
-    fn contains_args(&self, mut addr: usize) -> bool {
-        addr = self.deref_addr(addr);
-        match self[addr] {
-            (Tag::Arg, _) => true,
-            (Tag::Lis, ptr) => self.contains_args(ptr) || self.contains_args(ptr + 1),
-            (Tag::Str, ptr) => self.contains_args(ptr),
-            (Tag::Comp | Tag::Set | Tag::Tup, length) => {
-                (addr + 1..addr + 1 + length).any(|addr| self.contains_args(addr))
-            }
-            _ => false,
         }
     }
 
@@ -484,7 +454,10 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 }
                 Tag::Tup => println!("[{i:3}]| Tup |{value:w$}| {}", self.tuple_string(i)),
                 Tag::Set => println!("[{i:3}]| Set |{value:w$}| {}", self.set_string(i)),
-                Tag::Stri => println!("[{i:3}]|Stri |{value:w$}| \"{}\"", SymbolDB::get_string(value)),
+                Tag::Stri => println!(
+                    "[{i:3}]|Stri |{value:w$}| \"{}\"",
+                    SymbolDB::get_string(value)
+                ),
                 _ => println!("[{i:3}]|{tag:w$?}|{value:w$}|"),
             };
             println!("{:-<w$}--------{:-<w$}", "", "");
@@ -546,7 +519,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     /**Create a string for a set*/
     fn set_string(&self, addr: usize) -> String {
-        if self[addr].1 == 0{
+        if self[addr].1 == 0 {
             return "{}".into();
         }
         let mut buf = String::from("{");
@@ -588,7 +561,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             Tag::Set => self.set_string(addr),
             Tag::Str => self.term_string(self[addr].1),
             Tag::Stri => format!("\"{}\"", SymbolDB::get_string(self[addr].1)),
-            Tag::AVar => "_".into()
+            Tag::AVar => "_".into(),
         }
     }
 }
@@ -608,7 +581,7 @@ impl Heap for Vec<Cell> {
         self.resize(len, (Tag::Ref, 0));
     }
 
-    fn heap_last(&mut self) -> &mut Cell{
+    fn heap_last(&mut self) -> &mut Cell {
         self.last_mut().unwrap()
     }
 }

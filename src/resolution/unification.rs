@@ -257,7 +257,7 @@ fn unfiy_set(
     let r2 = addr_2 + 1..=addr_2 + len_2;
 
     // Every element in set1 must match some element in set2.
-    if r1.all(|a| r2.clone().any(|b| heap._term_equal(a, b))) {
+    if r1.all(|a| r2.clone().any(|b| heap.term_equal(a, b))) {
         Some(binding)
     } else {
         None
