@@ -1,6 +1,6 @@
 '='(X,X).
-is_number(X):-is_float(X).
-is_number(X):-is_int(X).
-is_list([]).
-is_list([_|T]):-
-    is_list(T).
+
+% atomic/1 - succeeds for constants, strings, and numbers.
+atomic(X) :- is_const(X).
+atomic(X) :- is_number(X).
+atomic(X) :- is_string(X).

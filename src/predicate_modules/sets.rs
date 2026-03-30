@@ -91,17 +91,6 @@ fn combo_rec(elems: &[usize], k: usize, sub_set: &mut Vec<usize>, result: &mut V
 
 // ── Predicates ────────────────────────────────────────────────────────────────
 
-/// `is_set(+X)` — succeeds if X is a set.
-pub fn is_set_pred(
-    heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
-    goal: usize,
-    _predicate_table: &PredicateTable,
-    _config: Config,
-) -> PredReturn {
-    read_set(heap, goal_arg(heap, goal, 0)).is_some().into()
-}
-
 /// `set_member(?Elem, +Set)` — check membership or enumerate elements.
 ///
 /// If `Elem` is bound, checks whether it is in `Set` (returns True/False).
@@ -478,7 +467,6 @@ pub fn list_to_set_pred(
 
 pub static SETS: PredicateModule = (
     &[
-        ("is_set", 1, is_set_pred),
         ("set_member", 2, set_member_pred),
         ("set_union", 3, set_union_pred),
         ("set_intersection", 3, set_intersection_pred),

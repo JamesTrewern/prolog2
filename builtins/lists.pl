@@ -1,6 +1,5 @@
-member(El, [El]).
-member(El, [El|T]).
-member(El, [H|T]):-member(El,T).
+member(El, [El|_]).
+member(El, [_|T]):-member(El,T).
 
 map_list([],_).
 map_list([H|T],P):-
