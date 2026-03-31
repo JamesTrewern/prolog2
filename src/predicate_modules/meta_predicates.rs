@@ -1,11 +1,10 @@
+use std::collections::HashMap;
+
 use crate::{
-    heap::{
+    Config, heap::{
         heap::Heap,
         query_heap::QueryHeap,
-    },
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
-    resolution::proof::Proof,
-    Config,
+    }, predicate_modules::helpers::{goal_arg, resolve}, program::{hypothesis::Hypothesis, predicate_table::PredicateTable}, resolution::proof::Proof
 };
 
 use super::{PredReturn, PredicateModule};
@@ -18,36 +17,15 @@ pub fn not(
     predicate_table: &PredicateTable,
     config: Config,
 ) -> PredReturn {
-    use crate::heap::heap::Tag;
-
-    // The goal is not(X), we want to prove X
-    // Goal may be a Str cell pointing to the Func, or directly a Func cell
-    // We need to find the actual Func cell first, then get the first argument
-
-    // First dereference to handle any Ref indirection
-    let mut func_addr = heap.deref_addr(goal);
-
-    // If it's a Str cell, follow the pointer to the actual Func
-    if let (Tag::Str, pointer) = heap[func_addr] {
-        func_addr = pointer;
-    }
-
-    // Now func_addr points to: Func(2) | Con("not") | InnerGoal
-    // The inner goal is at func_addr + 2
-    // But it might be a Str cell pointing to the actual goal structure
-    let arg_addr = func_addr + 2;
-    let inner_goal = match heap[arg_addr] {
-        (Tag::Str, pointer) => pointer, // Follow Str to actual goal
-        (Tag::Ref, _) => heap.deref_addr(arg_addr), // Follow Ref chain
-        _ => arg_addr,                  // Direct reference
-    };
-
     // Create a config with learning disabled - we only want to test if the goal
     // can be proven with the CURRENT hypothesis, not learn new clauses
     let mut inner_config = config;
     inner_config.max_clause = 0; // Disable learning by not allowing new clauses
 
-    let inner_heap = heap.branch(1).pop().unwrap();
+    //Create new heap by branching the current heap, then duplicate goal to mutable cells of inner_heap
+    //TODO Proof does not need ownership of query heap so this step would be easier is heap could be passed to the inner proof directly
+    let mut inner_heap = heap.branch(1).pop().unwrap();
+    let inner_goal = inner_heap.dup_term(resolve(&inner_heap, goal_arg(&inner_heap, goal, 0)),&mut HashMap::new());
 
     // Clone the current hypothesis so the inner proof can use the learned clauses
     // This is essential: we need to test if the inner goal succeeds given what
@@ -85,28 +63,6 @@ pub fn not(
     }
 }
 
-///forall(:Cond, :Action) - is true where all bindings for Cond are true for Action
-pub fn for_all(
-    heap: &mut QueryHeap,
-    hypothesis: &mut Hypothesis,
-    goal: usize,
-    predicate_table: &PredicateTable,
-    config: Config,
-) -> PredReturn {
-    todo!()
-}
-
-///for_one(:Cond, :Action) - true when one binding for Cond is true for Action
-pub fn for_one(
-    heap: &mut QueryHeap,
-    hypothesis: &mut Hypothesis,
-    goal: usize,
-    predicate_table: &PredicateTable,
-    config: Config,
-) -> PredReturn {
-    todo!()
-}
-
 ///find_all(+Template,:Goal,-Bag)
 pub fn findall(
     heap: &mut QueryHeap,
@@ -122,9 +78,7 @@ pub fn findall(
 pub static META_PREDICATES: PredicateModule = (
     &[
         ("not", 1, not),
-        ("forall", 2, for_all),
-        ("for_one", 2, for_one),
         ("findall", 3, findall),
     ],
-    &[],
+    &[include_str!("../../builtins/meta_predicates.pl")],
 );

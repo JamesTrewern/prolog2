@@ -1,0 +1,1 @@
+forall(Cond, Action) :- not((Cond, not(Action))).

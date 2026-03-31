@@ -7,7 +7,11 @@
 use smallvec::SmallVec;
 
 use crate::{
-    heap::{heap::Heap, query_heap::QueryHeap, symbol_db::SymbolDB},
+    heap::{
+        heap::{Heap, Tag},
+        query_heap::QueryHeap,
+        symbol_db::SymbolDB,
+    },
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
         clause::Clause,
@@ -47,6 +51,10 @@ pub(crate) enum Strategy {
         /// Whether the predicate function has been called yet.
         called: bool,
     },
+    Conjunction {
+        goals: Vec<usize>,
+        expanded: bool,
+    },
     Unset,
 }
 
@@ -83,20 +91,24 @@ impl Env {
 
     /// Whether the last successful clause try added a hypothesis clause.
     pub fn new_clause(&self) -> bool {
-        match &self.strategy {
-            Strategy::Clause { new_clause, .. } => *new_clause,
-            Strategy::Native { .. } => false,
-            Strategy::Unset => false,
-        }
+        matches!(
+            &self.strategy,
+            Strategy::Clause {
+                new_clause: true,
+                ..
+            }
+        )
     }
 
     /// Whether the last successful clause try invented a new predicate.
     pub fn invent_pred(&self) -> bool {
-        match &self.strategy {
-            Strategy::Clause { invent_pred, .. } => *invent_pred,
-            Strategy::Native { .. } => false,
-            Strategy::Unset => false,
-        }
+        matches!(
+            &self.strategy,
+            Strategy::Clause {
+                invent_pred: true,
+                ..
+            }
+        )
     }
 
     // ── choice gathering ────────────────────────────────────────────────
@@ -109,59 +121,104 @@ impl Env {
     ) {
         self.got_choices = true;
         self.heap_point = heap.heap_len();
-        let (symbol, arity) = heap.str_symbol_arity(self.goal);
 
-        if symbol == 0 {
-            // Variable goal — gather meta-rules and body clauses.
-            let mut choices = Vec::new();
-            choices.extend_from_slice(hypothesis);
-
-            if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
-                choices.extend_from_slice(clauses);
-            }
-            choices.extend(predicate_table.get_body_clauses(arity).cloned());
-            let total = choices.len();
-            self.strategy = Strategy::Clause {
-                choices,
-                new_clause: false,
-                invent_pred: false,
-                total_choice_count: total,
-            };
+        if heap[self.goal].0 == Tag::Tup {
+            self.get_tup_goals(heap);
         } else {
-            match predicate_table.get_predicate((symbol, arity)) {
-                Some(Predicate::Function(pred_function)) => {
-                    self.strategy = Strategy::Native {
-                        function: *pred_function,
-                        alternatives: Vec::new(),
-                        called: false,
-                    };
+            match heap.str_symbol_arity(self.goal) {
+                (0, arity) => self.get_choices_var_pred(hypothesis, predicate_table, arity),
+                sym_arr => self.get_choices_con_pred(hypothesis, predicate_table, sym_arr),
+            }
+        }
+    }
+
+    ///If goal is tuple select conjunction strategy
+    fn get_tup_goals(&mut self, heap: &mut QueryHeap) {
+        let goals = heap
+            .str_iterator(self.goal)
+            .map(|goal| {
+                if let (Tag::Str, ptr) = heap[goal] {
+                    ptr
+                } else {
+                    goal
                 }
-                Some(Predicate::Clauses(clauses)) => {
-                    let mut choices = Vec::new();
-                    choices.extend_from_slice(hypothesis);
+            })
+            .collect();
+        self.strategy = Strategy::Conjunction {
+            goals,
+            expanded: false,
+        }
+    }
+
+    /// Get choices for a variable predicate goal
+    /// Choices is built from:
+    /// body predicates, variable predicate clauses, hypothesis clauses
+    fn get_choices_var_pred(
+        &mut self,
+        hypothesis: &mut Hypothesis,
+        predicate_table: &PredicateTable,
+        arity: usize,
+    ) {
+        // Variable goal — gather meta-rules and body clauses.
+        let mut choices = Vec::new();
+        choices.extend_from_slice(hypothesis);
+
+        if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
+            choices.extend_from_slice(clauses);
+        }
+        choices.extend(predicate_table.get_body_clauses(arity).cloned());
+        let total = choices.len();
+        self.strategy = Strategy::Clause {
+            choices,
+            new_clause: false,
+            invent_pred: false,
+            total_choice_count: total,
+        };
+    }
+
+    /// Get choices for constant predicate goal
+    /// If symbol/arity is a predicate function select Native strategy
+    /// If symbol/arity is a known predicate use hashmap to get clauses + hypothesis
+    /// If symbol/arity is unkown predicate get hypothesis and variable predicate clauses
+    fn get_choices_con_pred(
+        &mut self,
+        hypothesis: &mut Hypothesis,
+        predicate_table: &PredicateTable,
+        (symbol, arity): (usize, usize),
+    ) {
+        match predicate_table.get_predicate((symbol, arity)) {
+            Some(Predicate::Function(pred_function)) => {
+                self.strategy = Strategy::Native {
+                    function: *pred_function,
+                    alternatives: Vec::new(),
+                    called: false,
+                };
+            }
+            Some(Predicate::Clauses(clauses)) => {
+                let mut choices = Vec::new();
+                choices.extend_from_slice(hypothesis);
+                choices.extend_from_slice(clauses);
+                let total = choices.len();
+                self.strategy = Strategy::Clause {
+                    choices,
+                    new_clause: false,
+                    invent_pred: false,
+                    total_choice_count: total,
+                };
+            }
+            None => {
+                let mut choices = Vec::new();
+                choices.extend_from_slice(hypothesis);
+                if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
                     choices.extend_from_slice(clauses);
-                    let total = choices.len();
-                    self.strategy = Strategy::Clause {
-                        choices,
-                        new_clause: false,
-                        invent_pred: false,
-                        total_choice_count: total,
-                    };
                 }
-                None => {
-                    let mut choices = Vec::new();
-                    choices.extend_from_slice(hypothesis);
-                    if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
-                        choices.extend_from_slice(clauses);
-                    }
-                    let total = choices.len();
-                    self.strategy = Strategy::Clause {
-                        choices,
-                        new_clause: false,
-                        invent_pred: false,
-                        total_choice_count: total,
-                    };
-                }
+                let total = choices.len();
+                self.strategy = Strategy::Clause {
+                    choices,
+                    new_clause: false,
+                    invent_pred: false,
+                    total_choice_count: total,
+                };
             }
         }
     }
@@ -228,6 +285,7 @@ impl Env {
                 *called = false;
                 alternatives.clear();
             }
+            Strategy::Conjunction { expanded, .. } => *expanded = false,
             Strategy::Unset => (),
         }
     }
@@ -268,6 +326,7 @@ impl Env {
                 config,
                 debug,
             ),
+            Strategy::Conjunction { .. } => self.try_conj(heap),
             Strategy::Unset => unreachable!("Shouldn't be able to try choices before getting them"),
         }
     }
@@ -312,7 +371,6 @@ impl Env {
                 }
                 PredReturn::Choices(alts) => {
                     *alternatives = alts;
-                    
                 }
             }
         }
@@ -504,5 +562,23 @@ impl Env {
             );
         }
         None
+    }
+
+    fn try_conj(&mut self, heap: &QueryHeap) -> Option<Vec<Env>> {
+        let Strategy::Conjunction { goals, expanded } = &mut self.strategy else {
+            unreachable!()
+        };
+        if *expanded {
+            None
+        } else {
+            *expanded = true;
+            self.children = goals.len();
+            Some(
+                goals
+                    .iter()
+                    .map(|goal| Env::new(*goal, self.depth + 1, heap.heap_len()))
+                    .collect(),
+            )
+        }
     }
 }
