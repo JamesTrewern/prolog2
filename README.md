@@ -156,9 +156,6 @@ Running this on Michalski's trains problem produces:
 first, we lay out our background knowledge.</br> 
 What would have been called meta-rules is now better described as second-order clauses, where {P,Q} denotes that P and Q are variables which are existentially quantified, meaning they will become constants in new clauses derived from these meta rules. 
 
-The usage of the directive body_pred here tells the program that goals with variable symbols can match clauses of that symbol and arity.
-
-
 ``` prolog
 
 mum(tami,james).
