@@ -1,11 +1,11 @@
 {
-    "config" : {
+    "config": {
         "max_depth": 20,
         "max_clause": 1,
         "max_pred": 0,
         "debug": false
     },
-    "body_predicates" : [
+    "body_predicates": [
         "move_right/2",
         "move_left/2",
         "move_up/2",
@@ -26,8 +26,8 @@
         "move_down_then_right/2",
         "move_down_then_left/2"
     ],
-    "examples" : {
-        "pos" : [
+    "examples": {
+        "pos": [
             "move([0/0,0/0,4 - 4],[0/0,0/0,4 - 4])",
             "move([0/0,0/1,4 - 4],[0/1,0/1,4 - 4])",
             "move([0/0,0/2,4 - 4],[0/2,0/2,4 - 4])",
@@ -54,8 +54,11 @@
             "move([0/0,4/3,4 - 4],[4/3,4/3,4 - 4])",
             "move([0/0,4/4,4 - 4],[4/4,4/4,4 - 4])"
         ],
-        "neg" : []
+        "neg": []
     },
-    "top_prog" : true,
-    "files" : ["examples/robots/robots.pl", "examples/robots/examples.pl"]
+    "top_prog": true,
+    "reduce": true,
+    "files": [
+        "examples/robots/robots.pl"
+    ]
 }
