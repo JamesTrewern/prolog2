@@ -201,7 +201,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     fn contains_args(&self, addr: usize) -> bool {
         let mut acc = false;
         self.walk_term(addr, &mut acc, Self::contains_args_opp);
-        false
+        acc
     }
 
     fn term_args_op(&self, addr: usize, args: &mut Vec<usize>) -> bool {
