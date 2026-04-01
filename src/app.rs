@@ -127,7 +127,7 @@ impl<'de> serde::Deserialize<'de> for BodyPred {
 }
 
 /// Positive and negative training examples.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Examples {
     /// Positive examples (goals that should succeed).
     pub pos: Vec<String>,
@@ -182,6 +182,17 @@ impl Examples {
         buffer += ".";
         buffer
     }
+
+    pub fn normalise_for_top_prog(&mut self){
+        fn normalise(ex: &mut String){
+            *ex = ex.trim().into();
+            if ex.chars().last() != Some('.'){
+                *ex += ".";
+            }
+        } 
+        self.pos.iter_mut().for_each(normalise);
+        self.neg.iter_mut().for_each(normalise);
+    }
 }
 
 /// The top-level Prolog² engine.
@@ -216,12 +227,12 @@ impl Examples {
 /// - [`App::query_session`] returns a [`QuerySession`] for programmatic
 ///   iteration over solutions without any I/O side-effects.
 pub struct App {
-    predicate_table: PredicateTable,
-    prog_heap: Vec<Cell>,
-    config: Config,
-    auto: bool,
-    examples: Option<Examples>,
-    top_prog: TopProg,
+    pub(crate) predicate_table: PredicateTable,
+    pub(crate) prog_heap: Vec<Cell>,
+    pub(crate) config: Config,
+    pub(crate) auto: bool,
+    pub(crate) examples: Option<Examples>,
+    pub(crate) top_prog: TopProg,
     // log_file: Option<String>
 }
 
@@ -281,7 +292,7 @@ impl App {
 
     /// Sets the positive and negative training examples used by [`App::run`]
     /// when no interactive REPL is desired.
-    pub fn examples(self, examples: Examples) -> Self {
+    pub fn examples(self, mut examples: Examples) -> Self {
         App {
             examples: Some(examples),
             ..self
@@ -549,16 +560,13 @@ impl App {
     ///   [`App::start_query`] on the examples and exits.
     /// - **Examples set, Top Program Construction enabled** — runs the TPC
     ///   algorithm and prints any learned clauses.
-    pub fn run(self) -> ExitCode {
+    pub fn run(mut self) -> ExitCode {
         match &self.examples {
             Some(examples) => match self.top_prog {
-                TopProg::True(reduce) => crate::top_prog::run(
-                    examples,
-                    &self.predicate_table,
-                    self.prog_heap,
-                    self.config,
-                    reduce,
-                ),
+                TopProg::True(_) => {
+                    self.run_top_prog();
+                    ExitCode::SUCCESS
+                }
                 TopProg::False => self.start_query(examples.to_query()).map_or_else(
                     |e| {
                         eprintln!("{e}");

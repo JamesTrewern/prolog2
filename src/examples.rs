@@ -144,18 +144,19 @@ fn fsm_parity() {
 
 #[test]
 fn top_prog_robots() {
-    let app = App::from_setup_json("examples/robots/tpc_config.json")
+    let mut app = App::from_setup_json("examples/robots/tpc_config.json")
         .expect("failed to load config")
         .auto(true);
-    let result = app.run();
-    assert_eq!(result, ExitCode::SUCCESS);
+    let result = app.run_top_prog();
 }
 
 #[test]
 fn top_prog_trains() {
-    let app = App::from_setup_json("examples/robots/tpc_config.json")
+    let mut app = App::from_setup_json("examples/trains/tpc_config.json")
         .expect("failed to load config")
         .auto(true);
-    let result = app.run();
-    assert_eq!(result, ExitCode::SUCCESS);
+    let result = app.run_top_prog();
+    assert_eq!(result.lines().count(),2);
+    assert!(result.lines().find(|line| *line == "e(Arg_0):-has_car(Arg_0,Arg_1),pred_1(Arg_1).").is_some());
+    assert!(result.lines().find(|line| *line == "pred_1(Arg_0):-short(Arg_0),closed(Arg_0).").is_some());
 }

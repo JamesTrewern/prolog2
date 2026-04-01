@@ -11,19 +11,16 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use rayon;
+use rayon::{self, iter::IntoParallelIterator};
 use smallvec::SmallVec;
 
 use crate::{
+    app::{App, TopProg},
     heap::{
         heap::{Cell, Heap, Tag},
         query_heap::QueryHeap,
     },
-    parser::{
-        build_tree::TokenStream,
-        execute_tree::build_clause,
-        tokeniser::tokenise,
-    },
+    parser::{build_tree::TokenStream, execute_tree::build_clause, tokeniser::tokenise},
     program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::proof::Proof,
     Config, Examples,
@@ -33,136 +30,91 @@ lazy_static! {
     static ref CPU_COUNT: usize = num_cpus::get();
 }
 
+pub enum TopProgError {}
+
 /// Message sent from a proof thread to the main thread.
 struct HypothesisMsg {
     cells: Vec<Cell>,
     h: Vec<Clause>,
 }
 
-/// Top Program Construction entry point
-pub fn run(
-    examples: &Examples,
-    predicate_table: &PredicateTable,
-    mut heap: Vec<Cell>,
-    config: Config,
-    no_reduce: bool,
-) -> ExitCode {
-    println!("=== Top Program Construction ===");
-    println!(
-        "Positive examples: {}, Negative examples: {}",
-        examples.pos.len(),
-        examples.neg.len()
-    );
+impl App {
+    pub fn run_top_prog(&mut self) -> String{
+        let Some(mut examples) = self.examples.clone() else {
+            panic!("Can't start top prog without examples");
+        };
+        let reduce = match self.top_prog {
+            TopProg::True(reduce) => reduce,
+            _ => false,
+        };
+        println!("=== Top Program Construction ===");
+        println!(
+            "Positive examples: {}, Negative examples: {}",
+            examples.pos.len(),
+            examples.neg.len()
+        );
+        examples.normalise_for_top_prog();
 
-    // Step 1: Generalise
-    let (cells, hypotheses) = generalise(&examples.pos, predicate_table, &heap, config);
-    heap.extend_from_slice(&cells);
+        let (cells, mut sub_hypotheses) = generalise(
+            &examples.pos,
+            &self.predicate_table,
+            &self.prog_heap,
+            self.config,
+        );
 
-    println!(
-        "\n=== Generalisation Results ===\n{} unique hypotheses, {} heap cells",
-        hypotheses.len(),
-        cells.len()
-    );
+        self.prog_heap.extend_from_slice(&cells);
 
-    // Step 2: Specialise
-    let retained = specialise(&examples.neg, &hypotheses, &heap, predicate_table, config);
+        println!(
+            "\n=== Generalisation Results ===\n{} unique hypotheses",
+            sub_hypotheses.len(),
+        );
 
-    let surviving_count = retained.iter().filter(|&&b| b).count();
-    let rejected_count = hypotheses.len() - surviving_count;
-    println!(
-        "\n=== Specialisation Results ===\n{} hypotheses survived, {} rejected",
-        surviving_count, rejected_count
-    );
+        // Step 2: Specialise
+        let retained = specialise(
+            &examples.neg,
+            &sub_hypotheses,
+            &self.prog_heap,
+            &self.predicate_table,
+            self.config,
+        );
 
-    // Build final top program from surviving hypotheses
-    let mut seen = HashSet::new();
-    let mut top_program: Vec<&Clause> = Vec::new();
+        let surviving_count = retained.iter().filter(|&&b| b).count();
+        let rejected_count = sub_hypotheses.len() - surviving_count;
+        println!(
+            "\n=== Specialisation Results ===\n{} hypotheses survived, {} rejected",
+            surviving_count, rejected_count
+        );
 
-    if no_reduce {
-        // Simple union without reduction
-        for (hypothesis, &alive) in hypotheses.iter().zip(retained.iter()) {
-            if alive {
-                for clause in hypothesis {
-                    let key = clause.to_string(&heap);
-                    if seen.insert(key) {
-                        top_program.push(clause);
-                    }
-                }
-            }
-        }
-
-        println!("\n=== Top Program ({} clauses) ===", top_program.len());
-        for clause in &top_program {
-            println!("  {}", clause.to_string(&heap));
-        }
-    } else {
-        // Step 2b: Per-hypothesis reduction — remove redundant clauses within each
-        // sub-hypothesis before union, so specific clauses don't drown out general ones.
-        let surviving: Vec<&Vec<Clause>> = hypotheses
-            .iter()
+        sub_hypotheses = sub_hypotheses
+            .into_iter()
             .zip(retained.iter())
             .filter_map(|(h, &alive)| if alive { Some(h) } else { None })
             .collect();
-        let sub_total = surviving.len();
 
-        // Reduce each sub-hypothesis and score by coverage (number of positives entailed)
-        let mut scored: Vec<(usize, Vec<&Clause>)> = Vec::new();
-        for (idx, hypothesis) in surviving.iter().enumerate() {
-            eprint!("\rSub-reduce: {}/{sub_total}    ", idx + 1);
-            let _ = io::stderr().flush();
-            let clauses: Vec<&Clause> = hypothesis.iter().collect();
-            let reduced = reduce(
+        // Build final top program from surviving hypotheses
+        let top_program = if reduce {
+            let reduced = reduce_hypotheses(
                 &examples.pos,
-                clauses,
-                &heap,
-                predicate_table,
-                config,
-                false,
+                sub_hypotheses,
+                &self.prog_heap,
+                &self.predicate_table,
+                self.config,
             );
-            let coverage = count_coverage(&examples.pos, &reduced, &heap, predicate_table, config);
-            scored.push((coverage, reduced));
-        }
-        eprintln!("\rSub-reduce: {sub_total}/{sub_total} ...done    ");
+            println!("\n=== Reduced Program ({} clauses) ===", reduced.len());
+            reduced
+        } else {
+            let top_program = union_sub_hypotheses(sub_hypotheses, &self.prog_heap);
+            println!("\n=== Top Program ({} clauses) ===", top_program.len());
+            top_program
+        };
 
-        // Sort by coverage ascending — specific hypotheses first in the union.
-        // Plotkin's reduction checks clauses front-to-back: specific clauses get
-        // checked first and removed (the general ones behind them cover the same
-        // examples). By the time we reach the general clauses, the specific ones
-        // are gone and the general ones become essential.
-        scored.sort_by(|a, b| a.0.cmp(&b.0));
-
-        // Union all reduced sub-hypothesis clauses, deduplicated
-        for (_coverage, reduced_h) in &scored {
-            for &clause in reduced_h {
-                let key = clause.to_string(&heap);
-                if seen.insert(key) {
-                    top_program.push(clause);
-                }
-            }
-        }
-
-        println!("\n=== Top Program ({} clauses) ===", top_program.len());
+        let mut buffer = String::new();
         for clause in &top_program {
-            println!("  {}", clause.to_string(&heap));
+            buffer += &format!("{}\n", clause.to_string(&self.prog_heap));
         }
-
-        // Step 3: Final reduction on the union
-        let reduced = reduce(
-            &examples.pos,
-            top_program,
-            &heap,
-            predicate_table,
-            config,
-            true,
-        );
-
-        println!("\n=== Reduced Program ({} clauses) ===", reduced.len());
-        for clause in &reduced {
-            println!("  {}", clause.to_string(&heap));
-        }
+        println!("{buffer}");
+        buffer
     }
-
-    ExitCode::SUCCESS
 }
 
 /// Parse a single example string into a goal on the given query heap.
@@ -183,9 +135,7 @@ fn extract_hypothesis_local(proof: &Proof) -> (Vec<Cell>, Vec<Clause>) {
     for clause in proof.hypothesis.iter() {
         let new_literals: Vec<usize> = clause
             .iter()
-            .map(|&lit_addr| {
-                local_cells.copy_term(&proof.heap, lit_addr, &mut ref_map)
-            })
+            .map(|&lit_addr| local_cells.copy_term(&proof.heap, lit_addr, &mut ref_map))
             .collect();
         clauses.push(Clause::new(new_literals, None, None));
     }
@@ -388,7 +338,7 @@ fn specialise_thread(
 /// Count how many positive examples a set of clauses can prove.
 fn count_coverage(
     pos_examples: &[String],
-    clauses: &[&Clause],
+    clauses: &[Clause],
     heap: &[Cell],
     predicate_table: &PredicateTable,
     config: Config,
@@ -419,17 +369,73 @@ fn count_coverage(
         .count()
 }
 
+fn reduce_hypotheses(
+    pos_examples: &[String],
+    sub_hypotheses: Vec<Vec<Clause>>,
+    heap: &Vec<Cell>,
+    predicate_table: &PredicateTable,
+    config: Config,
+) -> Vec<Clause> {
+    // Step 2b: Per-hypothesis reduction — remove redundant clauses within each
+    // sub-hypothesis before union, so specific clauses don't drown out general ones.
+
+    let sub_total = sub_hypotheses.len();
+
+    // Reduce each sub-hypothesis and score by coverage (number of positives entailed)
+    let mut scored: Vec<(usize, Vec<Clause>)> = Vec::new();
+    for (idx, hypothesis) in sub_hypotheses.into_iter().enumerate() {
+        eprint!("\rSub-reduce: {}/{sub_total}    ", idx + 1);
+        let _ = io::stderr().flush();
+        let reduced = reduce(
+            pos_examples,
+            hypothesis,
+            &heap,
+            predicate_table,
+            config,
+            false,
+        );
+        let coverage = count_coverage(pos_examples, &reduced, &heap, predicate_table, config);
+        scored.push((coverage, reduced));
+    }
+    eprintln!("\rSub-reduce: {sub_total}/{sub_total} ...done    ");
+
+    // Sort by coverage ascending — specific hypotheses first in the union.
+    // Plotkin's reduction checks clauses front-to-back: specific clauses get
+    // checked first and removed (the general ones behind them cover the same
+    // examples). By the time we reach the general clauses, the specific ones
+    // are gone and the general ones become essential.
+    scored.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // Union all reduced sub-hypothesis clauses, deduplicated
+    let top_program = union_sub_hypotheses(scored.into_iter().map(|(_, h)| h).collect(), heap);
+
+    println!("\n=== Top Program ({} clauses) ===", top_program.len());
+    for clause in &top_program {
+        println!("  {}", clause.to_string(heap));
+    }
+
+    // Step 3: Final reduction on the union
+    reduce(
+        pos_examples,
+        top_program,
+        &heap,
+        predicate_table,
+        config,
+        true,
+    )
+}
+
 /// Plotkin's program reduction (Algorithm 3).
 /// Sequentially tries removing each clause; if all positives are still provable
 /// without it, the clause is redundant and permanently removed.
 fn reduce<'a>(
     pos_examples: &[String],
-    mut top_program: Vec<&'a Clause>,
+    mut hypothesis: Vec<Clause>,
     heap: &[Cell],
     predicate_table: &PredicateTable,
     config: Config,
     verbose: bool,
-) -> Vec<&'a Clause> {
+) -> Vec<Clause> {
     let config = Config {
         max_depth: config.max_depth,
         max_clause: 0,
@@ -437,10 +443,10 @@ fn reduce<'a>(
         debug: false,
     };
 
-    let total = top_program.len();
+    let total = hypothesis.len();
     let mut removed = 0usize;
     let mut i = 0;
-    while i < top_program.len() {
+    while i < hypothesis.len() {
         if verbose {
             eprint!(
                 "\rReduce: {}/{total} checked, {removed} removed    ",
@@ -451,7 +457,7 @@ fn reduce<'a>(
 
         // Build hypothesis from all clauses except the one at index i
         let mut h = Hypothesis::new();
-        for (j, clause) in top_program.iter().enumerate() {
+        for (j, clause) in hypothesis.iter().enumerate() {
             if j != i {
                 h.push_clause((*clause).clone(), SmallVec::new());
             }
@@ -469,7 +475,7 @@ fn reduce<'a>(
         });
 
         if redundant {
-            top_program.remove(i);
+            hypothesis.remove(i);
             removed += 1;
             // Don't increment i — next clause slides into this position
         } else {
@@ -480,5 +486,19 @@ fn reduce<'a>(
         eprintln!(" ...done");
     }
 
+    hypothesis
+}
+
+fn union_sub_hypotheses(sub_hypotheses: Vec<Vec<Clause>>, heap: &Vec<Cell>) -> Vec<Clause> {
+    let mut top_program = Vec::new();
+    let mut seen = HashSet::new();
+    for hypothesis in sub_hypotheses {
+        for clause in hypothesis {
+            let key = clause.to_string(heap);
+            if seen.insert(key) {
+                top_program.push(clause);
+            }
+        }
+    }
     top_program
 }
