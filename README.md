@@ -1,6 +1,6 @@
 # Prolog<sup>2</sup>
 
-Prolog<sup>2</sup> is a machine learning and logic programming framework, that implements native second-order logic and SLD resolution. This is an extension of Meta-Interpretive Learning, which was first used in 
+[Prolog<sup>2</sup>](https://link.springer.com/chapter/10.1007/978-3-032-09087-4_3) is a machine learning and logic programming framework, that implements native second-order logic and SLD resolution. This is an extension of Meta-Interpretive Learning, which was first used in 
 [Meta-interpretive learning of higher-order dyadic datalog: predicate invention revisited](https://link.springer.com/article/10.1007/s10994-014-5471-y?fromPaywallRec=false)
 
 This project aims to allow for more complex formations of second-order clauses and resolution.
@@ -257,3 +257,12 @@ X = double
 FALSE
 ?- 
 ```
+
+
+# Examples
+- [ancestor](examples/ancestor/README.md)
+- [parity](examples/parity/README.md)
+- [map](examples/map/README.md)
+- [odd_even](examples/odd_even/README.md)
+- [robots](examples/robots/README.md)
+- [trains](examples/trains/README.md)

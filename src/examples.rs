@@ -73,10 +73,13 @@ fn ancestor() {
 #[test]
 fn map() {
     let app = App::from_setup_json("examples/map/config.json")
-        .expect("failed to load config")
-        .auto(true);
-    let solutions: Vec<Solution> = app.query_session_from_examples().unwrap().collect();
+        .expect("failed to load config");
+    // Grounded Double
+    let solutions: Vec<Solution> = app.query_session("map([1,2,3],[2,4,6],double).").unwrap().collect();
     assert!(solutions.len() > 0, "Expected at least one solution");
+    // Bind Double
+    let solutions: Vec<Solution> = app.query_session("map([1,2,3],[2,4,6],X).").unwrap().collect();
+    assert!(solutions.iter().any(|solution|solution.bindings.iter().any(|binding| *binding.0 == *"X" && binding.1 == "double")));
 }
 
 #[test]
@@ -134,10 +137,16 @@ fn trains() {
 
 #[test]
 fn fsm_parity() {
-    let app = App::from_setup_json("examples/fsm/parity.json")
+    const H1: &[&str] = &[
+        "edge(0,even,even):-q(even),q(even).",
+        "edge(1,even,odd):-q(even),q(odd).",
+        "edge(0,odd,odd):-q(odd),q(odd).",
+        "edge(1,odd,even):-q(odd),q(even).",
+    ];
+    let app = App::from_setup_json("examples/parity/config.json")
         .expect("failed to load config")
         .auto(true);
-    test_solutions(app, &[]);
+    test_solutions(app, &[H1]);
 }
 
 // ── Top Program Construction tests ──
