@@ -17,26 +17,21 @@ pub fn not(
     predicate_table: &PredicateTable,
     config: Config,
 ) -> PredReturn {
-    // Create a config with learning disabled - we only want to test if the goal
-    // can be proven with the CURRENT hypothesis, not learn new clauses
+    //Extract inner negated goal
+    let inner_goal = resolve(heap, goal_arg(heap, goal, 0));
+
+    // Create a config with learning disabled
     let mut inner_config = config;
     inner_config.max_clause = 0; // Disable learning by not allowing new clauses
 
-    //Create new heap by branching the current heap, then duplicate goal to mutable cells of inner_heap
-    //TODO Proof does not need ownership of query heap so this step would be easier is heap could be passed to the inner proof directly
-    let mut inner_heap = heap.branch(1).pop().unwrap();
-    let inner_goal = inner_heap.dup_term(resolve(&inner_heap, goal_arg(&inner_heap, goal, 0)),&mut HashMap::new());
-
     // Clone the current hypothesis so the inner proof can use the learned clauses
-    // This is essential: we need to test if the inner goal succeeds given what
-    // we've already learned. If it does, this hypothesis is bad and we backtrack.
     let hypothesis_clone = hypothesis.clone();
-    let mut inner_proof = Proof::with_hypothesis(inner_heap, &[inner_goal], hypothesis_clone);
+    let mut inner_proof = Proof::with_hypothesis(heap, &[inner_goal], hypothesis_clone);
 
     if config.debug {
         eprintln!(
             "[NEGATE] {} with {} hypothesis clauses",
-            inner_proof.heap.term_string(inner_goal),
+            heap.term_string(inner_goal),
             inner_proof.hypothesis.len()
         );
     }
@@ -44,11 +39,11 @@ pub fn not(
     // Try to prove the inner goal with the current hypothesis
     // If it succeeds, not/1 fails (the hypothesis entails something it shouldn't)
     // If it fails, not/1 succeeds (the hypothesis correctly doesn't entail this)
-    if inner_proof.prove(predicate_table, inner_config) {
+    if inner_proof.prove(heap,predicate_table, inner_config) {
         if config.debug {
             eprintln!(
                 "[FAILED_TO_NEGATE] {}",
-                inner_proof.heap.term_string(inner_goal)
+                heap.term_string(inner_goal)
             );
         }
         PredReturn::False
@@ -56,7 +51,7 @@ pub fn not(
         if config.debug {
             eprintln!(
                 "[NEGATED_THROUGH_FAILURE] {}",
-                inner_proof.heap.term_string(inner_goal)
+                heap.term_string(inner_goal)
             );
         }
         PredReturn::True

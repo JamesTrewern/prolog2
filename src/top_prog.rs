@@ -127,7 +127,7 @@ fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, Str
 }
 
 /// Minimal work on the worker thread — just the copy.
-fn extract_hypothesis_local(proof: &Proof) -> (Vec<Cell>, Vec<Clause>) {
+fn extract_hypothesis_local(proof: &Proof, heap: &impl Heap) -> (Vec<Cell>, Vec<Clause>) {
     let mut local_cells: Vec<Cell> = Vec::new();
     let mut ref_map = HashMap::new();
     let mut clauses = Vec::new();
@@ -135,7 +135,7 @@ fn extract_hypothesis_local(proof: &Proof) -> (Vec<Cell>, Vec<Clause>) {
     for clause in proof.hypothesis.iter() {
         let new_literals: Vec<usize> = clause
             .iter()
-            .map(|&lit_addr| local_cells.copy_term(&proof.heap, lit_addr, &mut ref_map))
+            .map(|&lit_addr| local_cells.copy_term(heap, lit_addr, &mut ref_map))
             .collect();
         clauses.push(Clause::new(new_literals, None, None));
     }
@@ -233,12 +233,12 @@ fn generalise_thread(
             return;
         }
     };
-    let mut proof = Proof::new(query_heap, &[goal]);
+    let mut proof = Proof::new(&query_heap, &[goal]);
 
-    while proof.prove(predicate_table, config) {
+    while proof.prove(&mut query_heap, predicate_table, config) {
         for clause in proof.hypothesis.iter() {
-            clause.normalise_clause_vars(&mut proof.heap);
-            let (cells, h) = extract_hypothesis_local(&proof);
+            clause.normalise_clause_vars(&mut query_heap);
+            let (cells, h) = extract_hypothesis_local(&proof, &query_heap);
             if tx.send(HypothesisMsg { cells, h }).is_err() {
                 break; // Receiver dropped
             }
@@ -324,9 +324,9 @@ fn specialise_thread(
                 continue;
             }
         };
-        let mut proof = Proof::with_hypothesis(query_heap, &[goal], h);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h);
         // If any negative example is provable, reject this hypothesis
-        if proof.prove(predicate_table, config) {
+        if proof.prove(&mut query_heap, predicate_table, config) {
             return false;
         }
         // Reclaim the hypothesis — it was never mutated since max_clause is 0
@@ -363,8 +363,8 @@ fn count_coverage(
                 Ok(g) => g,
                 Err(_) => return false,
             };
-            let mut proof = Proof::with_hypothesis(query_heap, &[goal], h.clone());
-            proof.prove(predicate_table, config)
+            let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h.clone());
+            proof.prove(&mut query_heap, predicate_table, config)
         })
         .count()
 }
@@ -470,8 +470,8 @@ fn reduce<'a>(
                 Ok(g) => g,
                 Err(_) => return true, // skip unparseable examples
             };
-            let mut proof = Proof::with_hypothesis(query_heap, &[goal], h.clone());
-            proof.prove(predicate_table, config)
+            let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h.clone());
+            proof.prove(&mut query_heap, predicate_table, config)
         });
 
         if redundant {

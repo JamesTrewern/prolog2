@@ -522,8 +522,9 @@ impl App {
                 )
             }));
         }
-        let proof = Proof::new(query_heap, &goals);
+        let proof = Proof::new(&query_heap, &goals);
         Ok(QuerySession {
+            heap: query_heap,
             proof,
             vars,
             predicate_table: &self.predicate_table,
@@ -665,7 +666,8 @@ fn continue_proof(auto: bool) -> bool {
 /// Backtracking state is maintained between calls, so each call to
 /// `next_solution` resumes the proof search from where it left off.
 pub struct QuerySession<'a> {
-    proof: Proof<'a>,
+    heap: QueryHeap<'a>,
+    proof: Proof,
     vars: Vec<(Arc<str>, usize)>, // (variable_name, heap_address)
     predicate_table: &'a PredicateTable,
     config: Config,
@@ -686,17 +688,17 @@ impl<'a> Iterator for QuerySession<'a> {
     type Item = Solution;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.proof.prove(self.predicate_table, self.config) {
+        if self.proof.prove(&mut self.heap,self.predicate_table, self.config) {
             let bindings = self
                 .vars
                 .iter()
-                .map(|(name, addr)| (name.clone(), self.proof.heap.term_string(*addr)))
+                .map(|(name, addr)| (name.clone(), self.heap.term_string(*addr)))
                 .collect();
             let hypothesis = if self.proof.hypothesis.len() > 0 {
                 for clause in self.proof.hypothesis.iter() {
-                    clause.normalise_clause_vars(&mut self.proof.heap);
+                    clause.normalise_clause_vars(&mut self.heap);
                 }
-                self.proof.hypothesis.to_string(&self.proof.heap)
+                self.proof.hypothesis.to_string(&self.heap)
             } else {
                 String::new()
             };
