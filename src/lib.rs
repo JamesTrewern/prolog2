@@ -55,7 +55,7 @@
 //! );
 //!
 //! fn main() -> ExitCode {
-//!     let app = App::deafult()
+//!     let app = App::default()
 //!         .load_module(&MY_MODULE).expect("failed to load MY_MODULE");
 //!     app.run()
 //! }
