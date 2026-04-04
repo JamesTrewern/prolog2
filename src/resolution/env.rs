@@ -471,7 +471,7 @@ impl Env {
                 if clause.meta() {
                     if heap.str_symbol_arity(head).0 == 0 && heap.str_symbol_arity(self.goal).0 == 0
                     {
-                        let pred_symbol = SymbolDB::set_const(format!("pred_{}", hypothesis.len()));
+                        let pred_symbol = SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
                         let pred_addr = heap.set_const(pred_symbol);
                         substitution.set_arg(0, pred_addr);
                         substitution =

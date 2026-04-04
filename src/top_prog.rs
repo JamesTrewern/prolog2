@@ -167,11 +167,12 @@ fn generalise(
         let mut offset = heap_len;
 
         for HypothesisMsg { cells, mut h } in rx {
-            // Build canonical key before offset adjustment, using local cells
-            let mut clause_strings: Vec<String> =
+            // Build canonical key before offset adjustment, using local cells.
+            // Normalise invented predicate names so that structurally identical
+            // hypotheses (differing only in pred_N numbering) are deduplicated.
+            let clause_strings: Vec<String> =
                 h.iter().map(|clause| clause.to_string(&cells)).collect();
-            clause_strings.sort_unstable();
-            let key = clause_strings.join("|");
+            let key = crate::hypothesis_canonical_key(&clause_strings);
 
             if !seen.insert(key) {
                 continue; // Duplicate hypothesis, skip

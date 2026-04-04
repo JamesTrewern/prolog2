@@ -698,7 +698,11 @@ impl<'a> Iterator for QuerySession<'a> {
                 for clause in self.proof.hypothesis.iter() {
                     clause.normalise_clause_vars(&mut self.heap);
                 }
-                self.proof.hypothesis.to_string(&self.heap)
+                let clause_strings: Vec<String> = self.proof.hypothesis
+                    .iter()
+                    .map(|c| c.to_string(&self.heap))
+                    .collect();
+                crate::normalise_hypothesis(&clause_strings).join("\n") + "\n"
             } else {
                 String::new()
             };

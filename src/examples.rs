@@ -38,10 +38,11 @@ pub fn hypothesis_exists(solutions: &[Solution], expected_h: &[&str]) {
 }
 
 pub fn test_solutions(app: App, expected_hypotheses: &[&[&str]]) {
+    let mut i = 0;
     let solutions: Vec<Solution> = app
         .query_session_from_examples()
         .unwrap()
-        .inspect(|solution| println!("{}", solution.hypothesis))
+        .inspect(|solution| {println!("Hypthesis {i}:\n{}\n", solution.hypothesis); i+=1;})
         .collect();
     for expected_h in expected_hypotheses {
         hypothesis_exists(&solutions, expected_h);

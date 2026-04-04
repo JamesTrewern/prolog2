@@ -151,5 +151,183 @@ impl From<ParserError> for Error {
     }
 }
 
+/// Normalise a hypothesis (list of clause strings) so that functionally
+/// identical hypotheses — differing only in invented predicate numbering —
+/// produce the same canonical form.
+///
+/// Algorithm:
+/// 1. Build a "skeleton" of each clause by replacing every `pred_\d+` with `pred_$`.
+/// 2. Compute a sort order over clause indices using `(skeleton.len(), skeleton)`.
+/// 3. Walk the original clauses in that order; assign `pred_1`, `pred_2`, …
+///    to each unique `pred_\d+` token in order of first appearance.
+/// 4. Apply the renaming to all clauses and return them in the sorted order.
+pub fn normalise_hypothesis(clauses: &[String]) -> Vec<String> {
+    if clauses.is_empty() {
+        return Vec::new();
+    }
+
+    // 1. Build skeletons
+    let skeletons: Vec<String> = clauses.iter().map(|c| replace_pred_ids(c, "pred_$")).collect();
+
+    // 2. Sort indices by (skeleton length, skeleton lexicographic)
+    let mut order: Vec<usize> = (0..clauses.len()).collect();
+    order.sort_by(|&a, &b| {
+        skeletons[a]
+            .len()
+            .cmp(&skeletons[b].len())
+            .then_with(|| skeletons[a].cmp(&skeletons[b]))
+    });
+
+    // 3. Walk in sorted order, enumerate invented predicates by first appearance
+    let mut mapping: Vec<(String, String)> = Vec::new();
+    let mut counter = 1usize;
+    for &idx in &order {
+        for token in find_pred_tokens(&clauses[idx]) {
+            if !mapping.iter().any(|(old, _)| old == &token) {
+                mapping.push((token, format!("pred_{counter}")));
+                counter += 1;
+            }
+        }
+    }
+
+    // Sort mapping by original token length descending so that
+    // "pred_10" is replaced before "pred_1" (avoids partial matches).
+    mapping.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+
+    // 4. Apply renaming in sorted clause order
+    order
+        .iter()
+        .map(|&idx| {
+            let mut s = clauses[idx].clone();
+            for (old, new) in &mapping {
+                s = s.replace(old.as_str(), new.as_str());
+            }
+            s
+        })
+        .collect()
+}
+
+/// Replace every `pred_\d+` token in `s` with `replacement`.
+fn replace_pred_ids(s: &str, replacement: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"pred_") {
+            let start = i;
+            i += 5; // skip "pred_"
+            if i < bytes.len() && bytes[i].is_ascii_digit() {
+                // Consume all digits
+                while i < bytes.len() && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
+                // Check the character after is not alphanumeric/underscore
+                // (word boundary check)
+                if i >= bytes.len() || !(bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                    result.push_str(replacement);
+                    continue;
+                }
+            }
+            // Not a pred_\d+ token, copy literally
+            result.push_str(&s[start..i]);
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    result
+}
+
+/// Find all `pred_\d+` tokens in `s`, returned in order of appearance.
+fn find_pred_tokens(s: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"pred_") {
+            let start = i;
+            i += 5;
+            if i < bytes.len() && bytes[i].is_ascii_digit() {
+                while i < bytes.len() && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
+                if i >= bytes.len() || !(bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                    tokens.push(s[start..i].to_string());
+                    continue;
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    tokens
+}
+
+/// Convenience: produce a canonical key string from a hypothesis for deduplication.
+pub fn hypothesis_canonical_key(clauses: &[String]) -> String {
+    normalise_hypothesis(clauses).join("|")
+}
+
+#[cfg(test)]
+mod normalise_tests {
+    use super::*;
+
+    #[test]
+    fn identical_structure_different_ids() {
+        let h1 = vec![
+            "in_cluster(Arg_0):-Arg_0(Arg_1),pred_42(Arg_1,Arg_2).".to_string(),
+            "pred_42(Arg_0,Arg_1):-ring(Arg_0,Arg_1),aromatic(Arg_1,Arg_1).".to_string(),
+        ];
+        let h2 = vec![
+            "in_cluster(Arg_0):-Arg_0(Arg_1),pred_99(Arg_1,Arg_2).".to_string(),
+            "pred_99(Arg_0,Arg_1):-ring(Arg_0,Arg_1),aromatic(Arg_1,Arg_1).".to_string(),
+        ];
+        assert_eq!(
+            hypothesis_canonical_key(&h1),
+            hypothesis_canonical_key(&h2)
+        );
+    }
+
+    #[test]
+    fn different_structure_different_keys() {
+        let h1 = vec![
+            "in_cluster(Arg_0):-Arg_0(Arg_1),pred_1(Arg_1,Arg_2).".to_string(),
+            "pred_1(Arg_0,Arg_1):-ring(Arg_0,Arg_1).".to_string(),
+        ];
+        let h2 = vec![
+            "in_cluster(Arg_0):-Arg_0(Arg_1),pred_1(Arg_1,Arg_2).".to_string(),
+            "pred_1(Arg_0,Arg_1):-bound(Arg_0,Arg_1).".to_string(),
+        ];
+        assert_ne!(
+            hypothesis_canonical_key(&h1),
+            hypothesis_canonical_key(&h2)
+        );
+    }
+
+    #[test]
+    fn multiple_invented_predicates() {
+        let h1 = vec![
+            "in_cluster(A):-A(M),pred_50(M,P).".to_string(),
+            "pred_50(X,Z):-pred_51(X,Y),bound(Y,Z).".to_string(),
+            "pred_51(X,Y):-ring(X,Y),aromatic(Y,Y).".to_string(),
+        ];
+        let h2 = vec![
+            "in_cluster(A):-A(M),pred_7(M,P).".to_string(),
+            "pred_7(X,Z):-pred_8(X,Y),bound(Y,Z).".to_string(),
+            "pred_8(X,Y):-ring(X,Y),aromatic(Y,Y).".to_string(),
+        ];
+        assert_eq!(
+            hypothesis_canonical_key(&h1),
+            hypothesis_canonical_key(&h2)
+        );
+    }
+
+    #[test]
+    fn pred_10_not_confused_with_pred_1() {
+        let tokens = find_pred_tokens("pred_1(X):-pred_10(X,Y).");
+        assert_eq!(tokens, vec!["pred_1", "pred_10"]);
+    }
+}
+
 #[cfg(test)]
 mod examples;
