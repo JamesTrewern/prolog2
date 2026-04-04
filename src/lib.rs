@@ -10,7 +10,8 @@
 //! [`predicate_modules::PredicateModule`] bundles native Rust predicate functions
 //! together with optional Prolog source code. Modules are registered with the
 //! [`app::App`] builder, which also handles configuration loading and execution.
-//!
+//! Examples of builtin predicate functions can be found at: https://github.com/JamesTrewern/prolog2/tree/master/src/predicate_modules
+//! 
 //! ### Writing a native predicate
 //!
 //! A native predicate is a Rust function with the signature defined by
@@ -19,9 +20,9 @@
 //! table, and the engine configuration. It returns a [`predicate_modules::PredReturn`]
 //! indicating:
 //!
-//! - [`PredReturn::True`] — success with no heap side-effects.
-//! - [`PredReturn::False`] — deterministic failure; the engine backtracks.
-//! - [`PredReturn::Success`] — success with a list of `(source, target)` variable
+//! - [`predicate_modules::PredReturn::True`] — success with no heap side-effects.
+//! - [`predicate_modules::PredReturn::False`] — deterministic failure; the engine backtracks.
+//! - [`predicate_modules::PredReturn::Success`] — success with a list of `(source, target)` variable
 //!   bindings to apply on the heap, and an optional list of new sub-goals to resolve.
 //!
 //! For the common case of a simple boolean check, `bool` converts directly via
@@ -48,14 +49,13 @@
 //!     true.into()
 //! }
 //!
-//! static MY_MODULE: PredicateModule = (&[
-//!     ("my_pred", 1, my_pred),
-//! ], &[]);
+//! static MY_MODULE: PredicateModule = (
+//! &[("my_pred", 1, my_pred)],
+//! &[]
+//! );
 //!
 //! fn main() -> ExitCode {
-//!     let app = App::new()
-//!         .load_module(&MATHS).expect("failed to load MATHS")
-//!         .load_module(&META_PREDICATES).expect("failed to load META_PREDICATES")
+//!     let app = App::deafult()
 //!         .load_module(&MY_MODULE).expect("failed to load MY_MODULE");
 //!     app.run()
 //! }

@@ -44,11 +44,6 @@ use crate::{
 ///   - `Success(vec![], goals)` — schedules new sub-goals without touching the heap.
 ///   - `Success(bindings, goals)` — both; the engine applies the bindings *then* resolves
 ///     the additional goals as if they had been in the clause body.
-///
-/// > **Note:** sub-goal scheduling via `Success(_, goals)` is not yet implemented in the
-/// > resolution engine. Returning a non-empty `goals` vec will currently panic with
-/// > `todo!()`. The variant is present so the API does not need to change once the
-/// > feature is added.
 pub enum PredReturn {
     True,
     False,
@@ -108,9 +103,10 @@ pub type PredicateFunction =
 /// ```
 /// use prolog2::predicate_modules::{PredicateModule, PredReturn};
 ///
-/// static MY_MODULE: PredicateModule = (&[
-///     ("always_true", 0, |_heap, _hyp, _goal, _pt, _cfg| PredReturn::True),
-/// ], &[]);
+/// static MY_MODULE: PredicateModule = (
+/// &[("always_true", 0, |_heap, _hyp, _goal, _pt, _cfg| PredReturn::True)],
+/// &["always_false:-not(always_true)."]
+/// );
 /// ```
 pub type PredicateModule = (
     &'static [(&'static str, usize, PredicateFunction)],
