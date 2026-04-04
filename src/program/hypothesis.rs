@@ -1,4 +1,4 @@
-use std::ops::{Deref, DerefMut};
+use std::{ops::{Deref, DerefMut}, sync::atomic::{AtomicUsize, Ordering::Relaxed}};
 
 use smallvec::SmallVec;
 
@@ -8,6 +8,8 @@ use super::clause::Clause;
 
 /// Constraint set for existentially quantified variables in a learned clause.
 pub type Constraints = SmallVec<[usize; 5]>;
+
+static PRED_N: AtomicUsize = AtomicUsize::new(0);
 
 /// A collection of learned clauses produced during proof search.
 ///
@@ -48,6 +50,10 @@ impl Hypothesis {
             buffer += "\n"
         }
         buffer
+    }
+
+    pub fn next_pred_id() -> usize{
+        PRED_N.fetch_add(1, Relaxed)
     }
 }
 
