@@ -251,14 +251,14 @@ pub fn tokenise<'a>(text: impl AsRef<str>) -> Result<Vec<String>, ParserError> {
                         tokens.push("\n".into());
                     }
                 } else {
-                    tokens.push(text[last_i..i].into());
+                    tokens.push(characters[last_i..i].iter().collect());
                     tokens.push(c.into());
                     i += 1;
                     last_i = i;
                 }
             }
             c if DELIMINATORS.contains(&c) => {
-                tokens.push(text[last_i..i].into());
+                tokens.push(characters[last_i..i].iter().collect());
                 tokens.push(c.into());
                 i += 1;
                 last_i = i;
@@ -266,7 +266,7 @@ pub fn tokenise<'a>(text: impl AsRef<str>) -> Result<Vec<String>, ParserError> {
             _ => i += 1,
         }
     }
-    tokens.push(text[last_i..].into());
+    tokens.push(characters[last_i..].iter().collect());
     tokens.retain(|token| "" != *token);
     form_known_symbols(&mut tokens);
     join_decimal_nums(&mut tokens);
