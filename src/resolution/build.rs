@@ -33,7 +33,7 @@ pub fn build(
     src_addr: usize,
 ) -> usize {
     match heap[heap.deref_addr(src_addr)] {
-        (tag @ (Tag::Con | Tag::Flt | Tag::Int | Tag::Stri | Tag::ELis | Tag::Ref), value) => {
+        (tag @ (Tag::Con | Tag::Flt | Tag::Int | Tag::Stri | Tag::ELis | Tag::Ref| Tag::AVar), value) => {
             heap.heap_push((tag, value))
         }
         (Tag::Arg, _arg_id) => build_arg(heap, substitution, meta_vars, src_addr),
