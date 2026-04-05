@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Write},
-    process::ExitCode,
     sync::{
         atomic::{AtomicUsize, Ordering},
         mpsc::{self, Sender},
@@ -9,10 +8,6 @@ use std::{
     },
     thread, usize,
 };
-
-use lazy_static::lazy_static;
-use rayon::{self, iter::IntoParallelIterator};
-use smallvec::SmallVec;
 
 use crate::{
     app::{App, TopProg},
@@ -23,8 +18,14 @@ use crate::{
     parser::{build_tree::TokenStream, execute_tree::build_clause, tokeniser::tokenise},
     program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::proof::Proof,
-    Config, Examples,
+    Config,
 };
+
+use lazy_static::lazy_static;
+use rayon;
+use smallvec::SmallVec;
+
+
 
 lazy_static! {
     static ref CPU_COUNT: usize = num_cpus::get();

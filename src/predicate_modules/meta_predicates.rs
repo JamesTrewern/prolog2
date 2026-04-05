@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     Config, heap::{
         heap::Heap,
@@ -60,11 +58,11 @@ pub fn not(
 
 ///find_all(+Template,:Goal,-Bag)
 pub fn findall(
-    heap: &mut QueryHeap,
-    hypothesis: &mut Hypothesis,
-    goal: usize,
-    predicate_table: &PredicateTable,
-    config: Config,
+    _heap: &mut QueryHeap,
+    _hypothesis: &mut Hypothesis,
+    _goal: usize,
+    _predicate_table: &PredicateTable,
+    _config: Config,
 ) -> PredReturn {
     todo!()
 }
@@ -73,7 +71,7 @@ pub fn findall(
 pub static META_PREDICATES: PredicateModule = (
     &[
         ("not", 1, not),
-        ("findall", 3, findall),
+        // ("findall", 3, findall),
     ],
     &[include_str!("../../builtins/meta_predicates.pl")],
 );

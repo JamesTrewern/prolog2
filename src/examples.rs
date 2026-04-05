@@ -1,6 +1,4 @@
 // Broad test on example files to prove working state of application
-use std::process::ExitCode;
-
 use crate::app::{App, Solution};
 
 pub fn contains_clause(solution: &Solution, clause: &str) -> bool {
@@ -157,7 +155,7 @@ fn top_prog_robots() {
     let mut app = App::from_setup_json("examples/robots/tpc_config.json")
         .expect("failed to load config")
         .auto(true);
-    let result = app.run_top_prog();
+    app.run_top_prog();
 }
 
 #[test]

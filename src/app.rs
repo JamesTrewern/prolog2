@@ -292,7 +292,7 @@ impl App {
 
     /// Sets the positive and negative training examples used by [`App::run`]
     /// when no interactive REPL is desired.
-    pub fn examples(self, mut examples: Examples) -> Self {
+    pub fn examples(self, examples: Examples) -> Self {
         App {
             examples: Some(examples),
             ..self
