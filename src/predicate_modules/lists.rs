@@ -248,4 +248,10 @@ mod tests {
         assert!(results.contains(&"b".to_string()));
         assert!(results.contains(&"c".to_string()));
     }
+
+    #[test]
+    fn count_true(){
+        let tw = tw();
+        tw.assert_true("list_for_all([2,3,4],'<'(1)).");
+    }
 }

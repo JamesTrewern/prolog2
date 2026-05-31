@@ -116,6 +116,18 @@ pub fn is_const_pred(
     (heap[goal_arg(heap, goal, 0)].0 == Tag::Con).into()
 }
 
+/// `is_const/1`: succeeds if the argument is a constant (atom).
+pub fn valid_functor_pred(
+    heap: &mut QueryHeap,
+    _: &mut Hypothesis,
+    goal: usize,
+    _: &PredicateTable,
+    _: Config,
+) -> PredReturn {
+    let tag = heap[goal_arg(heap, goal, 0)].0;
+    (tag == Tag::Con || tag == Tag::Ref).into()
+}
+
 /// `is_int/1`: succeeds if the argument is an integer.
 pub fn is_int_pred(
     heap: &mut QueryHeap,
@@ -216,21 +228,22 @@ pub fn is_list_pred(
 pub static DEFAULTS: PredicateModule = (
     &[
         // Unification / equality
-        ("==",  2, equal),
+        ("==", 2, equal),
         ("=\\=", 2, not_equal),
         ("\\=", 2, not_unify),
         ("=..", 2, univ),
         // Type checks
-        ("is_var",      1, is_var_pred),
-        ("is_const",    1, is_const_pred),
-        ("is_int",      1, is_int_pred),
-        ("is_float",    1, is_float_pred),
-        ("is_number",   1, is_number_pred),
-        ("is_string",   1, is_string_pred),
+        ("is_var", 1, is_var_pred),
+        ("is_const", 1, is_const_pred),
+        ("valid_functor", 1, valid_functor_pred),
+        ("is_int", 1, is_int_pred),
+        ("is_float", 1, is_float_pred),
+        ("is_number", 1, is_number_pred),
+        ("is_string", 1, is_string_pred),
         ("is_compound", 1, is_compound_pred),
-        ("is_tup",      1, is_tup_pred),
-        ("is_set",      1, is_set_pred),
-        ("is_list",     1, is_list_pred),
+        ("is_tup", 1, is_tup_pred),
+        ("is_set", 1, is_set_pred),
+        ("is_list", 1, is_list_pred),
     ],
     &[include_str!("../../builtins/defaults.pl")],
 );
@@ -392,7 +405,7 @@ mod tests {
         tw.assert_true("is_list([1,2,3]).");
         tw.assert_false("is_list(hello).");
         tw.assert_false("is_list(X).");
-        tw.assert_false("is_list([a|_]).");  // partial list fails
+        tw.assert_false("is_list([a|_])."); // partial list fails
     }
 
     #[test]

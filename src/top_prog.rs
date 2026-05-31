@@ -93,7 +93,7 @@ impl App {
             .collect();
 
         // Build final top program from surviving hypotheses
-        let top_program = if reduce {
+        if reduce {
             let reduced = reduce_hypotheses(
                 &examples.pos,
                 sub_hypotheses,
@@ -102,19 +102,22 @@ impl App {
                 self.config,
             );
             println!("\n=== Reduced Program ({} clauses) ===", reduced.len());
-            reduced
+            let mut buffer = String::new();
+            for clause in &reduced {
+                buffer += &format!("{}\n", clause.to_string(&self.prog_heap));
+            }
+            println!("{buffer}");
+            buffer
         } else {
-            let top_program = union_sub_hypotheses(sub_hypotheses, &self.prog_heap);
+            let top_program = union_sub_hypotheses_renumbered(sub_hypotheses, &self.prog_heap);
             println!("\n=== Top Program ({} clauses) ===", top_program.len());
-            top_program
-        };
-
-        let mut buffer = String::new();
-        for clause in &top_program {
-            buffer += &format!("{}\n", clause.to_string(&self.prog_heap));
+            let mut buffer = String::new();
+            for clause in &top_program {
+                buffer += &format!("{clause}\n");
+            }
+            println!("{buffer}");
+            buffer
         }
-        println!("{buffer}");
-        buffer
     }
 }
 
@@ -503,4 +506,237 @@ fn union_sub_hypotheses(sub_hypotheses: Vec<Vec<Clause>>, heap: &Vec<Cell>) -> V
         }
     }
     top_program
+}
+
+/// String-based union that deduplicates invented predicates across hypotheses.
+///
+/// For each hypothesis, invented predicates are processed bottom-up (leaves
+/// first). Each predicate's definition — with callees already resolved to
+/// their canonical union names — is checked against a global registry. If an
+/// identical definition already exists, the predicate is mapped to the
+/// existing name. Otherwise it gets a fresh global name and its clauses are
+/// added to the union.
+fn union_sub_hypotheses_renumbered(
+    sub_hypotheses: Vec<Vec<Clause>>,
+    heap: &Vec<Cell>,
+) -> Vec<String> {
+    // Registry: skeleton key → global pred name
+    let mut registry: HashMap<String, String> = HashMap::new();
+    let mut top_program: Vec<String> = Vec::new();
+    let mut global_counter = 1usize;
+    // Also dedup non-invented clauses (e.g. in_cluster bridge clauses)
+    let mut seen_clauses: HashSet<String> = HashSet::new();
+
+    for hypothesis in sub_hypotheses {
+        // Convert to strings, normalise within hypothesis
+        let clause_strings: Vec<String> = hypothesis
+            .iter()
+            .map(|c| c.to_string(heap))
+            .collect();
+        let normalised = crate::normalise_hypothesis(&clause_strings);
+
+        // Group clauses by head predicate name
+        let mut pred_clauses: HashMap<String, Vec<String>> = HashMap::new();
+        let mut non_invented: Vec<String> = Vec::new();
+
+        for clause in &normalised {
+            let head_name = clause.split('(').next().unwrap_or("");
+            if head_name.starts_with("pred_") {
+                pred_clauses
+                    .entry(head_name.to_string())
+                    .or_default()
+                    .push(clause.clone());
+            } else {
+                non_invented.push(clause.clone());
+            }
+        }
+
+        // Build dependency graph: which invented preds does each one call?
+        let pred_names: Vec<String> = pred_clauses.keys().cloned().collect();
+        let mut deps: HashMap<String, Vec<String>> = HashMap::new();
+        for (pred_name, clauses) in &pred_clauses {
+            let mut callees = Vec::new();
+            for clause in clauses {
+                for token in crate::find_pred_tokens(clause) {
+                    if token != *pred_name
+                        && pred_names.contains(&token)
+                        && !callees.contains(&token)
+                    {
+                        callees.push(token);
+                    }
+                }
+            }
+            deps.insert(pred_name.clone(), callees);
+        }
+
+        // Topological sort: leaves first (preds with no invented-pred dependencies)
+        let topo_order = topo_sort(&pred_names, &deps);
+
+        // Process each predicate in bottom-up order
+        // Maps local normalised name → global union name
+        let mut local_to_global: HashMap<String, String> = HashMap::new();
+
+        for pred_name in &topo_order {
+            let clauses = match pred_clauses.get(pred_name) {
+                Some(c) => c,
+                None => continue,
+            };
+
+            // Apply already-resolved mappings to callee names in these clauses
+            let resolved_clauses: Vec<String> = clauses
+                .iter()
+                .map(|c| apply_mapping(c, &local_to_global))
+                .collect();
+
+            // Build skeleton: replace THIS pred's name with "$HEAD",
+            // normalise variable names, sort clauses
+            let mut skeleton_clauses: Vec<String> = resolved_clauses
+                .iter()
+                .map(|c| {
+                    let replaced = c.replace(pred_name.as_str(), "$HEAD");
+                    normalise_vars(&replaced)
+                })
+                .collect();
+            skeleton_clauses.sort();
+            let skeleton_key = skeleton_clauses.join("|");
+
+            if let Some(existing_name) = registry.get(&skeleton_key) {
+                // This predicate already exists in the union — reuse it
+                local_to_global.insert(pred_name.clone(), existing_name.clone());
+            } else {
+                // New predicate — assign global name, add clauses
+                let global_name = format!("pred_{global_counter}");
+                global_counter += 1;
+
+                registry.insert(skeleton_key, global_name.clone());
+                local_to_global.insert(pred_name.clone(), global_name.clone());
+
+                // Add clauses with the global name
+                for clause in &resolved_clauses {
+                    let final_clause = clause.replace(pred_name.as_str(), global_name.as_str());
+                    if seen_clauses.insert(final_clause.clone()) {
+                        top_program.push(final_clause);
+                    }
+                }
+            }
+        }
+
+        // Add non-invented clauses (e.g. in_cluster bridge), applying mappings
+        for clause in &non_invented {
+            let final_clause = apply_mapping(clause, &local_to_global);
+            if seen_clauses.insert(final_clause.clone()) {
+                top_program.push(final_clause);
+            }
+        }
+    }
+
+    top_program
+}
+
+/// Normalise variable names in a clause string by replacing each `Arg_N` with
+/// `V0`, `V1`, … in order of first appearance.
+fn normalise_vars(clause: &str) -> String {
+    let mut result = String::with_capacity(clause.len());
+    let bytes = clause.as_bytes();
+    let mut var_map: Vec<(String, String)> = Vec::new();
+    let mut counter = 0usize;
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"Arg_") {
+            let start = i;
+            i += 4; // skip "Arg_"
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            let var_name = &clause[start..i];
+            let canonical = if let Some((_, canon)) = var_map.iter().find(|(orig, _)| orig == var_name) {
+                canon.clone()
+            } else {
+                let canon = format!("V{counter}");
+                counter += 1;
+                var_map.push((var_name.to_string(), canon.clone()));
+                canon
+            };
+            result.push_str(&canonical);
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    result
+}
+
+/// Apply a pred-name mapping to a clause string, replacing longest names first
+/// to avoid partial matches (e.g. "pred_10" before "pred_1").
+fn apply_mapping(clause: &str, mapping: &HashMap<String, String>) -> String {
+    if mapping.is_empty() {
+        return clause.to_string();
+    }
+    let mut pairs: Vec<(&str, &str)> = mapping.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    let mut result = clause.to_string();
+    for (old, new) in pairs {
+        result = result.replace(old, new);
+    }
+    result
+}
+
+/// Topological sort: returns leaves first (predicates with no invented-pred
+/// dependencies), then predicates that depend on those, etc.
+/// Falls back to including remaining nodes if cycles are detected.
+fn topo_sort(nodes: &[String], deps: &HashMap<String, Vec<String>>) -> Vec<String> {
+    // in_degree counts how many invented predicates this node depends on
+    // (i.e. how many callees it has). Leaves have in_degree 0.
+    let mut in_degree: HashMap<&str, usize> = HashMap::new();
+    // reverse_deps: callee → list of callers
+    let mut reverse_deps: HashMap<&str, Vec<&str>> = HashMap::new();
+
+    for node in nodes {
+        let callees = deps.get(node).map(|v| v.as_slice()).unwrap_or(&[]);
+        let count = callees.iter().filter(|c| nodes.contains(c)).count();
+        in_degree.insert(node.as_str(), count);
+        for callee in callees {
+            if nodes.contains(callee) {
+                reverse_deps
+                    .entry(callee.as_str())
+                    .or_default()
+                    .push(node.as_str());
+            }
+        }
+    }
+
+    // Start with leaves (nodes that call no other invented predicates)
+    let mut queue: Vec<&str> = in_degree
+        .iter()
+        .filter(|(_, &deg)| deg == 0)
+        .map(|(&name, _)| name)
+        .collect();
+    queue.sort(); // deterministic order
+
+    let mut result = Vec::new();
+    while let Some(node) = queue.pop() {
+        result.push(node.to_string());
+        // For each caller of this node, decrement their in-degree
+        if let Some(callers) = reverse_deps.get(node) {
+            for &caller in callers {
+                if let Some(deg) = in_degree.get_mut(caller) {
+                    *deg = deg.saturating_sub(1);
+                    if *deg == 0 {
+                        queue.push(caller);
+                        queue.sort();
+                    }
+                }
+            }
+        }
+    }
+
+    // Add any remaining nodes (cycles) at the end
+    for node in nodes {
+        if !result.contains(node) {
+            result.push(node.clone());
+        }
+    }
+
+    result
 }

@@ -239,7 +239,7 @@ fn replace_pred_ids(s: &str, replacement: &str) -> String {
 }
 
 /// Find all `pred_\d+` tokens in `s`, returned in order of appearance.
-fn find_pred_tokens(s: &str) -> Vec<String> {
+pub fn find_pred_tokens(s: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let bytes = s.as_bytes();
     let mut i = 0;
