@@ -292,7 +292,11 @@ fn occurs(heap: &impl Heap, binding: &Substitution, ref_addr: usize, complex_add
     let mut bound_args = SmallVec::<[usize; 2]>::new();
     let mut arg_idx = 0;
     //TODO check this is true, args should appear and be bound in order
-    while let Some(addr) = binding.get_arg(arg_idx) {
+    while let Some(mut addr) = binding.get_arg(arg_idx) {
+        if let Some(new_addr) = binding.bound(addr){
+            addr = new_addr
+        }
+
         if addr == ref_addr {
             bound_args.push(arg_idx);
         }
@@ -742,5 +746,82 @@ mod tests {
         ];
 
         assert_eq!(unify(&heap, 0, 5), None);
+    }
+
+    /// EDGE CASE (hypothesised gap): transitive arg → ref → ref chain.
+    ///
+    /// clause `p(Z,Z,(Z,W))`  vs  goal `p(X1,X2,X2)`
+    ///
+    /// Unification order:
+    ///   1. `Z = X1`                     (arg_reg[0] = X1)
+    ///   2. `Z = X2`  ⟹ `X1 = X2`        (pushes binding X1 → X2)
+    ///   3. `(Z,W) = X2`                 (X2 meets the tuple containing Z)
+    ///
+    /// At step 3 the tuple contains `Z` (Arg 0). `Z` is bound to `X1`, and
+    /// `X1` is bound to `X2` — so `Z` transitively *is* `X2`, and binding
+    /// `X2 → (Z,W)` closes a cycle (`X2 = (X2,W)`).
+    ///
+    /// But `occurs` collects `bound_args` by comparing `get_arg(0)` (== X1)
+    /// directly against `ref_addr` (== X2). It does not chase `X1 → X2` via
+    /// `bound()`, so `Z` is NOT added to `bound_args`, the tuple walk finds an
+    /// `Arg` that isn't flagged, and the cycle slips through.
+    ///
+    /// A correct occurs check should return `None`.
+    #[test]
+    fn occurs_transitive_arg_ref_chain() {
+        let p = SymbolDB::set_const("p");
+
+        let heap = vec![
+            // clause head: p(Z, Z, (Z,W))
+            (Tag::Str, 1),   // 0
+            (Tag::Comp, 4),  // 1   p, Z, Z, (Z,W)
+            (Tag::Con, p),   // 2
+            (Tag::Arg, 0),   // 3   Z
+            (Tag::Arg, 0),   // 4   Z
+            (Tag::Str, 6),   // 5   -> tuple
+            (Tag::Tup, 2),   // 6   (Z,W)
+            (Tag::Arg, 0),   // 7   Z
+            (Tag::Arg, 1),   // 8   W
+            // goal: p(X1, X2, X2)
+            (Tag::Str, 10),  // 9
+            (Tag::Comp, 4),  // 10  p, X1, X2, X2
+            (Tag::Con, p),   // 11
+            (Tag::Ref, 12),  // 12  X1 (canonical, unbound)
+            (Tag::Ref, 13),  // 13  X2 (canonical, unbound)
+            (Tag::Ref, 13),  // 14  X2
+        ];
+
+        assert_eq!(unify(&heap, 0, 9), None);
+    }
+
+    /// CONTROL: same shape as the test above but WITHOUT the intermediate
+    /// ref → ref hop, so the arg is bound directly to the ref that meets the
+    /// structure. This is the case the existing `bound_args` path already
+    /// handles, so it must return `None`.
+    ///
+    /// clause `p(Z,(Z,W))`  vs  goal `p(X,X)` — `Z = X`, then `(Z,W) = X`.
+    #[test]
+    fn occurs_direct_arg_ref_control() {
+        let p = SymbolDB::set_const("p");
+
+        let heap = vec![
+            // clause head: p(Z, (Z,W))
+            (Tag::Str, 1),   // 0
+            (Tag::Comp, 3),  // 1   p, Z, (Z,W)
+            (Tag::Con, p),   // 2
+            (Tag::Arg, 0),   // 3   Z
+            (Tag::Str, 5),   // 4   -> tuple
+            (Tag::Tup, 2),   // 5   (Z,W)
+            (Tag::Arg, 0),   // 6   Z
+            (Tag::Arg, 1),   // 7   W
+            // goal: p(X,X)
+            (Tag::Str, 9),   // 8
+            (Tag::Comp, 3),  // 9   p, X, X
+            (Tag::Con, p),   // 10
+            (Tag::Ref, 11),  // 11  X (canonical, unbound)
+            (Tag::Ref, 11),  // 12  X
+        ];
+
+        assert_eq!(unify(&heap, 0, 8), None);
     }
 }

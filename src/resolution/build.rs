@@ -122,7 +122,10 @@ fn build_complex_term(
 ) -> Option<Cell> {
     match heap[heap.deref_addr(src_addr)] {
         (Tag::Comp | Tag::Tup | Tag::Set, _) => {
-            Some((Tag::Str, build_str(heap, substitution, meta_vars, src_addr)))
+            // Dereference first: `src_addr` may be a bound `Ref` pointing to the
+            // structure. Passing the raw address would make `build_str` read the
+            // `Ref` cell and misinterpret its pointer value as the arity.
+            Some((Tag::Str, build_str(heap, substitution, meta_vars, heap.deref_addr(src_addr))))
         }
         (Tag::Str, ptr) => Some((Tag::Str, build_str(heap, substitution, meta_vars, ptr))),
         (Tag::Lis, ptr) => Some((Tag::Lis, build_list(heap, substitution, meta_vars, ptr))),
@@ -279,6 +282,56 @@ mod tests {
 
     #[test]
     fn meta_vars() {}
+
+    /// Regression test for the molecules stack overflow.
+    ///
+    /// When a structural subterm is a bound `Ref` that dereferences to a
+    /// structure (e.g. a query variable bound to a tuple), `build_complex_term`
+    /// must dereference the address before handing it to `build_str`. The
+    /// original code passed the raw `src_addr`, so `build_str` read the
+    /// `(Ref, ptr)` cell and treated `ptr` as the structure arity — reading far
+    /// past the real term and, on the molecules example, recursing until the
+    /// stack overflowed.
+    ///
+    /// Heap below encodes the compound `q(X)` where the single argument `X`
+    /// is a `Ref` (addr 2) that derefs to the tuple `(a,b)` at addr 4. Building
+    /// it must yield `q((a,b))`, with the built argument being a proper `Tup`
+    /// cell rather than the misread `Ref` cell.
+    #[test]
+    fn build_ref_to_structure_subterm() {
+        let q = SymbolDB::set_const("q");
+        let a = SymbolDB::set_const("a");
+        let b = SymbolDB::set_const("b");
+
+        let mut heap = vec![
+            (Tag::Comp, 2), // 0: q/1 (functor + 1 arg)
+            (Tag::Con, q),  // 1: functor
+            (Tag::Ref, 4),  // 2: arg X -> ref that derefs to the tuple at 4
+            (Tag::Con, a),  // 3: padding (in misread window)
+            (Tag::Tup, 2),  // 4: tuple (a,b) — the deref target of the ref at 2
+            (Tag::Con, a),  // 5
+            (Tag::Con, b),  // 6
+        ];
+
+        let mut sub = Substitution::default();
+        let result = build(&mut heap, &mut sub, None, 0);
+
+        // Built term should be q((a,b)).
+        assert_eq!(heap.term_string(result), "q((a,b))");
+
+        // Structurally: result is a Comp whose argument is a Str indirection to
+        // a real Tup cell — NOT to a misread Ref cell.
+        assert_eq!(heap[result], (Tag::Comp, 2));
+        assert_eq!(heap[result + 1], (Tag::Con, q));
+        let (arg_tag, arg_ptr) = heap[result + 2];
+        assert_eq!(arg_tag, Tag::Str, "argument should be a Str indirection");
+        assert_eq!(
+            heap[arg_ptr].0,
+            Tag::Tup,
+            "built subterm header should be a Tup, not a misread Ref cell (got {:?})",
+            heap[arg_ptr]
+        );
+    }
 
     #[test]
     fn test1() {
