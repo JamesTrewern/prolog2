@@ -1,4 +1,4 @@
-use crate::{app::Solution, heap::{
+use crate::{Config, app::Solution, heap::{
     heap::{Cell, Heap, Tag},
     query_heap::QueryHeap,
 }};
@@ -179,8 +179,10 @@ pub struct TestWrapper {
 
 impl TestWrapper {
     pub fn new(modules: &[PredicateModule]) -> Self {
+        let mut config = Config::default();
+        config.debug = true;
         TestWrapper {
-            app: modules.iter().fold(App::new(), |app, predicate_module| {
+            app: modules.iter().fold(App::new().config(config), |app, predicate_module| {
                 app.load_module(predicate_module).unwrap()
             }),
         }

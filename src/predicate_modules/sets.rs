@@ -505,21 +505,21 @@ mod tests {
         test_wrapper().all_bindings(query, var)
     }
 
-    // ── is_set ──
+    // ── is set? ──
 
     #[test]
-    fn is_set_true() {
-        assert!(succeeds("is_set({a, b, c})."));
+    fn set_true() {
+        assert!(succeeds("set({a, b, c})."));
     }
 
     #[test]
-    fn is_set_false_atom() {
-        assert!(!succeeds("is_set(hello)."));
+    fn set_false_atom() {
+        assert!(!succeeds("set(hello)."));
     }
 
     #[test]
-    fn is_set_false_list() {
-        assert!(!succeeds("is_set([a, b])."));
+    fn set_false_list() {
+        assert!(!succeeds("set([a, b])."));
     }
 
     // ── set_member ──

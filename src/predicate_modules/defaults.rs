@@ -184,6 +184,17 @@ pub fn is_string(
 }
 
 /// `is_compound/1`: succeeds if the argument is a compound term (functor + args).
+pub fn is_atomic(
+    heap: &mut QueryHeap,
+    _: &mut Hypothesis,
+    goal: usize,
+    _: &PredicateTable,
+    _: Config,
+) -> PredReturn {
+    (![Tag::Str,Tag::Comp,Tag::Tup,Tag::Set,Tag::Lis].contains(&heap[resolve(heap, goal_arg(heap, goal, 0))].0)).into()
+}
+
+/// `is_compound/1`: succeeds if the argument is a compound term (functor + args).
 pub fn is_compound(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
@@ -342,93 +353,93 @@ mod tests {
     // ── type checks ───────────────────────────────────────────────────────
 
     #[test]
-    fn type_is_var() {
+    fn type_var() {
         let tw = tw();
-        tw.assert_true("is_var(X).");
-        tw.assert_false("is_var(hello).");
-        tw.assert_false("is_var(42).");
-        tw.assert_false("is_var(3.14).");
-        tw.assert_false("X = hello, is_var(X).");
+        tw.assert_true("var(X).");
+        tw.assert_false("var(hello).");
+        tw.assert_false("var(42).");
+        tw.assert_false("var(3.14).");
+        tw.assert_false("X = hello, var(X).");
     }
 
     #[test]
-    fn type_is_const() {
+    fn type_const() {
         let tw = tw();
-        tw.assert_true("is_const(hello).");
-        tw.assert_true("is_const('42').");
-        tw.assert_false("is_const(42).");
-        tw.assert_false("is_const(X).");
-        tw.assert_false("is_const(\"hello\").");
+        tw.assert_true("const(hello).");
+        tw.assert_true("const('42').");
+        tw.assert_false("const(42).");
+        tw.assert_false("const(X).");
+        tw.assert_false("const(\"hello\").");
     }
 
     #[test]
-    fn type_is_int() {
+    fn type_int() {
         let tw = tw();
-        tw.assert_true("is_int(42).");
-        tw.assert_true("is_int(0).");
-        tw.assert_false("is_int(3.14).");
-        tw.assert_false("is_int(hello).");
-        tw.assert_false("is_int(X).");
+        tw.assert_true("int(42).");
+        tw.assert_true("int(0).");
+        tw.assert_false("int(3.14).");
+        tw.assert_false("int(hello).");
+        tw.assert_false("int(X).");
     }
 
     #[test]
-    fn type_is_float() {
+    fn type_float() {
         let tw = tw();
-        tw.assert_true("is_float(3.14).");
-        tw.assert_false("is_float(42).");
-        tw.assert_false("is_float(hello).");
-        tw.assert_false("is_float(X).");
+        tw.assert_true("float(3.14).");
+        tw.assert_false("float(42).");
+        tw.assert_false("float(hello).");
+        tw.assert_false("float(X).");
     }
 
     #[test]
-    fn type_is_number() {
+    fn type_number() {
         let tw = tw();
-        tw.assert_true("is_number(42).");
-        tw.assert_true("is_number(3.14).");
-        tw.assert_false("is_number(hello).");
-        tw.assert_false("is_number(X).");
-        tw.assert_false("is_number(\"hi\").");
+        tw.assert_true("number(42).");
+        tw.assert_true("number(3.14).");
+        tw.assert_false("number(hello).");
+        tw.assert_false("number(X).");
+        tw.assert_false("number(\"hi\").");
     }
 
     #[test]
-    fn type_is_string() {
+    fn type_string() {
         let tw = tw();
-        tw.assert_true("is_string(\"hello\").");
-        tw.assert_false("is_string(hello).");
-        tw.assert_false("is_string(42).");
-        tw.assert_false("is_string(X).");
+        tw.assert_true("string(\"hello\").");
+        tw.assert_false("string(hello).");
+        tw.assert_false("string(42).");
+        tw.assert_false("string(X).");
     }
 
     #[test]
-    fn type_is_compound() {
+    fn type_compound() {
         let tw = tw();
-        tw.assert_true("is_compound(f(x)).");
-        tw.assert_true("is_compound(f(x,y,z)).");
-        tw.assert_false("is_compound(hello).");
-        tw.assert_false("is_compound(42).");
-        tw.assert_false("is_compound(X).");
+        tw.assert_true("compound(f(x)).");
+        tw.assert_true("compound(f(x,y,z)).");
+        tw.assert_false("compound(hello).");
+        tw.assert_false("compound(42).");
+        tw.assert_false("compound(X).");
     }
 
     #[test]
-    fn type_is_list() {
+    fn type_list() {
         let tw = tw();
-        tw.assert_true("is_list([]).");
-        tw.assert_true("is_list([a,b,c]).");
-        tw.assert_true("is_list([1,2,3]).");
-        tw.assert_false("is_list(hello).");
-        tw.assert_false("is_list(X).");
-        tw.assert_false("is_list([a|_])."); // partial list fails
+        tw.assert_true("list([]).");
+        tw.assert_true("list([a,b,c]).");
+        tw.assert_true("list([1,2,3]).");
+        tw.assert_false("list(hello).");
+        tw.assert_false("list(X).");
+        tw.assert_false("list([a|_])."); // partial list fails
     }
 
     #[test]
-    fn type_is_set() {
+    fn type_set() {
         let tw = tw();
-        tw.assert_true("is_set({a,b,c}).");
-        tw.assert_false("is_set([a,b]).");
-        tw.assert_false("is_set(hello).");
+        tw.assert_true("set({a,b,c}).");
+        tw.assert_false("set([a,b]).");
+        tw.assert_false("set(hello).");
     }
 
-    // ── Prolog-defined: atomic/1 and is_list/1 ────────────────────────────
+    // ── Prolog-defined: atomic/1 and list/1 ────────────────────────────
 
     #[test]
     fn type_atomic() {

@@ -143,12 +143,12 @@ pub static LISTS: PredicateModule = (
 #[cfg(test)]
 mod tests {
     use super::{
-        super::{helpers::TestWrapper, DEFAULTS},
+        super::{helpers::TestWrapper, DEFAULTS, MATHS, META_PREDICATES},
         LISTS,
     };
 
     fn tw() -> TestWrapper {
-        TestWrapper::new(&[DEFAULTS, LISTS])
+        TestWrapper::new(&[DEFAULTS, LISTS, MATHS, META_PREDICATES])
     }
 
     // ── length/2 ──────────────────────────────────────────────────────────
@@ -250,8 +250,16 @@ mod tests {
     }
 
     #[test]
-    fn count_true(){
+    fn list_for_all(){
         let tw = tw();
         tw.assert_true("list_for_all([2,3,4],'<'(1)).");
+    }
+
+    #[test]
+    fn count_true(){
+        let tw = tw();
+        tw.assert_true("count_true([2,3,4],'<'(2),N).");
+        let mut results = tw.all_bindings("count_true([X, b, c], nonvar, N).", "N");
+        assert_eq!(results.pop().unwrap(),"2");
     }
 }
