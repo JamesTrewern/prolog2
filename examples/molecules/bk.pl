@@ -1,8 +1,12 @@
 % ------------------------------------------------------------------
 % Molecule Traversal
 % ------------------------------------------------------------------
-subs((B, E, Subs), Subs). 
-ring_members(ring(B, Members), Members).
+subs(X, Subs):-
+	nonvar(X),
+	X = (_,_,Subs).
+ring_members(X, Members):-
+	nonvar(X),
+	X = ring(_,Members).
 
 children(X,Y):-subs(X,Y).
 children(X,Y):-ring_members(X,Y).
@@ -15,10 +19,17 @@ sub_structure(X, Y):-
 % ------------------------------------------------------------------
 % Feature Extractors 
 % ------------------------------------------------------------------
-element(E,(B, E, S)).
+element(E,X):-
+	nonvar(X),
+	X = (_,E,_).
 element(h,h).
-bond_type(B,(B, E, S)).
-bond_type(B,ring(B, M)).
+bond_type(B,X):-
+	nonvar(X),
+	X = (B,_,_).
+bond_type(B,X):-
+	nonvar(X),
+	X = ring(B,_).
+
 
 branching(N,(B,S,Subs)):-
 	length(Subs, N).
@@ -67,6 +78,9 @@ P(X,X) :- Q(X,Y), R(X,Z), {P,Q,R}.
 hydroxyl(MolName):-
     MolName(MolTerm),
     sub_structure(MolTerm,SubStruct),
-    hydroxyl(SubStruct,A).
+    hydroxyl(SubStruct,Y).
 
-% hydroxyl(X, X) :- element(o, X), bound_element_count(h, 1, X).
+phenolic(MolName):-
+    MolName(MolTerm),
+    sub_structure(MolTerm,SubStruct),
+    phenolic(SubStruct,Y).
