@@ -3,7 +3,7 @@ use std::{
     mem,
     ops::{Index, IndexMut, Range, RangeInclusive},
 };
-
+use smallvec::SmallVec;
 use super::symbol_db::SymbolDB;
 
 /// Tag discriminant for heap cells.
@@ -166,7 +166,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         &self,
         addr: usize,
         accumulator: &mut T,
-        operation: fn(&Self, usize, &mut T) -> bool,
+        operation: fn(&Self, usize, &mut T) -> bool, //return true indicates early return
     ) {
         let addr = self.deref_addr(addr);
         if operation(self, addr, accumulator) {
@@ -231,7 +231,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         acc
     }
 
-    fn normalise_args_opp(&mut self, addr: usize, args: &mut Vec<usize>) -> bool{
+    fn normalise_args_opp(&mut self, addr: usize, args: &mut Vec<usize>) -> bool {
         if let (Tag::Arg, id) = self[addr] {
             if let Some(pos) = args.iter().position(|i| id == *i) {
                 self[addr].1 = pos;
@@ -246,6 +246,29 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn normalise_args(&mut self, addr: usize, args: &mut Vec<usize>) {
         self.walk_term_mut(addr, args, Self::normalise_args_opp);
+    }
+
+    ///Operation to check occurs
+    ///Tests both for ref and bound args
+    /// @ acc (ref_addr, bound args, occurs?)
+    fn occurs_opp(&self, addr: usize, acc: &mut (usize,&[usize],bool)) -> bool {
+        match self[addr] {
+            (Tag::Arg,id) if acc.1.contains(&id) => {
+                acc.2 = true;
+                true
+            }
+            (Tag::Ref,addr) if addr == acc.0 => {
+                acc.2 = true;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn occurs(&self, addr: usize, ref_addr: usize, bound_args: &[usize]) -> bool{
+        let mut acc = (ref_addr,bound_args,false);
+        self.walk_term(addr, &mut acc, Self::occurs_opp);
+        acc.2
     }
 
     /**Get the symbol id and arity of functor structure */
@@ -370,12 +393,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     /// Post-pass helper for copy_term_with_ref_map: push a simple cell,
     /// handling Ref identity via ref_map.
-    fn copy_simple(
-        &mut self,
-        other: &impl Heap,
-        addr: usize,
-        ref_map: &mut HashMap<usize, usize>,
-    ) {
+    fn copy_simple(&mut self, other: &impl Heap, addr: usize, ref_map: &mut HashMap<usize, usize>) {
         let addr = other.deref_addr(addr);
         match other[addr] {
             (Tag::Ref, r) if r == addr => {
@@ -400,10 +418,13 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             (EMPTY_LIS, EMPTY_LIS) => true,
             (EMPTY_LIS, _) => false,
             (_, EMPTY_LIS) => false,
-            (cell1@(Tag::Comp|Tag::Tup, _), cell2@(Tag::Comp|Tag::Tup, _)) if cell1 == cell2 => self
-                .str_iterator(addr1)
-                .zip(self.str_iterator(addr2))
-                .all(|(addr1, addr2)| self.term_equal(addr1, addr2)),
+            (cell1 @ (Tag::Comp | Tag::Tup, _), cell2 @ (Tag::Comp | Tag::Tup, _))
+                if cell1 == cell2 =>
+            {
+                self.str_iterator(addr1)
+                    .zip(self.str_iterator(addr2))
+                    .all(|(addr1, addr2)| self.term_equal(addr1, addr2))
+            }
             ((Tag::Lis, p1), (Tag::Lis, p2)) => {
                 self.term_equal(p1, p2) && self.term_equal(p1 + 1, p2 + 1)
             }

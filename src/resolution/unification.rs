@@ -6,6 +6,8 @@ use std::{
     usize,
 };
 
+use smallvec::SmallVec;
+
 use crate::heap::heap::{Cell, Heap, Tag};
 
 /// Substitution mapping clause `Arg` cells to heap addresses.
@@ -15,7 +17,7 @@ use crate::heap::heap::{Cell, Heap, Tag};
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
     arg_regs: [usize; 32],
-    binding_array: [(usize, usize, bool); 32], //(From, To, Complex)
+    binding_array: [(usize, usize, bool); 32], //(From, To, ComplexTerm?)
     binding_len: usize,
 }
 
@@ -196,11 +198,19 @@ fn unify_rec(
             }
         },
         (Tag::Ref, Tag::Lis | Tag::Comp | Tag::Set | Tag::Tup) => {
-            Some(binding.push((addr_1, addr_2, true)))
+            if occurs(heap, &binding, addr_1, addr_2) {
+                None
+            } else {
+                Some(binding.push((addr_1, addr_2, true)))
+            }
         }
         (Tag::Ref, _) => Some(binding.push((addr_1, addr_2, false))),
         (Tag::Lis | Tag::Comp | Tag::Set | Tag::Tup, Tag::Ref) => {
-            Some(binding.push((addr_2, addr_1, true)))
+            if occurs(heap, &binding, addr_2, addr_1) {
+                None
+            } else {
+                Some(binding.push((addr_2, addr_1, true)))
+            }
         }
         (_, Tag::Ref) => Some(binding.push((addr_2, addr_1, false))),
         (Tag::Con, Tag::Con) | (Tag::Int, Tag::Int) | (Tag::Flt, Tag::Flt)
@@ -276,6 +286,19 @@ fn unify_list(
     let addr_2 = heap[addr_2].1;
     binding = unify_rec(heap, binding, addr_1, addr_2)?;
     unify_rec(heap, binding, addr_1 + 1, addr_2 + 1)
+}
+
+fn occurs(heap: &impl Heap, binding: &Substitution, ref_addr: usize, complex_addr: usize) -> bool {
+    let mut bound_args = SmallVec::<[usize; 2]>::new();
+    let mut arg_idx = 0;
+    //TODO check this is true, args should appear and be bound in order
+    while let Some(addr) = binding.get_arg(arg_idx) {
+        if addr == ref_addr {
+            bound_args.push(arg_idx);
+        }
+        arg_idx += 1;
+    }
+    heap.occurs(complex_addr, ref_addr, &bound_args)
 }
 
 #[cfg(test)]
@@ -584,5 +607,140 @@ mod tests {
         let binding = unify(&heap, 0, 4).unwrap();
         assert_eq!(binding.bound(5), Some(1));
         assert_eq!(binding.bound(7), Some(3));
+    }
+
+    // ---------------------------------------------------------------------
+    // Occurs-check tests.
+    //
+    // Each test unifies a clause head (left, with `Arg` clause variables)
+    // against a goal (right, with `Ref` goal variables). Every pair is chosen
+    // so that successful unification would require an infinite/cyclic term, so
+    // a correct occurs check must make `unify` return `None`.
+    //
+    // The clause head is `addr_1` (program term), the goal is `addr_2`.
+    // ---------------------------------------------------------------------
+
+    /// clause `p(Y,(Y,Z))`  vs  goal `p(X,X)`
+    ///
+    /// `X = (Y,Z)` and `Y = X`  ⟹  `X = (X,Z)` — cyclic.
+    /// Here the cycle is reached *indirectly*: the goal var `X` does not appear
+    /// literally inside the tuple, but the clause arg `Y` (bound to `X`) does,
+    /// so detection relies on the `bound_args` path in `occurs`.
+    #[test]
+    fn occurs_arg_bound_to_var_in_tuple() {
+        let p = SymbolDB::set_const("p");
+
+        let heap = vec![
+            // clause head: p(Y,(Y,Z))
+            (Tag::Str, 1),   // 0
+            (Tag::Comp, 3),  // 1   p, Y, (Y,Z)
+            (Tag::Con, p),   // 2
+            (Tag::Arg, 0),   // 3   Y
+            (Tag::Str, 5),   // 4   -> tuple
+            (Tag::Tup, 2),   // 5   (Y,Z)
+            (Tag::Arg, 0),   // 6   Y
+            (Tag::Arg, 1),   // 7   Z
+            // goal: p(X,X)
+            (Tag::Str, 9),   // 8
+            (Tag::Comp, 3),  // 9   p, X, X
+            (Tag::Con, p),   // 10
+            (Tag::Ref, 11),  // 11  X (canonical, unbound)
+            (Tag::Ref, 11),  // 12  X
+        ];
+
+        assert_eq!(unify(&heap, 0, 8), None);
+    }
+
+    /// clause `p(Z,Z)`  vs  goal `p(X,(X,Y))`
+    ///
+    /// `Z = X` and `Z = (X,Y)`  ⟹  `X = (X,Y)` — cyclic.
+    /// The goal var `X` appears literally inside the tuple, so detection relies
+    /// on the direct `Ref` path in `occurs`.
+    #[test]
+    fn occurs_var_directly_in_tuple() {
+        let p = SymbolDB::set_const("p");
+
+        let heap = vec![
+            // clause head: p(Z,Z)
+            (Tag::Str, 1),   // 0
+            (Tag::Comp, 3),  // 1   p, Z, Z
+            (Tag::Con, p),   // 2
+            (Tag::Arg, 0),   // 3   Z
+            (Tag::Arg, 0),   // 4   Z
+            // goal: p(X,(X,Y))
+            (Tag::Str, 6),   // 5
+            (Tag::Comp, 3),  // 6   p, X, (X,Y)
+            (Tag::Con, p),   // 7
+            (Tag::Ref, 11),  // 8   X
+            (Tag::Str, 10),  // 9   -> tuple
+            (Tag::Tup, 2),   // 10  (X,Y)
+            (Tag::Ref, 11),  // 11  X (canonical, unbound)
+            (Tag::Ref, 12),  // 12  Y (canonical, unbound)
+        ];
+
+        assert_eq!(unify(&heap, 0, 5), None);
+    }
+
+    /// clause `p(Y,Z,(Y,Z))`  vs  goal `p(X,X,X)`
+    ///
+    /// `Y = X`, `Z = X`, `X = (Y,Z)`  ⟹  `X = (X,X)` — cyclic.
+    /// Both tuple elements are clause args bound to the same goal var, so
+    /// detection again exercises the `bound_args` path (with two bound args).
+    #[test]
+    fn occurs_two_args_bound_to_same_var() {
+        let p = SymbolDB::set_const("p");
+
+        let heap = vec![
+            // clause head: p(Y,Z,(Y,Z))
+            (Tag::Str, 1),   // 0
+            (Tag::Comp, 4),  // 1   p, Y, Z, (Y,Z)
+            (Tag::Con, p),   // 2
+            (Tag::Arg, 0),   // 3   Y
+            (Tag::Arg, 1),   // 4   Z
+            (Tag::Str, 6),   // 5   -> tuple
+            (Tag::Tup, 2),   // 6   (Y,Z)
+            (Tag::Arg, 0),   // 7   Y
+            (Tag::Arg, 1),   // 8   Z
+            // goal: p(X,X,X)
+            (Tag::Str, 10),  // 9
+            (Tag::Comp, 4),  // 10  p, X, X, X
+            (Tag::Con, p),   // 11
+            (Tag::Ref, 12),  // 12  X (canonical, unbound)
+            (Tag::Ref, 12),  // 13  X
+            (Tag::Ref, 12),  // 14  X
+        ];
+
+        assert_eq!(unify(&heap, 0, 9), None);
+    }
+
+    /// clause `p(Z,Z)`  vs  goal `p((X,Y),X)`
+    ///
+    /// `Z = (X,Y)` and `Z = X`  ⟹  `X = (X,Y)` — cyclic.
+    /// Here the clause arg `Z` is first bound to the *structure*, then later
+    /// unified against the bare goal var `X`, so the occurs check fires from
+    /// the `(complex, Ref)` branch with the var appearing directly in the tuple.
+    #[test]
+    fn occurs_arg_bound_to_structure_then_var() {
+        let p = SymbolDB::set_const("p");
+
+        let heap = vec![
+            // clause head: p(Z,Z)
+            (Tag::Str, 1),   // 0
+            (Tag::Comp, 3),  // 1   p, Z, Z
+            (Tag::Con, p),   // 2
+            (Tag::Arg, 0),   // 3   Z
+            (Tag::Arg, 0),   // 4   Z
+            // goal: p((X,Y),X)
+            (Tag::Str, 6),   // 5
+            (Tag::Comp, 3),  // 6   p, (X,Y), X
+            (Tag::Con, p),   // 7
+            (Tag::Str, 10),  // 8   -> tuple
+            (Tag::Ref, 11),  // 9   X
+            (Tag::Tup, 2),   // 10  (X,Y)
+            (Tag::Ref, 11),  // 11  X (canonical, unbound)
+            (Tag::Ref, 12),  // 12  Y (canonical, unbound)
+        ];
+
+        assert_eq!(unify(&heap, 0, 5), None);
     }
 }
