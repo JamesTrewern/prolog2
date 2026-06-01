@@ -158,6 +158,27 @@ fn top_prog_robots() {
     app.run_top_prog();
 }
 
+/// Regression test for the molecules example.
+///
+/// This example uses a negative example (`phenolic(benzene)`), which drives
+/// negation-as-failure (`not/1`) during top program construction. The inner
+/// proof spawned by `not/1` runs on the *shared* heap and used to leave
+/// forward bindings (old_var -> freshly_built_high_addr) behind; a later heap
+/// truncation by the outer proof then dangled those refs and panicked in
+/// `deref_addr`. This test ensures top program construction completes and
+/// produces a hypothesis without panicking.
+#[test]
+fn top_prog_molecules_not() {
+    let mut app = App::from_setup_json("setup.json")
+        .expect("failed to load molecules setup")
+        .auto(true);
+    let result = app.run_top_prog();
+    assert!(
+        result.contains("phenolic("),
+        "expected a phenolic hypothesis, got:\n{result}"
+    );
+}
+
 #[test]
 fn top_prog_trains() {
     let mut app = App::from_setup_json("examples/trains/tpc_config.json")

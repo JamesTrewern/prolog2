@@ -3,7 +3,6 @@ use std::{
     mem,
     ops::{Index, IndexMut, Range, RangeInclusive},
 };
-use smallvec::SmallVec;
 use super::symbol_db::SymbolDB;
 
 /// Tag discriminant for heap cells.
@@ -116,7 +115,6 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
      */
     fn bind(&mut self, binding: &[(usize, usize)]) {
         for (src, target) in binding {
-            // println!("{}", self.term_string(*src));
             let pointer = &mut self[*src].1;
             debug_assert!(
                 *pointer == *src,

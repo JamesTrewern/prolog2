@@ -130,7 +130,6 @@ impl Proof {
                     }
                     // Reset this goal so it gets fresh choices on a future visit
                     self.stack[self.pointer].reset(heap);
-
                     self.pointer -= 1;
                     let children = self.stack[self.pointer].undo_try(
                         &mut self.hypothesis,
@@ -139,12 +138,56 @@ impl Proof {
                         &mut self.invented_preds,
                         config.debug,
                     );
+                    // The parent's `undo_try` truncated the heap to the parent's
+                    // `heap_point`, which reclaims the cells the drained children
+                    // allocated. That is sufficient for ordinary bindings (whose
+                    // source vars live above the truncation point), but a forward
+                    // binding produced by `re_build_bound_arg_terms`
+                    // (old_var -> freshly_built_high_addr) has a source var BELOW
+                    // the truncation point that survives the truncate. If we drop
+                    // the child env without restoring that source ref, the cell is
+                    // left pointing at a truncated-away target and a later deref
+                    // panics. Restore any such surviving source refs here.
+                    let hl = heap.heap_len();
+                    for env in
+                        &self.stack[(self.pointer + 1)..(self.pointer + 1 + children)]
+                    {
+                        for &(src, _) in env.bindings.iter() {
+                            if src < hl {
+                                if let (crate::heap::heap::Tag::Ref, p) = &mut heap[src] {
+                                    *p = src;
+                                }
+                            }
+                        }
+                    }
                     self.stack
                         .drain((self.pointer + 1)..(self.pointer + 1 + children));
                 }
             }
         }
         true
+    }
+
+    /// Undo every binding still recorded across the proof's goal stack,
+    /// restoring each bound source ref to a self-reference.
+    ///
+    /// Used by negation-as-failure (`not/1`): the inner proof runs on the
+    /// *shared* parent heap, so on success it leaves the solution's bindings
+    /// (including forward bindings to low parent vars) in place. The caller
+    /// must call this and then truncate the heap back to its pre-call length
+    /// so the inner proof leaves no trace on the parent heap.
+    pub fn undo_all(&mut self, heap: &mut QueryHeap) {
+        let hl = heap.heap_len();
+        for env in self.stack.iter_mut() {
+            for &(src, _) in env.bindings.iter() {
+                if src < hl {
+                    if let (crate::heap::heap::Tag::Ref, p) = &mut heap[src] {
+                        *p = src;
+                    }
+                }
+            }
+            env.bindings = Box::new([]);
+        }
     }
 }
 

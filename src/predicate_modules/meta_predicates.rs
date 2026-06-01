@@ -24,6 +24,15 @@ pub fn not(
 
     // Clone the current hypothesis so the inner proof can use the learned clauses
     let hypothesis_clone = hypothesis.clone();
+
+    // The inner proof runs on this *same* shared heap. Negation-as-failure must
+    // not have any side effect on the outer proof's heap, so record the current
+    // heap length and restore the heap afterwards. On success the inner proof
+    // leaves its solution's bindings (including forward bindings to low parent
+    // vars) and freshly-allocated cells in place; we undo every recorded binding
+    // and truncate the inner allocations away so nothing dangles when the outer
+    // proof later truncates the heap.
+    let snapshot_len = heap.heap_len();
     let mut inner_proof = Proof::with_hypothesis(heap, &[inner_goal], hypothesis_clone);
 
     if config.debug {
@@ -37,7 +46,13 @@ pub fn not(
     // Try to prove the inner goal with the current hypothesis
     // If it succeeds, not/1 fails (the hypothesis entails something it shouldn't)
     // If it fails, not/1 succeeds (the hypothesis correctly doesn't entail this)
-    if inner_proof.prove(heap,predicate_table, inner_config) {
+    let proved = inner_proof.prove(heap, predicate_table, inner_config);
+
+    // Restore the shared heap to its pre-call state.
+    inner_proof.undo_all(heap);
+    heap.truncate(snapshot_len);
+
+    if proved {
         if config.debug {
             eprintln!(
                 "[FAILED_TO_NEGATE] {}",

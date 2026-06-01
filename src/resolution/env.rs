@@ -265,7 +265,15 @@ impl Env {
             heap.truncate(self.heap_point);
         }
         heap.unbind(&self.bindings);
-        self.children
+        let children = self.children;
+        // Clear binding/child bookkeeping now that they have been undone on the
+        // heap. Leaving stale bindings here is unsafe: on the subsequent RETRY
+        // (got_choices stays true) a failing try does not overwrite them, so a
+        // later `reset` would otherwise still see the old (already-unbound)
+        // forward bindings and could re-process them against a truncated heap.
+        self.bindings = Box::new([]);
+        self.children = 0;
+        children
     }
 
     // ── reset on backtrack-from ─────────────────────────────────────────
@@ -273,6 +281,15 @@ impl Env {
     /// Reset this env when backtracking past it, so it gets fresh choices on
     /// a future visit via a different proof path.
     pub fn reset(&mut self, heap: &mut QueryHeap) {
+        // Undo any bindings this env still records BEFORE truncating. A binding
+        // produced by `re_build_bound_arg_terms` is a forward binding
+        // (old_var -> freshly_built_high_addr); if we truncate the heap below
+        // that high target without first restoring the source ref to a
+        // self-reference, the source cell becomes a dangling forward ref and a
+        // later deref panics. Mirrors `undo_try`'s binding handling.
+        heap.unbind(&self.bindings);
+        self.bindings = Box::new([]);
+        self.children = 0;
         heap.truncate(self.heap_point);
         self.got_choices = false;
         match &mut self.strategy {
@@ -362,6 +379,7 @@ impl Env {
                     if goals.is_empty() {
                         return Some(Vec::new());
                     }
+                    self.children = goals.len();
                     return Some(
                         goals
                             .into_iter()
