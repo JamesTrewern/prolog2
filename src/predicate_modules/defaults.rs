@@ -94,7 +94,7 @@ pub fn univ(
 // ---------------------------------------------------------------------------
 
 /// `is_var/1`: succeeds if the argument is an unbound variable.
-pub fn is_var_pred(
+pub fn is_var(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -105,8 +105,19 @@ pub fn is_var_pred(
     (heap[goal_arg(heap, goal, 0)].0 == Tag::Ref).into()
 }
 
+pub fn non_var(
+    heap: &mut QueryHeap,
+    _: &mut Hypothesis,
+    goal: usize,
+    _: &PredicateTable,
+    _: Config,
+) -> PredReturn {
+    // goal_arg already derefs, so a Ref cell at this point is always unbound.
+    (heap[goal_arg(heap, goal, 0)].0 != Tag::Ref).into()
+}
+
 /// `is_const/1`: succeeds if the argument is a constant (atom).
-pub fn is_const_pred(
+pub fn is_const(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -117,7 +128,7 @@ pub fn is_const_pred(
 }
 
 /// `is_const/1`: succeeds if the argument is a constant (atom).
-pub fn valid_functor_pred(
+pub fn valid_functor(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -129,7 +140,7 @@ pub fn valid_functor_pred(
 }
 
 /// `is_int/1`: succeeds if the argument is an integer.
-pub fn is_int_pred(
+pub fn is_int(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -140,7 +151,7 @@ pub fn is_int_pred(
 }
 
 /// `is_float/1`: succeeds if the argument is a float.
-pub fn is_float_pred(
+pub fn is_float(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -151,7 +162,7 @@ pub fn is_float_pred(
 }
 
 /// `is_number/1`: succeeds if the argument is an integer or a float.
-pub fn is_number_pred(
+pub fn is_number(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -162,7 +173,7 @@ pub fn is_number_pred(
 }
 
 /// `is_string/1`: succeeds if the argument is a string literal.
-pub fn is_string_pred(
+pub fn is_string(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -173,7 +184,7 @@ pub fn is_string_pred(
 }
 
 /// `is_compound/1`: succeeds if the argument is a compound term (functor + args).
-pub fn is_compound_pred(
+pub fn is_compound(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -184,7 +195,7 @@ pub fn is_compound_pred(
 }
 
 /// `is_tup/1`: succeeds if the argument is a tuple.
-pub fn is_tup_pred(
+pub fn is_tup(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -195,7 +206,7 @@ pub fn is_tup_pred(
 }
 
 /// `is_set/1`: succeeds if the argument is a set.
-pub fn is_set_pred(
+pub fn is_set(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -206,7 +217,7 @@ pub fn is_set_pred(
 }
 
 /// `is_list/1`: succeeds if the argument is a proper list (including `[]`).
-pub fn is_list_pred(
+pub fn is_list(
     heap: &mut QueryHeap,
     _: &mut Hypothesis,
     goal: usize,
@@ -233,17 +244,18 @@ pub static DEFAULTS: PredicateModule = (
         ("\\=", 2, not_unify),
         ("=..", 2, univ),
         // Type checks
-        ("is_var", 1, is_var_pred),
-        ("is_const", 1, is_const_pred),
-        ("valid_functor", 1, valid_functor_pred),
-        ("is_int", 1, is_int_pred),
-        ("is_float", 1, is_float_pred),
-        ("is_number", 1, is_number_pred),
-        ("is_string", 1, is_string_pred),
-        ("is_compound", 1, is_compound_pred),
-        ("is_tup", 1, is_tup_pred),
-        ("is_set", 1, is_set_pred),
-        ("is_list", 1, is_list_pred),
+        ("var", 1, is_var),
+        ("nonvar", 1, non_var),
+        ("const", 1, is_const),
+        ("valid_functor", 1, valid_functor),
+        ("int", 1, is_int),
+        ("float", 1, is_float),
+        ("number", 1, is_number),
+        ("string", 1, is_string),
+        ("compound", 1, is_compound),
+        ("tup", 1, is_tup),
+        ("set", 1, is_set),
+        ("list", 1, is_list),
     ],
     &[include_str!("../../builtins/defaults.pl")],
 );
