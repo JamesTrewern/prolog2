@@ -138,28 +138,6 @@ impl Proof {
                         &mut self.invented_preds,
                         config.debug,
                     );
-                    // The parent's `undo_try` truncated the heap to the parent's
-                    // `heap_point`, which reclaims the cells the drained children
-                    // allocated. That is sufficient for ordinary bindings (whose
-                    // source vars live above the truncation point), but a forward
-                    // binding produced by `re_build_bound_arg_terms`
-                    // (old_var -> freshly_built_high_addr) has a source var BELOW
-                    // the truncation point that survives the truncate. If we drop
-                    // the child env without restoring that source ref, the cell is
-                    // left pointing at a truncated-away target and a later deref
-                    // panics. Restore any such surviving source refs here.
-                    let hl = heap.heap_len();
-                    for env in
-                        &self.stack[(self.pointer + 1)..(self.pointer + 1 + children)]
-                    {
-                        for &(src, _) in env.bindings.iter() {
-                            if src < hl {
-                                if let (crate::heap::heap::Tag::Ref, p) = &mut heap[src] {
-                                    *p = src;
-                                }
-                            }
-                        }
-                    }
                     self.stack
                         .drain((self.pointer + 1)..(self.pointer + 1 + children));
                 }

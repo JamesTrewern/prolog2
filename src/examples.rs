@@ -169,7 +169,7 @@ fn top_prog_robots() {
 /// produces a hypothesis without panicking.
 #[test]
 fn top_prog_molecules_not() {
-    let mut app = App::from_setup_json("setup.json")
+    let mut app = App::from_setup_json("examples/molecules/phenolic.json")
         .expect("failed to load molecules setup")
         .auto(true);
     let result = app.run_top_prog();
