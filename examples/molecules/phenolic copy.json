@@ -1,9 +1,9 @@
 {
     "config": {
         "max_depth": 10,
-        "max_clause": 3,
-        "max_pred": 1,
-        "debug": true
+        "max_clause": 4,
+        "max_pred": 3,
+        "debug": false
     },
     "body_predicates": [
         "element/2",
@@ -18,15 +18,20 @@
     ],
     "examples": {
         "pos": [
-            "phenolic(phenol)"
+            "phenolic(phenol)",
+            "phenolic(p_cresol)",
+            "phenolic(chlorophenol)"
         ],
         "neg": [
-            "phenolic(benzene)"
+            "phenolic(benzene)",
+            "phenolic(toluene)",
+            "phenolic(ethanol)",
+            "phenolic(cyclopentanol)",
+            "phenolic(anisole)"
         ]
     },
     "files": [
         "examples/molecules"
     ],
-    "top_prog": false,
-    "auto": false
+    "top_prog": true
 }

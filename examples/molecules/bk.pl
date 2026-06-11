@@ -43,6 +43,13 @@ ring_element_count(El,N,X):-
 	ring_members(X,Members),
 	count_true(Members,element(El),N).
 
+fe(element).
+fe(bond_type).
+fe(branching).
+fe(ring_size).
+fe(bound_element_count).
+fe(ring_element_count).
+
 % ------------------------------------------------------------------
 % Adjacency 
 % ------------------------------------------------------------------
@@ -62,9 +69,11 @@ limb(R, L):-
 % ------------------------------------------------------------------
 % Meta Rules 
 % ------------------------------------------------------------------
-P(X,X) :- Q(A,X),            {P,Q}, [A].        % 2-arity feature
-P(X,X) :- Q(A,B,X),          {P,Q}, [A,B].      % 3-arity feature
-P(X,X) :- Q(A,X), R(B,C,X),  {P,Q,R}, [A,B,C].  % 2-arity ∧ 3-arity
+% Valid groudning preds
+
+P(X,X) :- Q(A,X), atomic(A),            {P,Q}, [A].        % 2-arity feature
+P(X,X) :- Q(A,B,X), atomic(A), atomic(B),         {P,Q}, [A,B].      % 3-arity feature
+P(X,X) :- Q(A,X), atomic(A), R(B,C,X), atomic(B), atomic(C), {P,Q,R}, [A,B,C].  % 2-arity ∧ 3-arity
 
 % Chain: navigate through two steps
 P(X, Y) :- Q(X, Y), R(Y, Z), {P, Q, R}.
