@@ -88,6 +88,8 @@ pub mod predicate_modules;
 pub mod program;
 /// Resolution engine: proof search, unification, and term building.
 pub mod resolution;
+///
+pub mod slg;
 /// Implementation of the Top Program Consturction algorithm with parallelism
 pub mod top_prog;
 

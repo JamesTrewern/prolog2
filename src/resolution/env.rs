@@ -63,7 +63,7 @@ pub(crate) enum Strategy {
 /// Shared fields live directly on the struct; the divergent clause-vs-native
 /// state lives inside [`Strategy`].
 #[derive(Debug)]
-pub(super) struct Env {
+pub(crate) struct Env {
     pub(super) goal: usize,
     pub(super) bindings: Box<[Binding]>,
     pub(super) children: usize,

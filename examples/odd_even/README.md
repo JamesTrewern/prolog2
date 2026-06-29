@@ -14,8 +14,19 @@ prev(2,1).
 prev(3,2).
 prev(4,3).
 
-P(X):- Q(X), {P,Q}.
 P(X):- Q(X,Y), R(Y), {P,Q,R}.
+
+
+% Query
+% ----------------------------
+% even(4), not(even(3)).
+% ----------------------------
+% Expected Theory
+% ----------------------------
+% even(X):-prev(X,Y),p1(Y).
+% p1(X):-prev(X,Y),even(Y).
+% p1(X):-prev(X,Y),zero(Y)
+% ----------------------------
 ```
 <!-- embed-end: odd_even.pl -->
 
