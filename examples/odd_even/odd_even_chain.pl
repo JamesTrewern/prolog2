@@ -1,19 +1,19 @@
-zero(0).
+zero(0,0).
 prev(1,0).
 prev(2,1).
 prev(3,2).
 prev(4,3).
+prev(5,4).
 
-P(X):- Q(X,Y), R(Y), {P,Q,R}.
-
+P(X,Y):-Q(X,Z),R(Z,Y). 
 
 % Query
 % ----------------------------
-% even(4), not(even(3)).
+% even(4,X), not(even(3,X)).
 % ----------------------------
 % Expected Theory
 % ----------------------------
-% even(X):-prev(X,Y),p1(Y).
-% p1(X):-prev(X,Y),even(Y).
-% p1(X):-prev(X,Y),zero(Y)
+% even(X,Y):-prev(X,Z),p1(Z,Y).
+% p1(X,Y):-prev(X,Z),even(Z,Y).
+% p1(X,Y):-prev(X,Z),zero(Z,Y)
 % ----------------------------
