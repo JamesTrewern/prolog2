@@ -10,20 +10,22 @@ use std::{
 };
 
 pub struct Consumer{
-    idx: usize,
     answers: Arc<BVec<Answer>>,
     active: Arc<(Mutex<bool>, Condvar)>
 }
 
 impl Consumer {
     pub fn new(answers: Arc<BVec<Answer>>, active: Arc<(Mutex<bool>, Condvar)>) -> Self{
-        Self { idx: 0, answers, active }
+        Self { answers, active }
     }
     
-    pub fn next(&mut self) -> Option<Answer>{
-        if self.idx < self.answers.count(){
-            self.idx -= 1;
-            return Some(self.answers[self.idx-1]);
+    /// Attempt to consumer next answer
+    /// If idx less than answer count return answer @ idx
+    /// Else If active, wait for update from generator, return none or new answer
+    /// Else return None
+    pub fn consume_answer(&self, idx: usize) -> Option<&Answer>{
+        if idx < self.answers.count(){
+            return Some(&self.answers[idx]);
         }
         let (active,cvar) = &*self.active;
         let mut active = active.lock().unwrap();
@@ -32,12 +34,18 @@ impl Consumer {
             active = cvar.wait(active).unwrap();
             //Check if no longer active
             if *active{
-                Some(self.answers[self.idx])
+                Some(&self.answers[idx])
             }else{
                 None
             }
         }else{
             None
         }
+    }
+
+    /// Simply read an answer in the answer array for this consumer 
+    /// May panic if index to large
+    pub fn read_answer(&self, idx: usize) -> &Answer{
+        &self.answers[idx]
     }
 }

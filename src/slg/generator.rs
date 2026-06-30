@@ -1,4 +1,8 @@
-use crate::{heap::query_heap::QueryHeap, resolution::env, slg::{Answer, consumer::Consumer}};
+use crate::{
+    heap::query_heap::QueryHeap,
+    resolution::env,
+    slg::{consumer::Consumer, Answer},
+};
 use boxcar::Vec as BVec;
 use smallvec::SmallVec;
 use std::{
@@ -19,41 +23,40 @@ pub struct EntryManager<'a> {
 pub struct Generator<'a> {
     heap: QueryHeap<'a>,
     literals: SmallVec<[usize; 3]>,
-    answer_sender: Sender<Answer>
+    answer_sender: Sender<Answer>,
 }
 
-
 impl<'a> Generator<'a> {
-    pub fn generate(&mut self){
+    pub fn generate(mut self) {
         let mut consumers = Vec::<Consumer>::with_capacity(self.literals.len());
-        let mut consumed_answers = Vec::<Answer>::with_capacity(self.literals.len());
-        let mut idx = 0;
+        let mut answers = Vec::<usize>::with_capacity(self.literals.len());
+        let mut literal_idx = 0;
         loop {
-            if let Some(consumer) = consumers.get(idx){
-                //undo answer
-                //answers[idx]
-            }else{
+            if literal_idx < consumers.len() {
+                let undo_answer = consumers[literal_idx].read_answer(answers[literal_idx]);
+                // TODO undo answer
+                answers[literal_idx] += 1;
+            } else {
                 consumers.push(todo!("New consumer from table"));
+                answers.push(0);
             }
-            if let Some(answer) =  consumers[idx].next(){
-                // Update State with answer
-                consumed_answers.push(answer);
-                if idx == self.literals.len() - 1{
+            if let Some(answer) = consumers[literal_idx].consume_answer(answers[literal_idx]) {
+                if literal_idx == self.literals.len() - 1 {
                     // If final literal, send new answer
-                    let new_answer: Answer = 0; //TODO create actual answer
+                    let new_answer = Answer::new(); //TODO create actual answer
                     self.answer_sender.send(new_answer).unwrap();
-                }else{
-                    idx += 1;
+                } else {
+                    literal_idx += 1;
                 }
-            }else{
+            } else {
                 consumers.pop();
-                if idx > 0 {
-                    idx -= 1;
-                }else{
+                answers.pop();
+                if literal_idx > 0 {
+                    literal_idx -= 1;
+                } else {
                     return;
                 }
             }
-
         }
     }
 }

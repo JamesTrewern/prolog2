@@ -1,5 +1,6 @@
 mod table;
 mod generator;
 mod consumer;
+mod answer;
 
-pub type Answer = usize;
+pub use answer::Answer;
