@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use super::{
     build_tree::TreeClause,
-    term::{Term, Unit},
+    term::{Term,Str},
 };
 use crate::{
     heap::heap::Heap,
@@ -42,11 +42,11 @@ pub fn build_clause(
 
 /// Extract variable names from a Term::Set
 fn extract_var_names_from_set(term: Term) -> Vec<String> {
-    if let Term::Set(set_terms) = term {
+    if let Term::Str(Str::Set,set_terms) = term {
         set_terms
             .into_iter()
             .map(|t| {
-                if let Term::Unit(Unit::Variable(symbol)) = t {
+                if let Term::Variable(symbol) = t {
                     symbol
                 } else {
                     panic!("meta variable set should only contain variables")
@@ -68,7 +68,7 @@ fn extract_var_names_from_list(term: Term) -> Vec<String> {
         list_terms
             .into_iter()
             .map(|t| {
-                if let Term::Unit(Unit::Variable(symbol)) = t {
+                if let Term::Variable(symbol) = t {
                     symbol
                 } else {
                     panic!("unconstrained variable list should only contain variables")
@@ -90,7 +90,7 @@ fn extract_meta_rule_vars(terms: &mut Vec<Term>) -> (Vec<String>, Option<Vec<Str
     let last = terms.pop().unwrap();
     match last {
         // Case 1: last is {P,Q,R} — all constrained (original behaviour)
-        Term::Set(_) => {
+        Term::Str(Str::Set,_) => {
             let meta_vars = extract_var_names_from_set(last);
             (meta_vars, None)
         }
@@ -98,7 +98,7 @@ fn extract_meta_rule_vars(terms: &mut Vec<Term>) -> (Vec<String>, Option<Vec<Str
         Term::List(_, _) => {
             let unconstrained = extract_var_names_from_list(last);
             // Check if the new last element is a Set (Case 2: {P},[Q1,Q2])
-            let constrained = if matches!(terms.last(), Some(Term::Set(_))) {
+            let constrained = if matches!(terms.last(), Some(Term::Str(Str::Set,_))) {
                 extract_var_names_from_set(terms.pop().unwrap())
             } else {
                 // Case 3: [Q1,Q2] only — no constrained vars

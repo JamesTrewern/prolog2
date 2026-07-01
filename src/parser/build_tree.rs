@@ -2,7 +2,7 @@
 
 // TODO: Handle sets
 
-use super::term::{Term, Unit};
+use super::term::{Str, Term};
 use super::ParserError;
 
 const INFIX_ORDER: &[&[&str]] = &[
@@ -89,10 +89,10 @@ fn resolve_infix(term_stack: &mut Vec<Term>, op_stack: &mut Vec<String>, max_pre
         if p > max_prescendence {
             break;
         }
-        let op = op_stack.pop().unwrap();
+        let op = Term::Constant(op_stack.pop().unwrap());
         let right = term_stack.pop().unwrap();
         let left = term_stack.pop().unwrap();
-        term_stack.push(Term::Atom(Unit::Constant(op), vec![left, right]));
+        term_stack.push(Term::Str(Str::Comp, vec![op, left, right]));
     }
 }
 
@@ -136,7 +136,7 @@ impl TokenStream {
                 self.next();
                 let args = self.consume_args()?;
                 if self.next() == Some("}") {
-                    Ok(Term::Set(args))
+                    Ok(Term::Str(Str::Set, args))
                 } else {
                     Err(ParserError::MalformedSet)
                 }
@@ -168,7 +168,7 @@ impl TokenStream {
             }
             "()" => {
                 self.next();
-                Ok(Term::Tuple(vec![]))
+                Ok(Term::Str(Str::Tup, vec![]))
             }
             "(" => {
                 // Grouped expression or tuple
@@ -178,29 +178,30 @@ impl TokenStream {
                 if args.len() == 1 {
                     Ok(args.pop().unwrap())
                 } else {
-                    Ok(Term::Tuple(args))
+                    Ok(Term::Str(Str::Tup, args))
                 }
             }
             token if is_operator(token) => {
                 // Handle prefix operators (unary minus, unary plus)
                 let op = self.next().unwrap().to_string();
                 let operand = self.parse_term()?;
-                Ok(Term::Atom(Unit::Constant(op), vec![operand]))
+                Ok(Term::Str(Str::Comp, vec![Term::Constant(op), operand]))
             }
             token => {
                 let token = token.to_string();
-                match Unit::parse_unit(self.next().unwrap()) {
-                    Some(unit @ (Unit::Constant(_) | Unit::Variable(_))) => {
+                match Term::parse_unit(self.next().unwrap()) {
+                    Some(functor @ (Term::Constant(_) | Term::Variable(_))) => {
                         if self.peek() == Some("(") {
                             self.next();
-                            let args = self.consume_args()?;
+                            let mut args = self.consume_args()?;
+                            args.insert(0, functor);
                             self.expect(")")?;
-                            Ok(Term::Atom(unit, args))
+                            Ok(Term::Str(Str::Comp, args))
                         } else {
-                            Ok(Term::Unit(unit))
+                            Ok(functor)
                         }
                     }
-                    Some(unit) => Ok(Term::Unit(unit)),
+                    Some(unit) => Ok(unit),
                     None => Err(ParserError::UnexpectedToken {
                         token: token.to_string(),
                     }),
@@ -222,7 +223,7 @@ impl TokenStream {
                 if args.len() == 1 {
                     term_stack.push(args.pop().unwrap());
                 } else {
-                    term_stack.push(Term::Tuple(args));
+                    term_stack.push(Term::Str(Str::Tup, args));
                 }
             } else {
                 term_stack.push(self.parse_term()?);
@@ -274,10 +275,10 @@ impl TokenStream {
                         let len = literals.len();
                         let meta_rule = match literals.last() {
                             // Case 1: ...{P,Q,R}. — all constrained
-                            Some(Term::Set(eq_vars)) => {
+                            Some(Term::Str(Str::Set, eq_vars)) => {
                                 if eq_vars
                                     .iter()
-                                    .any(|eq_var| !matches!(eq_var, Term::Unit(Unit::Variable(_))))
+                                    .any(|eq_var| !matches!(eq_var, Term::Variable(_)))
                                 {
                                     return Err(ParserError::MalformedMetaRule { detail: format!("incorrectly formatted existentially quantified variables: {:?}", eq_vars) });
                                 }
@@ -287,18 +288,16 @@ impl TokenStream {
                             Some(Term::List(vars, tail))
                                 if matches!(tail.as_ref(), Term::EmptyList) =>
                             {
-                                if vars
-                                    .iter()
-                                    .any(|v| !matches!(v, Term::Unit(Unit::Variable(_))))
-                                {
+                                if vars.iter().any(|v| !matches!(v, Term::Variable(_))) {
                                     return Err(ParserError::MalformedMetaRule { detail: format!("unconstrained variable list should only contain variables, got {:?}", vars) });
                                 }
                                 // Case 2: ...{P},[Q1,Q2]. — check if second-to-last is a constrained set
                                 if len >= 2 {
-                                    if let Term::Set(eq_vars) = &literals[len - 2] {
-                                        if eq_vars.iter().any(|eq_var| {
-                                            !matches!(eq_var, Term::Unit(Unit::Variable(_)))
-                                        }) {
+                                    if let Term::Str(Str::Set, eq_vars) = &literals[len - 2] {
+                                        if eq_vars
+                                            .iter()
+                                            .any(|eq_var| !matches!(eq_var, Term::Variable(_)))
+                                        {
                                             return Err(ParserError::MalformedMetaRule { detail: format!("incorrectly formatted existentially quantified variables: {:?}", eq_vars) });
                                         }
                                     }
@@ -317,10 +316,10 @@ impl TokenStream {
                     Some(",") => {
                         // Could be a MetaFact: Head, {EQVars}.
                         let meta_data = self.parse_expression()?;
-                        if let Term::Set(eq_vars) = &meta_data {
+                        if let Term::Str(Str::Set, eq_vars) = &meta_data {
                             if eq_vars
                                 .iter()
-                                .any(|eq_var| !matches!(eq_var, Term::Unit(Unit::Variable(_))))
+                                .any(|eq_var| !matches!(eq_var, Term::Variable(_)))
                             {
                                 return Err(ParserError::MalformedMetaRule { detail: format!("incorrectly formatted existentially quantified variables: {:?}", eq_vars) });
                             }
@@ -383,167 +382,155 @@ impl TokenStream {
 mod tests {
     use super::{
         super::{tokeniser::tokenise, ParserError},
-        {Term, TokenStream, TreeClause, Unit},
+        {Str, Term, TokenStream, TreeClause},
     };
     #[test]
     fn parse_number_term() {
         //Positive Integer
         let text = tokenise("10").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Int(10)));
+        assert_eq!(term, Term::Int(10));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Int(10)));
+        assert_eq!(term, Term::Int(10));
 
         //Negative Integer
         let text = tokenise("-10").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Int(-10)));
+        assert_eq!(term, Term::Int(-10));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Int(-10)));
+        assert_eq!(term, Term::Int(-10));
 
         //Positive Float
         let text = tokenise("1.01").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Float(1.01)));
+        assert_eq!(term, Term::Float(1.01));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Float(1.01)));
+        assert_eq!(term, Term::Float(1.01));
 
         //Negative Float
         let text = tokenise("-1.01").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Float(-1.01)));
+        assert_eq!(term, Term::Float(-1.01));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Float(-1.01)));
+        assert_eq!(term, Term::Float(-1.01));
     }
 
     #[test]
     fn parse_constant_term() {
         let text = tokenise("constant").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Constant("constant".into())));
+        assert_eq!(term, Term::Constant("constant".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Constant("constant".into())));
+        assert_eq!(term, Term::Constant("constant".into()));
 
         let text = tokenise("constant_1").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Constant("constant_1".into())));
+        assert_eq!(term, Term::Constant("constant_1".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Constant("constant_1".into())));
+        assert_eq!(term, Term::Constant("constant_1".into()));
 
         let text = tokenise("'file/path'").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Constant("file/path".into())));
+        assert_eq!(term, Term::Constant("file/path".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Constant("file/path".into())));
+        assert_eq!(term, Term::Constant("file/path".into()));
 
         let text = tokenise("'c*o/n\"s-t'").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Constant("c*o/n\"s-t".into())));
+        assert_eq!(term, Term::Constant("c*o/n\"s-t".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Constant("c*o/n\"s-t".into())));
+        assert_eq!(term, Term::Constant("c*o/n\"s-t".into()));
     }
 
     #[test]
     fn parse_variable_term() {
         let text = tokenise("Var").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Variable("Var".into())));
+        assert_eq!(term, Term::Variable("Var".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Variable("Var".into())));
+        assert_eq!(term, Term::Variable("Var".into()));
 
         let text = tokenise("VAR_Under").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Variable("VAR_Under".into())));
+        assert_eq!(term, Term::Variable("VAR_Under".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Variable("VAR_Under".into())));
+        assert_eq!(term, Term::Variable("VAR_Under".into()));
 
         let text = tokenise("VAR10").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Variable("VAR10".into())));
+        assert_eq!(term, Term::Variable("VAR10".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Variable("VAR10".into())));
+        assert_eq!(term, Term::Variable("VAR10".into()));
 
         let text = tokenise("VAR_Under2").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Variable("VAR_Under2".into())));
+        assert_eq!(term, Term::Variable("VAR_Under2".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::Variable("VAR_Under2".into())));
+        assert_eq!(term, Term::Variable("VAR_Under2".into()));
     }
 
     #[test]
     fn parse_string_term() {
         let text = tokenise("\"A String\"").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("A String".into())));
+        assert_eq!(term, Term::String("A String".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("A String".into())));
+        assert_eq!(term, Term::String("A String".into()));
 
         let text = tokenise("\"A \\\"String\"").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("A \"String".into())));
+        assert_eq!(term, Term::String("A \"String".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("A \"String".into())));
+        assert_eq!(term, Term::String("A \"String".into()));
 
         let text = tokenise("\"A *+-=: String\"").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("A *+-=: String".into())));
+        assert_eq!(term, Term::String("A *+-=: String".into()));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Unit(Unit::String("A *+-=: String".into())));
+        assert_eq!(term, Term::String("A *+-=: String".into()));
     }
 
     #[test]
     fn parse_atom_term() {
-        let p = Unit::Constant("p".into());
-        let q = Unit::Variable("Q".into());
-        let x = Unit::Variable("X".into());
-        let y = Unit::Variable("Y".into());
-        let a = Unit::Constant("a".into());
-        let b = Unit::Constant("b".into());
+        let p = Term::Constant("p".into());
+        let q = Term::Variable("Q".into());
+        let x = Term::Variable("X".into());
+        let y = Term::Variable("Y".into());
+        let a = Term::Constant("a".into());
+        let b = Term::Constant("b".into());
 
         let text = tokenise("p(X,a)").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(
             term,
-            Term::Atom(
-                p.clone(),
-                vec![Term::Unit(x.clone()), Term::Unit(a.clone())]
-            )
+            Term::Str(Str::Comp, vec![p.clone(), x.clone(), a.clone()])
         );
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(
             term,
-            Term::Atom(
-                p.clone(),
-                vec![Term::Unit(x.clone()), Term::Unit(a.clone())]
-            )
+            Term::Str(Str::Comp, vec![p.clone(), x.clone(), a.clone()])
         );
 
         let text = tokenise("Q(b,Y)").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(
             term,
-            Term::Atom(
-                q.clone(),
-                vec![Term::Unit(b.clone()), Term::Unit(y.clone())]
-            )
+            Term::Str(Str::Comp, vec![q.clone(), b.clone(), y.clone()])
         );
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(
             term,
-            Term::Atom(
-                q.clone(),
-                vec![Term::Unit(b.clone()), Term::Unit(y.clone())]
-            )
+            Term::Str(Str::Comp, vec![q.clone(), b.clone(), y.clone()])
         );
     }
 
     #[test]
     fn parse_list_term() {
-        let a = Term::Unit(Unit::Constant("a".into()));
-        let b = Term::Unit(Unit::Constant("b".into()));
-        let c = Term::Unit(Unit::Constant("c".into()));
-        let t = Term::Unit(Unit::Variable("T".into()));
-        let p = Unit::Constant("p".into());
+        let a = Term::Constant("a".into());
+        let b = Term::Constant("b".into());
+        let c = Term::Constant("c".into());
+        let t = Term::Variable("T".into());
+        let p = Term::Constant("p".into());
 
         let text = tokenise("[a,b,c]").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
@@ -604,9 +591,12 @@ mod tests {
         let sub_list = Term::List(vec![b.clone(), c.clone()], Box::new(t.clone()));
         let list = Term::List(vec![a.clone(), sub_list.clone()], Box::new(Term::EmptyList));
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Atom(p.clone(), vec![list.clone()]));
+        assert_eq!(
+            term,
+            Term::Str(Str::Comp, vec![p.clone(), list.clone()])
+        );
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Atom(p.clone(), vec![list]));
+        assert_eq!(term, Term::Str(Str::Comp, vec![p.clone(), list]));
 
         let text = tokenise("[]").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
@@ -617,12 +607,12 @@ mod tests {
 
     #[test]
     fn parse_set_term() {
-        let a = Term::Unit(Unit::Constant("a".into()));
-        let b = Term::Unit(Unit::Constant("b".into()));
-        let c = Term::Unit(Unit::Constant("c".into()));
-        let p = Unit::Constant("p".into());
+        let a = Term::Constant("a".into());
+        let b = Term::Constant("b".into());
+        let c = Term::Constant("c".into());
+        let p = Term::Constant("p".into());
 
-        let abc = Term::Set(vec![a.clone(), b.clone(), c.clone()]);
+        let abc = Term::Str(Str::Set, vec![a.clone(), b.clone(), c.clone()]);
 
         let text = tokenise("{a,b,c}").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
@@ -632,38 +622,56 @@ mod tests {
 
         let text = tokenise("p({a,b,c})").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Atom(p.clone(), vec![abc.clone()]));
+        assert_eq!(term, Term::Str(Str::Comp, vec![p.clone(), abc.clone()]));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Atom(p.clone(), vec![abc.clone()]));
+        assert_eq!(term, Term::Str(Str::Comp, vec![p.clone(), abc.clone()]));
 
         let text = tokenise("{a,{b,c}}").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
         assert_eq!(
             term,
-            Term::Set(vec![a.clone(), Term::Set(vec![b.clone(), c.clone()])])
+            Term::Str(
+                Str::Set,
+                vec![
+                    a.clone(),
+                    Term::Str(Str::Set, vec![b.clone(), c.clone()])
+                ]
+            )
         );
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(
             term,
-            Term::Set(vec![a.clone(), Term::Set(vec![b.clone(), c.clone()])])
+            Term::Str(
+                Str::Set,
+                vec![
+                    a.clone(),
+                    Term::Str(Str::Set, vec![b.clone(), c.clone()])
+                ]
+            )
         );
 
         let text = tokenise("{a,{}}").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(term, Term::Set(vec![a.clone(), Term::EmptySet]));
+        assert_eq!(
+            term,
+            Term::Str(Str::Set, vec![a.clone(), Term::EmptySet])
+        );
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Set(vec![a.clone(), Term::EmptySet]));
+        assert_eq!(
+            term,
+            Term::Str(Str::Set, vec![a.clone(), Term::EmptySet])
+        );
     }
 
     #[test]
     fn parse_tuple() {
-        let a = Term::Unit(Unit::Constant("a".into()));
-        let b = Term::Unit(Unit::Constant("b".into()));
-        let c = Term::Unit(Unit::Constant("c".into()));
-        let p = Unit::Constant("p".into());
+        let a = Term::Constant("a".into());
+        let b = Term::Constant("b".into());
+        let c = Term::Constant("c".into());
+        let p = Term::Constant("p".into());
 
-        let abc = Term::Tuple(vec![a.clone(), b.clone(), c.clone()]);
-        let bc = Term::Tuple(vec![b.clone(), c.clone()]);
+        let abc = Term::Str(Str::Tup, vec![a.clone(), b.clone(), c.clone()]);
+        let bc = Term::Str(Str::Tup, vec![b.clone(), c.clone()]);
 
         let text = tokenise("(a,b,c)").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
@@ -671,16 +679,22 @@ mod tests {
 
         let text = tokenise("(a,(b,c))").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Tuple(vec![a.clone(), bc.clone()]));
+        assert_eq!(term, Term::Str(Str::Tup, vec![a.clone(), bc.clone()]));
 
         //This test fails
         let text = tokenise("(a,())").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Tuple(vec![a.clone(), Term::Tuple(vec![])]));
+        assert_eq!(
+            term,
+            Term::Str(
+                Str::Tup,
+                vec![a.clone(), Term::Str(Str::Tup, vec![])]
+            )
+        );
 
         let text = tokenise("p((a,b,c))").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(term, Term::Atom(p, vec![abc.clone()]));
+        assert_eq!(term, Term::Str(Str::Comp, vec![p, abc.clone()]));
     }
 
     // TODO: Improve error messaging for unclosed structures
@@ -810,38 +824,41 @@ mod tests {
 
     #[test]
     fn infix_order() {
-        let x = Term::Unit(Unit::Variable("X".into()));
-        let _y = Term::Unit(Unit::Variable("Y".into()));
-        let one = Term::Unit(Unit::Int(1));
-        let two = Term::Unit(Unit::Int(2));
-        let three = Term::Unit(Unit::Int(3));
-        let one_and_half = Term::Unit(Unit::Float(1.5));
-        let plus = Unit::Constant("+".into());
-        let _minus = Unit::Constant("-".into());
-        let divide = Unit::Constant("/".into());
-        let _times = Unit::Constant("*".into());
-        let power = Unit::Constant("**".into());
-        let eqauls = Unit::Constant("=:=".into());
+        let x = Term::Variable("X".into());
+        let _y = Term::Variable("Y".into());
+        let one = Term::Int(1);
+        let two = Term::Int(2);
+        let three = Term::Int(3);
+        let one_and_half = Term::Float(1.5);
+        let plus = Term::Constant("+".into());
+        let _minus = Term::Constant("-".into());
+        let divide = Term::Constant("/".into());
+        let _times = Term::Constant("*".into());
+        let power = Term::Constant("**".into());
+        let eqauls = Term::Constant("=:=".into());
 
         let text = tokenise("X =:= 1 + 2 / 1.5**3").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(
             term,
-            Term::Atom(
-                eqauls,
+            Term::Str(
+                Str::Comp,
                 vec![
+                    eqauls,
                     x.clone(),
-                    Term::Atom(
-                        plus.clone(),
+                    Term::Str(
+                        Str::Comp,
                         vec![
+                            plus.clone(),
                             one.clone(),
-                            Term::Atom(
-                                divide.clone(),
+                            Term::Str(
+                                Str::Comp,
                                 vec![
+                                    divide.clone(),
                                     two.clone(),
-                                    Term::Atom(
-                                        power.clone(),
-                                        vec![one_and_half.clone(), three.clone()]
+                                    Term::Str(
+                                        Str::Comp,
+                                        vec![power.clone(), one_and_half.clone(), three.clone()]
                                     )
                                 ]
                             )
@@ -854,35 +871,41 @@ mod tests {
 
     #[test]
     fn grouped_expression() {
-        let x = Term::Unit(Unit::Variable("X".into()));
-        let _y = Term::Unit(Unit::Variable("Y".into()));
-        let one = Term::Unit(Unit::Int(1));
-        let two = Term::Unit(Unit::Int(2));
-        let three = Term::Unit(Unit::Int(3));
-        let one_and_half = Term::Unit(Unit::Float(1.5));
-        let plus = Unit::Constant("+".into());
-        let _minus = Unit::Constant("-".into());
-        let divide = Unit::Constant("/".into());
-        let _times = Unit::Constant("*".into());
-        let power = Unit::Constant("**".into());
-        let equals = Unit::Constant("=:=".into());
+        let x = Term::Variable("X".into());
+        let _y = Term::Variable("Y".into());
+        let one = Term::Int(1);
+        let two = Term::Int(2);
+        let three = Term::Int(3);
+        let one_and_half = Term::Float(1.5);
+        let plus = Term::Constant("+".into());
+        let _minus = Term::Constant("-".into());
+        let divide = Term::Constant("/".into());
+        let _times = Term::Constant("*".into());
+        let power = Term::Constant("**".into());
+        let equals = Term::Constant("=:=".into());
 
         let text = tokenise("X =:= 1 + (2 / 1.5)**3").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
 
         assert_eq!(
             term,
-            Term::Atom(
-                equals,
+            Term::Str(
+                Str::Comp,
                 vec![
+                    equals,
                     x,
-                    Term::Atom(
-                        plus,
+                    Term::Str(
+                        Str::Comp,
                         vec![
+                            plus,
                             one,
-                            Term::Atom(
-                                power,
-                                vec![Term::Atom(divide, vec![two, one_and_half]), three]
+                            Term::Str(
+                                Str::Comp,
+                                vec![
+                                    power,
+                                    Term::Str(Str::Comp, vec![divide, two, one_and_half]),
+                                    three
+                                ]
                             )
                         ]
                     )
@@ -893,47 +916,56 @@ mod tests {
 
     #[test]
     fn tuple_or_grouped_expression() {
-        let x = Term::Unit(Unit::Variable("X".into()));
-        let y = Term::Unit(Unit::Variable("Y".into()));
-        let a = Term::Unit(Unit::Constant("a".into()));
-        let one = Term::Unit(Unit::Int(1));
-        let two = Term::Unit(Unit::Int(2));
-        let three = Term::Unit(Unit::Int(3));
-        let one_and_half = Term::Unit(Unit::Float(1.5));
-        let plus = Unit::Constant("+".into());
-        let _minus = Unit::Constant("-".into());
-        let divide = Unit::Constant("/".into());
-        let _times = Unit::Constant("*".into());
-        let power = Unit::Constant("**".into());
-        let equals = Unit::Constant("=:=".into());
+        let x = Term::Variable("X".into());
+        let y = Term::Variable("Y".into());
+        let a = Term::Constant("a".into());
+        let one = Term::Int(1);
+        let two = Term::Int(2);
+        let three = Term::Int(3);
+        let one_and_half = Term::Float(1.5);
+        let plus = Term::Constant("+".into());
+        let _minus = Term::Constant("-".into());
+        let divide = Term::Constant("/".into());
+        let _times = Term::Constant("*".into());
+        let power = Term::Constant("**".into());
+        let equals = Term::Constant("=:=".into());
 
         let text = tokenise("(a,X =:= 1 + (2 / 1.5)**(3,Y))").unwrap();
         let term = TokenStream::new(text).parse_expression().unwrap();
 
         assert_eq!(
             term,
-            Term::Tuple(vec![
-                a,
-                Term::Atom(
-                    equals,
-                    vec![
-                        x,
-                        Term::Atom(
-                            plus,
-                            vec![
-                                one,
-                                Term::Atom(
-                                    power,
-                                    vec![
-                                        Term::Atom(divide, vec![two, one_and_half]),
-                                        Term::Tuple(vec![three, y])
-                                    ]
-                                )
-                            ]
-                        )
-                    ]
-                )
-            ])
+            Term::Str(
+                Str::Tup,
+                vec![
+                    a,
+                    Term::Str(
+                        Str::Comp,
+                        vec![
+                            equals,
+                            x,
+                            Term::Str(
+                                Str::Comp,
+                                vec![
+                                    plus,
+                                    one,
+                                    Term::Str(
+                                        Str::Comp,
+                                        vec![
+                                            power,
+                                            Term::Str(
+                                                Str::Comp,
+                                                vec![divide, two, one_and_half]
+                                            ),
+                                            Term::Str(Str::Tup, vec![three, y])
+                                        ]
+                                    )
+                                ]
+                            )
+                        ]
+                    )
+                ]
+            )
         );
     }
 
@@ -941,15 +973,16 @@ mod tests {
     fn parse_rule() {
         let mut token_stream = TokenStream::new(tokenise("gt1(X):-X>1.").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
-        let head = Term::Atom(
-            Unit::Constant("gt1".into()),
-            vec![Term::Unit(Unit::Variable("X".into()))],
+        let head = Term::Str(
+            Str::Comp,
+            vec![Term::Constant("gt1".into()), Term::Variable("X".into())],
         );
-        let body = Term::Atom(
-            Unit::Constant(">".into()),
+        let body = Term::Str(
+            Str::Comp,
             vec![
-                Term::Unit(Unit::Variable("X".into())),
-                Term::Unit(Unit::Int(1)),
+                Term::Constant(">".into()),
+                Term::Variable("X".into()),
+                Term::Int(1),
             ],
         );
 
@@ -961,9 +994,9 @@ mod tests {
     fn parse_fact() {
         let mut token_stream = TokenStream::new(tokenise("man(plato).").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
-        let head = Term::Atom(
-            Unit::Constant("man".into()),
-            vec![Term::Unit(Unit::Constant("plato".into()))],
+        let head = Term::Str(
+            Str::Comp,
+            vec![Term::Constant("man".into()), Term::Constant("plato".into())],
         );
 
         assert_eq!(clause, TreeClause::Fact(head));
@@ -974,24 +1007,26 @@ mod tests {
     fn parse_meta_rule() {
         let mut token_stream = TokenStream::new(tokenise("P(X,Y):-Q(X,Y),{P,Q}.").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
-        let head = Term::Atom(
-            Unit::Variable("P".into()),
+        let head = Term::Str(
+            Str::Comp,
             vec![
-                Term::Unit(Unit::Variable("X".into())),
-                Term::Unit(Unit::Variable("Y".into())),
+                Term::Variable("P".into()),
+                Term::Variable("X".into()),
+                Term::Variable("Y".into()),
             ],
         );
-        let body = Term::Atom(
-            Unit::Variable("Q".into()),
+        let body = Term::Str(
+            Str::Comp,
             vec![
-                Term::Unit(Unit::Variable("X".into())),
-                Term::Unit(Unit::Variable("Y".into())),
+                Term::Variable("Q".into()),
+                Term::Variable("X".into()),
+                Term::Variable("Y".into()),
             ],
         );
-        let meta_data = Term::Set(vec![
-            Term::Unit(Unit::Variable("P".into())),
-            Term::Unit(Unit::Variable("Q".into())),
-        ]);
+        let meta_data = Term::Str(
+            Str::Set,
+            vec![Term::Variable("P".into()), Term::Variable("Q".into())],
+        );
 
         assert_eq!(clause, TreeClause::MetaRule(vec![head, body, meta_data]));
         assert_eq!(token_stream.parse_clause().unwrap(), None);
@@ -1003,28 +1038,26 @@ mod tests {
         let mut token_stream =
             TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
-        let head = Term::Atom(
-            Unit::Constant("edge".into()),
+        let head = Term::Str(
+            Str::Comp,
             vec![
-                Term::Unit(Unit::Variable("El".into())),
-                Term::Unit(Unit::Variable("Q1".into())),
-                Term::Unit(Unit::Variable("Q2".into())),
+                Term::Constant("edge".into()),
+                Term::Variable("El".into()),
+                Term::Variable("Q1".into()),
+                Term::Variable("Q2".into()),
             ],
         );
-        let body1 = Term::Atom(
-            Unit::Constant("q".into()),
-            vec![Term::Unit(Unit::Variable("Q1".into()))],
+        let body1 = Term::Str(
+            Str::Comp,
+            vec![Term::Constant("q".into()), Term::Variable("Q1".into())],
         );
-        let body2 = Term::Atom(
-            Unit::Constant("q".into()),
-            vec![Term::Unit(Unit::Variable("Q2".into()))],
+        let body2 = Term::Str(
+            Str::Comp,
+            vec![Term::Constant("q".into()), Term::Variable("Q2".into())],
         );
-        let constrained = Term::Set(vec![Term::Unit(Unit::Variable("El".into()))]);
+        let constrained = Term::Str(Str::Set, vec![Term::Variable("El".into())]);
         let unconstrained = Term::List(
-            vec![
-                Term::Unit(Unit::Variable("Q1".into())),
-                Term::Unit(Unit::Variable("Q2".into())),
-            ],
+            vec![Term::Variable("Q1".into()), Term::Variable("Q2".into())],
             Box::new(Term::EmptyList),
         );
 
@@ -1041,27 +1074,28 @@ mod tests {
         let mut token_stream =
             TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
-        let head = Term::Atom(
-            Unit::Constant("edge".into()),
+        let head = Term::Str(
+            Str::Comp,
             vec![
-                Term::Unit(Unit::Variable("El".into())),
-                Term::Unit(Unit::Variable("Q1".into())),
-                Term::Unit(Unit::Variable("Q2".into())),
+                Term::Constant("edge".into()),
+                Term::Variable("El".into()),
+                Term::Variable("Q1".into()),
+                Term::Variable("Q2".into()),
             ],
         );
-        let body1 = Term::Atom(
-            Unit::Constant("q".into()),
-            vec![Term::Unit(Unit::Variable("Q1".into()))],
+        let body1 = Term::Str(
+            Str::Comp,
+            vec![Term::Constant("q".into()), Term::Variable("Q1".into())],
         );
-        let body2 = Term::Atom(
-            Unit::Constant("q".into()),
-            vec![Term::Unit(Unit::Variable("Q2".into()))],
+        let body2 = Term::Str(
+            Str::Comp,
+            vec![Term::Constant("q".into()), Term::Variable("Q2".into())],
         );
         let unconstrained = Term::List(
             vec![
-                Term::Unit(Unit::Variable("El".into())),
-                Term::Unit(Unit::Variable("Q1".into())),
-                Term::Unit(Unit::Variable("Q2".into())),
+                Term::Variable("El".into()),
+                Term::Variable("Q1".into()),
+                Term::Variable("Q2".into()),
             ],
             Box::new(Term::EmptyList),
         );
@@ -1077,15 +1111,16 @@ mod tests {
     fn parse_meta_fact() {
         let mut token_stream = TokenStream::new(tokenise("Map([],[],X),{Map}.").unwrap());
         let clause = token_stream.parse_clause().unwrap().unwrap();
-        let head = Term::Atom(
-            Unit::Variable("Map".into()),
+        let head = Term::Str(
+            Str::Comp,
             vec![
+                Term::Variable("Map".into()),
                 Term::EmptyList,
                 Term::EmptyList,
-                Term::Unit(Unit::Variable("X".into())),
+                Term::Variable("X".into()),
             ],
         );
-        let meta_data = Term::Set(vec![Term::Unit(Unit::Variable("Map".into()))]);
+        let meta_data = Term::Str(Str::Set, vec![Term::Variable("Map".into())]);
 
         assert_eq!(clause, TreeClause::MetaFact(head, meta_data));
         assert_eq!(token_stream.parse_clause().unwrap(), None);
@@ -1095,18 +1130,16 @@ mod tests {
     fn parse_directive() {
         let mut token_stream = TokenStream::new(tokenise("test(a),goal([_|T],1).").unwrap());
         let clause = token_stream.parse_goals().unwrap();
-        let body = Term::Atom(
-            Unit::Constant("test".into()),
-            vec![Term::Unit(Unit::Constant("a".into()))],
+        let body = Term::Str(
+            Str::Comp,
+            vec![Term::Constant("test".into()), Term::Constant("a".into())],
         );
-        let body2 = Term::Atom(
-            Unit::Constant("goal".into()),
+        let body2 = Term::Str(
+            Str::Comp,
             vec![
-                Term::List(
-                    vec![Term::Unit(Unit::AnonVar)],
-                    Box::new(Term::Unit(Unit::Variable("T".into()))),
-                ),
-                Term::Unit(Unit::Int(1)),
+                Term::Constant("goal".into()),
+                Term::List(vec![Term::AnonVar], Box::new(Term::Variable("T".into()))),
+                Term::Int(1),
             ],
         );
 
@@ -1120,43 +1153,46 @@ mod tests {
         let mut token_stream = TokenStream::new(tokenise(text).unwrap());
         let clauses = token_stream.parse_all().unwrap();
 
-        let head = Term::Atom(
-            Unit::Constant("gt1".into()),
-            vec![Term::Unit(Unit::Variable("X".into()))],
+        let head = Term::Str(
+            Str::Comp,
+            vec![Term::Constant("gt1".into()), Term::Variable("X".into())],
         );
-        let body = Term::Atom(
-            Unit::Constant(">".into()),
+        let body = Term::Str(
+            Str::Comp,
             vec![
-                Term::Unit(Unit::Variable("X".into())),
-                Term::Unit(Unit::Int(1)),
+                Term::Constant(">".into()),
+                Term::Variable("X".into()),
+                Term::Int(1),
             ],
         );
         assert_eq!(clauses[0], TreeClause::Rule(vec![head, body]));
 
-        let head = Term::Atom(
-            Unit::Constant("man".into()),
-            vec![Term::Unit(Unit::Constant("plato".into()))],
+        let head = Term::Str(
+            Str::Comp,
+            vec![Term::Constant("man".into()), Term::Constant("plato".into())],
         );
         assert_eq!(clauses[1], TreeClause::Fact(head));
 
-        let head = Term::Atom(
-            Unit::Variable("P".into()),
+        let head = Term::Str(
+            Str::Comp,
             vec![
-                Term::Unit(Unit::Variable("X".into())),
-                Term::Unit(Unit::Variable("Y".into())),
+                Term::Variable("P".into()),
+                Term::Variable("X".into()),
+                Term::Variable("Y".into()),
             ],
         );
-        let body = Term::Atom(
-            Unit::Variable("Q".into()),
+        let body = Term::Str(
+            Str::Comp,
             vec![
-                Term::Unit(Unit::Variable("X".into())),
-                Term::Unit(Unit::Variable("Y".into())),
+                Term::Variable("Q".into()),
+                Term::Variable("X".into()),
+                Term::Variable("Y".into()),
             ],
         );
-        let meta_data = Term::Set(vec![
-            Term::Unit(Unit::Variable("P".into())),
-            Term::Unit(Unit::Variable("Q".into())),
-        ]);
+        let meta_data = Term::Str(
+            Str::Set,
+            vec![Term::Variable("P".into()), Term::Variable("Q".into())],
+        );
         assert_eq!(
             clauses[2],
             TreeClause::MetaRule(vec![head, body, meta_data])
