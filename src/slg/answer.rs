@@ -1,5 +1,10 @@
 use smallvec::SmallVec;
 
+pub struct MetaSub{
+    meta_clause_idx: usize,
+    arg_bindings: [usize; 32]    
+}
+
 pub struct Answer{
     // Table key represented with arg bindings. Arg Id -> table heap address
     bindings: SmallVec<[usize;3]>, 
