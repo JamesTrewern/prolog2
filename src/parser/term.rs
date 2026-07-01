@@ -14,6 +14,16 @@ pub enum Str {
     Set,
 }
 
+impl Str {
+    fn tag(&self) -> Tag {
+        match self {
+            Self::Comp => Tag::Comp,
+            Self::Tup => Tag::Tup,
+            Self::Set => Tag::Set,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Term {
     Str(Str, Vec<Term>),
@@ -64,60 +74,101 @@ impl Term {
         }
     }
 
+    /// Convenience wrapper function for encode, returns address of new term
+    /// Helps to maintian old code
     pub fn encode(
-        &self,
+        self,
         heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
     ) -> usize {
-        match self {
-            Term::List(head, tail) => todo!(),
-            Term::Str(str_type, terms) => todo!(),
-            Term::EmptyList => heap.heap_push(EMPTY_LIS),
-            Term::EmptySet => heap.heap_push((Tag::Set, 0)),
-            Term::Constant(symbol) => {
-                let id = SymbolDB::set_const(symbol.clone());
-                heap.heap_push((Tag::Con, id))
-            }
-            Term::Variable(symbol) => Self::encode_var(symbol, heap, var_values, query),
-            Term::Int(value) => heap.heap_push((Tag::Int, unsafe { mem::transmute_copy(value) })),
-            Term::Float(value) => heap.heap_push((Tag::Flt, unsafe { mem::transmute_copy(value) })),
-            Term::String(text) => {
-                let str_id = SymbolDB::set_string(text.clone());
-                heap.heap_push((Tag::Stri, str_id))
-            }
-            Term::AnonVar => heap.heap_push((Tag::AVar, 0)),
-        }
+        let addr = heap.heap_len();
+        self.encode_rec(heap, var_values, query);
+        addr
     }
 
-    fn encode_var(
-        symbol: &String,
+    pub fn encode_rec(
+        self,
         heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
         query: bool,
-    ) -> usize {
-        match var_values.get(symbol) {
-            Some(ref_addr) if query => heap.heap_push((Tag::Ref, *ref_addr)),
-            Some(arg) => {
-                let addr = heap.heap_push((Tag::Arg, *arg));
-                SymbolDB::set_var(symbol.clone(), addr, heap.get_id());
-                addr
+    ) {
+        match self {
+            Term::List(head, tail) => encode_list(head, *tail, heap, var_values, query),
+            Term::Str(str_type, terms) => encode_struct(str_type, terms, heap, var_values, query),
+            Term::EmptyList => _ = heap.heap_push(EMPTY_LIS),
+            Term::EmptySet => _ = heap.heap_push((Tag::Set, 0)),
+            Term::Constant(symbol) => {
+                let id = SymbolDB::set_const(symbol.clone());
+                heap.heap_push((Tag::Con, id));
             }
-            None if query => {
-                let addr = heap.set_ref(None);
-                var_values.insert(symbol.clone(), addr);
-                SymbolDB::set_var(symbol.clone(), addr, heap.get_id());
-                addr
+            Term::Variable(symbol) => encode_var(symbol, heap, var_values, query),
+            Term::Int(value) => {
+                heap.heap_push((Tag::Int, unsafe { mem::transmute_copy(&value) }));
             }
-            None => {
-                let v = var_values.len();
-                var_values.insert(symbol.clone(), v);
-                let addr = heap.heap_push((Tag::Arg, v));
-                SymbolDB::set_var(symbol.clone(), addr, heap.get_id());
-                addr
+            Term::Float(value) => {
+                heap.heap_push((Tag::Flt, unsafe { mem::transmute_copy(&value) }));
             }
+            Term::String(text) => {
+                let str_id = SymbolDB::set_string(text.clone());
+                heap.heap_push((Tag::Stri, str_id));
+            }
+            Term::AnonVar => _ = heap.heap_push((Tag::AVar, 0)),
         }
     }
+}
+
+fn encode_var(
+    symbol: String,
+    heap: &mut impl Heap,
+    var_values: &mut HashMap<String, usize>,
+    query: bool,
+) {
+    match var_values.get(&symbol) {
+        Some(ref_addr) if query => _ = heap.heap_push((Tag::Ref, *ref_addr)),
+        Some(arg) => {
+            let addr = heap.heap_push((Tag::Arg, *arg));
+            SymbolDB::set_var(symbol, addr, heap.get_id());
+        }
+        None if query => {
+            let addr = heap.set_ref(None);
+            var_values.insert(symbol.clone(), addr);
+            SymbolDB::set_var(symbol, addr, heap.get_id());
+        }
+        None => {
+            let v = var_values.len();
+            var_values.insert(symbol.clone(), v);
+            let addr = heap.heap_push((Tag::Arg, v));
+            SymbolDB::set_var(symbol, addr, heap.get_id());
+        }
+    }
+}
+
+fn encode_struct(
+    str_type: Str,
+    terms: Vec<Term>,
+    heap: &mut impl Heap,
+    var_values: &mut HashMap<String, usize>,
+    query: bool,
+) {
+    heap.heap_push((str_type.tag(), terms.len()));
+    for term in terms {
+        term.encode_rec(heap, var_values, query);
+    }
+}
+
+fn encode_list(
+    head: Vec<Term>,
+    tail: Term,
+    heap: &mut impl Heap,
+    var_values: &mut HashMap<String, usize>,
+    query: bool,
+) {
+    for term in head {
+        heap.heap_push((Tag::Lis, 0));
+        term.encode_rec(heap, var_values, query);
+    }
+    tail.encode_rec(heap, var_values, query);
 }
 
 #[cfg(test)]
@@ -142,8 +193,8 @@ mod encode_tests {
         let mut var_values = HashMap::new();
         let x = Term::Variable("X".into());
         let y = Term::Variable("Y".into());
-        x.encode(&mut heap, &mut var_values, false);
-        y.encode(&mut heap, &mut var_values, false);
+        x.clone().encode(&mut heap, &mut var_values, false);
+        y.clone().encode(&mut heap, &mut var_values, false);
         x.encode(&mut heap, &mut var_values, false);
         y.encode(&mut heap, &mut var_values, false);
 
@@ -159,8 +210,8 @@ mod encode_tests {
         let mut var_values = HashMap::new();
         let x = Term::Variable("X".into());
         let y = Term::Variable("Y".into());
-        x.encode(&mut heap, &mut var_values, true);
-        y.encode(&mut heap, &mut var_values, true);
+        x.clone().encode(&mut heap, &mut var_values, true);
+        y.clone().encode(&mut heap, &mut var_values, true);
         x.encode(&mut heap, &mut var_values, true);
         y.encode(&mut heap, &mut var_values, true);
 
@@ -219,7 +270,7 @@ mod encode_tests {
     }
 
     #[test]
-    fn program_encode_functor() {
+    fn program_encode_compound() {
         let p_id = SymbolDB::set_const("p");
         let a_id = SymbolDB::set_const("a");
         let f_id = SymbolDB::set_const("f");
@@ -1082,11 +1133,7 @@ mod encode_tests {
         let term = Term::List(
             vec![
                 Term::List(
-                    vec![
-                        Term::Int(1),
-                        Term::Int(2),
-                        Term::Int(3),
-                    ],
+                    vec![Term::Int(1), Term::Int(2), Term::Int(3)],
                     Box::new(Term::EmptyList),
                 ),
                 Term::EmptyList,
@@ -1173,11 +1220,7 @@ mod encode_tests {
         let term = Term::List(
             vec![
                 Term::List(
-                    vec![
-                        Term::Int(1),
-                        Term::Int(2),
-                        Term::Int(3),
-                    ],
+                    vec![Term::Int(1), Term::Int(2), Term::Int(3)],
                     Box::new(Term::EmptyList),
                 ),
                 Term::EmptyList,
