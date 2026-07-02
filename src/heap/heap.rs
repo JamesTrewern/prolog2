@@ -54,6 +54,7 @@ use fsize::fsize;
 pub const _CON_PTR: usize = isize::MAX as usize;
 pub const _FALSE: Cell = (Tag::Con, _CON_PTR);
 pub const _TRUE: Cell = (Tag::Con, _CON_PTR + 1);
+pub const LIS: Cell = (Tag::Lis, 0);
 pub const EMPTY_LIS: Cell = (Tag::ELis, 0);
 
 /// Core trait for heap storage.
@@ -491,7 +492,6 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
             *addr += 1;
             self.term_string_rec(addr, buf);
             *addr += 1;
-
             match self[*addr].0 {
                 Tag::Lis => {
                     write!(buf, ",");
@@ -599,7 +599,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn term_string(&self, mut addr: usize) -> String {
         let mut buf = String::new();
-        self.term_string_rec(&mut addr, &mut buf);
+        self.term_string_rec(&mut addr, &mut buf).unwrap();
         buf
     }
 }
