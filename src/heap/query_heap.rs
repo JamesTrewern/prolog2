@@ -43,14 +43,6 @@ impl<'a> QueryHeap<'a> {
         branch_heap
     }
 
-    fn get_symbol_db_id(&self, addr: usize) -> usize {
-        if addr < self.prog_cells.len() {
-            0
-        } else {
-            self.id
-        }
-    }
-
     /// Duplicate term from self, tracking variable identity
     /// via `ref_map`. Unbound Ref cells in `self` are mapped to fresh Ref
     /// cells in `self`; the same source Ref always maps to the same target Ref.
@@ -58,15 +50,11 @@ impl<'a> QueryHeap<'a> {
     /// sharing (e.g. across literals in a clause).
     /// Used to duplicate terms from immutable cells such as prog_cells or root_heap heap
     /// and place them in mutable cells.
-    pub fn dup_term(
-        &mut self,
-        addr: usize,
-        ref_map: &mut HashMap<usize, usize>,
-    ) -> usize {
+    pub fn dup_term(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) -> usize {
         let addr = self.deref_addr(addr);
         match self[addr] {
             (Tag::Str, pointer) => {
-                let new_ptr = self.dup_term( pointer, ref_map);
+                let new_ptr = self.dup_term(pointer, ref_map);
                 self.heap_push((Tag::Str, new_ptr));
                 self.heap_len() - 1
             }
@@ -74,7 +62,7 @@ impl<'a> QueryHeap<'a> {
                 // Pre-pass: recursively copy complex sub-terms
                 let mut pre: Vec<Option<Cell>> = Vec::with_capacity(length);
                 for i in 1..=length {
-                    pre.push(self.dup_complex( addr + i, ref_map));
+                    pre.push(self.dup_complex(addr + i, ref_map));
                 }
                 // Lay down structure header + sub-terms
                 let h = self.heap_len();
@@ -84,20 +72,20 @@ impl<'a> QueryHeap<'a> {
                         Some(cell) => {
                             self.heap_push(cell);
                         }
-                        None => self.dup_simple( addr + 1 + i, ref_map),
+                        None => self.dup_simple(addr + 1 + i, ref_map),
                     }
                 }
                 h
             }
             (Tag::Lis, pointer) => {
-                let head = self.dup_complex( pointer, ref_map);
-                let tail = self.dup_complex( pointer + 1, ref_map);
+                let head = self.dup_complex(pointer, ref_map);
+                let tail = self.dup_complex(pointer + 1, ref_map);
                 let h = self.heap_len();
                 match head {
                     Some(cell) => {
                         self.heap_push(cell);
                     }
-                    None => self.dup_simple( pointer, ref_map),
+                    None => self.dup_simple(pointer, ref_map),
                 }
                 match tail {
                     Some(cell) => {
@@ -128,29 +116,19 @@ impl<'a> QueryHeap<'a> {
 
     /// Pre-pass helper for dup_term_with_ref_map: recursively copy complex
     /// sub-terms and return the Cell to later insert, or None for simple cells.
-    fn dup_complex(
-        &mut self,
-        addr: usize,
-        ref_map: &mut HashMap<usize, usize>,
-    ) -> Option<Cell> {
+    fn dup_complex(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) -> Option<Cell> {
         let addr = self.deref_addr(addr);
         match self[addr] {
-            (Tag::Comp | Tag::Tup | Tag::Set, _) => {
-                Some((Tag::Str, self.dup_term( addr, ref_map)))
-            }
-            (Tag::Str, ptr) => Some((Tag::Str, self.dup_term( ptr, ref_map))),
-            (Tag::Lis, _) => Some((Tag::Lis, self.dup_term( addr, ref_map))),
+            (Tag::Comp | Tag::Tup | Tag::Set, _) => Some((Tag::Str, self.dup_term(addr, ref_map))),
+            (Tag::Str, ptr) => Some((Tag::Str, self.dup_term(ptr, ref_map))),
+            (Tag::Lis, _) => Some((Tag::Lis, self.dup_term(addr, ref_map))),
             _ => None,
         }
     }
 
     /// Post-pass helper for dup_term_with_ref_map: push a simple cell,
     /// handling Ref identity via ref_map.
-    fn dup_simple(
-        &mut self,
-        addr: usize,
-        ref_map: &mut HashMap<usize, usize>,
-    ) {
+    fn dup_simple(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) {
         let addr = self.deref_addr(addr);
         match self[addr] {
             (Tag::Ref, r) if r == addr => {
@@ -167,7 +145,6 @@ impl<'a> QueryHeap<'a> {
             }
         }
     }
-
 }
 
 impl Heap for QueryHeap<'_> {
@@ -196,8 +173,12 @@ impl Heap for QueryHeap<'_> {
         }
     }
 
-    fn get_id(&self) -> usize {
-        self.id
+    fn get_id(&self, addr: usize) -> usize {
+        if addr < self.prog_cells.len() {
+            0
+        } else {
+            self.id
+        }
     }
 
     fn prog_addr(&self, addr: usize) -> bool {
@@ -206,41 +187,6 @@ impl Heap for QueryHeap<'_> {
 
     fn heap_last(&mut self) -> &mut Cell {
         self.cells.last_mut().unwrap()
-    }
-
-    /** Create String to represent cell, can be recursively used to format complex structures or list */
-    fn term_string(&self, addr: usize) -> String {
-        // println!("[{addr}]:{:?}", self[addr]);
-        let addr = self.deref_addr(addr);
-        match self[addr].0 {
-            Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
-            Tag::Comp => self.func_string(addr),
-            Tag::Lis => self.list_string(addr),
-            Tag::ELis => "[]".into(),
-            Tag::Arg => match SymbolDB::get_var(addr, self.get_symbol_db_id(addr)) {
-                Some(symbol) => symbol.to_string(),
-                None => format!("Arg_{}", self[addr].1),
-            },
-            Tag::Ref => match SymbolDB::get_var(self.deref_addr(addr), self.get_symbol_db_id(addr))
-                .to_owned()
-            {
-                Some(symbol) => symbol.to_string(),
-                None => format!("Ref_{}", self[addr].1),
-            },
-            Tag::Int => {
-                let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
-                format!("{value}")
-            }
-            Tag::Flt => {
-                let value: fsize = unsafe { mem::transmute_copy(&self[addr].1) };
-                format!("{value}")
-            }
-            Tag::Tup => self.tuple_string(addr),
-            Tag::Set => self.set_string(addr),
-            Tag::Str => self.term_string(self[addr].1),
-            Tag::Stri => format!("\"{}\"", SymbolDB::get_string(self[addr].1)),
-            Tag::AVar => "_".into(),
-        }
     }
 
     fn truncate(&mut self, mut len: usize) {

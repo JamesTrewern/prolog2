@@ -1,9 +1,10 @@
+use super::symbol_db::SymbolDB;
 use std::{
     collections::HashMap,
+    fmt::Write,
     mem,
     ops::{Index, IndexMut, Range, RangeInclusive},
 };
-use super::symbol_db::SymbolDB;
 
 /// Tag discriminant for heap cells.
 ///
@@ -73,7 +74,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         true
     }
 
-    fn get_id(&self) -> usize {
+    fn get_id(&self, addr: usize) -> usize {
         0
     }
 
@@ -249,13 +250,13 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     ///Operation to check occurs
     ///Tests both for ref and bound args
     /// @ acc (ref_addr, bound args, occurs?)
-    fn occurs_opp(&self, addr: usize, acc: &mut (usize,&[usize],bool)) -> bool {
+    fn occurs_opp(&self, addr: usize, acc: &mut (usize, &[usize], bool)) -> bool {
         match self[addr] {
-            (Tag::Arg,id) if acc.1.contains(&id) => {
+            (Tag::Arg, id) if acc.1.contains(&id) => {
                 acc.2 = true;
                 true
             }
-            (Tag::Ref,addr) if addr == acc.0 => {
+            (Tag::Ref, addr) if addr == acc.0 => {
                 acc.2 = true;
                 true
             }
@@ -263,8 +264,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         }
     }
 
-    fn occurs(&self, addr: usize, ref_addr: usize, bound_args: &[usize]) -> bool{
-        let mut acc = (ref_addr,bound_args,false);
+    fn occurs(&self, addr: usize, ref_addr: usize, bound_args: &[usize]) -> bool {
+        let mut acc = (ref_addr, bound_args, false);
         self.walk_term(addr, &mut acc, Self::occurs_opp);
         acc.2
     }
@@ -471,8 +472,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     let value: fsize = unsafe { mem::transmute_copy(&value) };
                     println!("[{i:3}]|{tag:w$?}|{value:w$}|")
                 }
-                Tag::Tup => println!("[{i:3}]| Tup |{value:w$}| {}", self.tuple_string(i)),
-                Tag::Set => println!("[{i:3}]| Set |{value:w$}| {}", self.set_string(i)),
+                Tag::Tup => println!("[{i:3}]| Tup |{value:w$}| {}", self.term_string(i)),
+                Tag::Set => println!("[{i:3}]| Set |{value:w$}| {}", self.term_string(i)),
                 Tag::Stri => println!(
                     "[{i:3}]|Stri |{value:w$}| \"{}\"",
                     SymbolDB::get_string(value)
@@ -484,104 +485,122 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     }
 
     /**Create a string from a list */
-    fn list_string(&self, addr: usize) -> String {
-        let mut buffer = "[".to_string();
-        let mut pointer = self[addr].1;
-
+    fn list_string(&self, addr: &mut usize, buf: &mut String) {
+        write!(buf, "[");
         loop {
-            buffer += &self.term_string(pointer);
+            *addr += 1;
+            self.term_string_rec(addr, buf);
+            *addr += 1;
 
-            match self[pointer + 1].0 {
+            match self[*addr].0 {
                 Tag::Lis => {
-                    buffer += ",";
-                    pointer = self[pointer + 1].1
+                    write!(buf, ",");
                 }
                 Tag::ELis => break,
                 _ => {
-                    buffer += "|";
-                    buffer += &self.term_string(pointer + 1);
+                    write!(buf, "|");
+                    self.term_string_rec(addr, buf);
                     break;
                 }
             }
         }
-        buffer += "]";
-        buffer
+        write!(buf, "]");
     }
 
-    /**Create a string for a functor structure */
-    fn func_string(&self, addr: usize) -> String {
-        let mut buf = "".to_string();
-        let mut first = true;
-        for i in self.str_iterator(addr) {
-            buf += &self.term_string(i);
-            buf += if first { "(" } else { "," };
-            if first {
-                first = false
-            }
+    /**Create a string for a compound structure */
+    fn comp_string(&self, addr: &mut usize, buf: &mut String) {
+        let len = self[*addr].1;
+        *addr += 1;
+        self.term_string_rec(addr, buf);
+        write!(buf, "(");
+        for _ in 1..len {
+            *addr += 1;
+            self.term_string_rec(addr, buf);
+            write!(buf, ",");
         }
+
         buf.pop();
-        buf += ")";
-        buf
+        write!(buf, ")");
     }
 
     /**Create a string for a tuple*/
-    fn tuple_string(&self, addr: usize) -> String {
-        let mut buf = String::from("(");
-        for i in 1..self[addr].1 + 1 {
-            buf += &self.term_string(addr + i);
-            buf += ",";
+    fn tuple_string(&self, addr: &mut usize, buf: &mut String) {
+        let len = self[*addr].1;
+        write!(buf, "(");
+        for _ in 0..len {
+            *addr += 1;
+            self.term_string_rec(addr, buf);
+            write!(buf, ",");
         }
+
         buf.pop();
-        buf += ")";
-        buf
+        write!(buf, ")");
     }
 
     /**Create a string for a set*/
-    fn set_string(&self, addr: usize) -> String {
-        if self[addr].1 == 0 {
-            return "{}".into();
+    fn set_string(&self, addr: &mut usize, buf: &mut String) {
+        let len = self[*addr].1;
+        if len == 0 {
+            buf.write_str("{}");
+            return;
         }
-        let mut buf = String::from("{");
-        for i in 1..self[addr].1 + 1 {
-            buf += &self.term_string(addr + i);
-            buf += ",";
+
+        buf.write_str("{");
+        for _ in 0..len {
+            *addr += 1;
+            self.term_string_rec(addr, buf);
+            buf.write_str(",");
         }
         buf.pop();
-        buf += "}";
-        buf
+        buf.write_str("}");
     }
 
+    fn ref_string(&self, addr: &mut usize, buf: &mut String) {}
+
     /** Create String to represent cell, can be recursively used to format complex structures or list */
-    fn term_string(&self, addr: usize) -> String {
+    fn term_string_rec(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         // println!("[{addr}]:{:?}", self[addr]);
-        let addr = self.deref_addr(addr);
-        match self[addr].0 {
-            Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
-            Tag::Comp => self.func_string(addr),
-            Tag::Lis => self.list_string(addr),
-            Tag::ELis => "[]".into(),
-            Tag::Arg => match SymbolDB::get_var(addr, self.get_id()) {
-                Some(symbol) => symbol.to_string(),
-                None => format!("Arg_{}", self[addr].1),
+        match self[*addr].0 {
+            Tag::Con => buf.write_str(&SymbolDB::get_const(self[*addr].1))?,
+            Tag::Comp => self.comp_string(addr, buf),
+            Tag::Lis => self.list_string(addr, buf),
+            Tag::ELis => write!(buf, "[]")?,
+            Tag::Arg => match SymbolDB::get_var(*addr, self.get_id(*addr)) {
+                Some(symbol) => buf.write_str(&symbol)?,
+                None => write!(buf, "Arg_{}", self[*addr].1)?,
             },
-            Tag::Ref => match SymbolDB::get_var(self.deref_addr(addr), self.get_id()).to_owned() {
-                Some(symbol) => symbol.to_string(),
-                None => format!("Ref_{}", self[addr].1),
-            },
+            Tag::Ref => {
+                let mut ref_addr = self.deref_addr(*addr);
+                if self[ref_addr].0 == Tag::Ref {
+                    match SymbolDB::get_var(ref_addr, self.get_id(ref_addr)).to_owned() {
+                        Some(symbol) => buf.write_str(&symbol),
+                        None => write!(buf, "Ref_{}", self[ref_addr].1),
+                    };
+                } else {
+                    self.term_string_rec(&mut ref_addr, buf);
+                }
+            }
             Tag::Int => {
-                let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
-                format!("{value}")
+                let value: isize = unsafe { mem::transmute_copy(&self[*addr].1) };
+                write!(buf, "{value}");
             }
             Tag::Flt => {
-                let value: fsize = unsafe { mem::transmute_copy(&self[addr].1) };
-                format!("{value}")
+                let value: fsize = unsafe { mem::transmute_copy(&self[*addr].1) };
+                write!(buf, "{value}");
             }
-            Tag::Tup => self.tuple_string(addr),
-            Tag::Set => self.set_string(addr),
-            Tag::Str => self.term_string(self[addr].1),
-            Tag::Stri => format!("\"{}\"", SymbolDB::get_string(self[addr].1)),
-            Tag::AVar => "_".into(),
+            Tag::Tup => self.tuple_string(addr, buf),
+            Tag::Set => self.set_string(addr, buf),
+            Tag::Str => unreachable!(),
+            Tag::Stri => write!(buf, "\"{}\"", SymbolDB::get_string(self[*addr].1))?,
+            Tag::AVar => write!(buf, "_")?,
         }
+        Ok(())
+    }
+
+    fn term_string(&self, mut addr: usize) -> String {
+        let mut buf = String::new();
+        self.term_string_rec(&mut addr, &mut buf);
+        buf
     }
 }
 
