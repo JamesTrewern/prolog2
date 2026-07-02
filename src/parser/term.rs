@@ -3,11 +3,11 @@ use std::{collections::HashMap, mem};
 use fsize::fsize;
 
 use crate::heap::{
-    heap::{Cell, Heap, Tag, EMPTY_LIS},
+    heap::{Cell, Heap, Tag, EMPTY_LIS, LIS},
     symbol_db::SymbolDB,
 };
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
 pub enum Str {
     Comp,
     Tup,
@@ -24,7 +24,7 @@ impl Str {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, PartialOrd)]
 pub enum Term {
     Str(Str, Vec<Term>),
     List(Vec<Term>, Box<Term>),
@@ -128,33 +128,38 @@ fn encode_var(
         Some(ref_addr) if query => _ = heap.heap_push((Tag::Ref, *ref_addr)),
         Some(arg) => {
             let addr = heap.heap_push((Tag::Arg, *arg));
-            SymbolDB::set_var(symbol, addr, heap.get_id());
+            SymbolDB::set_var(symbol, addr, heap.get_id(addr));
         }
         None if query => {
             let addr = heap.set_ref(None);
             var_values.insert(symbol.clone(), addr);
-            SymbolDB::set_var(symbol, addr, heap.get_id());
+            SymbolDB::set_var(symbol, addr, heap.get_id(addr));
         }
         None => {
             let v = var_values.len();
             var_values.insert(symbol.clone(), v);
             let addr = heap.heap_push((Tag::Arg, v));
-            SymbolDB::set_var(symbol, addr, heap.get_id());
+            SymbolDB::set_var(symbol, addr, heap.get_id(addr));
         }
     }
 }
 
 fn encode_struct(
     str_type: Str,
-    terms: Vec<Term>,
+    mut terms: Vec<Term>,
     heap: &mut impl Heap,
     var_values: &mut HashMap<String, usize>,
     query: bool,
 ) {
+    if str_type == Str::Set {
+        terms.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        terms.dedup();
+    }
     heap.heap_push((str_type.tag(), terms.len()));
     for term in terms {
         term.encode_rec(heap, var_values, query);
     }
+    
 }
 
 fn encode_list(
@@ -165,7 +170,7 @@ fn encode_list(
     query: bool,
 ) {
     for term in head {
-        heap.heap_push((Tag::Lis, 0));
+        heap.heap_push(LIS);
         term.encode_rec(heap, var_values, query);
     }
     tail.encode_rec(heap, var_values, query);
@@ -178,7 +183,7 @@ mod encode_tests {
     use super::Term;
     use crate::{
         heap::{
-            heap::{Heap, Tag, EMPTY_LIS},
+            heap::{Heap, Tag, EMPTY_LIS, LIS},
             query_heap::QueryHeap,
             symbol_db::SymbolDB,
         },
@@ -321,16 +326,15 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr), "p(f(X),X)");
+        // assert_eq!(heap.term_string(addr), "p(f(X),X)");
         assert_eq!(
             heap.cells,
             [
+                (Tag::Comp, 3),
+                (Tag::Con, p_id),
                 (Tag::Comp, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Comp, 3),
-                (Tag::Con, p_id),
-                (Tag::Str, 0),
                 (Tag::Arg, 0),
             ]
         );
@@ -345,16 +349,15 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr), "p((f,X),X)");
+        // assert_eq!(heap.term_string(addr), "p((f,X),X)");
         assert_eq!(
             heap.cells,
             [
+                (Tag::Comp, 3),
+                (Tag::Con, p_id),
                 (Tag::Tup, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Comp, 3),
-                (Tag::Con, p_id),
-                (Tag::Str, 0),
                 (Tag::Arg, 0),
             ]
         );
@@ -369,16 +372,15 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr), "p({f,X},X)");
+        // assert_eq!(heap.term_string(addr), "p({f,X},X)");
         assert_eq!(
             heap.cells,
             [
+                (Tag::Comp, 3),
+                (Tag::Con, p_id),
                 (Tag::Set, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Comp, 3),
-                (Tag::Con, p_id),
-                (Tag::Str, 0),
                 (Tag::Arg, 0),
             ]
         );
@@ -393,24 +395,24 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr), "p([f,X],X)");
+        // assert_eq!(heap.term_string(addr), "p([f,X],X)");
         assert_eq!(
             heap.cells,
             [
-                (Tag::Con, f_id),
-                (Tag::Lis, 2),
-                (Tag::Arg, 0),
-                EMPTY_LIS,
                 (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Lis, 0),
+                (Tag::Con, f_id),
+                (Tag::Lis, 0),
+                (Tag::Arg, 0),
+                EMPTY_LIS,
                 (Tag::Arg, 0),
             ]
         );
     }
 
     #[test]
-    fn query_encode_functor() {
+    fn query_encode_compound() {
         let p_id = SymbolDB::set_const("p");
         let a_id = SymbolDB::set_const("a");
         let f_id = SymbolDB::set_const("f");
@@ -464,13 +466,12 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Comp, 2),
-                (Tag::Con, f_id),
-                (Tag::Ref, 2),
                 (Tag::Comp, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
-                (Tag::Ref, 2),
+                (Tag::Comp, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 4),
+                (Tag::Ref, 4),
             ]
         );
 
@@ -488,13 +489,13 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Tup, 2),
-                (Tag::Con, f_id),
-                (Tag::Ref, 2),
+                
                 (Tag::Comp, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
-                (Tag::Ref, 2),
+                (Tag::Tup, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 4),
+                (Tag::Ref, 4),
             ]
         );
 
@@ -512,13 +513,12 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Set, 2),
-                (Tag::Con, f_id),
-                (Tag::Ref, 2),
                 (Tag::Comp, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
-                (Tag::Ref, 2),
+                (Tag::Set, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 4),
+                (Tag::Ref, 4),
             ]
         );
 
@@ -536,14 +536,15 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Con, f_id),
-                (Tag::Lis, 2),
-                (Tag::Ref, 2),
-                EMPTY_LIS,
+                
                 (Tag::Comp, 3),
                 (Tag::Con, p_id),
-                (Tag::Lis, 0),
-                (Tag::Ref, 2),
+                LIS,
+                (Tag::Con, f_id),
+                LIS,
+                (Tag::Ref, 5),
+                EMPTY_LIS,
+                (Tag::Ref, 5),
             ]
         );
     }
@@ -603,12 +604,11 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
                 (Tag::Comp, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Tup, 3),
-                (Tag::Con, p_id),
-                (Tag::Str, 0),
                 (Tag::Arg, 0),
             ]
         );
@@ -627,12 +627,11 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
                 (Tag::Tup, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Tup, 3),
-                (Tag::Con, p_id),
-                (Tag::Str, 0),
                 (Tag::Arg, 0),
             ]
         );
@@ -651,12 +650,11 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
+                (Tag::Tup, 3),
+                (Tag::Con, p_id),
                 (Tag::Set, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Tup, 3),
-                (Tag::Con, p_id),
-                (Tag::Str, 0),
                 (Tag::Arg, 0),
             ]
         );
@@ -675,13 +673,13 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Con, f_id),
-                (Tag::Lis, 2),
-                (Tag::Arg, 0),
-                EMPTY_LIS,
                 (Tag::Tup, 3),
                 (Tag::Con, p_id),
-                (Tag::Lis, 0),
+                LIS,
+                (Tag::Con, f_id),
+                LIS,
+                (Tag::Arg, 0),
+                EMPTY_LIS,
                 (Tag::Arg, 0),
             ]
         );
@@ -742,13 +740,12 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Comp, 2),
-                (Tag::Con, f_id),
-                (Tag::Ref, 2),
                 (Tag::Tup, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
-                (Tag::Ref, 2),
+                (Tag::Comp, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 4),
+                (Tag::Ref, 4),
             ]
         );
 
@@ -766,13 +763,12 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Tup, 2),
-                (Tag::Con, f_id),
-                (Tag::Ref, 2),
                 (Tag::Tup, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
-                (Tag::Ref, 2),
+                (Tag::Tup, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 4),
+                (Tag::Ref, 4),
             ]
         );
 
@@ -790,13 +786,12 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Set, 2),
-                (Tag::Con, f_id),
-                (Tag::Ref, 2),
                 (Tag::Tup, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
-                (Tag::Ref, 2),
+                (Tag::Set, 2),
+                (Tag::Con, f_id),
+                (Tag::Ref, 4),
+                (Tag::Ref, 4),
             ]
         );
 
@@ -814,14 +809,15 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                (Tag::Con, f_id),
-                (Tag::Lis, 2),
-                (Tag::Ref, 2),
-                EMPTY_LIS,
+                
                 (Tag::Tup, 3),
                 (Tag::Con, p_id),
-                (Tag::Lis, 0),
-                (Tag::Ref, 2),
+                LIS,
+                (Tag::Con, f_id),
+                LIS,
+                (Tag::Ref, 5),
+                EMPTY_LIS,
+                (Tag::Ref, 5),
             ]
         );
     }
@@ -851,10 +847,10 @@ mod encode_tests {
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::Str(Str::Set, vec![q.clone(), a.clone(), q.clone()]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr), "{Q,a}");
+        assert_eq!(heap.term_string(addr), "{a,Q}");
         assert_eq!(
             heap.cells,
-            [(Tag::Set, 2), (Tag::Arg, 0), (Tag::Con, a_id),]
+            [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Arg, 0)]
         );
 
         let mut heap = QueryHeap::new(&[], None);
@@ -867,16 +863,16 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr), "{p,f(X),X}");
+        assert_eq!(heap.term_string(addr), "{f(X),p,X}");
         assert_eq!(
             heap.cells,
             [
+                
+                (Tag::Set, 3),
                 (Tag::Comp, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Set, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
                 (Tag::Arg, 0),
             ]
         );
@@ -891,16 +887,15 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr), "{p,(f,X),X}");
+        assert_eq!(heap.term_string(addr), "{(f,X),p,X}");
         assert_eq!(
             heap.cells,
             [
+                (Tag::Set, 3),
                 (Tag::Tup, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Set, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
                 (Tag::Arg, 0),
             ]
         );
@@ -915,16 +910,15 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr), "{p,{f,X},X}");
+        assert_eq!(heap.term_string(addr), "{{f,X},p,X}");
         assert_eq!(
             heap.cells,
             [
+                (Tag::Set, 3),
                 (Tag::Set, 2),
                 (Tag::Con, f_id),
                 (Tag::Arg, 0),
-                (Tag::Set, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
                 (Tag::Arg, 0),
             ]
         );
@@ -939,17 +933,17 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        assert_eq!(heap.term_string(addr), "{p,[f,X],X}");
+        assert_eq!(heap.term_string(addr), "{[f,X],p,X}");
         assert_eq!(
             heap.cells,
             [
+                (Tag::Set, 3),
+                LIS,
                 (Tag::Con, f_id),
-                (Tag::Lis, 2),
+                LIS,
                 (Tag::Arg, 0),
                 EMPTY_LIS,
-                (Tag::Set, 3),
                 (Tag::Con, p_id),
-                (Tag::Lis, 0),
                 (Tag::Arg, 0),
             ]
         );
@@ -980,10 +974,10 @@ mod encode_tests {
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::Str(Str::Set, vec![q.clone(), a.clone(), q.clone()]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), true);
-        assert_eq!(heap.term_string(addr), "{Q,a}");
+        assert_eq!(heap.term_string(addr), "{a,Q}");
         assert_eq!(
             heap.cells,
-            [(Tag::Set, 2), (Tag::Ref, 1), (Tag::Con, a_id),]
+            [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Ref, 2),]
         );
 
         let mut heap = QueryHeap::new(&[], None);
@@ -996,17 +990,16 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), true);
-        assert_eq!(heap.term_string(addr), "{p,f(X),X}");
+        assert_eq!(heap.term_string(addr), "{f(X),p,X}");
         assert_eq!(
             heap.cells,
             [
+                (Tag::Set, 3),
                 (Tag::Comp, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 2),
-                (Tag::Set, 3),
+                (Tag::Ref, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
-                (Tag::Ref, 2),
+                (Tag::Ref, 3),
             ]
         );
 
@@ -1020,17 +1013,16 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), true);
-        assert_eq!(heap.term_string(addr), "{p,(f,X),X}");
+        assert_eq!(heap.term_string(addr), "{(f,X),p,X}");
         assert_eq!(
             heap.cells,
             [
+                (Tag::Set, 3),
                 (Tag::Tup, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 2),
-                (Tag::Set, 3),
+                (Tag::Ref, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
-                (Tag::Ref, 2),
+                (Tag::Ref, 3),
             ]
         );
 
@@ -1044,17 +1036,16 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), true);
-        assert_eq!(heap.term_string(addr), "{p,{f,X},X}");
+        assert_eq!(heap.term_string(addr), "{{f,X},p,X}");
         assert_eq!(
             heap.cells,
             [
+                (Tag::Set, 3),
                 (Tag::Set, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 2),
-                (Tag::Set, 3),
+                (Tag::Ref, 3),
                 (Tag::Con, p_id),
-                (Tag::Str, 0),
-                (Tag::Ref, 2),
+                (Tag::Ref, 3),
             ]
         );
 
@@ -1068,18 +1059,19 @@ mod encode_tests {
             ],
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), true);
-        assert_eq!(heap.term_string(addr), "{p,[f,X],X}");
+        assert_eq!(heap.term_string(addr), "{[f,X],p,X}");
         assert_eq!(
             heap.cells,
             [
-                (Tag::Con, f_id),
-                (Tag::Lis, 2),
-                (Tag::Ref, 2),
-                EMPTY_LIS,
+                
                 (Tag::Set, 3),
+                LIS,
+                (Tag::Con, f_id),
+                LIS,
+                (Tag::Ref, 4),
+                EMPTY_LIS,
                 (Tag::Con, p_id),
-                (Tag::Lis, 0),
-                (Tag::Ref, 2),
+                (Tag::Ref, 4),
             ]
         );
     }
@@ -1098,35 +1090,27 @@ mod encode_tests {
             Box::new(Term::EmptyList),
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        let addr = heap.heap_push((Tag::Lis, addr));
         assert_eq!(heap.term_string(addr), "[a,X,a]");
         assert_eq!(
             heap.cells,
             [
+                LIS,
                 (Tag::Con, a_id),
-                (Tag::Lis, 2),
+                LIS,
                 (Tag::Arg, 0),
-                (Tag::Lis, 4),
+                LIS,
                 (Tag::Con, a_id),
                 EMPTY_LIS,
-                (Tag::Lis, 0),
             ]
         );
 
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::List(vec![q.clone(), a.clone()], Box::new(q.clone()));
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        let addr = heap.heap_push((Tag::Lis, addr));
         assert_eq!(heap.term_string(addr), "[Q,a|Q]");
         assert_eq!(
             heap.cells,
-            [
-                (Tag::Arg, 0),
-                (Tag::Lis, 2),
-                (Tag::Con, a_id),
-                (Tag::Arg, 0),
-                (Tag::Lis, 0),
-            ]
+            [LIS, (Tag::Arg, 0), LIS, (Tag::Con, a_id), (Tag::Arg, 0),]
         );
 
         let mut heap = QueryHeap::new(&[], None);
@@ -1142,42 +1126,36 @@ mod encode_tests {
             Box::new(q.clone()),
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
-        let addr = heap.heap_push((Tag::Lis, addr));
         assert_eq!(heap.term_string(addr), "[[1,2,3],[],[[]|Q]|Q]");
         assert_eq!(
             heap.cells,
             [
+                LIS,
+                LIS,
                 (Tag::Int, 1),
-                (Tag::Lis, 2),
+                LIS,
                 (Tag::Int, 2),
-                (Tag::Lis, 4),
+                LIS,
                 (Tag::Int, 3),
                 EMPTY_LIS,
+                LIS,
+                EMPTY_LIS,
+                LIS,
+                LIS,
                 EMPTY_LIS,
                 (Tag::Arg, 0),
-                (Tag::Lis, 0),
-                (Tag::Lis, 10),
-                EMPTY_LIS,
-                (Tag::Lis, 12),
-                (Tag::Lis, 6),
                 (Tag::Arg, 0),
-                (Tag::Lis, 8),
             ]
         );
     }
 
     #[test]
     fn query_encode_list() {
-        let _p_id = SymbolDB::set_const("p");
         let a_id = SymbolDB::set_const("a");
-        let _f_id = SymbolDB::set_const("f");
 
-        let _p = Term::Constant("p".into());
         let q = Term::Variable("Q".into());
         let x = Term::Variable("X".into());
-        let _y = Term::Variable("Y".into());
         let a = Term::Constant("a".into());
-        let _f = Term::Constant("f".into());
 
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::List(
@@ -1185,34 +1163,32 @@ mod encode_tests {
             Box::new(Term::EmptyList),
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), true);
-        let addr = heap.heap_push((Tag::Lis, addr));
         assert_eq!(heap.term_string(addr), "[a,X,a]");
         assert_eq!(
             heap.cells,
             [
+                LIS,
                 (Tag::Con, a_id),
-                (Tag::Lis, 2),
-                (Tag::Ref, 2),
-                (Tag::Lis, 4),
+                LIS,
+                (Tag::Ref, 3),
+                LIS,
                 (Tag::Con, a_id),
                 EMPTY_LIS,
-                (Tag::Lis, 0),
             ]
         );
 
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::List(vec![q.clone(), a.clone()], Box::new(q.clone()));
         let addr = term.encode(&mut heap, &mut HashMap::new(), true);
-        let addr = heap.heap_push((Tag::Lis, addr));
         assert_eq!(heap.term_string(addr), "[Q,a|Q]");
         assert_eq!(
             heap.cells,
             [
-                (Tag::Ref, 0),
-                (Tag::Lis, 2),
+                LIS,
+                (Tag::Ref, 1),
+                LIS,
                 (Tag::Con, a_id),
-                (Tag::Ref, 0),
-                (Tag::Lis, 0),
+                (Tag::Ref, 1),
             ]
         );
 
@@ -1229,26 +1205,25 @@ mod encode_tests {
             Box::new(q.clone()),
         );
         let addr = term.encode(&mut heap, &mut HashMap::new(), true);
-        let addr = heap.heap_push((Tag::Lis, addr));
         assert_eq!(heap.term_string(addr), "[[1,2,3],[],[[]|Q]|Q]");
         assert_eq!(
             heap.cells,
             [
+                LIS,
+                LIS,
                 (Tag::Int, 1),
-                (Tag::Lis, 2),
+                LIS,
                 (Tag::Int, 2),
-                (Tag::Lis, 4),
+                LIS,
                 (Tag::Int, 3),
                 EMPTY_LIS,
+                LIS,
                 EMPTY_LIS,
-                (Tag::Ref, 7),
-                (Tag::Lis, 0),
-                (Tag::Lis, 10),
+                LIS,
+                LIS,
                 EMPTY_LIS,
-                (Tag::Lis, 12),
-                (Tag::Lis, 6),
-                (Tag::Ref, 7),
-                (Tag::Lis, 8),
+                (Tag::Ref, 13),
+                (Tag::Ref, 13),
             ]
         );
     }

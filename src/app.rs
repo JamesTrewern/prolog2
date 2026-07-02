@@ -517,7 +517,7 @@ impl App {
         for literal in goals.iter() {
             vars.extend(query_heap.term_vars(*literal, false).iter().map(|addr| {
                 (
-                    SymbolDB::get_var(*addr, query_heap.get_id()).unwrap(),
+                    SymbolDB::get_var(*addr, query_heap.get_id(*addr)).unwrap(),
                     *addr,
                 )
             }));
