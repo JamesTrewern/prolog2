@@ -2,10 +2,7 @@ use std::{collections::HashMap, mem};
 
 use fsize::fsize;
 
-use crate::heap::{
-    heap::{Cell, Heap, Tag, EMPTY_LIS, LIS},
-    symbol_db::SymbolDB,
-};
+use crate::heap::{Heap, SymbolDB, Tag, EMPTY_LIS, LIS};
 
 #[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
 pub enum Str {
@@ -159,7 +156,6 @@ fn encode_struct(
     for term in terms {
         term.encode_rec(heap, var_values, query);
     }
-    
 }
 
 fn encode_list(
@@ -182,11 +178,7 @@ mod encode_tests {
 
     use super::Term;
     use crate::{
-        heap::{
-            heap::{Heap, Tag, EMPTY_LIS, LIS},
-            query_heap::QueryHeap,
-            symbol_db::SymbolDB,
-        },
+        heap::{Heap, QueryHeap, SymbolDB, Tag, EMPTY_LIS, LIS},
         parser::term::Str,
     };
 
@@ -489,7 +481,6 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                
                 (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 (Tag::Tup, 2),
@@ -536,7 +527,6 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                
                 (Tag::Comp, 3),
                 (Tag::Con, p_id),
                 LIS,
@@ -809,7 +799,6 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                
                 (Tag::Tup, 3),
                 (Tag::Con, p_id),
                 LIS,
@@ -848,10 +837,7 @@ mod encode_tests {
         let term = Term::Str(Str::Set, vec![q.clone(), a.clone(), q.clone()]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
         assert_eq!(heap.term_string(addr), "{a,Q}");
-        assert_eq!(
-            heap.cells,
-            [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Arg, 0)]
-        );
+        assert_eq!(heap.cells, [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Arg, 0)]);
 
         let mut heap = QueryHeap::new(&[], None);
         let term = Term::Str(
@@ -867,7 +853,6 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                
                 (Tag::Set, 3),
                 (Tag::Comp, 2),
                 (Tag::Con, f_id),
@@ -1063,7 +1048,6 @@ mod encode_tests {
         assert_eq!(
             heap.cells,
             [
-                
                 (Tag::Set, 3),
                 LIS,
                 (Tag::Con, f_id),
@@ -1183,13 +1167,7 @@ mod encode_tests {
         assert_eq!(heap.term_string(addr), "[Q,a|Q]");
         assert_eq!(
             heap.cells,
-            [
-                LIS,
-                (Tag::Ref, 1),
-                LIS,
-                (Tag::Con, a_id),
-                (Tag::Ref, 1),
-            ]
+            [LIS, (Tag::Ref, 1), LIS, (Tag::Con, a_id), (Tag::Ref, 1),]
         );
 
         let mut heap = QueryHeap::new(&[], None);

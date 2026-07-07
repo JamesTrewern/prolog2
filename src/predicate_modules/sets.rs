@@ -11,10 +11,7 @@
 
 use super::{helpers::*, PredReturn, PredicateModule};
 use crate::{
-    heap::{
-        heap::{Heap, Tag},
-        query_heap::QueryHeap,
-    },
+    heap::{Heap, QueryHeap, Tag},
     predicate_modules::maths::Number,
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
@@ -112,7 +109,7 @@ pub fn set_member_pred(
     if is_var(heap, elem_addr) {
         // Unbound — enumerate all elements as choices
         let var_addr = heap[elem_addr].1; // The Ref target (itself)
-        let alternatives: Vec<(Vec<(usize, usize)>, Vec<usize>)> = set_elements( base, len)
+        let alternatives: Vec<(Vec<(usize, usize)>, Vec<usize>)> = set_elements(base, len)
             .into_iter()
             .map(|el_addr| (vec![(var_addr, el_addr)], vec![]))
             .collect();
@@ -165,7 +162,7 @@ pub fn subset_sized(
             return PredReturn::Success(vec![(subset_arg, set_addr)], vec![]);
         }
         // Generate mode: enumerate every k-element subset of Set.
-        let elems = set_elements( set.0, set.1);
+        let elems = set_elements(set.0, set.1);
         let combos = combinations(&elems, k);
         if combos.is_empty() {
             return false.into();
@@ -184,7 +181,7 @@ pub fn subset_sized(
     } else if let Some(subset) = read_set(heap, subset_arg) {
         // Check mode: subset must have exactly k elements, all contained in Set.
         (subset.1 == k
-            && set_elements( subset.0, subset.1)
+            && set_elements(subset.0, subset.1)
                 .iter()
                 .all(|elem_addr| set_contains(heap, set.0, set.1, *elem_addr)))
         .into()
@@ -210,8 +207,8 @@ pub fn set_union_pred(
     let result_addr = goal_arg(heap, goal, 2);
 
     // Collect all elements from set1, then add elements from set2 not already present
-    let mut all_addrs: Vec<usize> = set_elements( base1, len1);
-    for a in set_elements( base2, len2) {
+    let mut all_addrs: Vec<usize> = set_elements(base1, len1);
+    for a in set_elements(base2, len2) {
         if !all_addrs
             .iter()
             .any(|&existing| heap.term_equal(existing, a))
@@ -246,7 +243,7 @@ pub fn set_intersection_pred(
     };
     let result_addr = goal_arg(heap, goal, 2);
 
-    let common: Vec<usize> = set_elements( base1, len1)
+    let common: Vec<usize> = set_elements(base1, len1)
         .into_iter()
         .filter(|&a| set_contains(heap, base2, len2, a))
         .collect();
@@ -276,7 +273,7 @@ pub fn set_difference_pred(
     };
     let result_addr = goal_arg(heap, goal, 2);
 
-    let diff: Vec<usize> = set_elements( base1, len1)
+    let diff: Vec<usize> = set_elements(base1, len1)
         .into_iter()
         .filter(|&a| !set_contains(heap, base2, len2, a))
         .collect();
@@ -306,11 +303,11 @@ pub fn set_symdiff_pred(
     };
     let result_addr = goal_arg(heap, goal, 2);
 
-    let mut sym: Vec<usize> = set_elements( base1, len1)
+    let mut sym: Vec<usize> = set_elements(base1, len1)
         .into_iter()
         .filter(|&a| !set_contains(heap, base2, len2, a))
         .collect();
-    for a in set_elements( base2, len2) {
+    for a in set_elements(base2, len2) {
         if !set_contains(heap, base1, len1, a) {
             sym.push(a);
         }
@@ -367,9 +364,11 @@ pub fn set_add_pred(
     if set_contains(heap, base, len, elem_addr) {
         if is_var(heap, result_addr) {
             // Bind to the original set address
+            todo!("handle unwrap properly");
             let set_addr = resolve(heap, heap.deref_addr(goal_arg(heap, goal, 0)));
             PredReturn::Success(vec![(result_addr, set_addr)], vec![])
         } else {
+            todo!("handle unwrap properly");
             heap.term_equal(
                 result_addr,
                 resolve(heap, heap.deref_addr(goal_arg(heap, goal, 0))),
@@ -378,7 +377,7 @@ pub fn set_add_pred(
         }
     } else {
         // Build new set with element added
-        let mut addrs: Vec<usize> = set_elements( base, len);
+        let mut addrs: Vec<usize> = set_elements(base, len);
         addrs.push(elem_addr);
         let new_set = build_set_from_addrs(heap, &addrs);
         if is_var(heap, result_addr) {
@@ -403,7 +402,7 @@ pub fn set_del_pred(
     let elem_addr = goal_arg(heap, goal, 1);
     let result_addr = goal_arg(heap, goal, 2);
 
-    let remaining: Vec<usize> = set_elements( base, len)
+    let remaining: Vec<usize> = set_elements(base, len)
         .into_iter()
         .filter(|&a| !heap.term_equal(a, elem_addr))
         .collect();
@@ -429,7 +428,7 @@ pub fn set_to_list_pred(
     };
     let list_addr_arg = goal_arg(heap, goal, 1);
 
-    let addrs = set_elements( base, len);
+    let addrs = set_elements(base, len);
     let list = build_list_from_addrs(heap, &addrs);
 
     if is_var(heap, list_addr_arg) {

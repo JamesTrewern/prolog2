@@ -4,10 +4,10 @@ use std::collections::HashMap;
 
 use super::{
     build_tree::TreeClause,
-    term::{Term,Str},
+    term::{Str, Term},
 };
 use crate::{
-    heap::heap::Heap,
+    heap::Heap,
     program::{clause::Clause, predicate_table::PredicateTable},
 };
 
@@ -42,7 +42,7 @@ pub fn build_clause(
 
 /// Extract variable names from a Term::Set
 fn extract_var_names_from_set(term: Term) -> Vec<String> {
-    if let Term::Str(Str::Set,set_terms) = term {
+    if let Term::Str(Str::Set, set_terms) = term {
         set_terms
             .into_iter()
             .map(|t| {
@@ -90,7 +90,7 @@ fn extract_meta_rule_vars(terms: &mut Vec<Term>) -> (Vec<String>, Option<Vec<Str
     let last = terms.pop().unwrap();
     match last {
         // Case 1: last is {P,Q,R} — all constrained (original behaviour)
-        Term::Str(Str::Set,_) => {
+        Term::Str(Str::Set, _) => {
             let meta_vars = extract_var_names_from_set(last);
             (meta_vars, None)
         }
@@ -98,7 +98,7 @@ fn extract_meta_rule_vars(terms: &mut Vec<Term>) -> (Vec<String>, Option<Vec<Str
         Term::List(_, _) => {
             let unconstrained = extract_var_names_from_list(last);
             // Check if the new last element is a Set (Case 2: {P},[Q1,Q2])
-            let constrained = if matches!(terms.last(), Some(Term::Str(Str::Set,_))) {
+            let constrained = if matches!(terms.last(), Some(Term::Str(Str::Set, _))) {
                 extract_var_names_from_set(terms.pop().unwrap())
             } else {
                 // Case 3: [Q1,Q2] only — no constrained vars
@@ -156,10 +156,7 @@ pub(crate) fn execute_tree(
 #[cfg(test)]
 mod tests {
     use crate::{
-        heap::{
-            heap::{Cell, Tag},
-            symbol_db::SymbolDB,
-        },
+        heap::{Cell, SymbolDB, Tag},
         parser::execute_tree::execute_tree,
         program::predicate_table::{Predicate, PredicateTable},
     };
@@ -203,11 +200,10 @@ mod tests {
     fn rules() {
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
-        let facts = TokenStream::new(
-            tokenise("p(X,Y):-q(X,a),q(Y,b). q(X):-r(X). q(X):-p(X).").unwrap(),
-        )
-        .parse_all()
-        .unwrap();
+        let facts =
+            TokenStream::new(tokenise("p(X,Y):-q(X,a),q(Y,b). q(X):-r(X). q(X):-p(X).").unwrap())
+                .parse_all()
+                .unwrap();
 
         let [p, q, r, a, b] = ["p", "q", "r", "a", "b"].map(|s| SymbolDB::set_const(s));
 
@@ -335,10 +331,9 @@ mod tests {
         // constrained_vars = {} (empty)
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
-        let facts =
-            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].").unwrap())
-                .parse_all()
-                .unwrap();
+        let facts = TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].").unwrap())
+            .parse_all()
+            .unwrap();
 
         let edge = SymbolDB::set_const("edge");
         let _q = SymbolDB::set_const("q");

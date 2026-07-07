@@ -11,10 +11,7 @@ use std::{
 
 use crate::{
     app::{App, TopProg},
-    heap::{
-        heap::{Cell, Heap, Tag},
-        query_heap::QueryHeap,
-    },
+    heap::{Cell, Heap, QueryHeap, Tag},
     parser::{build_tree::TokenStream, execute_tree::build_clause, tokeniser::tokenise},
     program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::proof::Proof,
@@ -24,8 +21,6 @@ use crate::{
 use lazy_static::lazy_static;
 use rayon;
 use smallvec::SmallVec;
-
-
 
 lazy_static! {
     static ref CPU_COUNT: usize = num_cpus::get();
@@ -40,7 +35,7 @@ struct HypothesisMsg {
 }
 
 impl App {
-    pub fn run_top_prog(&mut self) -> String{
+    pub fn run_top_prog(&mut self) -> String {
         let Some(mut examples) = self.examples.clone() else {
             panic!("Can't start top prog without examples");
         };
@@ -133,16 +128,16 @@ fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, Str
 /// Minimal work on the worker thread — just the copy.
 fn extract_hypothesis_local(proof: &Proof, heap: &impl Heap) -> (Vec<Cell>, Vec<Clause>) {
     let mut local_cells: Vec<Cell> = Vec::new();
-    let mut ref_map = HashMap::new();
+    // let mut ref_map = HashMap::new();
     let mut clauses = Vec::new();
-
-    for clause in proof.hypothesis.iter() {
-        let new_literals: Vec<usize> = clause
-            .iter()
-            .map(|&lit_addr| local_cells.copy_term(heap, lit_addr, &mut ref_map))
-            .collect();
-        clauses.push(Clause::new(new_literals, None, None));
-    }
+    todo!();
+    // for clause in proof.hypothesis.iter() {
+    //     let new_literals: Vec<usize> = clause
+    //         .iter()
+    //         .map(|&lit_addr| local_cells.clone_term(heap, lit_addr, &mut ref_map))
+    //         .collect();
+    //     clauses.push(Clause::new(new_literals, None, None));
+    // }
 
     (local_cells, clauses)
 }
@@ -185,7 +180,7 @@ fn generalise(
             let len = cells.len();
             for cell in cells {
                 let adjusted = match cell {
-                    (Tag::Str, addr) => (Tag::Str, addr + offset),
+                    // (Tag::Str, addr) => (Tag::Str, addr + offset),
                     (Tag::Lis, addr) => (Tag::Lis, addr + offset),
                     (Tag::Ref, addr) => (Tag::Ref, addr + offset),
                     other => other,
@@ -529,10 +524,7 @@ fn union_sub_hypotheses_renumbered(
 
     for hypothesis in sub_hypotheses {
         // Convert to strings, normalise within hypothesis
-        let clause_strings: Vec<String> = hypothesis
-            .iter()
-            .map(|c| c.to_string(heap))
-            .collect();
+        let clause_strings: Vec<String> = hypothesis.iter().map(|c| c.to_string(heap)).collect();
         let normalised = crate::normalise_hypothesis(&clause_strings);
 
         // Group clauses by head predicate name
@@ -650,14 +642,15 @@ fn normalise_vars(clause: &str) -> String {
                 i += 1;
             }
             let var_name = &clause[start..i];
-            let canonical = if let Some((_, canon)) = var_map.iter().find(|(orig, _)| orig == var_name) {
-                canon.clone()
-            } else {
-                let canon = format!("V{counter}");
-                counter += 1;
-                var_map.push((var_name.to_string(), canon.clone()));
-                canon
-            };
+            let canonical =
+                if let Some((_, canon)) = var_map.iter().find(|(orig, _)| orig == var_name) {
+                    canon.clone()
+                } else {
+                    let canon = format!("V{counter}");
+                    counter += 1;
+                    var_map.push((var_name.to_string(), canon.clone()));
+                    canon
+                };
             result.push_str(&canonical);
         } else {
             result.push(bytes[i] as char);
@@ -673,7 +666,10 @@ fn apply_mapping(clause: &str, mapping: &HashMap<String, String>) -> String {
     if mapping.is_empty() {
         return clause.to_string();
     }
-    let mut pairs: Vec<(&str, &str)> = mapping.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let mut pairs: Vec<(&str, &str)> = mapping
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
     let mut result = clause.to_string();
     for (old, new) in pairs {

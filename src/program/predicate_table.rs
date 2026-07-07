@@ -211,7 +211,7 @@ impl DerefMut for PredicateTable {
 mod tests {
     use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
     use crate::{
-        heap::{query_heap::QueryHeap, symbol_db::SymbolDB},
+        heap::{QueryHeap, SymbolDB},
         predicate_modules::PredReturn,
         program::{hypothesis::Hypothesis, predicate_table::FindReturn},
         Config,

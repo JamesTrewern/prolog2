@@ -6,11 +6,7 @@ use console::Term;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    heap::{
-        heap::{Cell, Heap},
-        query_heap::QueryHeap,
-        symbol_db::SymbolDB,
-    },
+    heap::{Cell, Heap, QueryHeap, SymbolDB},
     parser::{
         build_tree::TokenStream,
         execute_tree::{build_clause, execute_tree},
@@ -183,13 +179,13 @@ impl Examples {
         buffer
     }
 
-    pub fn normalise_for_top_prog(&mut self){
-        fn normalise(ex: &mut String){
+    pub fn normalise_for_top_prog(&mut self) {
+        fn normalise(ex: &mut String) {
             *ex = ex.trim().into();
-            if ex.chars().last() != Some('.'){
+            if ex.chars().last() != Some('.') {
                 *ex += ".";
             }
-        } 
+        }
         self.pos.iter_mut().for_each(normalise);
         self.neg.iter_mut().for_each(normalise);
     }
@@ -688,7 +684,10 @@ impl<'a> Iterator for QuerySession<'a> {
     type Item = Solution;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.proof.prove(&mut self.heap,self.predicate_table, self.config) {
+        if self
+            .proof
+            .prove(&mut self.heap, self.predicate_table, self.config)
+        {
             let bindings = self
                 .vars
                 .iter()
@@ -698,7 +697,9 @@ impl<'a> Iterator for QuerySession<'a> {
                 for clause in self.proof.hypothesis.iter() {
                     clause.normalise_clause_vars(&mut self.heap);
                 }
-                let clause_strings: Vec<String> = self.proof.hypothesis
+                let clause_strings: Vec<String> = self
+                    .proof
+                    .hypothesis
                     .iter()
                     .map(|c| c.to_string(&self.heap))
                     .collect();

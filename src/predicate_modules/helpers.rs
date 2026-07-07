@@ -1,7 +1,8 @@
-use crate::{Config, app::Solution, heap::{
-    heap::{Cell, Heap, Tag},
-    query_heap::QueryHeap,
-}};
+use crate::{
+    app::Solution,
+    heap::{Cell, Heap, QueryHeap, Tag},
+    Config,
+};
 
 /// Dereferenced heap address of the nth argument (0-indexed) of `goal`.
 pub fn goal_arg(heap: &QueryHeap, goal: usize, n: usize) -> usize {
@@ -15,10 +16,7 @@ pub fn is_var(heap: &QueryHeap, addr: usize) -> bool {
 
 /// Resolve any `Str` indirection and return the structure's base address.
 pub fn resolve(heap: &QueryHeap, addr: usize) -> usize {
-    match heap[addr] {
-        (Tag::Str, ptr) => ptr,
-        _ => addr,
-    }
+    todo!()
 }
 
 // ---------------------------------------------------------------------------
@@ -36,11 +34,7 @@ pub fn resolve(heap: &QueryHeap, addr: usize) -> usize {
 /// terms in `Str` indirection.
 fn cell_for_addr(heap: &QueryHeap, addr: usize) -> Cell {
     let addr = heap.deref_addr(addr);
-    match heap[addr] {
-        (Tag::Str, ptr) => (Tag::Str, ptr),
-        (Tag::Comp | Tag::Tup | Tag::Set, _) => (Tag::Str, addr),
-        cell => cell,
-    }
+    todo!()
 }
 
 // ---------------------------------------------------------------------------
@@ -182,9 +176,11 @@ impl TestWrapper {
         let mut config = Config::default();
         config.debug = true;
         TestWrapper {
-            app: modules.iter().fold(App::new().config(config), |app, predicate_module| {
-                app.load_module(predicate_module).unwrap()
-            }),
+            app: modules
+                .iter()
+                .fold(App::new().config(config), |app, predicate_module| {
+                    app.load_module(predicate_module).unwrap()
+                }),
         }
     }
 
@@ -219,7 +215,8 @@ impl TestWrapper {
 
     pub fn binding(&self, query: &str, var: &str) -> Option<String> {
         self.app
-            .query_session(query).expect("query should parse")
+            .query_session(query)
+            .expect("query should parse")
             .next()
             .and_then(|sol| {
                 sol.bindings
@@ -232,15 +229,21 @@ impl TestWrapper {
     pub fn assert_bindings(&self, query: &str, expected_bindings: &[(&str, &str)]) {
         let solutions: Vec<Solution> = self.app.query_session(query).unwrap().collect();
         println!("Solution: {:?}", solutions);
-        for expected in expected_bindings{
+        for expected in expected_bindings {
             println!("Test for binding: {} = {}", expected.0, expected.1);
-            assert!(solutions.iter().any(|solution| solution.bindings.iter().any(|binding|*binding.0 == *expected.0 && binding.1 == expected.1)))
+            assert!(solutions.iter().any(|solution| solution
+                .bindings
+                .iter()
+                .any(|binding| *binding.0 == *expected.0 && binding.1 == expected.1)))
         }
     }
 
     pub fn assert_binding(&self, query: &str, expected: (&str, &str)) {
         let solution = self.app.query_session(query).unwrap().next().unwrap();
-        assert!(solution.bindings.iter().any(|binding|*binding.0 == *expected.0 && binding.1 == expected.1))
+        assert!(solution
+            .bindings
+            .iter()
+            .any(|binding| *binding.0 == *expected.0 && binding.1 == expected.1))
     }
 
     pub fn assert_false(&self, query: &str) {

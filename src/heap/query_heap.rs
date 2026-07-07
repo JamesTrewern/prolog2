@@ -1,8 +1,6 @@
-use crate::heap::{heap::Tag, symbol_db::SymbolDB};
-use fsize::fsize;
+use crate::heap::{TermWalk, LIS, Tag};
 use std::{
     collections::HashMap,
-    mem,
     ops::{Index, IndexMut, Range},
     sync::atomic::{AtomicUsize, Ordering::Acquire},
 };
@@ -50,115 +48,44 @@ impl<'a> QueryHeap<'a> {
     /// sharing (e.g. across literals in a clause).
     /// Used to duplicate terms from immutable cells such as prog_cells or root_heap heap
     /// and place them in mutable cells.
-    pub fn dup_term(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) -> usize {
-        let addr = self.deref_addr(addr);
-        match self[addr] {
-            (Tag::Str, pointer) => {
-                let new_ptr = self.dup_term(pointer, ref_map);
-                self.heap_push((Tag::Str, new_ptr));
-                self.heap_len() - 1
-            }
-            (Tag::Comp | Tag::Tup | Tag::Set, length) => {
-                // Pre-pass: recursively copy complex sub-terms
-                let mut pre: Vec<Option<Cell>> = Vec::with_capacity(length);
-                for i in 1..=length {
-                    pre.push(self.dup_complex(addr + i, ref_map));
+    pub fn dup_term(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) {
+        let mut addr_stack = TermWalk::new(addr);
+        loop {
+            let addr = if let Some(addr) = addr_stack.next_addr(){
+                if let Some(deref_addr) = self.is_deref(addr) {
+                    addr_stack.add_frame(deref_addr);
+                    deref_addr
+                }else{
+                    addr
                 }
-                // Lay down structure header + sub-terms
-                let h = self.heap_len();
-                self.heap_push((self[addr].0, length));
-                for (i, pre_cell) in pre.into_iter().enumerate() {
-                    match pre_cell {
-                        Some(cell) => {
-                            self.heap_push(cell);
-                        }
-                        None => self.dup_simple(addr + 1 + i, ref_map),
+            }else{
+                return;
+            };
+            match self[addr] {
+                LIS => {
+                    self.heap_push(LIS);
+                    addr_stack.increment_cells_left(2);
+                }
+                cell @ (Tag::Comp | Tag::Tup | Tag::Set, len) => {
+                    self.heap_push(cell);
+                    addr_stack.increment_cells_left(len);
+                }
+                (Tag::Ref, addr) => {
+                    if let Some(&mapped) = ref_map.get(&addr) {
+                        self.heap_push((Tag::Ref, mapped));
+                    } else {
+                        let new_addr = self.heap_len();
+                        self.heap_push((Tag::Ref, new_addr));
+                        ref_map.insert(addr, new_addr);
                     }
                 }
-                h
-            }
-            (Tag::Lis, pointer) => {
-                let head = self.dup_complex(pointer, ref_map);
-                let tail = self.dup_complex(pointer + 1, ref_map);
-                let h = self.heap_len();
-                match head {
-                    Some(cell) => {
-                        self.heap_push(cell);
-                    }
-                    None => self.dup_simple(pointer, ref_map),
-                }
-                match tail {
-                    Some(cell) => {
-                        self.heap_push(cell);
-                    }
-                    None => self.dup_simple(pointer + 1, ref_map),
-                }
-                h
-            }
-            (Tag::Ref, r) if r == addr => {
-                // Unbound ref — use or create mapping
-                if let Some(&mapped) = ref_map.get(&addr) {
-                    mapped
-                } else {
-                    let new_addr = self.heap_len();
-                    self.heap_push((Tag::Ref, new_addr));
-                    ref_map.insert(addr, new_addr);
-                    new_addr
-                }
-            }
-            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri | Tag::ELis, _) => {
-                self.heap_push(self[addr]);
-                self.heap_len() - 1
-            }
-            (tag, val) => unreachable!("dup_term_with_ref_map: unhandled cell ({tag:?}, {val})"),
-        }
-    }
-
-    /// Pre-pass helper for dup_term_with_ref_map: recursively copy complex
-    /// sub-terms and return the Cell to later insert, or None for simple cells.
-    fn dup_complex(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) -> Option<Cell> {
-        let addr = self.deref_addr(addr);
-        match self[addr] {
-            (Tag::Comp | Tag::Tup | Tag::Set, _) => Some((Tag::Str, self.dup_term(addr, ref_map))),
-            (Tag::Str, ptr) => Some((Tag::Str, self.dup_term(ptr, ref_map))),
-            (Tag::Lis, _) => Some((Tag::Lis, self.dup_term(addr, ref_map))),
-            _ => None,
-        }
-    }
-
-    /// Post-pass helper for dup_term_with_ref_map: push a simple cell,
-    /// handling Ref identity via ref_map.
-    fn dup_simple(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) {
-        let addr = self.deref_addr(addr);
-        match self[addr] {
-            (Tag::Ref, r) if r == addr => {
-                if let Some(&mapped) = ref_map.get(&addr) {
-                    self.heap_push((Tag::Ref, mapped));
-                } else {
-                    let new_addr = self.heap_len();
-                    self.heap_push((Tag::Ref, new_addr));
-                    ref_map.insert(addr, new_addr);
-                }
-            }
-            cell => {
-                self.heap_push(cell);
+                cell => _ = self.heap_push(cell),
             }
         }
     }
 }
 
 impl Heap for QueryHeap<'_> {
-    #[inline(always)]
-    fn deref_addr(&self, mut addr: usize) -> usize {
-        loop {
-            let cell = self[addr];
-            match cell {
-                (Tag::Ref, pointer) if addr == pointer => return pointer,
-                (Tag::Ref, pointer) => addr = pointer,
-                _ => return addr,
-            }
-        }
-    }
 
     fn heap_push(&mut self, cell: Cell) -> usize {
         let i = self.heap_len();

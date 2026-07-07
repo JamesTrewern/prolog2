@@ -1,7 +1,7 @@
 use crate::{
     Config, heap::{
-        heap::Heap,
-        query_heap::QueryHeap,
+        Heap,
+        QueryHeap,
     }, predicate_modules::helpers::{goal_arg, resolve}, program::{hypothesis::Hypothesis, predicate_table::PredicateTable}, resolution::proof::Proof
 };
 

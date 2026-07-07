@@ -7,11 +7,7 @@
 use smallvec::SmallVec;
 
 use crate::{
-    heap::{
-        heap::{Heap, Tag},
-        query_heap::QueryHeap,
-        symbol_db::SymbolDB,
-    },
+    heap::{Heap, QueryHeap, SymbolDB, Tag},
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
         clause::Clause,
@@ -134,16 +130,7 @@ impl Env {
 
     ///If goal is tuple select conjunction strategy
     fn get_tup_goals(&mut self, heap: &mut QueryHeap) {
-        let goals = heap
-            .str_iterator(self.goal)
-            .map(|goal| {
-                if let (Tag::Str, ptr) = heap[goal] {
-                    ptr
-                } else {
-                    goal
-                }
-            })
-            .collect();
+        let goals = todo!();
         self.strategy = Strategy::Conjunction {
             goals,
             expanded: false,
@@ -472,11 +459,12 @@ impl Env {
                 if clause.meta() {
                     if heap.str_symbol_arity(head).0 == 0 && heap.str_symbol_arity(self.goal).0 == 0
                     {
-                        let pred_symbol = SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
+                        let pred_symbol =
+                            SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
                         let pred_addr = heap.set_const(pred_symbol);
                         substitution.set_arg(0, pred_addr);
                         substitution =
-                            substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
+                        substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
                         invented_pred_addr = Some(pred_addr);
 
                         if let Strategy::Clause { invent_pred, .. } = &mut self.strategy {

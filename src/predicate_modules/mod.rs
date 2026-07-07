@@ -20,7 +20,7 @@ pub use meta_predicates::META_PREDICATES;
 pub use strings::STRINGS;
 
 use crate::{
-    heap::query_heap::QueryHeap,
+    heap::QueryHeap,
     predicate_modules::sets::SETS,
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,

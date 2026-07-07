@@ -2,11 +2,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use super::{PredReturn, PredicateModule};
 use crate::{
-    heap::{
-        heap::{Cell, Heap, Tag},
-        query_heap::QueryHeap,
-        symbol_db::known_symbol_id,
-    },
+    heap::{known_symbol_id, Cell, Heap, QueryHeap, Tag},
     program::hypothesis::Hypothesis,
     program::predicate_table::PredicateTable,
     Config,
@@ -136,19 +132,19 @@ impl Number {
         Number::Flt(float_value)
     }
 
-    pub fn int_from_value(value: usize) -> Self{
+    pub fn int_from_value(value: usize) -> Self {
         Number::Int(usize::cast_signed(value))
     }
 }
 
-impl TryFrom<Cell> for Number{
+impl TryFrom<Cell> for Number {
     type Error = Tag;
 
     fn try_from(value: Cell) -> Result<Self, Self::Error> {
         match value.0 {
             Tag::Flt => Ok(Self::flt_from_value(value.1)),
             Tag::Int => Ok(Self::int_from_value(value.1)),
-            tag => Err(tag)
+            tag => Err(tag),
         }
     }
 }
@@ -292,11 +288,15 @@ fn round(addr: usize, heap: &QueryHeap) -> Option<Number> {
 }
 
 fn to_radians(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().to_radians()))
+    Some(Number::Flt(
+        evaluate_term(addr + 2, heap)?.float().to_radians(),
+    ))
 }
 
 fn to_degrees(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().to_degrees()))
+    Some(Number::Flt(
+        evaluate_term(addr + 2, heap)?.float().to_degrees(),
+    ))
 }
 
 fn neg(addr: usize, heap: &QueryHeap) -> Option<Number> {
@@ -335,7 +335,6 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Option<Number> {
     let addr = heap.deref_addr(addr);
     match heap[addr] {
         (Tag::Comp, _) => evaluate_str(addr, heap),
-        (Tag::Str, ptr) => evaluate_str(ptr, heap),
         (tag @ (Tag::Int | Tag::Flt), value) => Some(Number::from_cell((tag, value))),
         _ => None,
     }
@@ -351,7 +350,6 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Option<Number> {
 fn eval_comparison(heap: &QueryHeap, goal: usize) -> Option<(Number, Number)> {
     let goal_addr = heap.deref_addr(goal);
     let func_addr = match heap[goal_addr] {
-        (Tag::Str, ptr) => ptr,
         (Tag::Comp, _) => goal_addr,
         _ => return None,
     };
@@ -379,7 +377,6 @@ pub fn is_pred(
 ) -> PredReturn {
     let goal_addr = heap.deref_addr(goal);
     let func_addr = match heap[goal_addr] {
-        (Tag::Str, ptr) => ptr,
         (Tag::Comp, _) => goal_addr,
         _ => return false.into(),
     };
@@ -523,8 +520,8 @@ pub static MATHS: PredicateModule = (
 
 #[cfg(test)]
 mod tests {
-    use crate::predicate_modules::helpers::TestWrapper;
     use super::MATHS;
+    use crate::predicate_modules::helpers::TestWrapper;
 
     // ── helpers ──────────────────────────────────────────────────────────────
 

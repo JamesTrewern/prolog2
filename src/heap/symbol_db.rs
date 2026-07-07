@@ -115,13 +115,13 @@ impl SymbolDB {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{heap::_CON_PTR, symbol_db::SymbolDB};
+    use super::super::{heap::CON_PTR, symbol_db::SymbolDB};
 
     #[test]
     //Check required symbols are preloaded
     fn known_symbols() {
-        assert_eq!(&*SymbolDB::get_const(_CON_PTR), "false");
-        assert_eq!(&*SymbolDB::get_const(_CON_PTR + 1), "true");
+        assert_eq!(&*SymbolDB::get_const(CON_PTR), "false");
+        assert_eq!(&*SymbolDB::get_const(CON_PTR + 1), "true");
     }
 
     #[test]

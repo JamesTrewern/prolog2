@@ -2,7 +2,7 @@ use std::{ops::{Deref, DerefMut}, sync::atomic::{AtomicUsize, Ordering::Relaxed}
 
 use smallvec::SmallVec;
 
-use crate::heap::heap::Heap;
+use crate::heap::Heap;
 
 use super::clause::Clause;
 

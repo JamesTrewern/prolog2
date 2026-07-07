@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 
 use smallvec::SmallVec;
 
-use crate::heap::heap::Heap;
+use crate::heap::Heap;
 
 /// Compact 64-bit flag set used to mark meta-variables and constrained variables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

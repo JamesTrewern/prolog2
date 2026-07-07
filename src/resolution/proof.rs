@@ -1,7 +1,7 @@
 //! Proof search via SLD resolution with backtracking and predicate invention.
 
 use crate::{
-    heap::{heap::Heap, query_heap::QueryHeap},
+    heap::{Heap, QueryHeap, Tag},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
 };
@@ -159,7 +159,7 @@ impl Proof {
         for env in self.stack.iter_mut() {
             for &(src, _) in env.bindings.iter() {
                 if src < hl {
-                    if let (crate::heap::heap::Tag::Ref, p) = &mut heap[src] {
+                    if let (Tag::Ref, p) = &mut heap[src] {
                         *p = src;
                     }
                 }

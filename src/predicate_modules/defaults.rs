@@ -1,7 +1,7 @@
 use crate::{
     heap::{
-        heap::{Heap, Tag},
-        query_heap::QueryHeap,
+        Heap, Tag,
+        QueryHeap,
     },
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::unification::unify,
@@ -191,7 +191,7 @@ pub fn is_atomic(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    (![Tag::Str,Tag::Comp,Tag::Tup,Tag::Set,Tag::Lis].contains(&heap[resolve(heap, goal_arg(heap, goal, 0))].0)).into()
+    (![Tag::Comp,Tag::Tup,Tag::Set,Tag::Lis].contains(&heap[resolve(heap, goal_arg(heap, goal, 0))].0)).into()
 }
 
 /// `is_compound/1`: succeeds if the argument is a compound term (functor + args).

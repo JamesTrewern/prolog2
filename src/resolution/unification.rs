@@ -8,7 +8,7 @@ use std::{
 
 use smallvec::SmallVec;
 
-use crate::heap::heap::{Cell, Heap, Tag};
+use crate::heap::{Cell, Heap, Tag};
 
 /// Substitution mapping clause `Arg` cells to heap addresses.
 ///
@@ -158,6 +158,16 @@ pub fn unify(heap: &impl Heap, addr_1: usize, addr_2: usize) -> Option<Substitut
     unify_rec(heap, Substitution::default(), addr_1, addr_2)
 }
 
+fn unify_walk(
+    heap: &impl Heap,
+    mut binding: Substitution,
+    mut addr_1: usize,
+    mut addr_2: usize,
+) -> Option<Substitution> {
+    loop {}
+    None
+}
+
 ///Recursive unification function \
 ///@addr_1: Address of program term \
 ///@addr_2: Address of goal term
@@ -186,9 +196,9 @@ fn unify_rec(
 
     match (heap[addr_1].0, heap[addr_2].0) {
         (Tag::AVar, _) | (_,Tag::AVar) | (Tag::ELis, Tag::ELis) => Some(binding),
-        (Tag::Str, Tag::Str) => unify_rec(heap, binding, heap[addr_1].1, heap[addr_2].1),
-        (_, Tag::Str) => unify_rec(heap, binding, addr_1, heap[addr_2].1),
-        (Tag::Str, _) => unify_rec(heap, binding, heap[addr_1].1, addr_2),
+        // //(Tag::Str, Tag::Str) => unify_rec(heap, binding, heap[addr_1].1, heap[addr_2].1),
+        // (_, Tag::Str) => unify_rec(heap, binding, addr_1, heap[addr_2].1),
+        // //(Tag::Str, _) => unify_rec(heap, binding, heap[addr_1].1, addr_2),
         (_, Tag::Arg) => unreachable!("unification: Arg cell in non-Arg position — clause args should only appear on the left"),
         (Tag::Arg, _) => match binding.get_arg(heap[addr_1].1) {
             Some(addr) => unify_rec(heap, binding, addr, addr_2),
@@ -293,7 +303,7 @@ fn occurs(heap: &impl Heap, binding: &Substitution, ref_addr: usize, complex_add
     let mut arg_idx = 0;
     //TODO check this is true, args should appear and be bound in order
     while let Some(mut addr) = binding.get_arg(arg_idx) {
-        if let Some(new_addr) = binding.bound(addr){
+        if let Some(new_addr) = binding.bound(addr) {
             addr = new_addr
         }
 
@@ -309,7 +319,7 @@ fn occurs(heap: &impl Heap, binding: &Substitution, ref_addr: usize, complex_add
 mod tests {
     use super::Substitution;
     use crate::{
-        heap::{heap::Tag, query_heap::QueryHeap, symbol_db::SymbolDB},
+        heap::{QueryHeap, SymbolDB, Tag},
         resolution::unification::{unify, unify_rec},
     };
 
@@ -322,7 +332,7 @@ mod tests {
             (Tag::Arg, 0),
             (Tag::Ref, 1),
             (Tag::Ref, 2),
-            (Tag::Str, 4),
+            //(Tag::Str, 4),
             (Tag::Comp, 2),
             (Tag::Con, p),
             (Tag::Con, a),
@@ -363,7 +373,7 @@ mod tests {
 
         let heap = vec![
             (Tag::Arg, 0),
-            (Tag::Str, 2),
+            //(Tag::Str, 2),
             (Tag::Comp, 2),
             (Tag::Con, p),
             (Tag::Con, a),
@@ -382,7 +392,7 @@ mod tests {
             (Tag::Ref, 0),
             (Tag::Ref, 1),
             (Tag::Ref, 2),
-            (Tag::Str, 4),
+            //(Tag::Str, 4),
             (Tag::Comp, 2),
             (Tag::Con, p),
             (Tag::Con, a),
@@ -636,20 +646,20 @@ mod tests {
 
         let heap = vec![
             // clause head: p(Y,(Y,Z))
-            (Tag::Str, 1),   // 0
-            (Tag::Comp, 3),  // 1   p, Y, (Y,Z)
-            (Tag::Con, p),   // 2
-            (Tag::Arg, 0),   // 3   Y
-            (Tag::Str, 5),   // 4   -> tuple
-            (Tag::Tup, 2),   // 5   (Y,Z)
-            (Tag::Arg, 0),   // 6   Y
-            (Tag::Arg, 1),   // 7   Z
+            //(Tag::Str, 1),  // 0
+            (Tag::Comp, 3), // 1   p, Y, (Y,Z)
+            (Tag::Con, p),  // 2
+            (Tag::Arg, 0),  // 3   Y
+            //(Tag::Str, 5),  // 4   -> tuple
+            (Tag::Tup, 2),  // 5   (Y,Z)
+            (Tag::Arg, 0),  // 6   Y
+            (Tag::Arg, 1),  // 7   Z
             // goal: p(X,X)
-            (Tag::Str, 9),   // 8
-            (Tag::Comp, 3),  // 9   p, X, X
-            (Tag::Con, p),   // 10
-            (Tag::Ref, 11),  // 11  X (canonical, unbound)
-            (Tag::Ref, 11),  // 12  X
+            //(Tag::Str, 9),  // 8
+            (Tag::Comp, 3), // 9   p, X, X
+            (Tag::Con, p),  // 10
+            (Tag::Ref, 11), // 11  X (canonical, unbound)
+            (Tag::Ref, 11), // 12  X
         ];
 
         assert_eq!(unify(&heap, 0, 8), None);
@@ -666,20 +676,20 @@ mod tests {
 
         let heap = vec![
             // clause head: p(Z,Z)
-            (Tag::Str, 1),   // 0
-            (Tag::Comp, 3),  // 1   p, Z, Z
-            (Tag::Con, p),   // 2
-            (Tag::Arg, 0),   // 3   Z
-            (Tag::Arg, 0),   // 4   Z
+            //(Tag::Str, 1),  // 0
+            (Tag::Comp, 3), // 1   p, Z, Z
+            (Tag::Con, p),  // 2
+            (Tag::Arg, 0),  // 3   Z
+            (Tag::Arg, 0),  // 4   Z
             // goal: p(X,(X,Y))
-            (Tag::Str, 6),   // 5
-            (Tag::Comp, 3),  // 6   p, X, (X,Y)
-            (Tag::Con, p),   // 7
-            (Tag::Ref, 11),  // 8   X
-            (Tag::Str, 10),  // 9   -> tuple
-            (Tag::Tup, 2),   // 10  (X,Y)
-            (Tag::Ref, 11),  // 11  X (canonical, unbound)
-            (Tag::Ref, 12),  // 12  Y (canonical, unbound)
+            //(Tag::Str, 6),  // 5
+            (Tag::Comp, 3), // 6   p, X, (X,Y)
+            (Tag::Con, p),  // 7
+            (Tag::Ref, 11), // 8   X
+            //(Tag::Str, 10), // 9   -> tuple
+            (Tag::Tup, 2),  // 10  (X,Y)
+            (Tag::Ref, 11), // 11  X (canonical, unbound)
+            (Tag::Ref, 12), // 12  Y (canonical, unbound)
         ];
 
         assert_eq!(unify(&heap, 0, 5), None);
@@ -696,22 +706,22 @@ mod tests {
 
         let heap = vec![
             // clause head: p(Y,Z,(Y,Z))
-            (Tag::Str, 1),   // 0
-            (Tag::Comp, 4),  // 1   p, Y, Z, (Y,Z)
-            (Tag::Con, p),   // 2
-            (Tag::Arg, 0),   // 3   Y
-            (Tag::Arg, 1),   // 4   Z
-            (Tag::Str, 6),   // 5   -> tuple
-            (Tag::Tup, 2),   // 6   (Y,Z)
-            (Tag::Arg, 0),   // 7   Y
-            (Tag::Arg, 1),   // 8   Z
+            //(Tag::Str, 1),  // 0
+            (Tag::Comp, 4), // 1   p, Y, Z, (Y,Z)
+            (Tag::Con, p),  // 2
+            (Tag::Arg, 0),  // 3   Y
+            (Tag::Arg, 1),  // 4   Z
+            //(Tag::Str, 6),  // 5   -> tuple
+            (Tag::Tup, 2),  // 6   (Y,Z)
+            (Tag::Arg, 0),  // 7   Y
+            (Tag::Arg, 1),  // 8   Z
             // goal: p(X,X,X)
-            (Tag::Str, 10),  // 9
-            (Tag::Comp, 4),  // 10  p, X, X, X
-            (Tag::Con, p),   // 11
-            (Tag::Ref, 12),  // 12  X (canonical, unbound)
-            (Tag::Ref, 12),  // 13  X
-            (Tag::Ref, 12),  // 14  X
+            //(Tag::Str, 10), // 9
+            (Tag::Comp, 4), // 10  p, X, X, X
+            (Tag::Con, p),  // 11
+            (Tag::Ref, 12), // 12  X (canonical, unbound)
+            (Tag::Ref, 12), // 13  X
+            (Tag::Ref, 12), // 14  X
         ];
 
         assert_eq!(unify(&heap, 0, 9), None);
@@ -729,20 +739,20 @@ mod tests {
 
         let heap = vec![
             // clause head: p(Z,Z)
-            (Tag::Str, 1),   // 0
-            (Tag::Comp, 3),  // 1   p, Z, Z
-            (Tag::Con, p),   // 2
-            (Tag::Arg, 0),   // 3   Z
-            (Tag::Arg, 0),   // 4   Z
+            //(Tag::Str, 1),  // 0
+            (Tag::Comp, 3), // 1   p, Z, Z
+            (Tag::Con, p),  // 2
+            (Tag::Arg, 0),  // 3   Z
+            (Tag::Arg, 0),  // 4   Z
             // goal: p((X,Y),X)
-            (Tag::Str, 6),   // 5
-            (Tag::Comp, 3),  // 6   p, (X,Y), X
-            (Tag::Con, p),   // 7
-            (Tag::Str, 10),  // 8   -> tuple
-            (Tag::Ref, 11),  // 9   X
-            (Tag::Tup, 2),   // 10  (X,Y)
-            (Tag::Ref, 11),  // 11  X (canonical, unbound)
-            (Tag::Ref, 12),  // 12  Y (canonical, unbound)
+            //(Tag::Str, 6),  // 5
+            (Tag::Comp, 3), // 6   p, (X,Y), X
+            (Tag::Con, p),  // 7
+            //(Tag::Str, 10), // 8   -> tuple
+            (Tag::Ref, 11), // 9   X
+            (Tag::Tup, 2),  // 10  (X,Y)
+            (Tag::Ref, 11), // 11  X (canonical, unbound)
+            (Tag::Ref, 12), // 12  Y (canonical, unbound)
         ];
 
         assert_eq!(unify(&heap, 0, 5), None);
@@ -773,22 +783,22 @@ mod tests {
 
         let heap = vec![
             // clause head: p(Z, Z, (Z,W))
-            (Tag::Str, 1),   // 0
-            (Tag::Comp, 4),  // 1   p, Z, Z, (Z,W)
-            (Tag::Con, p),   // 2
-            (Tag::Arg, 0),   // 3   Z
-            (Tag::Arg, 0),   // 4   Z
-            (Tag::Str, 6),   // 5   -> tuple
-            (Tag::Tup, 2),   // 6   (Z,W)
-            (Tag::Arg, 0),   // 7   Z
-            (Tag::Arg, 1),   // 8   W
+            //(Tag::Str, 1),  // 0
+            (Tag::Comp, 4), // 1   p, Z, Z, (Z,W)
+            (Tag::Con, p),  // 2
+            (Tag::Arg, 0),  // 3   Z
+            (Tag::Arg, 0),  // 4   Z
+            //(Tag::Str, 6),  // 5   -> tuple
+            (Tag::Tup, 2),  // 6   (Z,W)
+            (Tag::Arg, 0),  // 7   Z
+            (Tag::Arg, 1),  // 8   W
             // goal: p(X1, X2, X2)
-            (Tag::Str, 10),  // 9
-            (Tag::Comp, 4),  // 10  p, X1, X2, X2
-            (Tag::Con, p),   // 11
-            (Tag::Ref, 12),  // 12  X1 (canonical, unbound)
-            (Tag::Ref, 13),  // 13  X2 (canonical, unbound)
-            (Tag::Ref, 13),  // 14  X2
+            //(Tag::Str, 10), // 9
+            (Tag::Comp, 4), // 10  p, X1, X2, X2
+            (Tag::Con, p),  // 11
+            (Tag::Ref, 12), // 12  X1 (canonical, unbound)
+            (Tag::Ref, 13), // 13  X2 (canonical, unbound)
+            (Tag::Ref, 13), // 14  X2
         ];
 
         assert_eq!(unify(&heap, 0, 9), None);
@@ -806,20 +816,20 @@ mod tests {
 
         let heap = vec![
             // clause head: p(Z, (Z,W))
-            (Tag::Str, 1),   // 0
-            (Tag::Comp, 3),  // 1   p, Z, (Z,W)
-            (Tag::Con, p),   // 2
-            (Tag::Arg, 0),   // 3   Z
-            (Tag::Str, 5),   // 4   -> tuple
-            (Tag::Tup, 2),   // 5   (Z,W)
-            (Tag::Arg, 0),   // 6   Z
-            (Tag::Arg, 1),   // 7   W
+            //(Tag::Str, 1),  // 0
+            (Tag::Comp, 3), // 1   p, Z, (Z,W)
+            (Tag::Con, p),  // 2
+            (Tag::Arg, 0),  // 3   Z
+            //(Tag::Str, 5),  // 4   -> tuple
+            (Tag::Tup, 2),  // 5   (Z,W)
+            (Tag::Arg, 0),  // 6   Z
+            (Tag::Arg, 1),  // 7   W
             // goal: p(X,X)
-            (Tag::Str, 9),   // 8
-            (Tag::Comp, 3),  // 9   p, X, X
-            (Tag::Con, p),   // 10
-            (Tag::Ref, 11),  // 11  X (canonical, unbound)
-            (Tag::Ref, 11),  // 12  X
+            //(Tag::Str, 9),  // 8
+            (Tag::Comp, 3), // 9   p, X, X
+            (Tag::Con, p),  // 10
+            (Tag::Ref, 11), // 11  X (canonical, unbound)
+            (Tag::Ref, 11), // 12  X
         ];
 
         assert_eq!(unify(&heap, 0, 8), None);
