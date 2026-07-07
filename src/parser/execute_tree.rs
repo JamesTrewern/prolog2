@@ -112,7 +112,7 @@ fn extract_meta_rule_vars(terms: &mut Vec<Term>) -> (Vec<String>, Option<Vec<Str
     }
 }
 
-pub(crate) fn execute_tree(
+pub fn execute_tree(
     syntax_tree: Vec<TreeClause>,
     heap: &mut impl Heap,
     pred_table: &mut PredicateTable,

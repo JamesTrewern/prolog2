@@ -7,11 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     heap::{Cell, Heap, QueryHeap, SymbolDB},
-    parser::{
-        build_tree::TokenStream,
-        execute_tree::{build_clause, execute_tree},
-        tokeniser::tokenise,
-    },
+    parser::{build_clause, execute_tree, tokenise, TokenStream},
     predicate_modules::{maths::set_approx_tolerance, PredicateModule, STANDARD_MODULES},
     program::predicate_table::PredicateTable,
     resolution::proof::Proof,

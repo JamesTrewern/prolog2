@@ -36,20 +36,6 @@ pub enum Term {
 }
 
 impl Term {
-    fn unit(&self) -> bool {
-        matches!(
-            self,
-            Term::Constant(_)
-                | Term::AnonVar
-                | Term::Variable(_)
-                | Term::Float(_)
-                | Term::Int(_)
-                | Term::String(_)
-                | Term::EmptyList
-                | Term::EmptySet
-        )
-    }
-
     pub fn parse_unit(token: &str) -> Option<Self> {
         let c = token.chars().next()?;
         match c {
@@ -317,7 +303,7 @@ mod encode_tests {
                 x.clone(),
             ],
         );
-        let addr = term.encode(&mut heap, &mut HashMap::new(), false);
+        term.encode(&mut heap, &mut HashMap::new(), false);
         // assert_eq!(heap.term_string(addr), "p(f(X),X)");
         assert_eq!(
             heap.cells,
@@ -340,7 +326,7 @@ mod encode_tests {
                 x.clone(),
             ],
         );
-        let addr = term.encode(&mut heap, &mut HashMap::new(), false);
+        term.encode(&mut heap, &mut HashMap::new(), false);
         // assert_eq!(heap.term_string(addr), "p((f,X),X)");
         assert_eq!(
             heap.cells,
@@ -363,7 +349,7 @@ mod encode_tests {
                 x.clone(),
             ],
         );
-        let addr = term.encode(&mut heap, &mut HashMap::new(), false);
+        term.encode(&mut heap, &mut HashMap::new(), false);
         // assert_eq!(heap.term_string(addr), "p({f,X},X)");
         assert_eq!(
             heap.cells,
@@ -386,7 +372,7 @@ mod encode_tests {
                 x.clone(),
             ],
         );
-        let addr = term.encode(&mut heap, &mut HashMap::new(), false);
+        term.encode(&mut heap, &mut HashMap::new(), false);
         // assert_eq!(heap.term_string(addr), "p([f,X],X)");
         assert_eq!(
             heap.cells,

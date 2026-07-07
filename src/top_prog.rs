@@ -12,7 +12,7 @@ use std::{
 use crate::{
     app::{App, TopProg},
     heap::{Cell, Heap, QueryHeap, Tag},
-    parser::{build_tree::TokenStream, execute_tree::build_clause, tokeniser::tokenise},
+    parser::{TokenStream, build_clause, tokenise},
     program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::proof::Proof,
     Config,

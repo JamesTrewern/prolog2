@@ -5,10 +5,14 @@
 //! construction ([`build_tree`](crate::parser::build_tree)), and heap encoding
 //! ([`execute_tree`](crate::parser::execute_tree)).
 
-pub mod build_tree;
-pub mod execute_tree;
+mod build_tree;
+mod execute_tree;
 mod term;
-pub mod tokeniser;
+mod tokeniser;
+
+pub(crate) use build_tree::TokenStream;
+pub(crate) use execute_tree::{build_clause,execute_tree};
+pub(crate) use tokeniser::tokenise;
 
 use std::fmt;
 
