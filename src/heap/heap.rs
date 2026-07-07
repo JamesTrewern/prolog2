@@ -1,4 +1,4 @@
-use super::{SymbolDB,TermWalk,DualWalk};
+use super::{DualWalk, SymbolDB, TermWalk};
 use std::{
     collections::HashMap,
     fmt::Write,
@@ -73,7 +73,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         true
     }
 
-    fn get_id(&self, addr: usize) -> usize {
+    fn get_id(&self, _addr: usize) -> usize {
         0
     }
 
@@ -100,7 +100,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     }
 
     #[inline(always)]
-    fn deref_addr(&self, mut addr: usize) -> usize{
+    fn deref_addr(&self, mut addr: usize) -> usize {
         if self[addr].0 != Tag::Ref || self[addr].1 == addr {
             addr
         } else {
@@ -159,59 +159,59 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
 
     fn walk_term_mut<T>(
         &mut self,
-        mut addr: usize,
+        addr: usize,
         accumulator: &mut T,
         operation: fn(&mut Self, usize, &mut T) -> bool,
     ) {
-        let mut cells_left = 1;
+        let mut walk = TermWalk::new(addr);
         loop {
-            if let Some(deref_addr) = self.is_deref(addr) {
-                self.walk_term_mut(deref_addr, accumulator, operation);
-            } else {
-                if operation(self, addr, accumulator) {
-                    return;
-                }
-                match self[addr] {
-                    LIS => cells_left += 2,
-                    (Tag::Comp | Tag::Tup | Tag::Set, len) => cells_left += len,
-                    _ => (),
-                }
+            let addr = match walk.next_addr() {
+                Some(addr) => match self.is_deref(addr) {
+                    Some(deref_addr) => {
+                        walk.add_deref_frame(deref_addr);
+                        deref_addr
+                    }
+                    None => addr,
+                },
+                None => return,
+            };
+            if operation(self, addr, accumulator) {
+                return;
             }
-
-            cells_left -= 1;
-            if cells_left == 0 {
-                break;
+            match self[addr] {
+                LIS => walk.increment_cells_left(2),
+                (Tag::Comp | Tag::Tup | Tag::Set, len) => walk.increment_cells_left(len),
+                _ => (),
             }
-            addr += 1;
         }
     }
 
     fn walk_term<T>(
         &self,
-        mut addr: usize,
+        addr: usize,
         accumulator: &mut T,
         operation: fn(&Self, usize, &mut T) -> bool, //return true indicates early return
     ) {
-        let mut cells_left = 1;
+        let mut walk = TermWalk::new(addr);
         loop {
-            if let Some(deref_addr) = self.is_deref(addr) {
-                self.walk_term(deref_addr, accumulator, operation);
-            } else {
-                if operation(self, addr, accumulator) {
-                    return;
-                }
-                match self[addr] {
-                    LIS => cells_left += 2,
-                    (Tag::Comp | Tag::Tup | Tag::Set, len) => cells_left += len,
-                    _ => (),
-                }
+            let addr = match walk.next_addr() {
+                Some(addr) => match self.is_deref(addr) {
+                    Some(deref_addr) => {
+                        walk.add_deref_frame(deref_addr);
+                        deref_addr
+                    }
+                    None => addr,
+                },
+                None => return,
+            };
+            if operation(self, addr, accumulator) {
+                return;
             }
-
-            cells_left -= 1;
-            if cells_left == 0 {
-                break;
+            match self[addr] {
+                LIS => walk.increment_cells_left(2),
+                (Tag::Comp | Tag::Tup | Tag::Set, len) => walk.increment_cells_left(len),
+                _ => (),
             }
-            addr += 1;
         }
     }
 
@@ -299,7 +299,7 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     }
 
     /**Get the symbol id and arity of functor structure */
-    fn str_symbol_arity(&self, mut addr: usize) -> (usize, usize) {
+    fn str_symbol_arity(&self, addr: usize) -> (usize, usize) {
         if let (Tag::Comp, arity) = self[addr] {
             let functor = self.is_deref(addr).unwrap_or(addr);
             match self[functor] {
@@ -322,33 +322,28 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         addr + 1..=addr + self[addr].1
     }
 
-    fn clone_term(
-        &mut self,
-        other: &impl Heap,
-        addr: usize,
-        ref_map: &mut HashMap<usize, usize>,
-    ) {
-        let mut ref_stack = TermWalk::new(addr);
+    fn clone_term(&mut self, other: &impl Heap, addr: usize, ref_map: &mut HashMap<usize, usize>) {
+        let mut walk = TermWalk::new(addr);
         loop {
-            let addr = if let Some(addr) = ref_stack.next_addr(){
+            let addr = if let Some(addr) = walk.next_addr() {
                 if let Some(deref_addr) = other.is_deref(addr) {
-                    ref_stack.add_frame(deref_addr);
+                    walk.add_deref_frame(deref_addr);
                     deref_addr
-                }else{
+                } else {
                     addr
                 }
-            }else{
+            } else {
                 return;
             };
 
             match other[addr] {
                 LIS => {
                     self.heap_push(LIS);
-                    ref_stack.increment_cells_left(2);
+                    walk.increment_cells_left(2);
                 }
                 cell @ (Tag::Comp | Tag::Tup | Tag::Set, len) => {
                     self.heap_push(cell);
-                    ref_stack.increment_cells_left(len);
+                    walk.increment_cells_left(len);
                 }
                 (Tag::Ref, addr) => {
                     if let Some(&mapped) = ref_map.get(&addr) {
@@ -365,36 +360,29 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     }
 
     fn term_equal(&self, addr1: usize, addr2: usize) -> bool {
-        let walk = DualWalk::new(addr1,addr2);
-
-
-        let mut stack1 = TermWalk::new(addr1);
-        let mut stack2 = TermWalk::new(addr2);
+        let mut walk = DualWalk::new(addr1, addr2);
         loop {
-            let (mut addr1, mut addr2) = match (stack1.next_addr(), stack2.next_addr()) {
-                (None, None) => return true,
-                (None, _) | (_, None) => return false,
-                (Some(addr1), Some(addr2)) => (addr1, addr2),
+            let (mut addr1, mut addr2) = match walk.next_addrs() {
+                Some(addrs) => addrs,
+                None => return true,
             };
 
             if let Some(deref_addr) = self.is_deref(addr1) {
-                stack1.add_frame(deref_addr);
+                walk.add_deref_frame(deref_addr, true);
                 addr1 = deref_addr;
             }
             if let Some(deref_addr) = self.is_deref(addr2) {
-                stack2.add_frame(deref_addr);
+                walk.add_deref_frame(deref_addr, false);
                 addr2 = deref_addr;
             }
             match (self[addr1], self[addr2]) {
-                (cell1 @ (Tag::Comp | Tag::Tup, _), cell2 @ (Tag::Comp | Tag::Tup, _))
+                (cell1 @ (Tag::Comp | Tag::Tup, len), cell2 @ (Tag::Comp | Tag::Tup, _))
                     if cell1 == cell2 =>
                 {
-                    stack1.increment_cells_left(cell1.1);
-                    stack2.increment_cells_left(cell2.1);
+                    walk.increment_cells_left(len);
                 }
                 (LIS, LIS) => {
-                    stack1.increment_cells_left(2);
-                    stack2.increment_cells_left(2);
+                    walk.increment_cells_left(2);
                 }
                 ((Tag::Set, len1), (Tag::Set, len2)) if len1 == len2 => {
                     // Set equality: every element in set1 must have a match in set2
@@ -402,19 +390,23 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     // given no duplicates — sets are deduplicated at parse time).
                     let r1 = addr1 + 1..=addr1 + len1;
                     let r2 = addr2 + 1..=addr2 + len2;
-                    if !r1.clone().all(|a| r2.clone().any(|b| self.term_equal(a, b))){
-                            return false;
+                    if !r1
+                        .clone()
+                        .all(|a| r2.clone().any(|b| self.term_equal(a, b)))
+                    {
+                        return false;
                     }
-                    stack1.skip_addrs(len1);
-                    stack2.skip_addrs(len2);
+                    walk.skip_addrs(len1);
                 }
                 ((Tag::Stri, i1), (Tag::Stri, i2)) => {
                     if *SymbolDB::get_string(i1) != *SymbolDB::get_string(i2) {
                         return false;
                     }
                 }
-                _ => if self[addr1] != self[addr2]{
-                    return false;
+                _ => {
+                    if self[addr1] != self[addr2] {
+                        return false;
+                    }
                 }
             }
         }
@@ -455,110 +447,111 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
     }
 
     /**Create a string from a list */
-    fn list_string(&self, addr: &mut usize, buf: &mut String) {
-        write!(buf, "[");
+    fn list_string(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
+        write!(buf, "[")?;
         loop {
             *addr += 1;
-            self.term_string_rec(addr, buf);
+            self.term_string_rec(addr, buf)?;
             *addr += 1;
             match self[*addr].0 {
                 Tag::Lis => {
-                    write!(buf, ",");
+                    write!(buf, ",")?;
                 }
                 Tag::ELis => break,
                 _ => {
-                    write!(buf, "|");
-                    self.term_string_rec(addr, buf);
+                    write!(buf, "|")?;
+                    self.term_string_rec(addr, buf)?;
                     break;
                 }
             }
         }
-        write!(buf, "]");
+        write!(buf, "]")?;
+        Ok(())
     }
 
     /**Create a string for a compound structure */
-    fn comp_string(&self, addr: &mut usize, buf: &mut String) {
+    fn comp_string(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         let len = self[*addr].1;
         *addr += 1;
-        self.term_string_rec(addr, buf);
-        write!(buf, "(");
+        self.term_string_rec(addr, buf)?;
+        write!(buf, "(")?;
         for _ in 1..len {
             *addr += 1;
-            self.term_string_rec(addr, buf);
-            write!(buf, ",");
+            self.term_string_rec(addr, buf)?;
+            write!(buf, ",")?;
         }
 
         buf.pop();
-        write!(buf, ")");
+        write!(buf, ")")?;
+        Ok(())
     }
 
     /**Create a string for a tuple*/
-    fn tuple_string(&self, addr: &mut usize, buf: &mut String) {
+    fn tuple_string(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         let len = self[*addr].1;
-        write!(buf, "(");
+        write!(buf, "(")?;
         for _ in 0..len {
             *addr += 1;
-            self.term_string_rec(addr, buf);
-            write!(buf, ",");
+            self.term_string_rec(addr, buf)?;
+            write!(buf, ",")?;
         }
 
         buf.pop();
-        write!(buf, ")");
+        write!(buf, ")")?;
+        Ok(())
     }
 
     /**Create a string for a set*/
-    fn set_string(&self, addr: &mut usize, buf: &mut String) {
+    fn set_string(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         let len = self[*addr].1;
         if len == 0 {
-            buf.write_str("{}");
-            return;
+            buf.write_str("{}")?;
+            return Ok(());
         }
 
-        buf.write_str("{");
+        buf.write_str("{")?;
         for _ in 0..len {
             *addr += 1;
-            self.term_string_rec(addr, buf);
-            buf.write_str(",");
+            self.term_string_rec(addr, buf)?;
+            buf.write_str(",")?;
         }
         buf.pop();
-        buf.write_str("}");
+        buf.write_str("}")?;
+        Ok(())
     }
 
     /** Create String to represent cell, can be recursively used to format complex structures or list */
     fn term_string_rec(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         // println!("[{addr}]:{:?}", self[addr]);
         match self[*addr].0 {
-            Tag::Con => buf.write_str(&SymbolDB::get_const(self[*addr].1))?,
+            Tag::Con => buf.write_str(&SymbolDB::get_const(self[*addr].1)),
             Tag::Comp => self.comp_string(addr, buf),
             Tag::Lis => self.list_string(addr, buf),
-            Tag::ELis => write!(buf, "[]")?,
+            Tag::ELis => write!(buf, "[]"),
             Tag::Arg => match SymbolDB::get_var(*addr, self.get_id(*addr)) {
-                Some(symbol) => buf.write_str(&symbol)?,
-                None => write!(buf, "Arg_{}", self[*addr].1)?,
+                Some(symbol) => buf.write_str(&symbol),
+                None => write!(buf, "Arg_{}", self[*addr].1),
             },
             Tag::Ref => match self.is_deref(*addr) {
-                Some(mut ref_addr) => self.term_string_rec(&mut ref_addr, buf)?,
-                None => {
-                    match SymbolDB::get_var(*addr, self.get_id(*addr)).to_owned() {
-                        Some(symbol) => buf.write_str(&symbol),
-                        None => write!(buf, "Ref_{}", self[*addr].1),
-                    };
-                }
+                Some(mut ref_addr) => self.term_string_rec(&mut ref_addr, buf),
+                None => match SymbolDB::get_var(*addr, self.get_id(*addr)).to_owned() {
+                    Some(symbol) => buf.write_str(&symbol),
+                    None => write!(buf, "Ref_{}", self[*addr].1),
+                },
             },
             Tag::Int => {
                 let value: isize = unsafe { mem::transmute_copy(&self[*addr].1) };
-                write!(buf, "{value}");
+                write!(buf, "{value}")
             }
             Tag::Flt => {
                 let value: fsize = unsafe { mem::transmute_copy(&self[*addr].1) };
-                write!(buf, "{value}");
+                write!(buf, "{value}")
             }
             Tag::Tup => self.tuple_string(addr, buf),
             Tag::Set => self.set_string(addr, buf),
-            Tag::Stri => write!(buf, "\"{}\"", SymbolDB::get_string(self[*addr].1))?,
-            Tag::AVar => write!(buf, "_")?,
+            Tag::Stri => write!(buf, "\"{}\"", SymbolDB::get_string(self[*addr].1)),
+            Tag::AVar => write!(buf, "_"),
         }
-        Ok(())
     }
 
     fn term_string(&self, mut addr: usize) -> String {
@@ -590,7 +583,9 @@ impl Heap for Vec<Cell> {
 
 #[cfg(test)]
 mod tests {
-    use crate::heap::query_heap::QueryHeap;
+    use std::collections::HashMap;
+
+use crate::heap::query_heap::QueryHeap;
 
     use super::{
         super::symbol_db::SymbolDB,
@@ -678,8 +673,141 @@ mod tests {
     }
 
     #[test]
-    fn copy_term() {
-        todo!()
+    fn is_deref(){
+        let a = SymbolDB::set_const("a");
+        let mut heap = QueryHeap::new(&[], None);
+        heap.cells.extend(vec![
+            (Tag::Ref, 0),
+            (Tag::Ref, 2),
+            (Tag::Con, a),
+            (Tag::Ref, 4),
+            (Tag::Ref, 5),
+            (Tag::Con, a),
+        ]);
+        assert_eq!(heap.is_deref(0), None);
+        assert_eq!(heap.is_deref(1), Some(2));
+        assert_eq!(heap.is_deref(2), None);
+        assert_eq!(heap.is_deref(3), Some(5));
+    }
+
+    #[test]
+    fn clone_term() {
+        let a = SymbolDB::set_const("a");
+        let f = SymbolDB::set_const("f");
+        let p = SymbolDB::set_const("p");
+
+        //Test simple
+        let mut heap = QueryHeap::new(&[], None);
+        let mut other = QueryHeap::new(&[], None);
+        other.cells.extend(vec![
+            (Tag::Comp, 3),
+            (Tag::Con, f),
+            (Tag::Con, a),
+            (Tag::Arg, 0),
+        ]);
+        heap.clone_term(&other, 0, &mut HashMap::new());
+        assert_eq!(&heap.cells, &[
+            (Tag::Comp, 3),
+            (Tag::Con, f),
+            (Tag::Con, a),
+            (Tag::Arg, 0),
+        ]);
+
+        //Test ref reasingment
+        let mut heap = QueryHeap::new(&[], None);
+        heap.cells.extend(vec![
+            EMPTY_LIS,
+            EMPTY_LIS,
+            EMPTY_LIS,
+        ]);
+        let mut other = QueryHeap::new(&[], None);
+        other.cells.extend(vec![
+            (Tag::Tup, 4),
+            (Tag::Ref, 2),
+            (Tag::Ref, 2),
+            (Tag::Ref, 2),
+            (Tag::Ref, 4),
+        ]);
+        heap.clone_term(&other, 0, &mut HashMap::new());
+        assert_eq!(&heap.cells[3..], &[
+            (Tag::Tup, 4),
+            (Tag::Ref, 4),
+            (Tag::Ref, 4),
+            (Tag::Ref, 4),
+            (Tag::Ref, 7),
+        ]);
+
+        // Ref bound to simple term
+        let mut heap = QueryHeap::new(&[], None);
+        let mut other = QueryHeap::new(&[], None);
+        other.cells.extend(vec![
+            (Tag::Con, a),
+            (Tag::Tup, 2),
+            (Tag::Ref, 3),
+            (Tag::Ref, 0),
+            (Tag::Tup, 2),
+            (Tag::Ref, 0),
+            (Tag::Ref, 5),
+        ]);
+        heap.clone_term(&other, 1, &mut HashMap::new());
+        heap.clone_term(&other, 4, &mut HashMap::new());
+        assert_eq!(&heap.cells, &[
+            (Tag::Tup, 2),
+            (Tag::Con, a),
+            (Tag::Con, a),
+            (Tag::Tup, 2),
+            (Tag::Con, a),
+            (Tag::Con, a),
+        ]);
+
+        // Ref bound to complex term
+        let mut heap = QueryHeap::new(&[], None);
+        let mut other = QueryHeap::new(&[], None);
+        other.cells.extend(vec![
+            (Tag::Comp, 2), // 0
+            (Tag::Con, f),  // 1
+            (Tag::Con, a),  // 2
+            (Tag::Comp, 2), // 3
+            (Tag::Con, p),  // 4
+            (Tag::Ref, 0),  // 5
+            (Tag::Comp, 2), // 6
+            (Tag::Con, p),  // 7
+            (Tag::Ref, 3),  // 8
+        ]);
+        heap.clone_term(&other, 6, &mut HashMap::new());
+        assert_eq!(&heap.cells, &[
+            (Tag::Comp, 2),
+            (Tag::Con, p),
+            (Tag::Comp, 2),
+            (Tag::Con, p),
+            (Tag::Comp, 2),
+            (Tag::Con, f),
+            (Tag::Con, a),
+        ]);
+
+        let mut heap = QueryHeap::new(&[], None);
+        let mut other = QueryHeap::new(&[], None);
+        other.cells.extend(vec![
+            LIS, // 0
+            (Tag::Con, f),  // 1
+            (Tag::Con, a),  // 2
+            LIS, // 3
+            (Tag::Con, p),  // 4
+            (Tag::Ref, 0),  // 5
+            (Tag::Comp, 2), // 6
+            (Tag::Con, p),  // 7
+            (Tag::Ref, 3),  // 8
+        ]);
+        heap.clone_term(&other, 6, &mut HashMap::new());
+        assert_eq!(&heap.cells, &[
+            (Tag::Comp, 2),
+            (Tag::Con, p),
+            LIS,
+            (Tag::Con, p),
+            LIS,
+            (Tag::Con, f),
+            (Tag::Con, a),
+        ]);
     }
 
     #[test]

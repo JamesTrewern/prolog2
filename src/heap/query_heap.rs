@@ -53,7 +53,7 @@ impl<'a> QueryHeap<'a> {
         loop {
             let addr = if let Some(addr) = addr_stack.next_addr(){
                 if let Some(deref_addr) = self.is_deref(addr) {
-                    addr_stack.add_frame(deref_addr);
+                    addr_stack.add_deref_frame(deref_addr);
                     deref_addr
                 }else{
                     addr
