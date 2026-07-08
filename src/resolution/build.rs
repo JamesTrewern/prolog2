@@ -271,7 +271,7 @@ mod tests {
             (Tag::Lis, 7),  //15
         ];
         let mut substitution = Substitution::default();
-        substitution = substitution.push((3, 10, true));
+        substitution.push((3, 10, true));
         re_build_bound_arg_terms(&mut heap, &mut substitution);
         let new_term = build(&mut heap, &mut substitution, None, 13);
         println!("{}", heap.term_string(new_term));

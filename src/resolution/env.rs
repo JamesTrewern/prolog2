@@ -432,107 +432,106 @@ impl Env {
                 }
             }
 
-            if let Some(mut substitution) = unify(heap, head, self.goal) {
-                for constraints in &hypothesis.constraints {
-                    if !substitution.check_constraints(&constraints, heap) {
-                        continue 'choices;
-                    }
+            let Some(mut substitution) = unify(heap, head, self.goal) else {
+                continue;
+            };
+            for constraints in &hypothesis.constraints {
+                if !substitution.check_constraints(&constraints, heap) {
+                    continue 'choices;
                 }
+            }
 
-                if debug {
-                    let Strategy::Clause { choices, .. } = &self.strategy else {
-                        unreachable!()
-                    };
-                    eprintln!(
-                        "[MATCH] depth={} goal={} clause={}, choices_remaining={}",
-                        self.depth,
-                        heap.term_string(self.goal),
-                        clause.to_string(heap),
-                        choices.len()
-                    );
-                }
-
-                re_build_bound_arg_terms(heap, &mut substitution);
-
-                // Check if we need to invent a predicate BEFORE building goals
-                let mut invented_pred_addr: Option<usize> = None;
-                if clause.meta() {
-                    if heap.str_symbol_arity(head).0 == 0 && heap.str_symbol_arity(self.goal).0 == 0
-                    {
-                        let pred_symbol =
-                            SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
-                        let pred_addr = heap.set_const(pred_symbol);
-                        substitution.set_arg(0, pred_addr);
-                        substitution =
-                        substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
-                        invented_pred_addr = Some(pred_addr);
-
-                        if let Strategy::Clause { invent_pred, .. } = &mut self.strategy {
-                            *invent_pred = true;
-                        }
-                    }
-                }
-
-                // Build new goals
-                let new_goals: Vec<usize> = clause
-                    .body()
-                    .iter()
-                    .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
-                    .collect();
-
-                // Build hypothesis clause if meta
-                if clause.meta() {
-                    if let Strategy::Clause { new_clause, .. } = &mut self.strategy {
-                        *new_clause = true;
-                    }
-
-                    let new_clause_literals: Vec<usize> = clause
-                        .iter()
-                        .map(|literal| build(heap, &mut substitution, clause.meta_vars, *literal))
-                        .collect();
-
-                    let mut constraints = Vec::with_capacity(16);
-                    for i in 0..32 {
-                        if clause.constrained_var(i) {
-                            constraints.push(unsafe { substitution.get_arg(i).unwrap_unchecked() });
-                        }
-                    }
-
-                    let new_clause = Clause::new(new_clause_literals, None, None);
-                    if debug {
-                        eprintln!(
-                            "[ADD_CLAUSE] depth={} goal={} clause={}",
-                            self.depth,
-                            heap.term_string(self.goal),
-                            new_clause.to_string(heap)
-                        );
-                        if invented_pred_addr.is_some() {
-                            eprintln!(
-                                "[INVENT_PRED] invented predicate for goal={}",
-                                heap.term_string(self.goal)
-                            );
-                        }
-                    }
-                    hypothesis.push_clause(new_clause, SmallVec::from_vec(constraints));
-                    if debug {
-                        eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
-                    }
-                }
-
-                self.bindings = substitution.get_bindings();
-                self.children = new_goals.len();
-                if debug {
-                    eprintln!("Bindings: {:?}", self.bindings);
-                }
-                heap.bind(&self.bindings);
-
-                return Some(
-                    new_goals
-                        .into_iter()
-                        .map(|goal| Env::new(goal, self.depth + 1, heap.heap_len()))
-                        .collect(),
+            if debug {
+                let Strategy::Clause { choices, .. } = &self.strategy else {
+                    unreachable!()
+                };
+                eprintln!(
+                    "[MATCH] depth={} goal={} clause={}, choices_remaining={}",
+                    self.depth,
+                    heap.term_string(self.goal),
+                    clause.to_string(heap),
+                    choices.len()
                 );
             }
+
+            re_build_bound_arg_terms(heap, &mut substitution);
+
+            // Check if we need to invent a predicate BEFORE building goals
+            let mut invented_pred_addr: Option<usize> = None;
+            if clause.meta() {
+                if heap.str_symbol_arity(head).0 == 0 && heap.str_symbol_arity(self.goal).0 == 0 {
+                    let pred_symbol =
+                        SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
+                    let pred_addr = heap.set_const(pred_symbol);
+                    substitution.set_arg(0, pred_addr);
+                    substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
+                    invented_pred_addr = Some(pred_addr);
+
+                    if let Strategy::Clause { invent_pred, .. } = &mut self.strategy {
+                        *invent_pred = true;
+                    }
+                }
+            }
+
+            // Build new goals
+            let new_goals: Vec<usize> = clause
+                .body()
+                .iter()
+                .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
+                .collect();
+
+            // Build hypothesis clause if meta
+            if clause.meta() {
+                if let Strategy::Clause { new_clause, .. } = &mut self.strategy {
+                    *new_clause = true;
+                }
+
+                let new_clause_literals: Vec<usize> = clause
+                    .iter()
+                    .map(|literal| build(heap, &mut substitution, clause.meta_vars, *literal))
+                    .collect();
+
+                let mut constraints = Vec::with_capacity(16);
+                for i in 0..32 {
+                    if clause.constrained_var(i) {
+                        constraints.push(unsafe { substitution.get_arg(i).unwrap_unchecked() });
+                    }
+                }
+
+                let new_clause = Clause::new(new_clause_literals, None, None);
+                if debug {
+                    eprintln!(
+                        "[ADD_CLAUSE] depth={} goal={} clause={}",
+                        self.depth,
+                        heap.term_string(self.goal),
+                        new_clause.to_string(heap)
+                    );
+                    if invented_pred_addr.is_some() {
+                        eprintln!(
+                            "[INVENT_PRED] invented predicate for goal={}",
+                            heap.term_string(self.goal)
+                        );
+                    }
+                }
+                hypothesis.push_clause(new_clause, SmallVec::from_vec(constraints));
+                if debug {
+                    eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
+                }
+            }
+
+            self.bindings = substitution.get_bindings();
+            self.children = new_goals.len();
+            if debug {
+                eprintln!("Bindings: {:?}", self.bindings);
+            }
+            heap.bind(&self.bindings);
+
+            return Some(
+                new_goals
+                    .into_iter()
+                    .map(|goal| Env::new(goal, self.depth + 1, heap.heap_len()))
+                    .collect(),
+            );
         }
 
         if debug {
