@@ -6,20 +6,15 @@ use console::Term;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    heap::{
+    Error, Result, heap::{
         heap::{Cell, Heap},
         query_heap::QueryHeap,
         symbol_db::SymbolDB,
-    },
-    parser::{
+    }, parser::{
         build_tree::TokenStream,
         execute_tree::{build_clause, execute_tree},
         tokeniser::tokenise,
-    },
-    predicate_modules::{maths::set_approx_tolerance, PredicateModule, STANDARD_MODULES},
-    program::predicate_table::PredicateTable,
-    resolution::proof::Proof,
-    Error, Result,
+    }, predicate_modules::{PredicateModule, STANDARD_MODULES, maths::set_approx_tolerance}, program::predicate_table::PredicateTable, resolution::proof::Proof,
 };
 
 /// Engine configuration loaded from a JSON setup file.
@@ -126,12 +121,53 @@ impl<'de> serde::Deserialize<'de> for BodyPred {
     }
 }
 
+fn deserialize_examples<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, SeqAccess, Visitor};
+    use std::fmt;
+
+    struct ExamplesVisitor;
+
+    impl<'de> Visitor<'de> for ExamplesVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a file path string or a list of example strings")
+        }
+
+        // "examples/pos.pl" — treat as a file path and load it
+        fn visit_str<E: de::Error>(self, v: &str) -> std::result::Result<Vec<String>, E> {
+            let file = fs::read_to_string(v)
+                .map_err(|e| E::custom(format!("failed to read examples file {v:?}: {e}")))?;
+            Ok(file
+                .split(".\n")
+                .map(str::trim)
+                .filter(|ex| !ex.is_empty())
+                .map(String::from)
+                .collect())
+        }
+
+        // ["p(a)", "p(b)"] — take the strings directly
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> std::result::Result<Vec<String>, A::Error> {
+            let mut items = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(item) = seq.next_element::<String>()? {
+                items.push(item);
+            }
+            Ok(items)
+        }
+    }
+
+    deserializer.deserialize_any(ExamplesVisitor)
+}
+
 /// Positive and negative training examples.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Examples {
-    /// Positive examples (goals that should succeed).
+    #[serde(deserialize_with = "deserialize_examples")]
     pub pos: Vec<String>,
-    /// Negative examples (goals that should fail).
+    #[serde(deserialize_with = "deserialize_examples")]
     pub neg: Vec<String>,
 }
 
