@@ -473,7 +473,7 @@ impl Env {
                     let var_goal_pred = if let Some(addr) = substitution.bound(self.goal+1){
                         heap[addr].0 == Tag::Ref
                     }else{
-                        false
+                        heap[self.goal+1].0 == Tag::Ref
                     };
                     if heap.str_symbol_arity(head).0 == 0 && var_goal_pred
                     {
