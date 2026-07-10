@@ -470,7 +470,12 @@ impl Env {
                 // Check if we need to invent a predicate BEFORE building goals
                 let mut invented_pred_addr: Option<usize> = None;
                 if clause.meta() {
-                    if heap.str_symbol_arity(head).0 == 0 && heap.str_symbol_arity(self.goal).0 == 0
+                    let var_goal_pred = if let Some(addr) = substitution.bound(self.goal+1){
+                        heap[addr].0 == Tag::Ref
+                    }else{
+                        false
+                    };
+                    if heap.str_symbol_arity(head).0 == 0 && var_goal_pred
                     {
                         let pred_symbol = SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
                         let pred_addr = heap.set_const(pred_symbol);

@@ -211,7 +211,7 @@ dependencies = [
 
 [[package]]
 name = "prolog-squared"
-version = "1.4.1"
+version = "1.4.2"
 dependencies = [
  "console",
  "fsize",
