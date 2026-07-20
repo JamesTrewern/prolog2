@@ -332,12 +332,13 @@ fn evaluate_str(addr: usize, heap: &QueryHeap) -> Option<Number> {
 /// Evaluate a heap term as an arithmetic expression.
 /// Returns `None` if the term is not a number or a known arithmetic expression.
 fn evaluate_term(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    let addr = heap.deref_addr(addr);
-    match heap[addr] {
-        (Tag::Comp, _) => evaluate_str(addr, heap),
-        (tag @ (Tag::Int | Tag::Flt), value) => Some(Number::from_cell((tag, value))),
-        _ => None,
-    }
+    // let addr = heap.deref_addr(addr);
+    // match heap[addr] {
+    //     (Tag::Comp, _) => evaluate_str(addr, heap),
+    //     (tag @ (Tag::Int | Tag::Flt), value) => Some(Number::from_cell((tag, value))),
+    //     _ => None,
+    // }
+    todo!()
 }
 
 // ---------------------------------------------------------------------------
@@ -348,15 +349,16 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Option<Number> {
 /// Returns `None` if the goal is malformed or either argument is not a valid
 /// arithmetic expression — the caller should treat this as failure.
 fn eval_comparison(heap: &QueryHeap, goal: usize) -> Option<(Number, Number)> {
-    let goal_addr = heap.deref_addr(goal);
-    let func_addr = match heap[goal_addr] {
-        (Tag::Comp, _) => goal_addr,
-        _ => return None,
-    };
-    Some((
-        evaluate_term(func_addr + 2, heap)?,
-        evaluate_term(func_addr + 3, heap)?,
-    ))
+    // let goal_addr = heap.deref_addr(goal);
+    // let func_addr = match heap[goal_addr] {
+    //     (Tag::Comp, _) => goal_addr,
+    //     _ => return None,
+    // };
+    // Some((
+    //     evaluate_term(func_addr + 2, heap)?,
+    //     evaluate_term(func_addr + 3, heap)?,
+    // ))
+    todo!()
 }
 
 // ---------------------------------------------------------------------------
@@ -375,31 +377,32 @@ pub fn is_pred(
     _pred_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    let goal_addr = heap.deref_addr(goal);
-    let func_addr = match heap[goal_addr] {
-        (Tag::Comp, _) => goal_addr,
-        _ => return false.into(),
-    };
+    // let goal_addr = heap.deref_addr(goal);
+    // let func_addr = match heap[goal_addr] {
+    //     (Tag::Comp, _) => goal_addr,
+    //     _ => return false.into(),
+    // };
 
-    let Some(rhs) = evaluate_term(func_addr + 3, heap) else {
-        return false.into();
-    };
-    let lhs_addr = heap.deref_addr(func_addr + 2);
+    // let Some(rhs) = evaluate_term(func_addr + 3, heap) else {
+    //     return false.into();
+    // };
+    // let lhs_addr = heap.deref_addr(func_addr + 2);
 
-    match heap[lhs_addr] {
-        (Tag::Ref, _) => {
-            // LHS is unbound — bind it to the result
-            let result_addr = heap.heap_push(rhs.to_cell());
-            PredReturn::Success(vec![(lhs_addr, result_addr)], vec![])
-        }
-        _ => {
-            // LHS is already bound — check numeric equality
-            match evaluate_term(lhs_addr, heap) {
-                Some(lhs) => (lhs == rhs).into(),
-                None => PredReturn::False,
-            }
-        }
-    }
+    // match heap[lhs_addr] {
+    //     (Tag::Ref, _) => {
+    //         // LHS is unbound — bind it to the result
+    //         let result_addr = heap.heap_push(rhs.to_cell());
+    //         PredReturn::Success(vec![(lhs_addr, result_addr)], vec![])
+    //     }
+    //     _ => {
+    //         // LHS is already bound — check numeric equality
+    //         match evaluate_term(lhs_addr, heap) {
+    //             Some(lhs) => (lhs == rhs).into(),
+    //             None => PredReturn::False,
+    //         }
+    //     }
+    // }
+    todo!()
 }
 
 /// `</2`: succeeds if LHS evaluates to a number strictly less than RHS.

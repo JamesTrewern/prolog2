@@ -1,12 +1,23 @@
 use crate::{
-    app::Solution,
-    heap::{Cell, Heap, QueryHeap, Tag},
-    Config,
+    Config, app::Solution, heap::{Cell, EMPTY_LIS, Heap, LIS, QueryHeap, Tag, TermWalk},
 };
 
 /// Dereferenced heap address of the nth argument (0-indexed) of `goal`.
 pub fn goal_arg(heap: &QueryHeap, goal: usize, n: usize) -> usize {
-    heap.deref_addr(resolve(heap, goal) + 2 + n)
+    let mut arg_addr = goal+2;
+    for _ in 0 .. n{
+        let mut termwalk = TermWalk::new(arg_addr);
+        while let Some(addr) = termwalk.next_addr(){
+            match heap[addr] {
+                (Tag::Comp|Tag::Tup|Tag::Set, len) => termwalk.increment_cells_left(len),
+                LIS => termwalk.increment_cells_left(2),
+                _ => ()
+            }
+            arg_addr = addr;
+        }
+        arg_addr + 1;
+    }
+    arg_addr
 }
 
 /// True if `addr` holds an unbound variable (self-referential `Ref`).
@@ -33,7 +44,7 @@ pub fn resolve(heap: &QueryHeap, addr: usize) -> usize {
 /// structure on the heap. Derefs, follows `Str`, and wraps compound-like
 /// terms in `Str` indirection.
 fn cell_for_addr(heap: &QueryHeap, addr: usize) -> Cell {
-    let addr = heap.deref_addr(addr);
+    let addr = heap.var_deref(addr);
     todo!()
 }
 
@@ -46,17 +57,18 @@ fn cell_for_addr(heap: &QueryHeap, addr: usize) -> Cell {
 /// For a partial list like `[a, b | T]` the tail will point to `T`.
 /// Element addresses are dereferenced.
 pub fn read_list_with_tail(heap: &QueryHeap, addr: usize) -> (Vec<usize>, usize) {
-    let mut result = Vec::new();
-    let mut current = heap.deref_addr(addr);
-    loop {
-        match heap[current] {
-            (Tag::Lis, ptr) => {
-                result.push(heap.deref_addr(ptr));
-                current = heap.deref_addr(ptr + 1);
-            }
-            _ => return (result, current),
-        }
-    }
+    // let mut result = Vec::new();
+    // let mut current = heap.deref_addr(addr);
+    // loop {
+    //     match heap[current] {
+    //         (Tag::Lis, ptr) => {
+    //             result.push(heap.deref_addr(ptr));
+    //             current = heap.deref_addr(ptr + 1);
+    //         }
+    //         _ => return (result, current),
+    //     }
+    // }
+    todo!()
 }
 
 /// Read a proper list and return element addresses.
@@ -64,7 +76,7 @@ pub fn read_list_with_tail(heap: &QueryHeap, addr: usize) -> (Vec<usize>, usize)
 pub fn read_list_addrs(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>> {
     let (elements, tail) = read_list_with_tail(heap, addr);
     match heap[tail] {
-        (Tag::ELis, _) => Some(elements),
+        EMPTY_LIS => Some(elements),
         _ => None,
     }
 }
@@ -77,15 +89,16 @@ pub fn read_list_addrs(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>> {
 /// Each address is dereferenced. Returns `None` if `addr` does not point to
 /// one of these tags.
 pub fn read_structure_addrs(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>> {
-    let addr = heap.deref_addr(resolve(heap, addr));
-    match heap[addr].0 {
-        Tag::Comp | Tag::Tup | Tag::Set => Some(
-            heap.str_iterator(addr)
-                .map(|a| heap.deref_addr(a))
-                .collect(),
-        ),
-        _ => None,
-    }
+    // let addr = heap.deref_addr(resolve(heap, addr));
+    // match heap[addr].0 {
+    //     Tag::Comp | Tag::Tup | Tag::Set => Some(
+    //         heap.str_iterator(addr)
+    //             .map(|a| heap.deref_addr(a))
+    //             .collect(),
+    //     ),
+    //     _ => None,
+    // }
+    todo!()
 }
 
 // ---------------------------------------------------------------------------

@@ -59,34 +59,35 @@ pub fn univ(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    let compound = resolve(heap, goal_arg(heap, goal, 0));
-    let list = goal_arg(heap, goal, 1);
-    match (heap[compound].0, heap[list].0) {
-        (Tag::Comp, Tag::Lis) => {
-            // Build the equivalent list from compound args, then unify with
-            // the existing list. Handles ground lists, partial lists with
-            // variable tails, and variables in elements all in one shot.
-            let comp_addrs: Vec<usize> = heap.str_iterator(compound).collect();
-            let built_list = build_list_from_addrs(heap, &comp_addrs);
-            match unify(heap, built_list, list) {
-                Some(sub) => PredReturn::Success(sub.get_bindings().to_vec(), vec![]),
-                None => false.into(),
-            }
-        }
-        (Tag::Comp, Tag::Ref) => {
-            let comp_addrs: Vec<usize> = heap.str_iterator(compound).collect();
-            let built_list = build_list_from_addrs(heap, &comp_addrs);
-            PredReturn::Success(vec![(list, built_list)], vec![])
-        }
-        (Tag::Ref, Tag::Lis) => {
-            let Some(addrs) = read_list_addrs(heap, list) else {
-                return false.into();
-            };
-            let new_compound = build_compound_from_addrs(heap, &addrs);
-            PredReturn::Success(vec![(compound, new_compound)], vec![])
-        }
-        _ => false.into(),
-    }
+    // let compound = resolve(heap, goal_arg(heap, goal, 0));
+    // let list = goal_arg(heap, goal, 1);
+    // match (heap[compound].0, heap[list].0) {
+    //     (Tag::Comp, Tag::Lis) => {
+    //         // Build the equivalent list from compound args, then unify with
+    //         // the existing list. Handles ground lists, partial lists with
+    //         // variable tails, and variables in elements all in one shot.
+    //         let comp_addrs: Vec<usize> = heap.str_iterator(compound).collect();
+    //         let built_list = build_list_from_addrs(heap, &comp_addrs);
+    //         match unify(heap, built_list, list) {
+    //             Some(sub) => PredReturn::Success(sub.get_bound_vars().to_vec(), vec![]),
+    //             None => false.into(),
+    //         }
+    //     }
+    //     (Tag::Comp, Tag::Ref) => {
+    //         let comp_addrs: Vec<usize> = heap.str_iterator(compound).collect();
+    //         let built_list = build_list_from_addrs(heap, &comp_addrs);
+    //         PredReturn::Success(vec![(list, built_list)], vec![])
+    //     }
+    //     (Tag::Ref, Tag::Lis) => {
+    //         let Some(addrs) = read_list_addrs(heap, list) else {
+    //             return false.into();
+    //         };
+    //         let new_compound = build_compound_from_addrs(heap, &addrs);
+    //         PredReturn::Success(vec![(compound, new_compound)], vec![])
+    //     }
+    //     _ => false.into(),
+    // }
+    todo!()
 }
 
 // ---------------------------------------------------------------------------

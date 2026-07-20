@@ -34,22 +34,23 @@ pub fn length(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    let list_a = goal_arg(heap, goal, 0);
-    let len_a = goal_arg(heap, goal, 1);
+    // let list_a = goal_arg(heap, goal, 0);
+    // let len_a = goal_arg(heap, goal, 1);
 
-    let Some(elements) = read_list_addrs(heap, list_a) else {
-        return false.into();
-    };
-    let n = elements.len();
+    // let Some(elements) = read_list_addrs(heap, list_a) else {
+    //     return false.into();
+    // };
+    // let n = elements.len();
 
-    match heap[len_a] {
-        (Tag::Ref, r) => {
-            let int_addr = heap.heap_push((Tag::Int, n));
-            PredReturn::Success(vec![(r, int_addr)], vec![])
-        }
-        (Tag::Int, v) => (n == v).into(),
-        _ => false.into(),
-    }
+    // match heap[len_a] {
+    //     (Tag::Ref, r) => {
+    //         let int_addr = heap.heap_push((Tag::Int, n));
+    //         PredReturn::Success(vec![(r, int_addr)], vec![])
+    //     }
+    //     (Tag::Int, v) => (n == v).into(),
+    //     _ => false.into(),
+    // }
+    todo!()
 }
 
 /// `sort(+List, -Sorted)` — Sorted is a sorted copy of List.
@@ -67,68 +68,69 @@ pub fn sort(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    let list_a = goal_arg(heap, goal, 0);
-    let sorted_a = goal_arg(heap, goal, 1);
+    // let list_a = goal_arg(heap, goal, 0);
+    // let sorted_a = goal_arg(heap, goal, 1);
 
-    // Output must be an unbound variable.
-    let (Tag::Ref, r) = heap[sorted_a] else {
-        return false.into();
-    };
+    // // Output must be an unbound variable.
+    // let (Tag::Ref, r) = heap[sorted_a] else {
+    //     return false.into();
+    // };
 
-    let Some(element_addrs) = read_list_addrs(heap, list_a) else {
-        return false.into();
-    };
+    // let Some(element_addrs) = read_list_addrs(heap, list_a) else {
+    //     return false.into();
+    // };
 
-    if element_addrs.is_empty() {
-        let empty = heap.heap_push((Tag::ELis, 0));
-        return PredReturn::Success(vec![(r, empty)], vec![]);
-    }
+    // if element_addrs.is_empty() {
+    //     let empty = heap.heap_push((Tag::ELis, 0));
+    //     return PredReturn::Success(vec![(r, empty)], vec![]);
+    // }
 
-    let first_tag = heap[element_addrs[0]].0;
-    match first_tag {
-        Tag::Flt | Tag::Int => {
-            if !element_addrs
-                .iter()
-                .all(|&a| matches!(heap[a].0, Tag::Flt | Tag::Int))
-            {
-                return false.into();
-            }
-            let mut indexed: Vec<(usize, Number)> = element_addrs
-                .into_iter()
-                .map(|a| (a, Number::from_cell(heap[a])))
-                .collect();
-            indexed.sort_by(|(_, n1), (_, n2)| {
-                n1.partial_cmp(n2).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let sorted_addrs: Vec<usize> = indexed.into_iter().map(|(a, _)| a).collect();
-            let list_addr = build_list_from_addrs(heap, &sorted_addrs);
-            PredReturn::Success(vec![(r, list_addr)], vec![])
-        }
-        Tag::Stri | Tag::Con => {
-            if !element_addrs
-                .iter()
-                .all(|&a| matches!(heap[a].0, Tag::Stri | Tag::Con))
-            {
-                return false.into();
-            }
-            let mut indexed: Vec<(usize, Arc<str>)> = element_addrs
-                .into_iter()
-                .map(|a| {
-                    let s = match heap[a] {
-                        (Tag::Stri, idx) => SymbolDB::get_string(idx),
-                        (Tag::Con, id) => SymbolDB::get_const(id),
-                        _ => unreachable!("sort: tag changed unexpectedly"),
-                    };
-                    (a, s)
-                })
-                .collect();
-            indexed.sort_by(|(_, s1), (_, s2)| s1.cmp(s2));
-            let sorted_addrs: Vec<usize> = indexed.into_iter().map(|(a, _)| a).collect();
-            let list_addr = build_list_from_addrs(heap, &sorted_addrs);
-            PredReturn::Success(vec![(r, list_addr)], vec![])
-        }
-        _ => false.into(),
-    }
+    // let first_tag = heap[element_addrs[0]].0;
+    // match first_tag {
+    //     Tag::Flt | Tag::Int => {
+    //         if !element_addrs
+    //             .iter()
+    //             .all(|&a| matches!(heap[a].0, Tag::Flt | Tag::Int))
+    //         {
+    //             return false.into();
+    //         }
+    //         let mut indexed: Vec<(usize, Number)> = element_addrs
+    //             .into_iter()
+    //             .map(|a| (a, Number::from_cell(heap[a])))
+    //             .collect();
+    //         indexed.sort_by(|(_, n1), (_, n2)| {
+    //             n1.partial_cmp(n2).unwrap_or(std::cmp::Ordering::Equal)
+    //         });
+    //         let sorted_addrs: Vec<usize> = indexed.into_iter().map(|(a, _)| a).collect();
+    //         let list_addr = build_list_from_addrs(heap, &sorted_addrs);
+    //         PredReturn::Success(vec![(r, list_addr)], vec![])
+    //     }
+    //     Tag::Stri | Tag::Con => {
+    //         if !element_addrs
+    //             .iter()
+    //             .all(|&a| matches!(heap[a].0, Tag::Stri | Tag::Con))
+    //         {
+    //             return false.into();
+    //         }
+    //         let mut indexed: Vec<(usize, Arc<str>)> = element_addrs
+    //             .into_iter()
+    //             .map(|a| {
+    //                 let s = match heap[a] {
+    //                     (Tag::Stri, idx) => SymbolDB::get_string(idx),
+    //                     (Tag::Con, id) => SymbolDB::get_const(id),
+    //                     _ => unreachable!("sort: tag changed unexpectedly"),
+    //                 };
+    //                 (a, s)
+    //             })
+    //             .collect();
+    //         indexed.sort_by(|(_, s1), (_, s2)| s1.cmp(s2));
+    //         let sorted_addrs: Vec<usize> = indexed.into_iter().map(|(a, _)| a).collect();
+    //         let list_addr = build_list_from_addrs(heap, &sorted_addrs);
+    //         PredReturn::Success(vec![(r, list_addr)], vec![])
+    //     }
+    //     _ => false.into(),
+    // }
+    todo!()
 }
 
 // ── Module registration ───────────────────────────────────────────────────────

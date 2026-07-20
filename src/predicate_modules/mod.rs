@@ -20,10 +20,7 @@ pub use meta_predicates::META_PREDICATES;
 pub use strings::STRINGS;
 
 use crate::{
-    heap::QueryHeap,
-    predicate_modules::sets::SETS,
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
-    Config,
+    Config, heap::{Binding, QueryHeap}, predicate_modules::sets::SETS, program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
 };
 
 /// Return type for predicate functions.
@@ -51,13 +48,13 @@ pub enum PredReturn {
     ///
     /// - First field: `(source_addr, target_addr)` heap bindings.
     /// - Second field: heap addresses of additional sub-goals to schedule (may be empty).
-    Success(Vec<(usize, usize)>, Vec<usize>),
+    Success(Vec<Binding>, Vec<usize>),
     /// Multiple alternative results — each tried on backtracking, like clause choices.
     ///
     /// Each element is a `(bindings, sub_goals)` pair, identical in meaning to
     /// [`Success`](PredReturn::Success). The engine stores these alternatives and
     /// pops one per attempt, undoing bindings on backtrack just like clause choices.
-    Choices(Vec<(Vec<(usize, usize)>, Vec<usize>)>),
+    Choices(Vec<(Vec<Binding>, Vec<usize>)>),
 }
 
 impl From<bool> for PredReturn {
