@@ -114,7 +114,7 @@ fn encode_var(
             SymbolDB::set_var(symbol, addr, heap.get_id(addr));
         }
         None if query => {
-            let addr = heap.set_ref(None);
+            let addr = heap.set_var(None);
             var_values.insert(symbol.clone(), addr);
             SymbolDB::set_var(symbol, addr, heap.get_id(addr));
         }
