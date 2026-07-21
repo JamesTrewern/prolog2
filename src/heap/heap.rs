@@ -1,9 +1,10 @@
-use super::{DualWalk, SymbolDB, TermWalk};
+use super::{SymbolDB, TermWalk};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Write,
     mem,
     ops::{Index, IndexMut, Range, RangeInclusive},
+    todo,
 };
 
 use fsize::fsize;
@@ -54,13 +55,23 @@ pub const _FALSE: Cell = (Tag::Con, CON_PTR);
 pub const _TRUE: Cell = (Tag::Con, CON_PTR + 1);
 pub const LIS: Cell = (Tag::Lis, 0);
 pub const EMPTY_LIS: Cell = (Tag::ELis, 0);
+pub enum VarDeref {
+    Same,           // cell at addr is not a (bound) variable — keep using addr
+    Jump(usize),    // chain resolved to the term at this address
+    Unbound(usize), // chain resolved to an unbound variable with this id
+}
+
+/// (from var_id, to value, true: value is another var_id | false: value is heap address)
+pub type Binding = (usize, usize, bool);
 
 /// Core trait for heap storage.
 ///
 /// Implemented by both the static program heap (`Vec<Cell>`) and the
 /// query-time [`super::query_heap::QueryHeap`]. Provides cell access,
 /// term construction, dereferencing, and display.
-pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]> {
+pub trait Heap:
+    Sized + IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]>
+{
     fn heap_push(&mut self, cell: Cell) -> usize;
 
     fn heap_len(&self) -> usize;
@@ -89,158 +100,38 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         h
     }
 
-    fn set_ref(&mut self, ref_addr: Option<usize>) -> usize {
-        //If no address provided set addr to current heap len
-        let addr = match ref_addr {
-            Some(a) => a,
-            None => self.heap_len(),
+    fn set_var(&mut self, var_id: Option<usize>) -> usize {
+        unreachable!("Shouldn't set var in program heap");
+    }
+
+    #[inline(always)]
+    fn var_deref(&self, addr: usize) -> VarDeref {
+        let (Tag::Ref, mut id) = self[addr] else {
+            return VarDeref::Same;
         };
-        self.heap_push((Tag::Ref, addr));
-        return self.heap_len() - 1;
-    }
-
-    #[inline(always)]
-    fn deref_addr(&self, mut addr: usize) -> usize {
-        if self[addr].0 != Tag::Ref || self[addr].1 == addr {
-            addr
-        } else {
-            loop {
-                match self[addr] {
-                    (Tag::Ref, pointer) if addr == pointer => return addr,
-                    (Tag::Ref, pointer) => addr = pointer,
-                    // (Tag::Str, pointer) => return pointer,
-                    _ => return addr,
-                }
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn is_deref(&self, mut addr: usize) -> Option<usize> {
-        if self[addr].0 != Tag::Ref || self[addr].1 == addr {
-            None
-        } else {
-            loop {
-                match self[addr] {
-                    (Tag::Ref, pointer) if addr == pointer => break,
-                    (Tag::Ref, pointer) => addr = pointer,
-                    // (Tag::Str, pointer) => return pointer,
-                    _ => break,
-                }
-            }
-            Some(addr)
-        }
+        unreachable!("Should not have ref cells in program heap");
     }
 
     /** Update address value of ref cells affected by binding
      * @binding: List of (usize, usize) tuples representing heap indexes, left -> right
      */
-    fn bind(&mut self, binding: &[(usize, usize)]) {
-        for (src, target) in binding {
-            let pointer = &mut self[*src].1;
-            debug_assert!(
-                *pointer == *src,
-                "bind: tried to rebind already-bound ref at {src} (binding: {binding:?})"
-            );
-            *pointer = *target;
-        }
+    fn bind(&mut self, binding: Binding) {
+        unreachable!("Should not attempt to bind in program heap")
     }
 
     /** Reset Ref cells affected by binding to self references
      * @binding: List of (usize, usize) tuples representing heap indexes, left -> right
      */
-    fn unbind(&mut self, binding: &[(usize, usize)]) {
-        for (src, _target) in binding {
-            if let (Tag::Ref, pointer) = &mut self[*src] {
-                *pointer = *src;
-            }
-        }
-    }
-
-    fn walk_term_mut<T>(
-        &mut self,
-        addr: usize,
-        accumulator: &mut T,
-        operation: fn(&mut Self, usize, &mut T) -> bool,
-    ) {
-        let mut walk = TermWalk::new(addr);
-        loop {
-            let addr = match walk.next_addr() {
-                Some(addr) => match self.is_deref(addr) {
-                    Some(deref_addr) => {
-                        walk.add_deref_frame(deref_addr);
-                        deref_addr
-                    }
-                    None => addr,
-                },
-                None => return,
-            };
-            if operation(self, addr, accumulator) {
-                return;
-            }
-            match self[addr] {
-                LIS => walk.increment_cells_left(2),
-                (Tag::Comp | Tag::Tup | Tag::Set, len) => walk.increment_cells_left(len),
-                _ => (),
-            }
-        }
-    }
-
-    fn walk_term<T>(
-        &self,
-        addr: usize,
-        accumulator: &mut T,
-        operation: fn(&Self, usize, &mut T) -> bool, //return true indicates early return
-    ) {
-        let mut walk = TermWalk::new(addr);
-        loop {
-            let addr = match walk.next_addr() {
-                Some(addr) => match self.is_deref(addr) {
-                    Some(deref_addr) => {
-                        walk.add_deref_frame(deref_addr);
-                        deref_addr
-                    }
-                    None => addr,
-                },
-                None => return,
-            };
-            if operation(self, addr, accumulator) {
-                return;
-            }
-            match self[addr] {
-                LIS => walk.increment_cells_left(2),
-                (Tag::Comp | Tag::Tup | Tag::Set, len) => walk.increment_cells_left(len),
-                _ => (),
-            }
-        }
-    }
-
-    fn contains_args_opp(&self, addr: usize, acc: &mut bool) -> bool {
-        match self[addr].0 {
-            Tag::Arg => {
-                *acc = true;
-                true
-            }
-            _ => false,
-        }
+    fn unbind(&mut self, binding: &[usize]) {
+        unreachable!("Should not attempt to unbind in program heap")
     }
 
     fn contains_args(&self, addr: usize) -> bool {
-        let mut acc = false;
-        self.walk_term(addr, &mut acc, Self::contains_args_opp);
-        acc
-    }
-
-    fn term_args_op(&self, addr: usize, args: &mut Vec<usize>) -> bool {
-        if self[addr].0 == Tag::Arg {
-            args.push(addr);
-        }
-        false
-    }
-
-    fn term_refs_op(&self, addr: usize, refs: &mut Vec<usize>) -> bool {
-        if self[addr].0 == Tag::Ref {
-            refs.push(addr);
+        let mut walk = TermWalk::new(addr);
+        while let Some((tag, _)) = walk.next_cell(self) {
+            if tag == Tag::Arg {
+                return true;
+            }
         }
         false
     }
@@ -249,59 +140,80 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
      * If cell at addr is a reference return that cell  
      */
     fn term_vars(&self, addr: usize, args: bool) -> Vec<usize> {
-        let mut acc = Vec::new();
-        if args {
-            self.walk_term(addr, &mut acc, Self::term_args_op);
-        } else {
-            self.walk_term(addr, &mut acc, Self::term_refs_op);
-        }
-        acc
-    }
-
-    fn normalise_args_opp(&mut self, addr: usize, args: &mut Vec<usize>) -> bool {
-        if let (Tag::Arg, id) = self[addr] {
-            if let Some(pos) = args.iter().position(|i| id == *i) {
-                self[addr].1 = pos;
-            } else {
-                let pos = args.len();
-                args.push(id);
-                self[addr].1 = pos;
+        let mut walk = TermWalk::new(addr);
+        let mut vars = Vec::new();
+        while let Some((tag, value)) = walk.next_cell(self) {
+            if (!args && tag == Tag::Ref) | (args && tag == Tag::Arg) {
+                if !vars.contains(&value) {
+                    vars.push(value);
+                }
             }
         }
-        false
+        vars
     }
 
-    fn normalise_args(&mut self, addr: usize, args: &mut Vec<usize>) {
-        self.walk_term_mut(addr, args, Self::normalise_args_opp);
+    /**Collect all Arg, cells in structure or referenced by structure
+     * If cell at addr is a reference return that cell  
+     */
+    fn term_args(&self, addr: usize, args: bool) -> Vec<usize> {
+        let mut walk = TermWalk::new(addr);
+        let mut vars = Vec::new();
+        while let Some((tag, value)) = walk.next_cell(self) {
+            if tag == Tag::Arg {
+                if !vars.contains(&value) {
+                    vars.push(value);
+                }
+            }
+        }
+        vars
     }
 
-    ///Operation to check occurs
-    ///Tests both for ref and bound args
-    /// @ acc (ref_addr, bound args, occurs?)
-    fn occurs_opp(&self, addr: usize, acc: &mut (usize, &[usize], bool)) -> bool {
-        match self[addr] {
-            (Tag::Arg, id) if acc.1.contains(&id) => {
-                acc.2 = true;
-                true
+    ///Normalise args across multiple terms to 0 index arg ids
+    fn normalise_args(&mut self, mut addr: usize, args: &mut Vec<usize>) {
+        // Can ignore variable dereferencing as refs can't bind to arg terms without rebuilding
+        let mut cells_left = 1;
+        while cells_left > 0 {
+            cells_left -= 1;
+            match self[addr] {
+                (Tag::Arg, arg_id) => {
+                    if let Some(pos) = args.iter().position(|&arg_id2| arg_id == arg_id2) {
+                        self[addr].1 = pos;
+                    } else {
+                        args.push(arg_id);
+                    }
+                }
+                LIS => cells_left += 2,
+                (Tag::Comp | Tag::Set | Tag::Tup, len) => cells_left += len,
+                _ => (),
             }
-            (Tag::Ref, addr) if addr == acc.0 => {
-                acc.2 = true;
-                true
-            }
-            _ => false,
+            addr += 1;
         }
     }
 
-    fn occurs(&self, addr: usize, ref_addr: usize, bound_args: &[usize]) -> bool {
-        let mut acc = (ref_addr, bound_args, false);
-        self.walk_term(addr, &mut acc, Self::occurs_opp);
-        acc.2
+    fn occurs(&self, addr: usize, var_id: usize, bound_args: &[usize]) -> bool {
+        let mut walk = TermWalk::new(addr);
+        while let Some(cell) = walk.next_cell(self) {
+            match cell {
+                (Tag::Arg, id) if bound_args.contains(&id) => {
+                    return true;
+                }
+                (Tag::Ref, var_id2) if var_id2 == var_id => {
+                    return true;
+                }
+                _ => (),
+            }
+        }
+        true
     }
 
     /**Get the symbol id and arity of functor structure */
     fn str_symbol_arity(&self, addr: usize) -> (usize, usize) {
         if let (Tag::Comp, arity) = self[addr] {
-            let functor = self.is_deref(addr).unwrap_or(addr);
+            let functor = match self.var_deref(addr) {
+                VarDeref::Same => addr,
+                VarDeref::Jump(addr) => addr,
+                VarDeref::Unbound(_) => return (0, arity),
+            };
             match self[functor] {
                 (Tag::Arg | Tag::Ref, _) => (0, arity - 1),
                 (Tag::Con, id) => (id, arity - 1),
@@ -322,68 +234,75 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
         addr + 1..=addr + self[addr].1
     }
 
-    fn clone_term(&mut self, other: &impl Heap, addr: usize, ref_map: &mut HashMap<usize, usize>) {
+    /// Clone term from another heap, replacing ref cells with fresh references
+    /// and inlining bound references to new term
+    fn clone_term_from_other(
+        &mut self,
+        other: &impl Heap,
+        addr: usize,
+        ref_map: &mut HashMap<usize, usize>,
+    ) {
         let mut walk = TermWalk::new(addr);
-        loop {
-            let addr = if let Some(addr) = walk.next_addr() {
-                if let Some(deref_addr) = other.is_deref(addr) {
-                    walk.add_deref_frame(deref_addr);
-                    deref_addr
+        while let Some((tag, value)) = walk.next_cell(other) {
+            if tag == Tag::Ref {
+                if let Some(var_id) = ref_map.get(&value) {
+                    self.heap_push((tag, *var_id));
                 } else {
-                    addr
+                    let var_id = self.set_var(None);
+                    ref_map.insert(value, var_id);
                 }
             } else {
-                return;
-            };
-
-            match other[addr] {
-                LIS => {
-                    self.heap_push(LIS);
-                    walk.increment_cells_left(2);
-                }
-                cell @ (Tag::Comp | Tag::Tup | Tag::Set, len) => {
-                    self.heap_push(cell);
-                    walk.increment_cells_left(len);
-                }
-                (Tag::Ref, addr) => {
-                    if let Some(&mapped) = ref_map.get(&addr) {
-                        self.heap_push((Tag::Ref, mapped));
-                    } else {
-                        let new_addr = self.heap_len();
-                        self.heap_push((Tag::Ref, new_addr));
-                        ref_map.insert(addr, new_addr);
-                    }
-                }
-                cell => _ = self.heap_push(cell),
+                self.heap_push((tag, value));
             }
         }
     }
 
+    /// Clone term replacing ref cells with fresh references
+    /// and inlining bound references to new term
+    fn clone_term(
+        &mut self,
+        addr: usize,
+        ref_map: &mut HashMap<usize, usize>,
+    ) {
+        let mut walk = TermWalk::new(addr);
+        while let Some((tag, value)) = walk.next_cell(self) {
+            if tag == Tag::Ref {
+                if let Some(var_id) = ref_map.get(&value) {
+                    self.heap_push((tag, *var_id));
+                } else {
+                    let var_id = self.set_var(None);
+                    ref_map.insert(value, var_id);
+                }
+            } else {
+                self.heap_push((tag, value));
+            }
+        }
+    }
+
+    /// Naively copy cells from a term, with no dereferencing 
+    fn copy_term(&mut self, mut addr: usize){
+        // Can ignore variable dereferencing as refs can't bind to arg terms without rebuilding
+        let mut cells_left = 1;
+        while cells_left > 0 {
+            cells_left -= 1;
+            self.heap_push(self[addr]);
+            match self[addr] {
+                LIS => cells_left += 2,
+                (Tag::Comp | Tag::Set | Tag::Tup, len) => cells_left += len,
+                _ => (),
+            }
+            addr += 1;
+        }
+    }
+
     fn term_equal(&self, addr1: usize, addr2: usize) -> bool {
-        let mut walk = DualWalk::new(addr1, addr2);
+        let (mut walk1, mut walk2) = (TermWalk::new(addr1), TermWalk::new(addr2));
         loop {
-            let (mut addr1, mut addr2) = match walk.next_addrs() {
-                Some(addrs) => addrs,
-                None => return true,
+            let (Some(cell1), Some(cell2)) = (walk1.next_cell(self), walk2.next_cell(self)) else {
+                return true;
             };
 
-            if let Some(deref_addr) = self.is_deref(addr1) {
-                walk.add_deref_frame(deref_addr, true);
-                addr1 = deref_addr;
-            }
-            if let Some(deref_addr) = self.is_deref(addr2) {
-                walk.add_deref_frame(deref_addr, false);
-                addr2 = deref_addr;
-            }
-            match (self[addr1], self[addr2]) {
-                (cell1 @ (Tag::Comp | Tag::Tup, len), cell2 @ (Tag::Comp | Tag::Tup, _))
-                    if cell1 == cell2 =>
-                {
-                    walk.increment_cells_left(len);
-                }
-                (LIS, LIS) => {
-                    walk.increment_cells_left(2);
-                }
+            match (cell1, cell2) {
                 ((Tag::Set, len1), (Tag::Set, len2)) if len1 == len2 => {
                     // Set equality: every element in set1 must have a match in set2
                     // and vice-versa (lengths already equal, so one direction suffices
@@ -396,7 +315,8 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                     {
                         return false;
                     }
-                    walk.skip_addrs(len1);
+                    walk1.skip_addrs(len1);
+                    walk2.skip_addrs(len1);
                 }
                 ((Tag::Stri, i1), (Tag::Stri, i2)) => {
                     if *SymbolDB::get_string(i1) != *SymbolDB::get_string(i2) {
@@ -532,12 +452,17 @@ pub trait Heap: IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [C
                 Some(symbol) => buf.write_str(&symbol),
                 None => write!(buf, "Arg_{}", self[*addr].1),
             },
-            Tag::Ref => match self.is_deref(*addr) {
-                Some(mut ref_addr) => self.term_string_rec(&mut ref_addr, buf),
-                None => match SymbolDB::get_var(*addr, self.get_id(*addr)).to_owned() {
-                    Some(symbol) => buf.write_str(&symbol),
-                    None => write!(buf, "Ref_{}", self[*addr].1),
-                },
+            Tag::Ref => match self.var_deref(*addr) {
+                VarDeref::Jump(mut ref_addr) => self.term_string_rec(&mut ref_addr, buf),
+                VarDeref::Unbound(var_id) => {
+                    match SymbolDB::get_var(var_id, self.get_id(*addr)).to_owned() {
+                        Some(symbol) => buf.write_str(&symbol),
+                        None => write!(buf, "Ref_{}", self[*addr].1),
+                    }
+                }
+                VarDeref::Same => {
+                    unreachable!("Ref should not be able to return same (should be unbound)")
+                }
             },
             Tag::Int => {
                 let value: isize = unsafe { mem::transmute_copy(&self[*addr].1) };
@@ -585,7 +510,7 @@ impl Heap for Vec<Cell> {
 mod tests {
     use std::collections::HashMap;
 
-use crate::heap::query_heap::QueryHeap;
+    use crate::heap::query_heap::QueryHeap;
 
     use super::{
         super::symbol_db::SymbolDB,
@@ -673,7 +598,7 @@ use crate::heap::query_heap::QueryHeap;
     }
 
     #[test]
-    fn is_deref(){
+    fn var_deref() {
         let a = SymbolDB::set_const("a");
         let mut heap = QueryHeap::new(&[], None);
         heap.cells.extend(vec![
@@ -684,10 +609,7 @@ use crate::heap::query_heap::QueryHeap;
             (Tag::Ref, 5),
             (Tag::Con, a),
         ]);
-        assert_eq!(heap.is_deref(0), None);
-        assert_eq!(heap.is_deref(1), Some(2));
-        assert_eq!(heap.is_deref(2), None);
-        assert_eq!(heap.is_deref(3), Some(5));
+        todo!();
     }
 
     #[test]
@@ -705,21 +627,15 @@ use crate::heap::query_heap::QueryHeap;
             (Tag::Con, a),
             (Tag::Arg, 0),
         ]);
-        heap.clone_term(&other, 0, &mut HashMap::new());
-        assert_eq!(&heap.cells, &[
-            (Tag::Comp, 3),
-            (Tag::Con, f),
-            (Tag::Con, a),
-            (Tag::Arg, 0),
-        ]);
+        heap.clone_term_from_other(&other, 0, &mut HashMap::new());
+        assert_eq!(
+            &heap.cells,
+            &[(Tag::Comp, 3), (Tag::Con, f), (Tag::Con, a), (Tag::Arg, 0),]
+        );
 
         //Test ref reasingment
         let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![
-            EMPTY_LIS,
-            EMPTY_LIS,
-            EMPTY_LIS,
-        ]);
+        heap.cells.extend(vec![EMPTY_LIS, EMPTY_LIS, EMPTY_LIS]);
         let mut other = QueryHeap::new(&[], None);
         other.cells.extend(vec![
             (Tag::Tup, 4),
@@ -728,14 +644,17 @@ use crate::heap::query_heap::QueryHeap;
             (Tag::Ref, 2),
             (Tag::Ref, 4),
         ]);
-        heap.clone_term(&other, 0, &mut HashMap::new());
-        assert_eq!(&heap.cells[3..], &[
-            (Tag::Tup, 4),
-            (Tag::Ref, 4),
-            (Tag::Ref, 4),
-            (Tag::Ref, 4),
-            (Tag::Ref, 7),
-        ]);
+        heap.clone_term_from_other(&other, 0, &mut HashMap::new());
+        assert_eq!(
+            &heap.cells[3..],
+            &[
+                (Tag::Tup, 4),
+                (Tag::Ref, 4),
+                (Tag::Ref, 4),
+                (Tag::Ref, 4),
+                (Tag::Ref, 7),
+            ]
+        );
 
         // Ref bound to simple term
         let mut heap = QueryHeap::new(&[], None);
@@ -749,16 +668,19 @@ use crate::heap::query_heap::QueryHeap;
             (Tag::Ref, 0),
             (Tag::Ref, 5),
         ]);
-        heap.clone_term(&other, 1, &mut HashMap::new());
-        heap.clone_term(&other, 4, &mut HashMap::new());
-        assert_eq!(&heap.cells, &[
-            (Tag::Tup, 2),
-            (Tag::Con, a),
-            (Tag::Con, a),
-            (Tag::Tup, 2),
-            (Tag::Con, a),
-            (Tag::Con, a),
-        ]);
+        heap.clone_term_from_other(&other, 1, &mut HashMap::new());
+        heap.clone_term_from_other(&other, 4, &mut HashMap::new());
+        assert_eq!(
+            &heap.cells,
+            &[
+                (Tag::Tup, 2),
+                (Tag::Con, a),
+                (Tag::Con, a),
+                (Tag::Tup, 2),
+                (Tag::Con, a),
+                (Tag::Con, a),
+            ]
+        );
 
         // Ref bound to complex term
         let mut heap = QueryHeap::new(&[], None);
@@ -774,40 +696,46 @@ use crate::heap::query_heap::QueryHeap;
             (Tag::Con, p),  // 7
             (Tag::Ref, 3),  // 8
         ]);
-        heap.clone_term(&other, 6, &mut HashMap::new());
-        assert_eq!(&heap.cells, &[
-            (Tag::Comp, 2),
-            (Tag::Con, p),
-            (Tag::Comp, 2),
-            (Tag::Con, p),
-            (Tag::Comp, 2),
-            (Tag::Con, f),
-            (Tag::Con, a),
-        ]);
+        heap.clone_term_from_other(&other, 6, &mut HashMap::new());
+        assert_eq!(
+            &heap.cells,
+            &[
+                (Tag::Comp, 2),
+                (Tag::Con, p),
+                (Tag::Comp, 2),
+                (Tag::Con, p),
+                (Tag::Comp, 2),
+                (Tag::Con, f),
+                (Tag::Con, a),
+            ]
+        );
 
         let mut heap = QueryHeap::new(&[], None);
         let mut other = QueryHeap::new(&[], None);
         other.cells.extend(vec![
-            LIS, // 0
+            LIS,            // 0
             (Tag::Con, f),  // 1
             (Tag::Con, a),  // 2
-            LIS, // 3
+            LIS,            // 3
             (Tag::Con, p),  // 4
             (Tag::Ref, 0),  // 5
             (Tag::Comp, 2), // 6
             (Tag::Con, p),  // 7
             (Tag::Ref, 3),  // 8
         ]);
-        heap.clone_term(&other, 6, &mut HashMap::new());
-        assert_eq!(&heap.cells, &[
-            (Tag::Comp, 2),
-            (Tag::Con, p),
-            LIS,
-            (Tag::Con, p),
-            LIS,
-            (Tag::Con, f),
-            (Tag::Con, a),
-        ]);
+        heap.clone_term_from_other(&other, 6, &mut HashMap::new());
+        assert_eq!(
+            &heap.cells,
+            &[
+                (Tag::Comp, 2),
+                (Tag::Con, p),
+                LIS,
+                (Tag::Con, p),
+                LIS,
+                (Tag::Con, f),
+                (Tag::Con, a),
+            ]
+        );
     }
 
     #[test]

@@ -1,13 +1,33 @@
-use crate::heap::{TermWalk, LIS, Tag};
+use super::{Binding, VarDeref, LIS, Tag, TermWalk};
 use std::{
-    collections::HashMap,
-    ops::{Index, IndexMut, Range},
-    sync::atomic::{AtomicUsize, Ordering::Acquire},
+    collections::HashMap, ops::{Index, IndexMut, Range}, sync::atomic::{AtomicUsize, Ordering::Acquire},
 };
 
 use super::heap::{Cell, Heap};
 
 static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+const VAR_TAG: usize = 1 << (usize::BITS - 1);
+const UNBOUND: usize = usize::MAX;
+
+#[derive(Debug,Clone, Copy)]
+struct VarEntry(usize);
+
+impl VarEntry {
+    pub fn bind(&mut self, value: usize, var: bool){
+        debug_assert!(self.0 == UNBOUND, "Attempt to bind bound var");
+        if var{
+            self.0 = VAR_TAG | value
+        }else{
+            self.0 = value
+        }
+    }
+
+    pub fn unbind(&mut self){
+        debug_assert!(self.0 != UNBOUND, "Attempt to unbind unbound var");
+        self.0 = UNBOUND
+    }
+}
 
 /// Working heap for proof search.
 ///
@@ -20,16 +40,23 @@ pub struct QueryHeap<'a> {
     prog_cells: &'a [Cell],
     // TODO: handle branching query heap multi-threading
     root: Option<*const QueryHeap<'a>>,
+    var_bindings: Vec<VarEntry>, //Reference binding registers
 }
 
 impl<'a> QueryHeap<'a> {
     pub fn new(prog_cells: &'a [Cell], root: Option<*const QueryHeap<'a>>) -> QueryHeap<'a> {
         let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
+        let var_bindings = if let Some(root) = root {
+            unsafe { (&*root).var_bindings.clone() }
+        } else {
+            Vec::new()
+        };
         QueryHeap {
             id,
             cells: Vec::new(),
             prog_cells,
             root,
+            var_bindings,
         }
     }
 
@@ -49,26 +76,28 @@ impl<'a> QueryHeap<'a> {
     /// Used to duplicate terms from immutable cells such as prog_cells or root_heap heap
     /// and place them in mutable cells.
     pub fn dup_term(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) {
-        let mut addr_stack = TermWalk::new(addr);
+        let mut walk = TermWalk::new(addr);
         loop {
-            let addr = if let Some(addr) = addr_stack.next_addr(){
-                if let Some(deref_addr) = self.is_deref(addr) {
-                    addr_stack.add_deref_frame(deref_addr);
-                    deref_addr
-                }else{
-                    addr
+            let addr = if let Some(addr) = walk.next_addr() {
+                match self.var_deref(addr) {
+                    VarDeref::Same => addr,
+                    VarDeref::Jump(jump_addr) => {
+                        walk.add_jump_frame(jump_addr);
+                        jump_addr
+                    }
+                    VarDeref::Unbound(var_id) => self.set_var(Some(var_id))
                 }
-            }else{
+            } else {
                 return;
             };
             match self[addr] {
                 LIS => {
                     self.heap_push(LIS);
-                    addr_stack.increment_cells_left(2);
+                    walk.increment_cells_left(2);
                 }
                 cell @ (Tag::Comp | Tag::Tup | Tag::Set, len) => {
                     self.heap_push(cell);
-                    addr_stack.increment_cells_left(len);
+                    walk.increment_cells_left(len);
                 }
                 (Tag::Ref, addr) => {
                     if let Some(&mapped) = ref_map.get(&addr) {
@@ -83,10 +112,33 @@ impl<'a> QueryHeap<'a> {
             }
         }
     }
+
+    /// If true passed contrains, false if failed contraints
+    pub fn check_constraints(&self, cons: &[usize]) -> bool{
+        let mut i = 0;
+        while i < cons.len(){
+            let mut j = 0;
+            while j < cons.len(){
+                if i == j {
+                    continue;
+                }
+                let var_id1 = cons[i];
+                let var_id2 = cons[j];
+                todo!("Effeciently compared vars to ensure they don't have same value");
+                // follow var1 binding chain to value early return if hit var2_id
+                // follow var2 binding chain to value early return if hit var1_id
+                // if both unbound var compare id
+                // if both address use heap.term_equal()
+
+                j+=1
+            }
+            i += 1;
+        }
+        true
+    }
 }
 
 impl Heap for QueryHeap<'_> {
-
     fn heap_push(&mut self, cell: Cell) -> usize {
         let i = self.heap_len();
         self.cells.push(cell);
@@ -124,6 +176,51 @@ impl Heap for QueryHeap<'_> {
         );
         len -= self.prog_cells.len();
         self.cells.resize(len, (Tag::Ref, 0));
+    }
+
+    #[inline(always)]
+    fn var_deref(&self, addr: usize) -> VarDeref {
+        let (Tag::Ref, mut var_id) = self[addr] else {
+            return VarDeref::Same;
+        };
+        loop {
+            match self.var_bindings[var_id].0 {
+                // decode inline
+                UNBOUND => return VarDeref::Unbound(var_id),
+                v if v & VAR_TAG != 0 => var_id = v & !VAR_TAG,
+                a => return VarDeref::Jump(a),
+            }
+        }
+    }
+
+    /// Bind variable of var_id
+    /// @var_id: variable id/var_binding index
+    /// @value: value to set in binding
+    /// @var: is binding to another variable id or an address
+    fn bind(&mut self, (var_id, value, var): Binding) {
+        self.var_bindings[var_id].bind(value, var);
+    }
+
+    fn unbind(&mut self, bound_vars: &[usize]) {
+        for var_id in bound_vars {
+            self.var_bindings[*var_id].unbind();
+        }
+    }
+
+    /// Add variable cell to heap
+    /// If using existing var_id simple push new cell return var_id
+    /// If creating new var push unbound to var bindings array and return new index (var_id)
+    fn set_var(&mut self, var_id: Option<usize>) -> usize {
+        //If no address provided set addr to current heap len
+        let var_id = var_id.unwrap_or({
+            //Create new var id
+            let var_id = self.var_bindings.len();
+            self.var_bindings.push(VarEntry(UNBOUND));
+            var_id
+        });
+        
+        self.heap_push((Tag::Ref, var_id));
+        var_id
     }
 }
 

@@ -10,7 +10,7 @@ mod query_heap;
 mod symbol_db;
 mod walk;
 
-pub use heap::{Heap,Cell,Tag,LIS,EMPTY_LIS,CON_PTR};
+pub use heap::{Cell, Heap, Tag, CON_PTR, EMPTY_LIS, LIS, VarDeref, Binding};
 pub use query_heap::QueryHeap;
-pub use walk::{TermWalk,DualWalk};
-pub use symbol_db::{SymbolDB,known_symbol_id};
+pub use symbol_db::{known_symbol_id, SymbolDB};
+pub use walk::TermWalk;
