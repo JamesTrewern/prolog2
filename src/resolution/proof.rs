@@ -53,7 +53,12 @@ impl Proof {
         }
     }
 
-    pub fn prove(&mut self, heap: &mut QueryHeap, predicate_table: &PredicateTable, config: Config) -> bool {
+    pub fn prove(
+        &mut self,
+        heap: &mut QueryHeap,
+        predicate_table: &PredicateTable,
+        config: Config,
+    ) -> bool {
         // Handle restart after previous success
         if self.pointer == self.stack.len() {
             if config.debug {
@@ -89,11 +94,7 @@ impl Proof {
                     );
                 }
             } else {
-                self.stack[self.pointer].get_choices(
-                    heap,
-                    &mut self.hypothesis,
-                    &predicate_table,
-                );
+                self.stack[self.pointer].get_choices(heap, &mut self.hypothesis, &predicate_table);
                 if config.debug {
                     eprintln!(
                         "[TRY] goal={} addr={}",
@@ -155,16 +156,9 @@ impl Proof {
     /// must call this and then truncate the heap back to its pre-call length
     /// so the inner proof leaves no trace on the parent heap.
     pub fn undo_all(&mut self, heap: &mut QueryHeap) {
-        let hl = heap.heap_len();
         for env in self.stack.iter_mut() {
-            for &(src, _) in env.bindings.iter() {
-                if src < hl {
-                    if let (Tag::Ref, p) = &mut heap[src] {
-                        *p = src;
-                    }
-                }
-            }
-            env.bindings = Box::new([]);
+            heap.unbind(&env.bound_vars);
+            env.bound_vars = Box::new([]);
         }
     }
 }

@@ -4,26 +4,20 @@
 //! enum separates clause-based resolution from native predicate evaluation,
 //! keeping the two execution paths explicit at the type level.
 
+use std::{matches, todo, unreachable};
+
 use smallvec::SmallVec;
 
 use crate::{
-    heap::{Heap, QueryHeap, SymbolDB, Tag},
-    predicate_modules::{PredReturn, PredicateFunction},
-    program::{
+    Config, heap::{Binding, Heap, QueryHeap, SymbolDB, Tag}, predicate_modules::{PredReturn, PredicateFunction}, program::{
         clause::Clause,
         hypothesis::Hypothesis,
         predicate_table::{Predicate, PredicateTable},
-    },
-    resolution::{
+    }, resolution::{
         build::{build, re_build_bound_arg_terms},
         unification::unify,
     },
-    Config,
 };
-
-/// A variable binding: `(source_addr, target_addr)` on the heap.
-pub type Binding = (usize, usize);
-
 /// How a goal is resolved: either by unifying with clauses or by calling a
 /// native predicate function.
 #[derive(Debug)]
@@ -61,7 +55,7 @@ pub(crate) enum Strategy {
 #[derive(Debug)]
 pub(super) struct Env {
     pub(super) goal: usize,
-    pub(super) bindings: Box<[Binding]>,
+    pub(super) bound_vars: Box<[usize]>,
     pub(super) children: usize,
     pub(super) depth: usize,
     pub(crate) got_choices: bool,
@@ -73,7 +67,7 @@ impl Env {
     pub fn new(goal: usize, depth: usize, heap_point: usize) -> Self {
         Env {
             goal,
-            bindings: Box::new([]),
+            bound_vars: Box::new([]),
             children: 0,
             depth,
             got_choices: false,
@@ -251,7 +245,7 @@ impl Env {
             }
             heap.truncate(self.heap_point);
         }
-        heap.unbind(&self.bindings);
+        heap.unbind(&self.bound_vars);
         self.children
     }
 
@@ -344,8 +338,12 @@ impl Env {
                 PredReturn::True => return Some(Vec::new()),
                 PredReturn::False => return None,
                 PredReturn::Success(bindings, goals) => {
-                    self.bindings = bindings.into_boxed_slice();
-                    heap.bind(&self.bindings);
+                    let mut bound_vars = Vec::with_capacity(bindings.len());
+                    for binding in bindings {
+                        bound_vars.push(binding.0);
+                        heap.bind(binding);
+                    }
+                    self.bound_vars = bound_vars.into_boxed_slice();
                     if goals.is_empty() {
                         return Some(Vec::new());
                     }
@@ -368,8 +366,11 @@ impl Env {
             unreachable!()
         };
         let (bindings, goals) = alternatives.pop()?;
-        self.bindings = bindings.into_boxed_slice();
-        heap.bind(&self.bindings);
+        let mut bound_vars = Vec::with_capacity(bindings.len());
+        for binding in bindings {
+            bound_vars.push(binding.0);
+            heap.bind(binding);
+        }
         if goals.is_empty() {
             Some(Vec::new())
         } else {
@@ -436,7 +437,7 @@ impl Env {
                 continue;
             };
             for constraints in &hypothesis.constraints {
-                if !substitution.check_constraints(&constraints, heap) {
+                if !heap.check_constraints(constraints) {
                     continue 'choices;
                 }
             }
@@ -463,8 +464,9 @@ impl Env {
                     let pred_symbol =
                         SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
                     let pred_addr = heap.set_const(pred_symbol);
-                    substitution.set_arg(0, pred_addr);
-                    substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
+                    substitution.set_arg(0, (pred_addr,false).into());
+                    // substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
+                    todo!("push invented pred, could be ignored");
                     invented_pred_addr = Some(pred_addr);
 
                     if let Strategy::Clause { invent_pred, .. } = &mut self.strategy {
@@ -494,7 +496,8 @@ impl Env {
                 let mut constraints = Vec::with_capacity(16);
                 for i in 0..32 {
                     if clause.constrained_var(i) {
-                        constraints.push(unsafe { substitution.get_arg(i).unwrap_unchecked() });
+                        todo!("How to construct new contraints?")
+                        // constraints.push(unsafe { let VarBind::substitution.get_arg(i).unwrap_unchecked() });
                     }
                 }
 
@@ -519,12 +522,12 @@ impl Env {
                 }
             }
 
-            self.bindings = substitution.get_bindings();
+            self.bound_vars = substitution.get_bound_vars();
             self.children = new_goals.len();
             if debug {
-                eprintln!("Bindings: {:?}", self.bindings);
+                eprintln!("Bindings: {:?}", self.bound_vars);
             }
-            heap.bind(&self.bindings);
+            // heap.bind(&self.bound_vars);
 
             return Some(
                 new_goals
