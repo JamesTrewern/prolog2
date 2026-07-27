@@ -1,21 +1,23 @@
+use std::{matches, todo};
+
 use crate::{
-    Config, app::Solution, heap::{Cell, EMPTY_LIS, Heap, LIS, QueryHeap, Tag, TermWalk},
+    Config, app::Solution, heap::{Cell, EMPTY_LIS, Heap, LIS, QueryHeap, Tag, TermWalk, Walk},
 };
 
 /// Dereferenced heap address of the nth argument (0-indexed) of `goal`.
 pub fn goal_arg(heap: &QueryHeap, goal: usize, n: usize) -> usize {
     let mut arg_addr = goal+2;
     for _ in 0 .. n{
-        let mut termwalk = TermWalk::new(arg_addr);
-        while let Some(addr) = termwalk.next_addr(){
-            match heap[addr] {
-                (Tag::Comp|Tag::Tup|Tag::Set, len) => termwalk.increment_cells_left(len),
-                LIS => termwalk.increment_cells_left(2),
+        let mut cells_left = 1;
+        while cells_left > 0{
+            match heap[arg_addr] {
+                (Tag::Comp|Tag::Tup|Tag::Set, len) => cells_left += len,
+                LIS => cells_left+=2,
                 _ => ()
             }
-            arg_addr = addr;
+            arg_addr += 1;
+            cells_left -= 1;
         }
-        arg_addr + 1;
     }
     arg_addr
 }
