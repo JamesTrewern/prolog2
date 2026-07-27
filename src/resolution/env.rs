@@ -341,7 +341,7 @@ impl Env {
                     let mut bound_vars = Vec::with_capacity(bindings.len());
                     for binding in bindings {
                         bound_vars.push(binding.0);
-                        heap.bind(binding);
+                        heap.bind(binding.0,(binding.1,binding.2));
                     }
                     self.bound_vars = bound_vars.into_boxed_slice();
                     if goals.is_empty() {
@@ -369,7 +369,7 @@ impl Env {
         let mut bound_vars = Vec::with_capacity(bindings.len());
         for binding in bindings {
             bound_vars.push(binding.0);
-            heap.bind(binding);
+            heap.bind(binding.0,(binding.1,binding.2));
         }
         if goals.is_empty() {
             Some(Vec::new())
@@ -464,7 +464,7 @@ impl Env {
                     let pred_symbol =
                         SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
                     let pred_addr = heap.set_const(pred_symbol);
-                    substitution.set_arg(0, (pred_addr,false).into());
+                    substitution.set_arg(0, (pred_addr,false));
                     // substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
                     todo!("push invented pred, could be ignored");
                     invented_pred_addr = Some(pred_addr);
