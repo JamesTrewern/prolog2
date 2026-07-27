@@ -14,9 +14,9 @@ use crate::heap::{Cell, DualWalk, Heap, QueryHeap, Tag, TermWalk, VarDeref, VarB
 /// produced during unification.
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
-    pub arg_regs: [VarBind; 32],
-    bound_vars: SmallVec<[usize;5]>, // List of bound variables
-    bound_needs_rebuild: SmallVec<[bool;5]>, // Are bound variables bound to complex?
+    pub(crate) arg_regs: [VarBind; 32],
+    pub(crate) bound_vars: SmallVec<[usize;5]>, // List of bound variables
+    pub(crate) needs_rebuild: SmallVec<[bool;5]>, // Are bound variables bound to complex?
 }
 
 impl Deref for Substitution {
@@ -37,7 +37,7 @@ impl Default for Substitution {
         Self {
             arg_regs: [VarBind::Unbound; 32],
             bound_vars: SmallVec::new(),
-            bound_needs_rebuild: SmallVec::new(),
+            needs_rebuild: SmallVec::new(),
         }
     }
 }
@@ -47,12 +47,12 @@ impl Substitution {
         self.bound_vars.contains(&var_id)
     }
 
-    pub fn get_arg(&self, arg_idx: usize) -> VarBind {
-        self.arg_regs[arg_idx]
+    pub fn get_arg(&self, arg_id: usize) -> VarBind {
+        self.arg_regs[arg_id]
     }
 
-    pub fn set_arg(&mut self, arg_idx: usize, var_bind: VarBind) {
-        self.arg_regs[arg_idx] = var_bind;
+    pub fn set_arg<T: Into<VarBind>>(&mut self, arg_id: usize, var_bind: T) {
+        self.arg_regs[arg_id] = var_bind.into();
     }
 
     pub fn get_bound_vars(self) -> Box<[usize]> {
@@ -61,7 +61,7 @@ impl Substitution {
 
     pub fn push_bound_var(&mut self, var_id: usize, needs_rebuild: bool){
         self.bound_vars.push(var_id);
-        self.bound_needs_rebuild.push(needs_rebuild);
+        self.needs_rebuild.push(needs_rebuild);
     }
 
     // /// Fully dereference an address through both heap references and substitution bindings.
@@ -188,11 +188,11 @@ fn unify_walk(heap: &mut QueryHeap, addr1: usize, addr2: usize) -> Option<Substi
                 }
             }
             (Tag::Ref, _) => {
-                heap.bind((value1,addr2,false));
+                heap.bind(value1,(addr2,false));
                 substitution.push_bound_var(value1, false);
             },
             (_, Tag::Ref) => {
-                heap.bind((value2,addr1,false));
+                heap.bind(value2,(addr1,false));
                 substitution.push_bound_var(value2, false);
             },
             (Tag::Set, Tag::Set) if set_equal(heap, addr1, addr2) => continue,
@@ -242,7 +242,7 @@ fn bind_ref_to_complex(heap: &mut QueryHeap, substitution: &mut Substitution, va
     if occurs(heap, &substitution, var_id, complex_addr) {
         false
     } else {
-        heap.bind((var_id,complex_addr,false));
+        heap.bind(var_id,(complex_addr,false));
         //TODO only pass needs rebuild to true if complex contains args
         substitution.push_bound_var(var_id, true);
         todo!("advance past complex term");
@@ -253,7 +253,7 @@ fn bind_ref_to_complex(heap: &mut QueryHeap, substitution: &mut Substitution, va
 
 fn occurs(heap: &mut QueryHeap, binding: &Substitution, var_id: usize, complex_addr: usize) -> bool {
     let mut bound_args = SmallVec::<[usize; 2]>::new();
-    let mut arg_idx = 0;
+    let mut arg_id = 0;
     //TODO make this quicker perhaps SIMD?
     for (arg_id,arg_reg) in binding.arg_regs.iter().enumerate(){
         if let VarBind::Var(b7) = arg_reg{
