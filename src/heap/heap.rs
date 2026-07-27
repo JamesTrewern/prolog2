@@ -78,7 +78,7 @@ pub trait Heap:
     
     /// Update address value of ref cells affected by binding
     /// @binding: List of (usize, usize) tuples representing heap indexes, left -> right
-    fn bind(&mut self, binding: Binding);
+    fn bind(&mut self, var_id: usize, var_bind: impl Into<VarBind>);
 
     fn heap_push(&mut self, cell: Cell) -> usize;
 
@@ -505,7 +505,7 @@ impl Heap for Vec<Cell> {
         unreachable!("Should not consult program heap for variable binding")
     }
 
-    fn bind(&mut self, binding: Binding) {
+    fn bind(&mut self, var_id: usize, var_bind: impl Into<VarBind>) {
         unreachable!("Should not attempt to bind in program heap")
     }
 

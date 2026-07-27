@@ -177,8 +177,8 @@ impl Heap for QueryHeap<'_> {
     /// @var_id: variable id/var_binding index
     /// @value: value to set in binding
     /// @var: is binding to another variable id or an address
-    fn bind(&mut self, (var_id, value, var): Binding) {
-        self.var_bindings[var_id].bind(value, var);
+    fn bind(&mut self, var_id: usize, var_bind: impl Into<VarBind>) {
+        self.var_bindings[var_id].bind(var_bind);
     }
 
     fn unbind(&mut self, bound_vars: &[usize]) {

@@ -37,20 +37,16 @@ impl Into<usize> for B7 {
 
 impl From<usize> for B7 {
     fn from(value: usize) -> Self {
+        debug_assert!(value <= MAX_7, "value {value:#x} does not fit in 7 bytes");
         let b = value.to_le_bytes();
         B7([b[0], b[1], b[2], b[3], b[4], b[5], b[6]])
     }
 }
 
 impl VarBind {
-    pub fn bind(&mut self, value: usize, var: bool) {
+    pub fn bind(&mut self, var_bind: impl Into<VarBind>) {
         debug_assert!(!(*self == VarBind::Unbound), "Attempt to bind bound var");
-        debug_assert!(value <= MAX_7, "value {value:#x} does not fit in 7 bytes");
-        if var {
-            *self = VarBind::Var(value.into());
-        } else {
-            *self = VarBind::Addr(value.into())
-        }
+        *self = var_bind.into()
     }
 
     pub fn unbind(&mut self) {
