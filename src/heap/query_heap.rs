@@ -1,33 +1,13 @@
-use super::{Binding, VarDeref, LIS, Tag, TermWalk};
+use serde::de::value;
+
+use super::{Binding, Tag, TermWalk, VarDeref, VarBind, Walk, LIS};
 use std::{
-    collections::HashMap, ops::{Index, IndexMut, Range}, sync::atomic::{AtomicUsize, Ordering::Acquire},
+    collections::HashMap, matches, ops::{Index, IndexMut, Range}, sync::atomic::{AtomicUsize, Ordering::Acquire}, todo, unreachable,
 };
 
 use super::heap::{Cell, Heap};
 
 static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
-
-const VAR_TAG: usize = 1 << (usize::BITS - 1);
-const UNBOUND: usize = usize::MAX;
-
-#[derive(Debug,Clone, Copy)]
-struct VarEntry(usize);
-
-impl VarEntry {
-    pub fn bind(&mut self, value: usize, var: bool){
-        debug_assert!(self.0 == UNBOUND, "Attempt to bind bound var");
-        if var{
-            self.0 = VAR_TAG | value
-        }else{
-            self.0 = value
-        }
-    }
-
-    pub fn unbind(&mut self){
-        debug_assert!(self.0 != UNBOUND, "Attempt to unbind unbound var");
-        self.0 = UNBOUND
-    }
-}
 
 /// Working heap for proof search.
 ///
@@ -40,7 +20,7 @@ pub struct QueryHeap<'a> {
     prog_cells: &'a [Cell],
     // TODO: handle branching query heap multi-threading
     root: Option<*const QueryHeap<'a>>,
-    var_bindings: Vec<VarEntry>, //Reference binding registers
+    pub(crate) var_bindings: Vec<VarBind>, //Reference binding registers
 }
 
 impl<'a> QueryHeap<'a> {
@@ -85,7 +65,7 @@ impl<'a> QueryHeap<'a> {
                         walk.add_jump_frame(jump_addr);
                         jump_addr
                     }
-                    VarDeref::Unbound(var_id) => self.set_var(Some(var_id))
+                    VarDeref::Unbound(var_id) => self.set_var(Some(var_id)),
                 }
             } else {
                 return;
@@ -114,11 +94,11 @@ impl<'a> QueryHeap<'a> {
     }
 
     /// If true passed contrains, false if failed contraints
-    pub fn check_constraints(&self, cons: &[usize]) -> bool{
+    pub fn check_constraints(&self, cons: &[usize]) -> bool {
         let mut i = 0;
-        while i < cons.len(){
+        while i < cons.len() {
             let mut j = 0;
-            while j < cons.len(){
+            while j < cons.len() {
                 if i == j {
                     continue;
                 }
@@ -130,7 +110,7 @@ impl<'a> QueryHeap<'a> {
                 // if both unbound var compare id
                 // if both address use heap.term_equal()
 
-                j+=1
+                j += 1
             }
             i += 1;
         }
@@ -184,11 +164,11 @@ impl Heap for QueryHeap<'_> {
             return VarDeref::Same;
         };
         loop {
-            match self.var_bindings[var_id].0 {
+            match self.var_bindings[var_id] {
                 // decode inline
-                UNBOUND => return VarDeref::Unbound(var_id),
-                v if v & VAR_TAG != 0 => var_id = v & !VAR_TAG,
-                a => return VarDeref::Jump(a),
+                VarBind::Unbound => return VarDeref::Unbound(var_id),
+                VarBind::Var(value) => var_id = value.into(),
+                VarBind::Addr(value) => return VarDeref::Jump(value.into()),
             }
         }
     }
@@ -215,12 +195,16 @@ impl Heap for QueryHeap<'_> {
         let var_id = var_id.unwrap_or({
             //Create new var id
             let var_id = self.var_bindings.len();
-            self.var_bindings.push(VarEntry(UNBOUND));
+            self.var_bindings.push(VarBind::Unbound);
             var_id
         });
-        
+
         self.heap_push((Tag::Ref, var_id));
         var_id
+    }
+    
+    fn bound(&self, var_id: usize) -> VarBind {
+        self.var_bindings[var_id]
     }
 }
 

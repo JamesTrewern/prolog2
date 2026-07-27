@@ -1,10 +1,8 @@
-use super::{SymbolDB, TermWalk};
+use crate::heap::VarBind;
+
+use super::{SymbolDB, TermWalk, Walk};
 use std::{
-    collections::{HashMap, HashSet},
-    fmt::Write,
-    mem,
-    ops::{Index, IndexMut, Range, RangeInclusive},
-    todo,
+    collections::HashMap, fmt::Write, mem, ops::{Index, IndexMut, Range, RangeInclusive}, unreachable, write,
 };
 
 use fsize::fsize;
@@ -55,6 +53,8 @@ pub const _FALSE: Cell = (Tag::Con, CON_PTR);
 pub const _TRUE: Cell = (Tag::Con, CON_PTR + 1);
 pub const LIS: Cell = (Tag::Lis, 0);
 pub const EMPTY_LIS: Cell = (Tag::ELis, 0);
+
+#[derive(Debug,PartialEq, Eq)]
 pub enum VarDeref {
     Same,           // cell at addr is not a (bound) variable — keep using addr
     Jump(usize),    // chain resolved to the term at this address
@@ -72,6 +72,14 @@ pub type Binding = (usize, usize, bool);
 pub trait Heap:
     Sized + IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]>
 {
+    /// Reset Ref cells affected by binding to self references
+    /// @binding: List of (usize, usize) tuples representing heap indexes, left -> right
+    fn unbind(&mut self, binding: &[usize]);
+    
+    /// Update address value of ref cells affected by binding
+    /// @binding: List of (usize, usize) tuples representing heap indexes, left -> right
+    fn bind(&mut self, binding: Binding);
+
     fn heap_push(&mut self, cell: Cell) -> usize;
 
     fn heap_len(&self) -> usize;
@@ -80,6 +88,10 @@ pub trait Heap:
 
     fn heap_last(&mut self) -> &mut Cell;
 
+    fn set_var(&mut self, var_id: Option<usize>) -> usize;
+
+    fn bound(&self, var_id: usize) -> VarBind;
+    
     fn prog_addr(&self, _addr: usize) -> bool {
         true
     }
@@ -100,30 +112,12 @@ pub trait Heap:
         h
     }
 
-    fn set_var(&mut self, var_id: Option<usize>) -> usize {
-        unreachable!("Shouldn't set var in program heap");
-    }
-
     #[inline(always)]
     fn var_deref(&self, addr: usize) -> VarDeref {
         let (Tag::Ref, mut id) = self[addr] else {
             return VarDeref::Same;
         };
         unreachable!("Should not have ref cells in program heap");
-    }
-
-    /** Update address value of ref cells affected by binding
-     * @binding: List of (usize, usize) tuples representing heap indexes, left -> right
-     */
-    fn bind(&mut self, binding: Binding) {
-        unreachable!("Should not attempt to bind in program heap")
-    }
-
-    /** Reset Ref cells affected by binding to self references
-     * @binding: List of (usize, usize) tuples representing heap indexes, left -> right
-     */
-    fn unbind(&mut self, binding: &[usize]) {
-        unreachable!("Should not attempt to unbind in program heap")
     }
 
     fn contains_args(&self, addr: usize) -> bool {
@@ -136,9 +130,8 @@ pub trait Heap:
         false
     }
 
-    /**Collect all REF, cells in structure or referenced by structure
-     * If cell at addr is a reference return that cell  
-     */
+    /// Collect all REF, cells in structure or referenced by structure
+    /// If cell at addr is a reference return that cell  
     fn term_vars(&self, addr: usize, args: bool) -> Vec<usize> {
         let mut walk = TermWalk::new(addr);
         let mut vars = Vec::new();
@@ -152,9 +145,8 @@ pub trait Heap:
         vars
     }
 
-    /**Collect all Arg, cells in structure or referenced by structure
-     * If cell at addr is a reference return that cell  
-     */
+    /// Collect all Arg, cells in structure or referenced by structure
+    /// If cell at addr is a reference return that cell  
     fn term_args(&self, addr: usize, args: bool) -> Vec<usize> {
         let mut walk = TermWalk::new(addr);
         let mut vars = Vec::new();
@@ -206,7 +198,7 @@ pub trait Heap:
         true
     }
 
-    /**Get the symbol id and arity of functor structure */
+    ///Get the symbol id and arity of functor structure 
     fn str_symbol_arity(&self, addr: usize) -> (usize, usize) {
         if let (Tag::Comp, arity) = self[addr] {
             let functor = match self.var_deref(addr) {
@@ -229,7 +221,7 @@ pub trait Heap:
         }
     }
 
-    /** Given address to a str cell create an operator over the sub terms addresses, including functor/predicate */
+    /// Given address to a str cell create an operator over the sub terms addresses, including functor/predicate 
     fn str_iterator(&self, addr: usize) -> RangeInclusive<usize> {
         addr + 1..=addr + self[addr].1
     }
@@ -332,7 +324,7 @@ pub trait Heap:
         }
     }
 
-    /**Debug function for printing formatted string of current heap state */
+    ///Debug function for printing formatted string of current heap state 
     fn _print_heap(&self) {
         let w = 6;
         for i in 0..self.heap_len() {
@@ -366,7 +358,7 @@ pub trait Heap:
         }
     }
 
-    /**Create a string from a list */
+    ///Create a string from a list 
     fn list_string(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         write!(buf, "[")?;
         loop {
@@ -389,7 +381,7 @@ pub trait Heap:
         Ok(())
     }
 
-    /**Create a string for a compound structure */
+    ///Create a string for a compound structure 
     fn comp_string(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         let len = self[*addr].1;
         *addr += 1;
@@ -406,7 +398,7 @@ pub trait Heap:
         Ok(())
     }
 
-    /**Create a string for a tuple*/
+    ///Create a string for a tuple
     fn tuple_string(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         let len = self[*addr].1;
         write!(buf, "(")?;
@@ -421,7 +413,7 @@ pub trait Heap:
         Ok(())
     }
 
-    /**Create a string for a set*/
+    ///Create a string for a set
     fn set_string(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         let len = self[*addr].1;
         if len == 0 {
@@ -440,7 +432,7 @@ pub trait Heap:
         Ok(())
     }
 
-    /** Create String to represent cell, can be recursively used to format complex structures or list */
+    /// Create String to represent cell, can be recursively used to format complex structures or list 
     fn term_string_rec(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         // println!("[{addr}]:{:?}", self[addr]);
         match self[*addr].0 {
@@ -503,6 +495,22 @@ impl Heap for Vec<Cell> {
 
     fn heap_last(&mut self) -> &mut Cell {
         self.last_mut().unwrap()
+    }
+
+    fn set_var(&mut self, var_id: Option<usize>) -> usize {
+        unreachable!("Shouldn't set var in program heap");
+    }
+
+    fn bound(&self, var_id: usize) -> VarBind {
+        unreachable!("Should not consult program heap for variable binding")
+    }
+
+    fn bind(&mut self, binding: Binding) {
+        unreachable!("Should not attempt to bind in program heap")
+    }
+
+    fn unbind(&mut self, binding: &[usize]) {
+        unreachable!("Should not attempt to unbind in program heap")
     }
 }
 
