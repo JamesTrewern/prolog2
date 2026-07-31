@@ -1,12 +1,19 @@
 //! Unification algorithm and substitution management.
 
 use std::{
-    mem::MaybeUninit, ops::{Deref, DerefMut}, todo, usize,
+    ops::{Deref, DerefMut},
+    println, todo, usize,
 };
 
 use smallvec::SmallVec;
 
-use crate::heap::{Cell, DualWalk, Heap, QueryHeap, Tag, TermWalk, VarDeref, VarBind};
+use crate::heap::{
+    Cell, DualWalk, Heap, QueryHeap, SubWalk,
+    Tag::*,
+    TermWalk,
+    VarBind::{self, *},
+    VarReg, Walk,
+};
 
 /// Substitution mapping clause `Arg` cells to heap addresses.
 ///
@@ -14,9 +21,9 @@ use crate::heap::{Cell, DualWalk, Heap, QueryHeap, Tag, TermWalk, VarDeref, VarB
 /// produced during unification.
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
-    pub(crate) arg_regs: [VarBind; 32],
-    pub(crate) bound_vars: SmallVec<[usize;5]>, // List of bound variables
-    pub(crate) needs_rebuild: SmallVec<[bool;5]>, // Are bound variables bound to complex?
+    pub(crate) arg_regs: [VarReg; 32],
+    pub(crate) bound_vars: SmallVec<[usize; 5]>, // List of bound variables
+    pub(crate) needs_rebuild: SmallVec<[bool; 5]>, // Are bound variables bound to complex?
 }
 
 impl Deref for Substitution {
@@ -35,7 +42,7 @@ impl DerefMut for Substitution {
 impl Default for Substitution {
     fn default() -> Self {
         Self {
-            arg_regs: [VarBind::Unbound; 32],
+            arg_regs: [VarReg::UNBOUND; 32],
             bound_vars: SmallVec::new(),
             needs_rebuild: SmallVec::new(),
         }
@@ -47,19 +54,19 @@ impl Substitution {
         self.bound_vars.contains(&var_id)
     }
 
-    pub fn get_arg(&self, arg_id: usize) -> VarBind {
-        self.arg_regs[arg_id]
+    pub fn get_arg(&self, arg_id: usize) -> Option<VarBind> {
+        self.arg_regs[arg_id].get_bind()
     }
 
-    pub fn set_arg<T: Into<VarBind>>(&mut self, arg_id: usize, var_bind: T) {
-        self.arg_regs[arg_id] = var_bind.into();
+    pub fn set_arg(&mut self, arg_id: usize, binding: VarBind) {
+        self.arg_regs[arg_id].bind(binding);
     }
 
     pub fn get_bound_vars(self) -> Box<[usize]> {
         self.bound_vars.into_boxed_slice()
     }
 
-    pub fn push_bound_var(&mut self, var_id: usize, needs_rebuild: bool){
+    pub fn push_bound_var(&mut self, var_id: usize, needs_rebuild: bool) {
         self.bound_vars.push(var_id);
         self.needs_rebuild.push(needs_rebuild);
     }
@@ -68,12 +75,12 @@ impl Substitution {
     // pub(crate) fn full_deref(&self, mut addr: usize, heap: &mut QueryHeap) -> usize {
     //     loop {
     //         match heap[addr] {
-    //             (Tag::Ref, ref_pointer) if addr != ref_pointer => addr = ref_pointer,
-    //             (Tag::Ref, _) => match self.bound(addr) {
+    //             (Ref, ref_pointer) if addr != ref_pointer => addr = ref_pointer,
+    //             (Ref, _) => match self.bound(addr) {
     //                 Some(bound_addr) => addr = bound_addr,
     //                 None => return addr,
     //             }
-    //             (Tag::Arg, id) => match self.get_arg(id) {
+    //             (Arg, id) => match self.get_arg(id) {
     //                 Some(bound_addr) => addr = bound_addr,
     //                 None => return addr,
     //             },
@@ -83,18 +90,18 @@ impl Substitution {
     // }
 
     // pub fn full_is_deref(&self, mut addr: usize, heap: &mut QueryHeap) -> Option<usize> {
-    //     if heap[addr].0 != Tag::Arg && heap[addr].0 != Tag::Ref{
+    //     if heap[addr].0 != Arg && heap[addr].0 != Ref{
     //         return None;
     //     }
     //     let first_addr = addr;
     //     loop {
     //         match heap[addr] {
-    //             (Tag::Ref, ref_pointer) if addr != ref_pointer => addr = heap.deref_addr(addr),
-    //             (Tag::Ref, _) => match self.bound(addr) {
+    //             (Ref, ref_pointer) if addr != ref_pointer => addr = heap.deref_addr(addr),
+    //             (Ref, _) => match self.bound(addr) {
     //                 Some(bound_addr) => addr = bound_addr,
     //                 None => break,
     //             }
-    //             (Tag::Arg, id) => match self.get_arg(id) {
+    //             (Arg, id) => match self.get_arg(id) {
     //                 Some(bound_addr) => addr = bound_addr,
     //                 None => break,
     //             },
@@ -167,48 +174,68 @@ pub fn unify(heap: &mut QueryHeap, addr1: usize, addr2: usize) -> Option<Substit
 fn unify_walk(heap: &mut QueryHeap, addr1: usize, addr2: usize) -> Option<Substitution> {
     let mut substitution = Substitution::default();
     let mut walk = DualWalk::new(addr1, addr2);
-    while let Some((res1,res2)) = walk.next_cells_with_addrs(heap) {
-        let (addr1,(tag1,value1)) = res1;
-        let (addr2,(tag2,value2)) = res2;
+    while let Some((res1, res2)) =
+        walk.next_cells_with_addrs_arg_deref(heap, &substitution.arg_regs)
+    {
+        println!("----------------------------");
+        let (addr1, (tag1, value1)) = res1;
+        let (addr2, (tag2, value2)) = res2;
+
+        println!("Addr1: {addr1}, ({tag1}, {value1}");
+        println!("Addr2: {addr2}, ({tag2}, {value2}");
+
         match (tag1, tag2) {
-            (_, Tag::Arg) => unreachable!("unification: Arg cell in non-Arg position — clause args should only appear on the left"),
-            (Tag::Arg, _) => {
-                todo!("Check if bound");
-                todo!("If bound to other term how to branch?");
-                todo!("If unbound set arg reg, advance past term");
-            },
-            (Tag::Ref, Tag::Lis | Tag::Comp | Tag::Set | Tag::Tup) => {
-                if !bind_ref_to_complex(heap, &mut substitution, value1, addr2){
-                    return undo_substitution(heap, substitution);
+            (Arg, Arg) => {
+                if value1 != value2 {
+                    todo!("How to handle two args unifiying")
                 }
             }
-            (Tag::Lis | Tag::Comp | Tag::Set | Tag::Tup, Tag::Ref) => {
-                if !bind_ref_to_complex(heap, &mut substitution, value2, addr1){
-                    return undo_substitution(heap, substitution);
+            (Arg, _) => {
+                if !bind_arg(heap, &mut substitution, value1, res2, &mut walk.walk2) {
+                    return None;
                 }
             }
-            (Tag::Ref, _) => {
-                heap.bind(value1,(addr2,false));
+            (_, Arg) => {
+                if !bind_arg(heap, &mut substitution, value2, res1, &mut walk.walk1) {
+                    return None;
+                }
+            }
+            (Ref, Ref) => {
+                heap.bind(value1, Var(value2));
                 substitution.push_bound_var(value1, false);
-            },
-            (_, Tag::Ref) => {
-                heap.bind(value2,(addr1,false));
+            }
+            (Ref, Lis | Comp | Set | Tup) => {
+                if !bind_ref_to_complex(heap, &mut substitution, value1, addr2, &mut walk.walk2) {
+                    return undo_substitution(heap, substitution);
+                }
+            }
+            (Lis | Comp | Set | Tup, Ref) => {
+                if !bind_ref_to_complex(heap, &mut substitution, value2, addr1, &mut walk.walk1) {
+                    return undo_substitution(heap, substitution);
+                }
+            }
+            (Ref, _) => {
+                heap.bind(value1, Addr(addr2));
+                substitution.push_bound_var(value1, false);
+            }
+            (_, Ref) => {
+                heap.bind(value2, Addr(addr1));
                 substitution.push_bound_var(value2, false);
-            },
-            (Tag::Set, Tag::Set) if set_equal(heap, addr1, addr2) => continue,
-            (Tag::Set, Tag::Set) => return None,
-            (Tag::Comp|Tag::Tup, Tag::Comp|Tag::Tup) if heap[addr1] == heap[addr2] => continue,
-            (Tag::Lis, Tag::Lis) => continue,
-            (Tag::AVar, _) | (_, Tag::AVar) => continue,
+            }
+            (Set, Set) if set_equal(heap, addr1, addr2) => continue,
+            (Set, Set) => return None,
+            (Comp | Tup, Comp | Tup) if heap[addr1] == heap[addr2] => continue,
+            (Lis, Lis) => continue,
+            (AVar, _) | (_, AVar) => continue,
             _ if heap[addr1].1 == heap[addr2].1 => continue,
-            _ => return None
-            
+            _ => return None,
         }
+        println!("----------------------------");
     }
     Some(substitution)
 }
 
-fn undo_substitution(heap: &mut QueryHeap, substitution: Substitution) -> Option<Substitution>{
+fn undo_substitution(heap: &mut QueryHeap, substitution: Substitution) -> Option<Substitution> {
     heap.unbind(&substitution.get_bound_vars());
     None
 }
@@ -220,11 +247,7 @@ fn undo_substitution(heap: &mut QueryHeap, substitution: Substitution) -> Option
 /// created — this is a deliberate design choice because with two or more
 /// unbound variables the lack of element ordering makes correct binding
 /// impossible.
-fn set_equal(
-    heap: &mut QueryHeap,
-    addr1: usize,
-    addr2: usize,
-) -> bool {
+fn set_equal(heap: &mut QueryHeap, addr1: usize, addr2: usize) -> bool {
     let len_1 = heap[addr1].1;
     let len_2 = heap[addr2].1;
     if len_1 != len_2 {
@@ -235,43 +258,91 @@ fn set_equal(
     let r2 = addr2 + 1..=addr2 + len_2;
 
     // Every element in set1 must match some element in set2.
-    r1.all(|a| r2.clone().any(|b| heap.term_equal(a, b))) 
+    r1.all(|a| r2.clone().any(|b| heap.term_equal(a, b)))
 }
 
-fn bind_ref_to_complex(heap: &mut QueryHeap, substitution: &mut Substitution, var_id: usize, complex_addr: usize) -> bool{
-    if occurs(heap, &substitution, var_id, complex_addr) {
-        false
-    } else {
-        heap.bind(var_id,(complex_addr,false));
-        //TODO only pass needs rebuild to true if complex contains args
-        substitution.push_bound_var(var_id, true);
-        todo!("advance past complex term");
-        true
-    }
+fn bind_ref_to_complex(
+    heap: &mut QueryHeap,
+    substitution: &mut Substitution,
+    var_id: usize,
+    complex_addr: usize,
+    walk: &mut TermWalk,
+) -> bool {
+    let Some(needs_rebuild) = occurs(heap, &substitution, var_id, walk.sub_walk()) else {
+        return false;
+    };
+    heap.bind(var_id, Addr(complex_addr));
+    substitution.push_bound_var(var_id, needs_rebuild);
+    true
 }
 
-
-fn occurs(heap: &mut QueryHeap, binding: &Substitution, var_id: usize, complex_addr: usize) -> bool {
+fn occurs(
+    heap: &mut QueryHeap,
+    binding: &Substitution,
+    var_id: usize,
+    mut walk: SubWalk,
+) -> Option<bool> {
     let mut bound_args = SmallVec::<[usize; 2]>::new();
-    let mut arg_id = 0;
     //TODO make this quicker perhaps SIMD?
-    for (arg_id,arg_reg) in binding.arg_regs.iter().enumerate(){
-        if let VarBind::Var(b7) = arg_reg{
-            if var_id == (Into::<usize>::into(*b7)){
+    for (arg_id, arg_reg) in binding.arg_regs.iter().enumerate() {
+        if let Some(Var(var_id_2)) = arg_reg.get_bind() {
+            if var_id == var_id_2 {
                 bound_args.push(arg_id);
             }
         }
     }
-    heap.occurs(complex_addr, var_id, &bound_args)
+    let mut contains_args = false;
+
+    while let Some((tag, value)) = walk.next_cell(heap) {
+        match tag {
+            Ref if value == var_id => return None,
+            Arg if bound_args.contains(&value) => return None,
+            Arg => contains_args = true,
+            _ => (),
+        }
+    }
+
+    Some(contains_args)
+}
+
+fn bind_arg(
+    heap: &mut QueryHeap,
+    substitution: &mut Substitution,
+    arg_id: usize,
+    (addr, (tag, value)): (usize, Cell),
+    walk: &mut TermWalk,
+) -> bool {
+    match tag {
+        Comp | Tup | Lis => {
+            if arg_occurs(heap, arg_id, walk.sub_walk()) {
+                return false;
+            } else {
+                substitution.set_arg(arg_id, Addr(addr));
+            }
+        }
+        Ref => substitution.set_arg(arg_id, Var(value)),
+        _ => substitution.set_arg(arg_id, Addr(addr)),
+    }
+    true
+}
+
+fn arg_occurs(heap: &mut QueryHeap, arg_id: usize, mut walk: SubWalk) -> bool {
+    while let Some((tag, value)) = walk.next_cell(heap) {
+        if tag == Arg && value == arg_id {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
 mod tests {
     use std::{assert_eq, vec};
 
-use super::Substitution;
+    use super::Substitution;
     use crate::{
-        heap::{EMPTY_LIS, Heap, LIS, QueryHeap, SymbolDB, Tag, VarDeref, VarBind}, resolution::unification::unify,
+        heap::{Heap, QueryHeap, SymbolDB, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
+        resolution::unification::unify,
     };
 
     #[test]
@@ -282,62 +353,60 @@ use super::Substitution;
         let prog_heap = vec![];
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
-            (Tag::Tup, 2),
-            (Tag::Arg, 0),
-            (Tag::Arg, 0),
-            (Tag::Tup, 2),
-            (Tag::Ref, 0),
-            (Tag::Ref, 1),
-            (Tag::Comp, 2),
-            (Tag::Con, p),
-            (Tag::Con, a),
+            (Tup, 2),
+            (Arg, 0),
+            (Arg, 0),
+            (Tup, 2),
+            (Ref, 0),
+            (Ref, 1),
+            (Comp, 2),
+            (Con, p),
+            (Con, a),
         ]);
-        heap.var_bindings.push(VarBind::Unbound);
-        heap.var_bindings.push(VarBind::Unbound);
+        heap.var_regs.push(VarReg::UNBOUND);
+        heap.var_regs.push(VarReg::UNBOUND);
 
-        let binding = unify(&mut heap, 0, 2).unwrap();
-        assert_eq!(binding.arg_regs[0], VarBind::Var(1.into()));
+        let binding = unify(&mut heap, 0, 3).unwrap();
+        assert_eq!(binding.arg_regs[0], Var(0).into());
         assert!(binding.bound(0));
-        assert_eq!(heap.var_deref(0), VarDeref::Unbound(1));
+        assert_eq!(heap.var_regs[0], Var(1).into());
 
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
-            (Tag::Tup, 2),
-            (Tag::Arg, 0),
-            (Tag::Arg, 0),
-            (Tag::Tup, 2),
-            (Tag::Comp, 2),
-            (Tag::Con, p),
-            (Tag::Con, a),
-            (Tag::Ref, 0),
+            (Tup, 2),
+            (Arg, 0),
+            (Arg, 0),
+            (Tup, 2),
+            (Comp, 2),
+            (Con, p),
+            (Con, a),
+            (Ref, 0),
         ]);
-        heap.var_bindings.push(VarBind::Unbound);
+        heap.var_regs.push(VarReg::UNBOUND);
 
         let binding = unify(&mut heap, 0, 3).unwrap();
         assert!(binding.bound(0));
-        assert_eq!(heap.bound(0), VarBind::Addr(4.into()));
+        assert_eq!(heap.var_regs[0], Addr(4).into());
 
-
-       let mut heap = QueryHeap::new(&prog_heap, None);
+        let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
-            (Tag::Tup, 3),
-            (Tag::Arg, 0),
-            (Tag::Arg, 0),
-            (Tag::Arg, 0),
-            (Tag::Tup, 3),
-            (Tag::Comp, 2),
-            (Tag::Con, p),
-            (Tag::Con, a),
-            (Tag::Ref, 0),
-            (Tag::Ref, 1),
+            (Tup, 3),
+            (Arg, 0),
+            (Arg, 0),
+            (Arg, 0),
+            (Tup, 3),
+            (Comp, 2),
+            (Con, p),
+            (Con, a),
+            (Ref, 0),
+            (Ref, 1),
         ]);
-        heap.var_bindings.push(VarBind::Var(1.into()));
-        heap.var_bindings.push(VarBind::Unbound);
+        heap.var_regs.push(Var(1).into());
+        heap.var_regs.push(VarReg::UNBOUND);
 
         let binding = unify(&mut heap, 0, 4).unwrap();
         assert!(binding.bound(0));
-        assert_eq!(heap.bound(1), VarBind::Addr(5.into()));
-
+        assert_eq!(heap.bound(1), Addr(5).into());
     }
 
     #[test]
@@ -347,32 +416,21 @@ use super::Substitution;
 
         let prog_heap = vec![];
         let mut heap = QueryHeap::new(&prog_heap, None);
-        heap.cells.extend([
-            (Tag::Arg, 0),
-            (Tag::Comp, 2),
-            (Tag::Con, p),
-            (Tag::Con, a),
-        ]);
+        heap.cells.extend([(Arg, 0), (Comp, 2), (Con, p), (Con, a)]);
 
         let binding = unify(&mut heap, 0, 1).unwrap();
-        assert_eq!(binding.get_arg(0), VarBind::Addr(1.into()));
+        assert_eq!(binding.get_arg(0), Some(Addr(1)));
     }
 
     #[test]
-    fn unify_refs(){
+    fn unify_refs() {
         let prog_heap = vec![];
         let mut heap = QueryHeap::new(&prog_heap, None);
-        heap.cells.extend([
-            (Tag::Tup, 2),
-            (Tag::Arg, 0),
-            (Tag::Arg, 0),
-            (Tag::Tup, 2),
-            (Tag::Ref, 0),
-            (Tag::Ref, 5),
-        ]);
+        heap.cells
+            .extend([(Tup, 2), (Arg, 0), (Arg, 0), (Tup, 2), (Ref, 0), (Ref, 5)]);
 
         let binding = unify(&mut heap, 0, 3).unwrap();
-        assert_eq!(binding.get_arg(0), VarBind::Addr(4.into()));
+        assert_eq!(binding.get_arg(0), Addr(4).into());
         assert!(binding.bound(4));
         // assert_eq!(heap.bound(4))
         // assert_eq!(binding.bound(4), Some(5));
@@ -380,14 +438,14 @@ use super::Substitution;
         let prog_heap = vec![];
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
-            (Tag::Tup, 3),
-            (Tag::Arg, 0),
-            (Tag::Arg, 1),
-            (Tag::Arg, 1),
-            (Tag::Tup, 3),
-            (Tag::Ref, 6),
-            (Tag::Ref, 6),
-            (Tag::Ref, 7),
+            (Tup, 3),
+            (Arg, 0),
+            (Arg, 1),
+            (Arg, 1),
+            (Tup, 3),
+            (Ref, 6),
+            (Ref, 6),
+            (Ref, 7),
         ]);
 
         let binding = unify(&mut heap, 0, 4).unwrap();
@@ -397,20 +455,14 @@ use super::Substitution;
     }
 
     #[test]
-    fn bind_ref_through_arg(){
+    fn bind_ref_through_arg() {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
 
         let prog_heap = vec![];
         let mut heap = QueryHeap::new(&prog_heap, None);
-        heap.cells.extend([
-            (Tag::Tup, 2),
-            (Tag::Arg, 0),
-            (Tag::Arg, 0),
-            (Tag::Tup, 2),
-            (Tag::Con, a),
-            (Tag::Ref, 5),
-        ]);
+        heap.cells
+            .extend([(Tup, 2), (Arg, 0), (Arg, 0), (Tup, 2), (Con, a), (Ref, 5)]);
 
         let binding = unify(&mut heap, 0, 3).unwrap();
         // assert_eq!(binding.get_arg(0), Some(4));
@@ -418,69 +470,57 @@ use super::Substitution;
     }
 
     #[test]
-    fn bind_ref_to_structure(){
+    fn bind_ref_to_structure() {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
 
         let prog_heap = vec![];
-let mut heap = QueryHeap::new(&prog_heap, None);
-        heap.cells.extend([
-            (Tag::Tup, 1),
-            (Tag::Comp, 2),
-            (Tag::Con, p),
-            (Tag::Con, a),
-            (Tag::Tup, 1),
-            (Tag::Ref, 5),
-        ]);
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        heap.cells
+            .extend([(Tup, 1), (Comp, 2), (Con, p), (Con, a), (Tup, 1), (Ref, 5)]);
         let binding = unify(&mut heap, 0, 4).unwrap();
         assert_eq!(binding.bound(5), true);
-        assert_eq!(heap.var_deref(5), VarDeref::Jump(1));
+        assert_eq!(heap.var_regs[5], Addr(1).into());
 
         let prog_heap = vec![];
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
-            (Tag::Tup, 1),
+            (Tup, 1),
             LIS,
-            (Tag::Con, p),
+            (Con, p),
             LIS,
-            (Tag::Con, a),
+            (Con, a),
             EMPTY_LIS,
-            (Tag::Tup, 1),
-            (Tag::Ref, 7),
+            (Tup, 1),
+            (Ref, 7),
         ]);
         let binding = unify(&mut heap, 0, 6).unwrap();
         // assert_eq!(binding.bound(7), Some(1));
     }
 
     #[test]
-    fn bind_arg_to_structure(){
+    fn bind_arg_to_structure() {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
 
         let prog_heap = vec![];
         let mut heap = QueryHeap::new(&prog_heap, None);
-        heap.cells.extend([
-            (Tag::Tup, 1),
-            (Tag::Arg, 0),
-            (Tag::Tup, 1),
-            (Tag::Comp, 2),
-            (Tag::Con, p),
-            (Tag::Con, a),
-        ]);
+        heap.cells
+            .extend([(Tup, 1), (Arg, 0), (Tup, 1), (Comp, 2), (Con, p), (Con, a)]);
         let binding = unify(&mut heap, 0, 2).unwrap();
         // assert_eq!(binding.get_arg(0), Some(3));
 
         let prog_heap = vec![];
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
-            (Tag::Tup, 2),
-            (Tag::Arg, 0),
-            (Tag::Comp, 2),
-            (Tag::Con, p),
-            (Tag::Con, a),
-            (Tag::Tup, 2),
-            (Tag::Ref, 7),
-            (Tag::Ref, 7),
+            (Tup, 2),
+            (Arg, 0),
+            (Comp, 2),
+            (Con, p),
+            (Con, a),
+            (Tup, 2),
+            (Ref, 7),
+            (Ref, 7),
         ]);
         let binding = unify(&mut heap, 0, 5).unwrap();
         // assert_eq!(binding.get_arg(0), Some(4));
@@ -495,14 +535,14 @@ let mut heap = QueryHeap::new(&prog_heap, None);
         let prog_heap = vec![];
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
-            (Tag::Comp, 3),
-            (Tag::Con, p),
-            (Tag::Con, a),
-            (Tag::Arg, 0),
-            (Tag::Comp, 3),
-            (Tag::Con, p),
-            (Tag::Ref, 6),
-            (Tag::Con, a),
+            (Comp, 3),
+            (Con, p),
+            (Con, a),
+            (Arg, 0),
+            (Comp, 3),
+            (Con, p),
+            (Ref, 6),
+            (Con, a),
         ]);
 
         let binding = unify(&mut heap, 0, 4).unwrap();
@@ -516,16 +556,16 @@ let mut heap = QueryHeap::new(&prog_heap, None);
         let a = SymbolDB::set_const("a");
 
         let prog_heap = vec![];
-let mut heap = QueryHeap::new(&prog_heap, None);
+        let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
-            (Tag::Tup, 3),
-            (Tag::Con, p),
-            (Tag::Con, a),
-            (Tag::Arg, 0),
-            (Tag::Tup, 3),
-            (Tag::Con, p),
-            (Tag::Ref, 6),
-            (Tag::Con, a),
+            (Tup, 3),
+            (Con, p),
+            (Con, a),
+            (Arg, 0),
+            (Tup, 3),
+            (Con, p),
+            (Ref, 6),
+            (Con, a),
         ]);
 
         let binding = unify(&mut heap, 0, 4).unwrap();
@@ -534,27 +574,27 @@ let mut heap = QueryHeap::new(&prog_heap, None);
     }
 
     #[test]
-    fn unify_proper_list(){
+    fn unify_proper_list() {
         let a = SymbolDB::set_const("a");
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
 
         let prog_heap = vec![];
-let mut heap = QueryHeap::new(&prog_heap, None);
+        let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
             LIS,
-            (Tag::Con, a),
+            (Con, a),
             LIS,
-            (Tag::Arg, 0),
+            (Arg, 0),
             LIS,
-            (Tag::Con, c),
+            (Con, c),
             EMPTY_LIS,
             LIS,
-            (Tag::Con, a),
+            (Con, a),
             LIS,
-            (Tag::Con, b),
+            (Con, b),
             LIS,
-            (Tag::Ref, 12),
+            (Ref, 12),
             EMPTY_LIS,
         ]);
 
@@ -588,20 +628,20 @@ let mut heap = QueryHeap::new(&prog_heap, None);
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
             // clause head: p(Y,(Y,Z))
-            //(Tag::Str, 1),  // 0
-            (Tag::Comp, 3), // 1   p, Y, (Y,Z)
-            (Tag::Con, p),  // 2
-            (Tag::Arg, 0),  // 3   Y
-            //(Tag::Str, 5),  // 4   -> tuple
-            (Tag::Tup, 2), // 5   (Y,Z)
-            (Tag::Arg, 0), // 6   Y
-            (Tag::Arg, 1), // 7   Z
+            //(Str, 1),  // 0
+            (Comp, 3), // 1   p, Y, (Y,Z)
+            (Con, p),  // 2
+            (Arg, 0),  // 3   Y
+            //(Str, 5),  // 4   -> tuple
+            (Tup, 2), // 5   (Y,Z)
+            (Arg, 0), // 6   Y
+            (Arg, 1), // 7   Z
             // goal: p(X,X)
-            //(Tag::Str, 9),  // 8
-            (Tag::Comp, 3), // 9   p, X, X
-            (Tag::Con, p),  // 10
-            (Tag::Ref, 11), // 11  X (canonical, unbound)
-            (Tag::Ref, 11), // 12  X
+            //(Str, 9),  // 8
+            (Comp, 3), // 9   p, X, X
+            (Con, p),  // 10
+            (Ref, 11), // 11  X (canonical, unbound)
+            (Ref, 11), // 12  X
         ]);
 
         assert_eq!(unify(&mut heap, 0, 8), None);
@@ -620,20 +660,20 @@ let mut heap = QueryHeap::new(&prog_heap, None);
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
             // clause head: p(Z,Z)
-            //(Tag::Str, 1),  // 0
-            (Tag::Comp, 3), // 1   p, Z, Z
-            (Tag::Con, p),  // 2
-            (Tag::Arg, 0),  // 3   Z
-            (Tag::Arg, 0),  // 4   Z
+            //(Str, 1),  // 0
+            (Comp, 3), // 1   p, Z, Z
+            (Con, p),  // 2
+            (Arg, 0),  // 3   Z
+            (Arg, 0),  // 4   Z
             // goal: p(X,(X,Y))
-            //(Tag::Str, 6),  // 5
-            (Tag::Comp, 3), // 6   p, X, (X,Y)
-            (Tag::Con, p),  // 7
-            (Tag::Ref, 11), // 8   X
-            //(Tag::Str, 10), // 9   -> tuple
-            (Tag::Tup, 2),  // 10  (X,Y)
-            (Tag::Ref, 11), // 11  X (canonical, unbound)
-            (Tag::Ref, 12), // 12  Y (canonical, unbound)
+            //(Str, 6),  // 5
+            (Comp, 3), // 6   p, X, (X,Y)
+            (Con, p),  // 7
+            (Ref, 11), // 8   X
+            //(Str, 10), // 9   -> tuple
+            (Tup, 2),  // 10  (X,Y)
+            (Ref, 11), // 11  X (canonical, unbound)
+            (Ref, 12), // 12  Y (canonical, unbound)
         ]);
 
         assert_eq!(unify(&mut heap, 0, 5), None);
@@ -652,22 +692,22 @@ let mut heap = QueryHeap::new(&prog_heap, None);
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
             // clause head: p(Y,Z,(Y,Z))
-            //(Tag::Str, 1),  // 0
-            (Tag::Comp, 4), // 1   p, Y, Z, (Y,Z)
-            (Tag::Con, p),  // 2
-            (Tag::Arg, 0),  // 3   Y
-            (Tag::Arg, 1),  // 4   Z
-            //(Tag::Str, 6),  // 5   -> tuple
-            (Tag::Tup, 2), // 6   (Y,Z)
-            (Tag::Arg, 0), // 7   Y
-            (Tag::Arg, 1), // 8   Z
+            //(Str, 1),  // 0
+            (Comp, 4), // 1   p, Y, Z, (Y,Z)
+            (Con, p),  // 2
+            (Arg, 0),  // 3   Y
+            (Arg, 1),  // 4   Z
+            //(Str, 6),  // 5   -> tuple
+            (Tup, 2), // 6   (Y,Z)
+            (Arg, 0), // 7   Y
+            (Arg, 1), // 8   Z
             // goal: p(X,X,X)
-            //(Tag::Str, 10), // 9
-            (Tag::Comp, 4), // 10  p, X, X, X
-            (Tag::Con, p),  // 11
-            (Tag::Ref, 12), // 12  X (canonical, unbound)
-            (Tag::Ref, 12), // 13  X
-            (Tag::Ref, 12), // 14  X
+            //(Str, 10), // 9
+            (Comp, 4), // 10  p, X, X, X
+            (Con, p),  // 11
+            (Ref, 12), // 12  X (canonical, unbound)
+            (Ref, 12), // 13  X
+            (Ref, 12), // 14  X
         ]);
 
         assert_eq!(unify(&mut heap, 0, 9), None);
@@ -684,23 +724,23 @@ let mut heap = QueryHeap::new(&prog_heap, None);
         let p = SymbolDB::set_const("p");
 
         let prog_heap = vec![];
-let mut heap = QueryHeap::new(&prog_heap, None);
+        let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
             // clause head: p(Z,Z)
-            //(Tag::Str, 1),  // 0
-            (Tag::Comp, 3), // 1   p, Z, Z
-            (Tag::Con, p),  // 2
-            (Tag::Arg, 0),  // 3   Z
-            (Tag::Arg, 0),  // 4   Z
+            //(Str, 1),  // 0
+            (Comp, 3), // 1   p, Z, Z
+            (Con, p),  // 2
+            (Arg, 0),  // 3   Z
+            (Arg, 0),  // 4   Z
             // goal: p((X,Y),X)
-            //(Tag::Str, 6),  // 5
-            (Tag::Comp, 3), // 6   p, (X,Y), X
-            (Tag::Con, p),  // 7
-            //(Tag::Str, 10), // 8   -> tuple
-            (Tag::Ref, 11), // 9   X
-            (Tag::Tup, 2),  // 10  (X,Y)
-            (Tag::Ref, 11), // 11  X (canonical, unbound)
-            (Tag::Ref, 12), // 12  Y (canonical, unbound)
+            //(Str, 6),  // 5
+            (Comp, 3), // 6   p, (X,Y), X
+            (Con, p),  // 7
+            //(Str, 10), // 8   -> tuple
+            (Ref, 11), // 9   X
+            (Tup, 2),  // 10  (X,Y)
+            (Ref, 11), // 11  X (canonical, unbound)
+            (Ref, 12), // 12  Y (canonical, unbound)
         ]);
 
         assert_eq!(unify(&mut heap, 0, 5), None);
@@ -730,25 +770,25 @@ let mut heap = QueryHeap::new(&prog_heap, None);
         let p = SymbolDB::set_const("p");
 
         let prog_heap = vec![];
-let mut heap = QueryHeap::new(&prog_heap, None);
+        let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
             // clause head: p(Z, Z, (Z,W))
-            //(Tag::Str, 1),  // 0
-            (Tag::Comp, 4), // 1   p, Z, Z, (Z,W)
-            (Tag::Con, p),  // 2
-            (Tag::Arg, 0),  // 3   Z
-            (Tag::Arg, 0),  // 4   Z
-            //(Tag::Str, 6),  // 5   -> tuple
-            (Tag::Tup, 2), // 6   (Z,W)
-            (Tag::Arg, 0), // 7   Z
-            (Tag::Arg, 1), // 8   W
+            //(Str, 1),  // 0
+            (Comp, 4), // 1   p, Z, Z, (Z,W)
+            (Con, p),  // 2
+            (Arg, 0),  // 3   Z
+            (Arg, 0),  // 4   Z
+            //(Str, 6),  // 5   -> tuple
+            (Tup, 2), // 6   (Z,W)
+            (Arg, 0), // 7   Z
+            (Arg, 1), // 8   W
             // goal: p(X1, X2, X2)
-            //(Tag::Str, 10), // 9
-            (Tag::Comp, 4), // 10  p, X1, X2, X2
-            (Tag::Con, p),  // 11
-            (Tag::Ref, 12), // 12  X1 (canonical, unbound)
-            (Tag::Ref, 13), // 13  X2 (canonical, unbound)
-            (Tag::Ref, 13), // 14  X2
+            //(Str, 10), // 9
+            (Comp, 4), // 10  p, X1, X2, X2
+            (Con, p),  // 11
+            (Ref, 12), // 12  X1 (canonical, unbound)
+            (Ref, 13), // 13  X2 (canonical, unbound)
+            (Ref, 13), // 14  X2
         ]);
 
         assert_eq!(unify(&mut heap, 0, 9), None);
@@ -765,23 +805,23 @@ let mut heap = QueryHeap::new(&prog_heap, None);
         let p = SymbolDB::set_const("p");
 
         let prog_heap = vec![];
-let mut heap = QueryHeap::new(&prog_heap, None);
+        let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
             // clause head: p(Z, (Z,W))
-            //(Tag::Str, 1),  // 0
-            (Tag::Comp, 3), // 1   p, Z, (Z,W)
-            (Tag::Con, p),  // 2
-            (Tag::Arg, 0),  // 3   Z
-            //(Tag::Str, 5),  // 4   -> tuple
-            (Tag::Tup, 2), // 5   (Z,W)
-            (Tag::Arg, 0), // 6   Z
-            (Tag::Arg, 1), // 7   W
+            //(Str, 1),  // 0
+            (Comp, 3), // 1   p, Z, (Z,W)
+            (Con, p),  // 2
+            (Arg, 0),  // 3   Z
+            //(Str, 5),  // 4   -> tuple
+            (Tup, 2), // 5   (Z,W)
+            (Arg, 0), // 6   Z
+            (Arg, 1), // 7   W
             // goal: p(X,X)
-            //(Tag::Str, 9),  // 8
-            (Tag::Comp, 3), // 9   p, X, X
-            (Tag::Con, p),  // 10
-            (Tag::Ref, 11), // 11  X (canonical, unbound)
-            (Tag::Ref, 11), // 12  X
+            //(Str, 9),  // 8
+            (Comp, 3), // 9   p, X, X
+            (Con, p),  // 10
+            (Ref, 11), // 11  X (canonical, unbound)
+            (Ref, 11), // 12  X
         ]);
 
         assert_eq!(unify(&mut heap, 0, 8), None);

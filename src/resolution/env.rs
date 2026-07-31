@@ -9,14 +9,21 @@ use std::{matches, todo, unreachable};
 use smallvec::SmallVec;
 
 use crate::{
-    Config, heap::{Binding, Heap, QueryHeap, SymbolDB, Tag}, predicate_modules::{PredReturn, PredicateFunction}, program::{
+    heap::{
+        Heap, QueryHeap, SymbolDB, Tag,
+        VarBind::{self, Addr},
+    },
+    predicate_modules::{PredReturn, PredicateFunction},
+    program::{
         clause::Clause,
         hypothesis::Hypothesis,
         predicate_table::{Predicate, PredicateTable},
-    }, resolution::{
+    },
+    resolution::{
         build::{build, re_build_bound_arg_terms},
         unification::unify,
     },
+    Config,
 };
 /// How a goal is resolved: either by unifying with clauses or by calling a
 /// native predicate function.
@@ -37,7 +44,7 @@ pub(crate) enum Strategy {
         function: PredicateFunction,
         /// Alternative results to try on backtracking. Each entry is a
         /// `(bindings, sub_goals)` pair, popped one at a time.
-        alternatives: Vec<(Vec<Binding>, Vec<usize>)>,
+        alternatives: Vec<(Vec<(usize,VarBind)>, Vec<usize>)>,
         /// Whether the predicate function has been called yet.
         called: bool,
     },
@@ -115,7 +122,7 @@ impl Env {
         if heap[self.goal].0 == Tag::Tup {
             self.get_tup_goals(heap);
         } else {
-            match heap.str_symbol_arity(self.goal) {
+            match heap.symbol_arity(self.goal) {
                 (0, arity) => self.get_choices_var_pred(hypothesis, predicate_table, arity),
                 sym_arr => self.get_choices_con_pred(hypothesis, predicate_table, sym_arr),
             }
@@ -339,9 +346,9 @@ impl Env {
                 PredReturn::False => return None,
                 PredReturn::Success(bindings, goals) => {
                     let mut bound_vars = Vec::with_capacity(bindings.len());
-                    for binding in bindings {
-                        bound_vars.push(binding.0);
-                        heap.bind(binding.0,(binding.1,binding.2));
+                    for (var_id, binding) in bindings {
+                        bound_vars.push(var_id);
+                        heap.bind(var_id, binding);
                     }
                     self.bound_vars = bound_vars.into_boxed_slice();
                     if goals.is_empty() {
@@ -367,9 +374,9 @@ impl Env {
         };
         let (bindings, goals) = alternatives.pop()?;
         let mut bound_vars = Vec::with_capacity(bindings.len());
-        for binding in bindings {
-            bound_vars.push(binding.0);
-            heap.bind(binding.0,(binding.1,binding.2));
+        for (var_id, binding) in bindings {
+            bound_vars.push(var_id);
+            heap.bind(var_id, binding);
         }
         if goals.is_empty() {
             Some(Vec::new())
@@ -426,8 +433,8 @@ impl Env {
                 if !allow_new_clause {
                     continue;
                 } else if !allow_new_pred
-                    && heap.str_symbol_arity(head).0 == 0
-                    && heap.str_symbol_arity(self.goal).0 == 0
+                    && heap.symbol_arity(head).0 == 0
+                    && heap.symbol_arity(self.goal).0 == 0
                 {
                     continue;
                 }
@@ -460,11 +467,11 @@ impl Env {
             // Check if we need to invent a predicate BEFORE building goals
             let mut invented_pred_addr: Option<usize> = None;
             if clause.meta() {
-                if heap.str_symbol_arity(head).0 == 0 && heap.str_symbol_arity(self.goal).0 == 0 {
+                if heap.symbol_arity(head).0 == 0 && heap.symbol_arity(self.goal).0 == 0 {
                     let pred_symbol =
                         SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
                     let pred_addr = heap.set_const(pred_symbol);
-                    substitution.set_arg(0, (pred_addr,false));
+                    substitution.set_arg(0, Addr(pred_addr));
                     // substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
                     todo!("push invented pred, could be ignored");
                     invented_pred_addr = Some(pred_addr);

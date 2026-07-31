@@ -121,14 +121,14 @@ pub fn execute_tree(
         match clause {
             TreeClause::Fact(term) => {
                 let clause = build_clause(vec![term], None, None, heap, false);
-                let symbol_arity = heap.str_symbol_arity(clause[0]);
+                let symbol_arity = heap.symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
             TreeClause::Rule(terms) => {
                 let clause = build_clause(terms, None, None, heap, false);
-                let symbol_arity = heap.str_symbol_arity(clause[0]);
+                let symbol_arity = heap.symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
@@ -136,7 +136,7 @@ pub fn execute_tree(
             TreeClause::MetaRule(mut terms) => {
                 let (meta_vars, constrained_vars) = extract_meta_rule_vars(&mut terms);
                 let clause = build_clause(terms, Some(meta_vars), constrained_vars, heap, false);
-                let symbol_arity = heap.str_symbol_arity(clause[0]);
+                let symbol_arity = heap.symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
@@ -144,7 +144,7 @@ pub fn execute_tree(
             TreeClause::MetaFact(head, meta_data) => {
                 let meta_vars = extract_var_names_from_set(meta_data);
                 let clause = build_clause(vec![head], Some(meta_vars), None, heap, false);
-                let symbol_arity = heap.str_symbol_arity(clause[0]);
+                let symbol_arity = heap.symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();

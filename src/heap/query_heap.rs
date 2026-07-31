@@ -1,8 +1,11 @@
-use serde::de::value;
-
-use super::{Binding, Tag, TermWalk, VarDeref, VarBind, Walk, LIS};
+use super::{
+    Tag::*,
+    TermWalk,
+    VarBind::{self, *},
+    VarReg, Walk, LIS,
+};
 use std::{
-    collections::HashMap, matches, ops::{Index, IndexMut, Range}, sync::atomic::{AtomicUsize, Ordering::Acquire}, todo, unreachable,
+    collections::HashMap, ops::{Index, IndexMut, Range}, println, sync::atomic::{AtomicUsize, Ordering::Acquire}, todo, unreachable,
 };
 
 use super::heap::{Cell, Heap};
@@ -20,14 +23,14 @@ pub struct QueryHeap<'a> {
     prog_cells: &'a [Cell],
     // TODO: handle branching query heap multi-threading
     root: Option<*const QueryHeap<'a>>,
-    pub(crate) var_bindings: Vec<VarBind>, //Reference binding registers
+    pub(crate) var_regs: Vec<VarReg>, //Reference binding registers
 }
 
 impl<'a> QueryHeap<'a> {
     pub fn new(prog_cells: &'a [Cell], root: Option<*const QueryHeap<'a>>) -> QueryHeap<'a> {
         let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
-        let var_bindings = if let Some(root) = root {
-            unsafe { (&*root).var_bindings.clone() }
+        let var_regs = if let Some(root) = root {
+            unsafe { (&*root).var_regs.clone() }
         } else {
             Vec::new()
         };
@@ -36,7 +39,7 @@ impl<'a> QueryHeap<'a> {
             cells: Vec::new(),
             prog_cells,
             root,
-            var_bindings,
+            var_regs,
         }
     }
 
@@ -57,38 +60,16 @@ impl<'a> QueryHeap<'a> {
     /// and place them in mutable cells.
     pub fn dup_term(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) {
         let mut walk = TermWalk::new(addr);
-        loop {
-            let addr = if let Some(addr) = walk.next_addr() {
-                match self.var_deref(addr) {
-                    VarDeref::Same => addr,
-                    VarDeref::Jump(jump_addr) => {
-                        walk.add_jump_frame(jump_addr);
-                        jump_addr
-                    }
-                    VarDeref::Unbound(var_id) => self.set_var(Some(var_id)),
+        while let Some(cell) = walk.next_cell(self) {
+            if cell.0 == Ref {
+                if let Some(&mapped) = ref_map.get(&addr) {
+                    self.heap_push((Ref, mapped));
+                } else {
+                    let new_var_id = self.set_var(None);
+                    ref_map.insert(cell.1, new_var_id);
                 }
             } else {
-                return;
-            };
-            match self[addr] {
-                LIS => {
-                    self.heap_push(LIS);
-                    walk.increment_cells_left(2);
-                }
-                cell @ (Tag::Comp | Tag::Tup | Tag::Set, len) => {
-                    self.heap_push(cell);
-                    walk.increment_cells_left(len);
-                }
-                (Tag::Ref, addr) => {
-                    if let Some(&mapped) = ref_map.get(&addr) {
-                        self.heap_push((Tag::Ref, mapped));
-                    } else {
-                        let new_addr = self.heap_len();
-                        self.heap_push((Tag::Ref, new_addr));
-                        ref_map.insert(addr, new_addr);
-                    }
-                }
-                cell => _ = self.heap_push(cell),
+                self.heap_push(cell);
             }
         }
     }
@@ -155,35 +136,36 @@ impl Heap for QueryHeap<'_> {
             self.prog_cells.len()
         );
         len -= self.prog_cells.len();
-        self.cells.resize(len, (Tag::Ref, 0));
+        self.cells.resize(len, (Ref, 0));
     }
 
     #[inline(always)]
-    fn var_deref(&self, addr: usize) -> VarDeref {
-        let (Tag::Ref, mut var_id) = self[addr] else {
-            return VarDeref::Same;
-        };
+    fn var_deref(&self, mut var_id: usize) -> VarBind {
         loop {
-            match self.var_bindings[var_id] {
-                // decode inline
-                VarBind::Unbound => return VarDeref::Unbound(var_id),
-                VarBind::Var(value) => var_id = value.into(),
-                VarBind::Addr(value) => return VarDeref::Jump(value.into()),
+            if self.var_regs[var_id].var() {
+                println!("{var_id}");
+                var_id = self.var_regs[var_id].value()
+            } else {
+                if self.var_regs[var_id].bound() {
+                    return Addr(self.var_regs[var_id].0);
+                } else {
+                    return Var(var_id);
+                }
             }
         }
     }
 
     /// Bind variable of var_id
-    /// @var_id: variable id/var_binding index
+    /// @var_id: variable id/bindinging index
     /// @value: value to set in binding
     /// @var: is binding to another variable id or an address
-    fn bind(&mut self, var_id: usize, var_bind: impl Into<VarBind>) {
-        self.var_bindings[var_id].bind(var_bind);
+    fn bind(&mut self, var_id: usize, binding: VarBind) {
+        self.var_regs[var_id].bind(binding);
     }
 
     fn unbind(&mut self, bound_vars: &[usize]) {
         for var_id in bound_vars {
-            self.var_bindings[*var_id].unbind();
+            self.var_regs[*var_id].unbind();
         }
     }
 
@@ -194,17 +176,17 @@ impl Heap for QueryHeap<'_> {
         //If no address provided set addr to current heap len
         let var_id = var_id.unwrap_or({
             //Create new var id
-            let var_id = self.var_bindings.len();
-            self.var_bindings.push(VarBind::Unbound);
+            let var_id = self.var_regs.len();
+            self.var_regs.push(VarReg::UNBOUND);
             var_id
         });
 
-        self.heap_push((Tag::Ref, var_id));
+        self.heap_push((Ref, var_id));
         var_id
     }
-    
-    fn bound(&self, var_id: usize) -> VarBind {
-        self.var_bindings[var_id]
+
+    fn bound(&self, var_id: usize) -> Option<VarBind> {
+        self.var_regs[var_id].get_bind()
     }
 }
 

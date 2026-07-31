@@ -46,7 +46,6 @@ pub fn resolve(heap: &QueryHeap, addr: usize) -> usize {
 /// structure on the heap. Derefs, follows `Str`, and wraps compound-like
 /// terms in `Str` indirection.
 fn cell_for_addr(heap: &QueryHeap, addr: usize) -> Cell {
-    let addr = heap.var_deref(addr);
     todo!()
 }
 

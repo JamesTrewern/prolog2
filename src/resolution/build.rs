@@ -3,32 +3,26 @@
 use std::{todo, unreachable};
 
 use crate::{
-    heap::{Cell, Heap, Tag::*, TermWalk, VarBind, Walk},
-    program::clause::BitFlag64,
-    resolution::unification::Substitution,
+    heap::{Cell, Heap, QueryHeap, Tag::*, TermWalk, VarBind::*, VarReg, Walk}, program::clause::BitFlag64, resolution::unification::Substitution,
 };
 
-/*  If a ref if bound to some complex term which contains args we want
-   to rebuild this term in the query space replacing args with refs or arg reg values
-*/
-pub fn re_build_bound_arg_terms(heap: &mut impl Heap, substitution: &mut Substitution) {
+/// If a ref if bound to some complex term which contains args we want
+/// to rebuild this term in the query space replacing args with refs or arg reg values
+pub fn re_build_bound_arg_terms(heap: &mut QueryHeap, substitution: &mut Substitution) {
     for i in 0..substitution.len() {
         if substitution.needs_rebuild[i] {
-            //Build term if contains args
+            // Assume if needs rebuild is true variable register is an addr
+            let mut bound_addr = heap.var_regs[substitution[i]].value();
             //Update bound_addr to newly built term
-            let VarBind::Addr(bound_addr) = heap.bound(substitution[i]) else {
-                unreachable!("Needs rebuild shouldn't be true unles var bound to structure")
-            };
-            let new_bound_addr = build(heap, substitution, None, bound_addr.into());
-            heap.bind(substitution[i], (new_bound_addr, false));
+            bound_addr = build(heap, substitution, None, bound_addr);
+            // don't use heap.bind() to avoid overwrite guards
+            heap.var_regs[substitution[i]] = Addr(bound_addr).into();
         }
     }
 }
 
-/*  Build a new term from previous term and substitution.
-    Assume that src_addr does not point to bound ref.   ``
-
-*/
+/// Build a new term from previous term and substitution.
+/// Assume that src_addr does not point to bound ref.
 pub fn build(
     heap: &mut impl Heap,
     substitution: &mut Substitution,
@@ -58,13 +52,13 @@ fn build_arg(
     match meta_vars {
         Some(bit_flags) if !bit_flags.get(arg_id) => _ = heap.heap_push(heap[src_addr]),
         _ => match substitution.get_arg(arg_id) {
-            VarBind::Addr(bound_addr) => {
-                _ = build(heap, substitution, meta_vars, bound_addr.into())
+            Some(Addr(bound_addr)) => {
+                _ = build(heap, substitution, meta_vars, bound_addr)
             }
-            VarBind::Var(var_id) => _ = heap.heap_push((Ref, var_id.into())),
-            VarBind::Unbound => {
+            Some(Var(var_id)) => _ = heap.heap_push((Ref, var_id)),
+            None => {
                 let var_id = heap.set_var(None);
-                substitution.set_arg(arg_id, (var_id, true));
+                substitution.set_arg(arg_id, Var(var_id));
             }
         },
     }
@@ -75,11 +69,8 @@ mod tests {
     use std::{assert_eq, vec};
 
     use crate::{
-        heap::{Heap, QueryHeap, SymbolDB, Tag::*, VarBind, EMPTY_LIS, LIS},
-        program::clause::BitFlag64,
-        resolution::{
-            build::{build, re_build_bound_arg_terms},
-            unification::{unify, Substitution},
+        heap::{EMPTY_LIS, Heap, LIS, QueryHeap, SymbolDB, Tag::*, VarBind::*, VarReg}, program::clause::BitFlag64, resolution::{
+            build::{build, re_build_bound_arg_terms}, unification::{Substitution, unify},
         },
     };
 
@@ -98,8 +89,8 @@ mod tests {
             heap.cells[addr..],
             [(Comp, 4), (Con, p), (Ref, 0), (Ref, 0), (Ref, 1),]
         );
-        assert_eq!(heap.bound(0), VarBind::Unbound);
-        assert_eq!(heap.bound(1), VarBind::Unbound);
+        assert_eq!(heap.var_regs[0], VarReg::UNBOUND);
+        assert_eq!(heap.var_regs[1], VarReg::UNBOUND);
 
         let mut substitution = Substitution::default();
         let mut meta_vars = BitFlag64::default();
@@ -110,14 +101,14 @@ mod tests {
             heap.cells[addr..],
             [(Comp, 4), (Con, p), (Ref, 2), (Ref, 2), (Arg, 1)]
         );
-        assert_eq!(heap.bound(2), VarBind::Unbound);
+        assert_eq!(heap.var_regs[2], VarReg::UNBOUND);
 
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells
             .extend([(Comp, 2), (Con, f), (Ref, 0), (Comp, 2), (Con, p), (Arg, 0)]);
-        heap.var_bindings.push(VarBind::Unbound);
+        heap.var_regs.push(VarReg::UNBOUND);
         substitution = Substitution::default();
-        substitution.set_arg(0, (0, false));
+        substitution.set_arg(0, Addr(0));
         let addr = build(&mut heap, &mut substitution, None, 3);
         assert_eq!(
             heap.cells[addr..],
@@ -155,7 +146,7 @@ mod tests {
             EMPTY_LIS,
         ]);
         let mut substitution = Substitution::default();
-        substitution.set_arg(0, (13, true));
+        substitution.set_arg(0, Var(13));
         let addr = build(&mut heap, &mut substitution, None, 4);
         assert_eq!(heap.term_string(addr), "p([a,b,c])");
 
@@ -180,13 +171,13 @@ mod tests {
             (Arg, 0),
             EMPTY_LIS,
         ]);
-        heap.var_bindings.push((13, false).into());
+        heap.var_regs.push(Addr(13).into());
         let mut substitution = Substitution::default();
         substitution.push_bound_var(0, true);
         let idx = heap.heap_len();
         re_build_bound_arg_terms(&mut heap, &mut substitution);
         assert_eq!(heap.cells[idx..], [LIS, (Ref, 1), EMPTY_LIS,]);
-        assert_eq!(heap.var_bindings[1], VarBind::Unbound);
+        assert_eq!(heap.var_regs[1], VarReg::UNBOUND);
 
         let new_term = build(&mut heap, &mut substitution, None, 7);
         assert_eq!(
@@ -239,7 +230,7 @@ mod tests {
             (Con, a),  // 5
             (Con, b),  // 6
         ]);
-        heap.var_bindings.push((4,false).into());
+        heap.var_regs.push(Addr(4).into());
 
         let mut sub = Substitution::default();
         let result = build(&mut heap, &mut sub, None, 0);

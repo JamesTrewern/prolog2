@@ -1,8 +1,15 @@
-use crate::heap::VarBind;
+use crate::heap::{
+    Tag::*,
+    VarBind::{self, *},
+};
 
 use super::{SymbolDB, TermWalk, Walk};
 use std::{
-    collections::HashMap, fmt::Write, mem, ops::{Index, IndexMut, Range, RangeInclusive}, unreachable, write,
+    collections::HashMap,
+    fmt::Write,
+    mem,
+    ops::{Index, IndexMut, Range, RangeInclusive},
+    println, unreachable, write,
 };
 
 use fsize::fsize;
@@ -49,20 +56,10 @@ impl std::fmt::Display for Tag {
 pub type Cell = (Tag, usize);
 
 pub const CON_PTR: usize = isize::MAX as usize;
-pub const _FALSE: Cell = (Tag::Con, CON_PTR);
-pub const _TRUE: Cell = (Tag::Con, CON_PTR + 1);
-pub const LIS: Cell = (Tag::Lis, 0);
-pub const EMPTY_LIS: Cell = (Tag::ELis, 0);
-
-#[derive(Debug,PartialEq, Eq)]
-pub enum VarDeref {
-    Same,           // cell at addr is not a (bound) variable — keep using addr
-    Jump(usize),    // chain resolved to the term at this address
-    Unbound(usize), // chain resolved to an unbound variable with this id
-}
-
-/// (from var_id, to value, true: value is another var_id | false: value is heap address)
-pub type Binding = (usize, usize, bool);
+pub const _FALSE: Cell = (Con, CON_PTR);
+pub const _TRUE: Cell = (Con, CON_PTR + 1);
+pub const LIS: Cell = (Lis, 0);
+pub const EMPTY_LIS: Cell = (ELis, 0);
 
 /// Core trait for heap storage.
 ///
@@ -75,10 +72,10 @@ pub trait Heap:
     /// Reset Ref cells affected by binding to self references
     /// @binding: List of (usize, usize) tuples representing heap indexes, left -> right
     fn unbind(&mut self, binding: &[usize]);
-    
+
     /// Update address value of ref cells affected by binding
     /// @binding: List of (usize, usize) tuples representing heap indexes, left -> right
-    fn bind(&mut self, var_id: usize, var_bind: impl Into<VarBind>);
+    fn bind(&mut self, var_id: usize, binding: VarBind);
 
     fn heap_push(&mut self, cell: Cell) -> usize;
 
@@ -90,8 +87,15 @@ pub trait Heap:
 
     fn set_var(&mut self, var_id: Option<usize>) -> usize;
 
-    fn bound(&self, var_id: usize) -> VarBind;
-    
+    fn bound(&self, var_id: usize) -> Option<VarBind>;
+
+    /// Return VarBind for a given var_id
+    /// If var_id unbound return Unbound
+    /// If var_id bound follow binding chains
+    /// Return either last unbound var as Var(var_id)
+    /// Or return Addr(addr)
+    fn var_deref(&self, var_id: usize) -> VarBind;
+
     fn prog_addr(&self, _addr: usize) -> bool {
         true
     }
@@ -102,28 +106,20 @@ pub trait Heap:
 
     fn _set_arg(&mut self, value: usize) -> usize {
         //If no address provided set addr to current heap len
-        self.heap_push((Tag::Arg, value));
+        self.heap_push((Arg, value));
         return self.heap_len() - 1;
     }
 
     fn set_const(&mut self, id: usize) -> usize {
         let h = self.heap_len();
-        self.heap_push((Tag::Con, id));
+        self.heap_push((Con, id));
         h
-    }
-
-    #[inline(always)]
-    fn var_deref(&self, addr: usize) -> VarDeref {
-        let (Tag::Ref, mut id) = self[addr] else {
-            return VarDeref::Same;
-        };
-        unreachable!("Should not have ref cells in program heap");
     }
 
     fn contains_args(&self, addr: usize) -> bool {
         let mut walk = TermWalk::new(addr);
         while let Some((tag, _)) = walk.next_cell(self) {
-            if tag == Tag::Arg {
+            if tag == Arg {
                 return true;
             }
         }
@@ -136,7 +132,7 @@ pub trait Heap:
         let mut walk = TermWalk::new(addr);
         let mut vars = Vec::new();
         while let Some((tag, value)) = walk.next_cell(self) {
-            if (!args && tag == Tag::Ref) | (args && tag == Tag::Arg) {
+            if (!args && tag == Ref) | (args && tag == Arg) {
                 if !vars.contains(&value) {
                     vars.push(value);
                 }
@@ -151,7 +147,7 @@ pub trait Heap:
         let mut walk = TermWalk::new(addr);
         let mut vars = Vec::new();
         while let Some((tag, value)) = walk.next_cell(self) {
-            if tag == Tag::Arg {
+            if tag == Arg {
                 if !vars.contains(&value) {
                     vars.push(value);
                 }
@@ -167,15 +163,17 @@ pub trait Heap:
         while cells_left > 0 {
             cells_left -= 1;
             match self[addr] {
-                (Tag::Arg, arg_id) => {
+                (Arg, arg_id) => {
                     if let Some(pos) = args.iter().position(|&arg_id2| arg_id == arg_id2) {
+                        println!("pos: {pos}, arg_id: {arg_id}");
                         self[addr].1 = pos;
                     } else {
+                        self[addr].1 = args.len();
                         args.push(arg_id);
                     }
                 }
                 LIS => cells_left += 2,
-                (Tag::Comp | Tag::Set | Tag::Tup, len) => cells_left += len,
+                (Comp | Set | Tup, len) => cells_left += len,
                 _ => (),
             }
             addr += 1;
@@ -186,10 +184,10 @@ pub trait Heap:
         let mut walk = TermWalk::new(addr);
         while let Some(cell) = walk.next_cell(self) {
             match cell {
-                (Tag::Arg, id) if bound_args.contains(&id) => {
+                (Arg, id) if bound_args.contains(&id) => {
                     return true;
                 }
-                (Tag::Ref, var_id2) if var_id2 == var_id => {
+                (Ref, var_id2) if var_id2 == var_id => {
                     return true;
                 }
                 _ => (),
@@ -198,20 +196,22 @@ pub trait Heap:
         true
     }
 
-    ///Get the symbol id and arity of functor structure 
-    fn str_symbol_arity(&self, addr: usize) -> (usize, usize) {
-        if let (Tag::Comp, arity) = self[addr] {
-            let functor = match self.var_deref(addr) {
-                VarDeref::Same => addr,
-                VarDeref::Jump(addr) => addr,
-                VarDeref::Unbound(_) => return (0, arity),
-            };
-            match self[functor] {
-                (Tag::Arg | Tag::Ref, _) => (0, arity - 1),
-                (Tag::Con, id) => (id, arity - 1),
+    ///Get the symbol id and arity of functor structure (Comp)
+    fn symbol_arity(&self, addr: usize) -> (usize, usize) {
+        if let (Comp, arity) = self[addr] {
+            let mut functor = self[addr+1];
+            if functor.0 == Ref {
+                let Addr(addr) = self.var_deref(functor.1) else {
+                    return (0, arity-1);
+                };
+                functor = self[addr];
+            }
+            match functor {
+                (Arg, _) => (0, arity - 1),
+                (Con, id) => (id, arity - 1),
                 _ => unreachable!("str_symbol_arity: functor cell is not a constant or variable"),
             }
-        } else if let (Tag::Con, symbol) = self[addr] {
+        } else if let (Con, symbol) = self[addr] {
             (symbol, 0)
         } else {
             unreachable!(
@@ -221,7 +221,7 @@ pub trait Heap:
         }
     }
 
-    /// Given address to a str cell create an operator over the sub terms addresses, including functor/predicate 
+    /// Given address to a str cell create an operator over the sub terms addresses, including functor/predicate
     fn str_iterator(&self, addr: usize) -> RangeInclusive<usize> {
         addr + 1..=addr + self[addr].1
     }
@@ -236,7 +236,7 @@ pub trait Heap:
     ) {
         let mut walk = TermWalk::new(addr);
         while let Some((tag, value)) = walk.next_cell(other) {
-            if tag == Tag::Ref {
+            if tag == Ref {
                 if let Some(var_id) = ref_map.get(&value) {
                     self.heap_push((tag, *var_id));
                 } else {
@@ -251,14 +251,10 @@ pub trait Heap:
 
     /// Clone term replacing ref cells with fresh references
     /// and inlining bound references to new term
-    fn clone_term(
-        &mut self,
-        addr: usize,
-        ref_map: &mut HashMap<usize, usize>,
-    ) {
+    fn clone_term(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) {
         let mut walk = TermWalk::new(addr);
         while let Some((tag, value)) = walk.next_cell(self) {
-            if tag == Tag::Ref {
+            if tag == Ref {
                 if let Some(var_id) = ref_map.get(&value) {
                     self.heap_push((tag, *var_id));
                 } else {
@@ -271,8 +267,8 @@ pub trait Heap:
         }
     }
 
-    /// Naively copy cells from a term, with no dereferencing 
-    fn copy_term(&mut self, mut addr: usize){
+    /// Naively copy cells from a term, with no dereferencing
+    fn copy_term(&mut self, mut addr: usize) {
         // Can ignore variable dereferencing as refs can't bind to arg terms without rebuilding
         let mut cells_left = 1;
         while cells_left > 0 {
@@ -280,7 +276,7 @@ pub trait Heap:
             self.heap_push(self[addr]);
             match self[addr] {
                 LIS => cells_left += 2,
-                (Tag::Comp | Tag::Set | Tag::Tup, len) => cells_left += len,
+                (Comp | Set | Tup, len) => cells_left += len,
                 _ => (),
             }
             addr += 1;
@@ -295,7 +291,7 @@ pub trait Heap:
             };
 
             match (cell1, cell2) {
-                ((Tag::Set, len1), (Tag::Set, len2)) if len1 == len2 => {
+                ((Set, len1), (Set, len2)) if len1 == len2 => {
                     // Set equality: every element in set1 must have a match in set2
                     // and vice-versa (lengths already equal, so one direction suffices
                     // given no duplicates — sets are deduplicated at parse time).
@@ -310,7 +306,7 @@ pub trait Heap:
                     walk1.skip_addrs(len1);
                     walk2.skip_addrs(len1);
                 }
-                ((Tag::Stri, i1), (Tag::Stri, i2)) => {
+                ((Stri, i1), (Stri, i2)) => {
                     if *SymbolDB::get_string(i1) != *SymbolDB::get_string(i2) {
                         return false;
                     }
@@ -324,31 +320,31 @@ pub trait Heap:
         }
     }
 
-    ///Debug function for printing formatted string of current heap state 
+    ///Debug function for printing formatted string of current heap state
     fn _print_heap(&self) {
         let w = 6;
         for i in 0..self.heap_len() {
             let (tag, value) = self[i];
             match tag {
-                Tag::Con => {
+                Con => {
                     println!("[{i:3}]|{tag:w$}|{:w$}|", SymbolDB::get_const(value))
                 }
-                Tag::Lis => println!("[{i:3}]|{tag:w$}|{value:w$}|"),
-                Tag::ELis => println!("[{i:3}]|{tag:w$}|{:w$}|", "[]"),
-                Tag::Ref | Tag::Arg => {
+                Lis => println!("[{i:3}]|{tag:w$}|{value:w$}|"),
+                ELis => println!("[{i:3}]|{tag:w$}|{:w$}|", "[]"),
+                Ref | Arg => {
                     println!("[{i:3}]|{tag:w$?}|{value:w$}|:({})", self.term_string(i))
                 }
-                Tag::Int => {
+                Int => {
                     let value: isize = unsafe { mem::transmute_copy(&value) };
                     println!("[{i:3}]|{tag:w$?}|{value:w$}|")
                 }
-                Tag::Flt => {
+                Flt => {
                     let value: fsize = unsafe { mem::transmute_copy(&value) };
                     println!("[{i:3}]|{tag:w$?}|{value:w$}|")
                 }
-                Tag::Tup => println!("[{i:3}]| Tup |{value:w$}| {}", self.term_string(i)),
-                Tag::Set => println!("[{i:3}]| Set |{value:w$}| {}", self.term_string(i)),
-                Tag::Stri => println!(
+                Tup => println!("[{i:3}]| Tup |{value:w$}| {}", self.term_string(i)),
+                Set => println!("[{i:3}]| Set |{value:w$}| {}", self.term_string(i)),
+                Stri => println!(
                     "[{i:3}]|Stri |{value:w$}| \"{}\"",
                     SymbolDB::get_string(value)
                 ),
@@ -358,7 +354,7 @@ pub trait Heap:
         }
     }
 
-    ///Create a string from a list 
+    ///Create a string from a list
     fn list_string(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         write!(buf, "[")?;
         loop {
@@ -366,10 +362,10 @@ pub trait Heap:
             self.term_string_rec(addr, buf)?;
             *addr += 1;
             match self[*addr].0 {
-                Tag::Lis => {
+                Lis => {
                     write!(buf, ",")?;
                 }
-                Tag::ELis => break,
+                ELis => break,
                 _ => {
                     write!(buf, "|")?;
                     self.term_string_rec(addr, buf)?;
@@ -381,7 +377,7 @@ pub trait Heap:
         Ok(())
     }
 
-    ///Create a string for a compound structure 
+    ///Create a string for a compound structure
     fn comp_string(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         let len = self[*addr].1;
         *addr += 1;
@@ -432,42 +428,37 @@ pub trait Heap:
         Ok(())
     }
 
-    /// Create String to represent cell, can be recursively used to format complex structures or list 
+    /// Create String to represent cell, can be recursively used to format complex structures or list
     fn term_string_rec(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         // println!("[{addr}]:{:?}", self[addr]);
         match self[*addr].0 {
-            Tag::Con => buf.write_str(&SymbolDB::get_const(self[*addr].1)),
-            Tag::Comp => self.comp_string(addr, buf),
-            Tag::Lis => self.list_string(addr, buf),
-            Tag::ELis => write!(buf, "[]"),
-            Tag::Arg => match SymbolDB::get_var(*addr, self.get_id(*addr)) {
+            Con => buf.write_str(&SymbolDB::get_const(self[*addr].1)),
+            Comp => self.comp_string(addr, buf),
+            Lis => self.list_string(addr, buf),
+            ELis => write!(buf, "[]"),
+            Arg => match SymbolDB::get_var(*addr, self.get_id(*addr)) {
                 Some(symbol) => buf.write_str(&symbol),
                 None => write!(buf, "Arg_{}", self[*addr].1),
             },
-            Tag::Ref => match self.var_deref(*addr) {
-                VarDeref::Jump(mut ref_addr) => self.term_string_rec(&mut ref_addr, buf),
-                VarDeref::Unbound(var_id) => {
-                    match SymbolDB::get_var(var_id, self.get_id(*addr)).to_owned() {
-                        Some(symbol) => buf.write_str(&symbol),
-                        None => write!(buf, "Ref_{}", self[*addr].1),
-                    }
-                }
-                VarDeref::Same => {
-                    unreachable!("Ref should not be able to return same (should be unbound)")
-                }
+            Ref => match self.var_deref(self[*addr].1) {
+                Addr(mut ref_addr) => self.term_string_rec(&mut ref_addr, buf),
+                Var(var_id) => match SymbolDB::get_var(var_id, self.get_id(*addr)).to_owned() {
+                    Some(symbol) => buf.write_str(&symbol),
+                    None => write!(buf, "Ref_{}", self[*addr].1),
+                },
             },
-            Tag::Int => {
+            Int => {
                 let value: isize = unsafe { mem::transmute_copy(&self[*addr].1) };
                 write!(buf, "{value}")
             }
-            Tag::Flt => {
+            Flt => {
                 let value: fsize = unsafe { mem::transmute_copy(&self[*addr].1) };
                 write!(buf, "{value}")
             }
-            Tag::Tup => self.tuple_string(addr, buf),
-            Tag::Set => self.set_string(addr, buf),
-            Tag::Stri => write!(buf, "\"{}\"", SymbolDB::get_string(self[*addr].1)),
-            Tag::AVar => write!(buf, "_"),
+            Tup => self.tuple_string(addr, buf),
+            Set => self.set_string(addr, buf),
+            Stri => write!(buf, "\"{}\"", SymbolDB::get_string(self[*addr].1)),
+            AVar => write!(buf, "_"),
         }
     }
 
@@ -490,40 +481,68 @@ impl Heap for Vec<Cell> {
     }
 
     fn truncate(&mut self, len: usize) {
-        self.resize(len, (Tag::Ref, 0));
+        self.resize(len, (Ref, 0));
     }
 
     fn heap_last(&mut self) -> &mut Cell {
         self.last_mut().unwrap()
     }
 
-    fn set_var(&mut self, var_id: Option<usize>) -> usize {
+    fn set_var(&mut self, _: Option<usize>) -> usize {
         unreachable!("Shouldn't set var in program heap");
     }
 
-    fn bound(&self, var_id: usize) -> VarBind {
+    fn bound(&self, var_id: usize) -> Option<VarBind> {
         unreachable!("Should not consult program heap for variable binding")
     }
 
-    fn bind(&mut self, var_id: usize, var_bind: impl Into<VarBind>) {
+    fn var_deref(&self, _: usize) -> VarBind {
+        unreachable!("no vars to deref in program heap")
+    }
+
+    fn bind(&mut self, _: usize, _: VarBind) {
         unreachable!("Should not attempt to bind in program heap")
     }
 
-    fn unbind(&mut self, binding: &[usize]) {
+    fn unbind(&mut self, _: &[usize]) {
         unreachable!("Should not attempt to unbind in program heap")
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{assert_eq, collections::HashMap, println, vec};
 
-    use crate::heap::query_heap::QueryHeap;
+    use crate::heap::{
+        query_heap::QueryHeap,
+        VarBind::{Addr, Var},
+        VarReg,
+    };
 
     use super::{
         super::symbol_db::SymbolDB,
-        {Heap, Tag, EMPTY_LIS, LIS},
+        {Heap, Tag::*, EMPTY_LIS, LIS},
     };
+
+    #[test]
+    fn var_deref() {
+        let mut heap = QueryHeap::new(&[], None);
+        heap.var_regs.extend_from_slice(&[
+            Var(1).into(),
+            Var(2).into(),
+            Addr(3).into(),
+            Var(4).into(),
+            Var(5).into(),
+            VarReg::UNBOUND,
+        ]);
+
+        assert_eq!(Addr(3), heap.var_deref(0));
+        assert_eq!(Addr(3), heap.var_deref(1));
+        assert_eq!(Addr(3), heap.var_deref(2));
+        assert_eq!(Var(5), heap.var_deref(3));
+        assert_eq!(Var(5), heap.var_deref(4));
+        assert_eq!(Var(5), heap.var_deref(5));
+    }
 
     #[test]
     fn dereference() {
@@ -531,93 +550,50 @@ mod tests {
         let a = SymbolDB::set_const("a");
 
         let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![
-            (Tag::Ref, 1),
-            (Tag::Ref, 2),
-            (Tag::Ref, 3),
-            (Tag::Ref, 3),
+        heap.var_regs.extend_from_slice(&[
+            Var(1).into(),
+            Var(2).into(),
+            Addr(3).into(),
+            VarReg::UNBOUND,
         ]);
+
+        heap.cells = vec![(Ref, 0), (Ref, 1), (Ref, 2), (Ref, 3)];
         assert_eq!(heap.term_string(0), "Ref_3");
 
-        let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![
-            (Tag::Ref, 1),
-            (Tag::Ref, 2),
-            (Tag::Ref, 3),
-            (Tag::Arg, 0),
-        ]);
+        heap.cells = vec![(Ref, 0), (Ref, 1), (Ref, 2), (Arg, 0)];
         assert_eq!(heap.term_string(0), "Arg_0");
 
-        let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![
-            (Tag::Ref, 1),
-            (Tag::Ref, 2),
-            (Tag::Ref, 3),
-            (Tag::Con, a),
-        ]);
+        heap.cells = vec![(Ref, 0), (Ref, 1), (Ref, 2), (Con, a)];
         assert_eq!(heap.term_string(0), "a");
 
-        let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![
-            (Tag::Ref, 1),
-            (Tag::Ref, 2),
-            (Tag::Ref, 3),
-            (Tag::Comp, 3),
-            (Tag::Con, f),
-            (Tag::Con, a),
-            (Tag::Ref, 6),
-        ]);
-        assert_eq!(heap.term_string(0), "f(a,Ref_6)");
+        heap.cells = vec![
+            (Ref, 0),
+            (Ref, 1),
+            (Ref, 2),
+            (Comp, 3),
+            (Con, f),
+            (Con, a),
+            (Ref, 3),
+        ];
+        assert_eq!(heap.term_string(0), "f(a,Ref_3)");
 
-        let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![
-            (Tag::Ref, 1),
-            (Tag::Ref, 2),
-            (Tag::Ref, 3),
-            (Tag::Tup, 2),
-            (Tag::Con, a),
-            (Tag::Ref, 5),
-        ]);
-        assert_eq!(heap.term_string(0), "(a,Ref_5)");
+        heap.cells = vec![(Ref, 0), (Ref, 1), (Ref, 2), (Tup, 2), (Con, a), (Ref, 3)];
+        assert_eq!(heap.term_string(0), "(a,Ref_3)");
 
-        let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![
-            (Tag::Ref, 1),
-            (Tag::Ref, 2),
-            (Tag::Ref, 3),
-            (Tag::Set, 2),
-            (Tag::Con, a),
-            (Tag::Ref, 5),
-        ]);
-        assert_eq!(heap.term_string(0), "{a,Ref_5}");
+        heap.cells = vec![(Ref, 0), (Ref, 1), (Ref, 2), (Set, 2), (Con, a), (Ref, 3)];
+        assert_eq!(heap.term_string(0), "{a,Ref_3}");
 
-        let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![
-            (Tag::Ref, 1),
-            (Tag::Ref, 2),
-            (Tag::Ref, 3),
+        heap.cells = vec![
+            (Ref, 0),
+            (Ref, 1),
+            (Ref, 2),
             LIS,
-            (Tag::Con, a),
+            (Con, a),
             LIS,
-            (Tag::Ref, 6),
+            (Ref, 3),
             EMPTY_LIS,
-        ]);
-        assert_eq!(heap.term_string(0), "[a,Ref_6]");
-    }
-
-    #[test]
-    fn var_deref() {
-        let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![
-            (Tag::Ref, 0),
-            (Tag::Ref, 2),
-            (Tag::Con, a),
-            (Tag::Ref, 4),
-            (Tag::Ref, 5),
-            (Tag::Con, a),
-        ]);
-        todo!();
+        ];
+        assert_eq!(heap.term_string(0), "[a,Ref_3]");
     }
 
     #[test]
@@ -629,120 +605,95 @@ mod tests {
         //Test simple
         let mut heap = QueryHeap::new(&[], None);
         let mut other = QueryHeap::new(&[], None);
-        other.cells.extend(vec![
-            (Tag::Comp, 3),
-            (Tag::Con, f),
-            (Tag::Con, a),
-            (Tag::Arg, 0),
-        ]);
+        other.cells = vec![(Comp, 3), (Con, f), (Con, a), (Arg, 0)];
+        heap.clone_term_from_other(&other, 0, &mut HashMap::new());
+        assert_eq!(&heap.cells, &[(Comp, 3), (Con, f), (Con, a), (Arg, 0),]);
+
+        //Test ref reasingment
+        heap.cells.clear();
+        heap.var_regs.clear();
+        other.cells = vec![(Tup, 4), (Ref, 0), (Ref, 1), (Ref, 2), (Ref, 3)];
+        other.var_regs = vec![
+            Var(1).into(),
+            Var(2).into(),
+            VarReg::UNBOUND,
+            VarReg::UNBOUND,
+        ];
         heap.clone_term_from_other(&other, 0, &mut HashMap::new());
         assert_eq!(
             &heap.cells,
-            &[(Tag::Comp, 3), (Tag::Con, f), (Tag::Con, a), (Tag::Arg, 0),]
-        );
-
-        //Test ref reasingment
-        let mut heap = QueryHeap::new(&[], None);
-        heap.cells.extend(vec![EMPTY_LIS, EMPTY_LIS, EMPTY_LIS]);
-        let mut other = QueryHeap::new(&[], None);
-        other.cells.extend(vec![
-            (Tag::Tup, 4),
-            (Tag::Ref, 2),
-            (Tag::Ref, 2),
-            (Tag::Ref, 2),
-            (Tag::Ref, 4),
-        ]);
-        heap.clone_term_from_other(&other, 0, &mut HashMap::new());
-        assert_eq!(
-            &heap.cells[3..],
-            &[
-                (Tag::Tup, 4),
-                (Tag::Ref, 4),
-                (Tag::Ref, 4),
-                (Tag::Ref, 4),
-                (Tag::Ref, 7),
-            ]
+            &[(Tup, 4), (Ref, 0), (Ref, 0), (Ref, 0), (Ref, 1),]
         );
 
         // Ref bound to simple term
-        let mut heap = QueryHeap::new(&[], None);
-        let mut other = QueryHeap::new(&[], None);
-        other.cells.extend(vec![
-            (Tag::Con, a),
-            (Tag::Tup, 2),
-            (Tag::Ref, 3),
-            (Tag::Ref, 0),
-            (Tag::Tup, 2),
-            (Tag::Ref, 0),
-            (Tag::Ref, 5),
-        ]);
+        heap.cells.clear();
+        heap.var_regs.clear();
+        //(a,a)
+        other.cells = vec![
+            (Con, a),
+            (Tup, 2),
+            (Ref, 0),
+            (Ref, 1),
+            (Tup, 2),
+            (Ref, 2),
+            (Ref, 3),
+        ];
+        other.var_regs = vec![Var(1).into(), Addr(0).into(), Var(3).into(), Addr(0).into()];
         heap.clone_term_from_other(&other, 1, &mut HashMap::new());
         heap.clone_term_from_other(&other, 4, &mut HashMap::new());
         assert_eq!(
             &heap.cells,
-            &[
-                (Tag::Tup, 2),
-                (Tag::Con, a),
-                (Tag::Con, a),
-                (Tag::Tup, 2),
-                (Tag::Con, a),
-                (Tag::Con, a),
-            ]
+            &[(Tup, 2), (Con, a), (Con, a), (Tup, 2), (Con, a), (Con, a),]
         );
 
         // Ref bound to complex term
-        let mut heap = QueryHeap::new(&[], None);
-        let mut other = QueryHeap::new(&[], None);
-        other.cells.extend(vec![
-            (Tag::Comp, 2), // 0
-            (Tag::Con, f),  // 1
-            (Tag::Con, a),  // 2
-            (Tag::Comp, 2), // 3
-            (Tag::Con, p),  // 4
-            (Tag::Ref, 0),  // 5
-            (Tag::Comp, 2), // 6
-            (Tag::Con, p),  // 7
-            (Tag::Ref, 3),  // 8
-        ]);
+        heap.cells.clear();
+        heap.var_regs.clear();
+        other.cells = vec![
+            (Comp, 2), // 0
+            (Con, f),  // 1
+            (Con, a),  // 2
+            (Comp, 2), // 3
+            (Con, p),  // 4
+            (Ref, 0),  // 5
+            (Comp, 2), // 6
+            (Con, p),  // 7
+            (Ref, 1),  // 8
+        ];
+        other.var_regs = vec![Addr(0).into(), Addr(3).into()];
         heap.clone_term_from_other(&other, 6, &mut HashMap::new());
         assert_eq!(
             &heap.cells,
             &[
-                (Tag::Comp, 2),
-                (Tag::Con, p),
-                (Tag::Comp, 2),
-                (Tag::Con, p),
-                (Tag::Comp, 2),
-                (Tag::Con, f),
-                (Tag::Con, a),
+                (Comp, 2),
+                (Con, p),
+                (Comp, 2),
+                (Con, p),
+                (Comp, 2),
+                (Con, f),
+                (Con, a),
             ]
         );
 
-        let mut heap = QueryHeap::new(&[], None);
-        let mut other = QueryHeap::new(&[], None);
-        other.cells.extend(vec![
-            LIS,            // 0
-            (Tag::Con, f),  // 1
-            (Tag::Con, a),  // 2
-            LIS,            // 3
-            (Tag::Con, p),  // 4
-            (Tag::Ref, 0),  // 5
-            (Tag::Comp, 2), // 6
-            (Tag::Con, p),  // 7
-            (Tag::Ref, 3),  // 8
-        ]);
+        heap.cells.clear();
+        heap.var_regs.clear();
+        // p([p|[f|a]])
+        other.cells = vec![
+            LIS,       // 0
+            (Con, f),  // 1
+            (Con, a),  // 2
+            LIS,       // 3
+            (Con, p),  // 4
+            (Ref, 0),  // 5
+            (Comp, 2), // 6
+            (Con, p),  // 7
+            (Ref, 1),  // 8
+        ];
+        other.var_regs = vec![Addr(0).into(), Addr(3).into()];
         heap.clone_term_from_other(&other, 6, &mut HashMap::new());
         assert_eq!(
             &heap.cells,
-            &[
-                (Tag::Comp, 2),
-                (Tag::Con, p),
-                LIS,
-                (Tag::Con, p),
-                LIS,
-                (Tag::Con, f),
-                (Tag::Con, a),
-            ]
+            &[(Comp, 2), (Con, p), LIS, (Con, p), LIS, (Con, f), (Con, a),]
         );
     }
 
@@ -750,17 +701,17 @@ mod tests {
     fn normalise_args() {
         let mut norm_args_map = Vec::new();
         let mut heap = vec![
-            (Tag::Comp, 3),
-            (Tag::Arg, 2),
-            (Tag::Arg, 4),
-            (Tag::Arg, 1),
-            (Tag::Comp, 1),
+            (Comp, 3),
+            (Arg, 2),
+            (Arg, 4),
+            (Arg, 1),
+            (Comp, 1),
             LIS,
-            (Tag::Arg, 1),
+            (Arg, 1),
             LIS,
-            (Tag::Arg, 4),
+            (Arg, 4),
             LIS,
-            (Tag::Arg, 2),
+            (Arg, 2),
             EMPTY_LIS,
         ];
         heap.normalise_args(0, &mut norm_args_map);
@@ -769,19 +720,92 @@ mod tests {
         assert_eq!(
             &heap,
             &[
-                (Tag::Comp, 3),
-                (Tag::Arg, 0),
-                (Tag::Arg, 1),
-                (Tag::Arg, 2),
-                (Tag::Comp, 1),
+                (Comp, 3),
+                (Arg, 0),
+                (Arg, 1),
+                (Arg, 2),
+                (Comp, 1),
                 LIS,
-                (Tag::Arg, 2),
+                (Arg, 2),
                 LIS,
-                (Tag::Arg, 1),
+                (Arg, 1),
                 LIS,
-                (Tag::Arg, 0),
+                (Arg, 0),
                 EMPTY_LIS
             ]
         )
+    }
+
+    #[test]
+    fn str_symbol_arity() {
+        let p = SymbolDB::set_const("p");
+        let f = SymbolDB::set_const("f");
+        let a = SymbolDB::set_const("a");
+
+        let mut heap = QueryHeap::new(&[], None);
+
+        //p(a)
+        heap.cells = vec![(Comp, 2), (Con, p), (Con, a)];
+        assert_eq!(heap.symbol_arity(0), (p, 1));
+
+        //p
+        heap.cells = vec![(Con, p)];
+        assert_eq!(heap.symbol_arity(0), (p, 0));
+
+        // p(f(a),f(a))
+        heap.cells = vec![
+            (Comp, 3),
+            (Con, p),
+            (Comp, 2),
+            (Con, f),
+            (Con, a),
+            (Comp, 2),
+            (Con, f),
+            (Con, a),
+        ];
+        assert_eq!(heap.symbol_arity(0), (p, 2));
+        assert_eq!(heap.symbol_arity(2), (f, 1));
+        assert_eq!(heap.symbol_arity(5), (f, 1));
+
+        //Arg
+        heap.cells = vec![
+            (Comp, 2),
+            (Arg, 0),
+            (Con, a),
+
+        ];
+        assert_eq!(heap.symbol_arity(0), (0, 1));
+
+        //Var chain to con
+        heap.cells = vec![
+            (Con, p),
+            (Comp, 2),
+            (Ref, 0),
+            (Ref, 1),
+
+        ];
+        heap.var_regs = vec![
+            Var(1).into(),
+            Addr(0).into()
+        ];
+        assert_eq!(heap.symbol_arity(1), (p, 1));
+
+        //Unbound var + chain to unbound var
+        heap.cells = vec![
+            (Comp, 2),
+            (Ref, 0),
+            (Con, a),
+            (Comp, 2),
+            (Ref, 1),
+            (Ref, 2),
+        ];
+        heap.var_regs = vec![
+            VarReg::UNBOUND,
+            Var(2).into(),
+            VarReg::UNBOUND,
+        ];
+        assert_eq!(heap.symbol_arity(0), (0, 1));
+        assert_eq!(heap.symbol_arity(3), (0, 1));
+
     }
 }

@@ -1,11 +1,17 @@
 use std::{
+    cell,
     ops::{Deref, DerefMut},
-    todo,
+    println, todo,
 };
 
 use smallvec::SmallVec;
 
-use crate::heap::{Cell, Heap, Tag, VarDeref, LIS};
+use super::{
+    Cell, Heap,
+    Tag::*,
+    VarBind::*,
+    VarReg, LIS,
+};
 
 type JumpStack = SmallVec<[(usize, usize); 3]>;
 trait JumpStackTrait {
@@ -36,6 +42,7 @@ impl JumpStackTrait for JumpStack {
 /// Stack for walking terms and saving indirection points
 /// [i].0: current address
 /// [i].1: cells left to walk
+#[derive(Debug)]
 pub struct TermWalk {
     stack: JumpStack,
 }
@@ -107,18 +114,25 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
         Some(addr)
     }
 
-    fn next_cell(&mut self, heap: &impl Heap) -> Option<Cell> {
-        let addr = self.next_addr()?;
-        let cell = match heap.var_deref(addr) {
-            VarDeref::Same => heap[addr],
-            VarDeref::Jump(jump_addr) => {
-                self.push((jump_addr + 1, 0));
-                heap[jump_addr]
+    fn handle_ref(&mut self, heap: &impl Heap, addr: &mut usize, cell: &mut Cell) {
+        if let (Ref, var_id) = cell {
+            match heap.var_deref(*var_id) {
+                Var(var_id) => cell.1 = var_id,
+                Addr(jump_addr) => {
+                    self.push((jump_addr + 1, 0));
+                    (*addr, *cell) = (jump_addr, heap[jump_addr])
+                }
             }
-            VarDeref::Unbound(var_id) => (Tag::Ref, var_id),
-        };
+        }
+    }
+
+    fn next_cell(&mut self, heap: &impl Heap) -> Option<Cell> {
+        let mut addr = self.next_addr()?;
+        let mut cell = heap[addr];
+        self.handle_ref(heap, &mut addr, &mut cell);
+
         match cell {
-            (Tag::Comp | Tag::Tup | Tag::Set, len) => self.increment_cells_left(len),
+            (Comp | Tup | Set, len) => self.increment_cells_left(len),
             LIS => self.increment_cells_left(2),
             _ => (),
         }
@@ -126,17 +140,42 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
     }
 
     fn next_cell_with_addr(&mut self, heap: &impl Heap) -> Option<(usize, Cell)> {
-        let addr = self.next_addr()?;
-        let (addr, cell) = match heap.var_deref(addr) {
-            VarDeref::Same => (addr, heap[addr]),
-            VarDeref::Jump(jump_addr) => {
-                self.push((jump_addr + 1, 0));
-                (jump_addr, heap[jump_addr])
-            }
-            VarDeref::Unbound(var_id) => (usize::MAX, (Tag::Ref, var_id)),
-        };
+        let mut addr = self.next_addr()?;
+        let mut cell = heap[addr];
+        self.handle_ref(heap, &mut addr, &mut cell);
         match cell {
-            (Tag::Comp | Tag::Tup | Tag::Set, len) => self.increment_cells_left(len),
+            (Comp | Tup | Set, len) => self.increment_cells_left(len),
+            LIS => self.increment_cells_left(2),
+            _ => (),
+        }
+        Some((addr, cell))
+    }
+
+    fn next_cell_with_addr_arg_deref(
+        &mut self,
+        heap: &impl Heap,
+        arg_regs: &[VarReg],
+    ) -> Option<(usize, Cell)> {
+        let mut addr = self.next_addr()?;
+        let mut cell = heap[addr];
+
+        if let (Arg, arg_id) = cell {
+            let arg = arg_regs[arg_id];
+            if arg.bound() {
+                if arg.addr() {
+                    let jump_addr = arg.0;
+                    self.push((jump_addr + 1, 0));
+                    (addr, cell) = (jump_addr, heap[jump_addr])
+                } else {
+                    cell = (Ref, arg.value())
+                }
+            }
+        }
+
+        self.handle_ref(heap, &mut addr, &mut cell);
+
+        match cell {
+            (Comp | Tup | Set, len) => self.increment_cells_left(len),
             LIS => self.increment_cells_left(2),
             _ => (),
         }
@@ -152,13 +191,10 @@ impl TermWalk {
     }
 
     pub fn sub_walk(&mut self) -> SubWalk {
+        println!("{self:?}");
         let parent_frame = self.last_mut().unwrap();
-        let sub_stack = 
-            SmallVec::from_buf_and_len([
-                (parent_frame.0, parent_frame.1-1),
-                (0, 0),
-                (0, 0)
-            ], 1);
+        let sub_stack =
+            SmallVec::from_buf_and_len([(parent_frame.0, parent_frame.1 - 1), (0, 0), (0, 0)], 1);
         SubWalk {
             parent_frame,
             sub_stack,
@@ -185,18 +221,17 @@ impl<'a> Walk for SubWalk<'a> {
         let addr = frame.0;
         frame.1 -= 1;
         frame.0 += 1;
-        if self.len() == 1{
+        if self.len() == 1 {
             self.parent_frame.1 -= 1;
             self.parent_frame.0 += 1;
-
         }
         Some(addr)
     }
 }
 
 pub struct DualWalk {
-    walk1: TermWalk,
-    walk2: TermWalk,
+    pub(crate) walk1: TermWalk,
+    pub(crate) walk2: TermWalk,
 }
 
 impl DualWalk {
@@ -218,6 +253,17 @@ impl DualWalk {
         Some((
             self.walk1.next_cell_with_addr(heap)?,
             self.walk2.next_cell_with_addr(heap)?,
+        ))
+    }
+
+    pub fn next_cells_with_addrs_arg_deref(
+        &mut self,
+        heap: &impl Heap,
+        arg_regs: &[VarReg]
+    ) -> Option<((usize, Cell), (usize, Cell))> {
+        Some((
+            self.walk1.next_cell_with_addr_arg_deref(heap,arg_regs)?,
+            self.walk2.next_cell_with_addr_arg_deref(heap,arg_regs)?,
         ))
     }
 }

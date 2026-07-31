@@ -20,7 +20,7 @@ pub use meta_predicates::META_PREDICATES;
 pub use strings::STRINGS;
 
 use crate::{
-    Config, heap::{Binding, QueryHeap}, predicate_modules::sets::SETS, program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    Config, heap::{VarBind, QueryHeap}, predicate_modules::sets::SETS, program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
 };
 
 /// Return type for predicate functions.
@@ -37,7 +37,7 @@ use crate::{
 /// - [`PredReturn::False`] — deterministic failure; the engine backtracks.
 /// - [`PredReturn::Success`] — success with optional variable bindings and/or new
 ///   sub-goals to schedule. Either field may be empty:
-///   - `Success(bindings, vec![])` — binds heap cells and succeeds (the former `Binding` case).
+///   - `Success(bindings, vec![])` — binds heap cells and succeeds (the former `VarBind` case).
 ///   - `Success(vec![], goals)` — schedules new sub-goals without touching the heap.
 ///   - `Success(bindings, goals)` — both; the engine applies the bindings *then* resolves
 ///     the additional goals as if they had been in the clause body.
@@ -48,13 +48,13 @@ pub enum PredReturn {
     ///
     /// - First field: `(source_addr, target_addr)` heap bindings.
     /// - Second field: heap addresses of additional sub-goals to schedule (may be empty).
-    Success(Vec<Binding>, Vec<usize>),
+    Success(Vec<(usize,VarBind)>, Vec<usize>),
     /// Multiple alternative results — each tried on backtracking, like clause choices.
     ///
     /// Each element is a `(bindings, sub_goals)` pair, identical in meaning to
     /// [`Success`](PredReturn::Success). The engine stores these alternatives and
     /// pops one per attempt, undoing bindings on backtrack just like clause choices.
-    Choices(Vec<(Vec<Binding>, Vec<usize>)>),
+    Choices(Vec<(Vec<(usize,VarBind)>, Vec<usize>)>),
 }
 
 impl From<bool> for PredReturn {
