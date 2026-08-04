@@ -79,7 +79,6 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
     /// Expects the jump_addr will be consumed
     fn add_jump_frame(&mut self, jump_addr: usize) {
         self.push((jump_addr + 1, 0));
-        self.print_jump_stack();
     }
 
     fn skip_addrs(&mut self, step: usize) {
@@ -148,7 +147,6 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
     ) -> Option<(usize, Cell)> {
         let mut addr = self.next_addr()?;
         let mut cell = heap[addr];
-        // println!("Initial Cell: {cell:?}",);
         if let (Arg, arg_id) = cell {
             let arg = arg_regs[arg_id];
             if arg.bound() {
@@ -161,10 +159,8 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
                 }
             }
         }
-        // println!("Cell after Arg Deref: {cell:?}",);
         self.handle_ref(heap, &mut addr, &mut cell);
         self.handle_cell_increment(cell);
-        println!("Final Cell: {cell:?}",);
         Some((addr, cell))
     }
 
@@ -187,7 +183,6 @@ impl TermWalk {
     }
 
     pub fn sub_walk<'a>(&'a mut self) -> SubWalk<'a> {
-        println!("{self:?}");
         let parent_frame = self.last_mut().unwrap();
         let sub_stack =
             SmallVec::from_buf_and_len([(parent_frame.0, parent_frame.1 - 1), (0, 0), (0, 0)], 1);
