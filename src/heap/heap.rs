@@ -1,15 +1,15 @@
-use crate::heap::{
+use super::{
+    SymbolDB,
     Tag::*,
+    TermWalk,
     VarBind::{self, *},
+    Walk,
 };
-
-use super::{SymbolDB, TermWalk, Walk};
 use std::{
     collections::HashMap,
     fmt::Write,
     mem,
     ops::{Index, IndexMut, Range, RangeInclusive},
-    println, unreachable, write,
 };
 
 use fsize::fsize;
@@ -126,28 +126,13 @@ pub trait Heap:
         false
     }
 
-    /// Collect all REF, cells in structure or referenced by structure
-    /// If cell at addr is a reference return that cell  
+    /// Collect all Ref or Arg ids in term
+    /// @ args: true -> collect args, false -> collect refss
     fn term_vars(&self, addr: usize, args: bool) -> Vec<usize> {
         let mut walk = TermWalk::new(addr);
         let mut vars = Vec::new();
         while let Some((tag, value)) = walk.next_cell(self) {
             if (!args && tag == Ref) | (args && tag == Arg) {
-                if !vars.contains(&value) {
-                    vars.push(value);
-                }
-            }
-        }
-        vars
-    }
-
-    /// Collect all Arg, cells in structure or referenced by structure
-    /// If cell at addr is a reference return that cell  
-    fn term_args(&self, addr: usize, args: bool) -> Vec<usize> {
-        let mut walk = TermWalk::new(addr);
-        let mut vars = Vec::new();
-        while let Some((tag, value)) = walk.next_cell(self) {
-            if tag == Arg {
                 if !vars.contains(&value) {
                     vars.push(value);
                 }
@@ -199,10 +184,10 @@ pub trait Heap:
     ///Get the symbol id and arity of functor structure (Comp)
     fn symbol_arity(&self, addr: usize) -> (usize, usize) {
         if let (Comp, arity) = self[addr] {
-            let mut functor = self[addr+1];
+            let mut functor = self[addr + 1];
             if functor.0 == Ref {
                 let Addr(addr) = self.var_deref(functor.1) else {
-                    return (0, arity-1);
+                    return (0, arity - 1);
                 };
                 functor = self[addr];
             }
@@ -492,7 +477,7 @@ impl Heap for Vec<Cell> {
         unreachable!("Shouldn't set var in program heap");
     }
 
-    fn bound(&self, var_id: usize) -> Option<VarBind> {
+    fn bound(&self, _var_id: usize) -> Option<VarBind> {
         unreachable!("Should not consult program heap for variable binding")
     }
 
@@ -511,7 +496,7 @@ impl Heap for Vec<Cell> {
 
 #[cfg(test)]
 mod tests {
-    use std::{assert_eq, collections::HashMap, println, vec};
+    use std::collections::HashMap;
 
     use crate::heap::{
         query_heap::QueryHeap,
@@ -768,44 +753,18 @@ mod tests {
         assert_eq!(heap.symbol_arity(5), (f, 1));
 
         //Arg
-        heap.cells = vec![
-            (Comp, 2),
-            (Arg, 0),
-            (Con, a),
-
-        ];
+        heap.cells = vec![(Comp, 2), (Arg, 0), (Con, a)];
         assert_eq!(heap.symbol_arity(0), (0, 1));
 
         //Var chain to con
-        heap.cells = vec![
-            (Con, p),
-            (Comp, 2),
-            (Ref, 0),
-            (Ref, 1),
-
-        ];
-        heap.var_regs = vec![
-            Var(1).into(),
-            Addr(0).into()
-        ];
+        heap.cells = vec![(Con, p), (Comp, 2), (Ref, 0), (Ref, 1)];
+        heap.var_regs = vec![Var(1).into(), Addr(0).into()];
         assert_eq!(heap.symbol_arity(1), (p, 1));
 
         //Unbound var + chain to unbound var
-        heap.cells = vec![
-            (Comp, 2),
-            (Ref, 0),
-            (Con, a),
-            (Comp, 2),
-            (Ref, 1),
-            (Ref, 2),
-        ];
-        heap.var_regs = vec![
-            VarReg::UNBOUND,
-            Var(2).into(),
-            VarReg::UNBOUND,
-        ];
+        heap.cells = vec![(Comp, 2), (Ref, 0), (Con, a), (Comp, 2), (Ref, 1), (Ref, 2)];
+        heap.var_regs = vec![VarReg::UNBOUND, Var(2).into(), VarReg::UNBOUND];
         assert_eq!(heap.symbol_arity(0), (0, 1));
         assert_eq!(heap.symbol_arity(3), (0, 1));
-
     }
 }

@@ -2,10 +2,12 @@ use super::{
     Tag::*,
     TermWalk,
     VarBind::{self, *},
-    VarReg, Walk, LIS,
+    VarReg, Walk,
 };
 use std::{
-    collections::HashMap, ops::{Index, IndexMut, Range}, println, sync::atomic::{AtomicUsize, Ordering::Acquire}, todo, unreachable,
+    collections::HashMap,
+    ops::{Index, IndexMut, Range},
+    sync::atomic::{AtomicUsize, Ordering::Acquire},
 };
 
 use super::heap::{Cell, Heap};
@@ -78,20 +80,20 @@ impl<'a> QueryHeap<'a> {
     pub fn check_constraints(&self, cons: &[usize]) -> bool {
         let mut i = 0;
         while i < cons.len() {
-            let mut j = 0;
+            let j = 0;
             while j < cons.len() {
                 if i == j {
                     continue;
                 }
-                let var_id1 = cons[i];
-                let var_id2 = cons[j];
+                let _var_id1 = cons[i];
+                let _var_id2 = cons[j];
+
                 todo!("Effeciently compared vars to ensure they don't have same value");
                 // follow var1 binding chain to value early return if hit var2_id
                 // follow var2 binding chain to value early return if hit var1_id
                 // if both unbound var compare id
                 // if both address use heap.term_equal()
 
-                j += 1
             }
             i += 1;
         }

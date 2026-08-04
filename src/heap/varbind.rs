@@ -1,4 +1,3 @@
-use std::debug_assert;
 use self::VarBind::{Addr, Var};
 
 const VAR_MASK: usize = 1 << (usize::BITS - 1);
@@ -10,7 +9,7 @@ pub enum VarBind {
     Addr(usize),
 }
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct VarReg(pub(super)usize);
+pub struct VarReg(pub(super) usize);
 
 impl Default for VarReg {
     fn default() -> Self {
@@ -45,23 +44,19 @@ impl VarReg {
         self.0 & !VAR_MASK
     }
     pub fn get_bind(&self) -> Option<VarBind> {
-        if *self != Self::UNBOUND{
-            if self.addr(){
+        if *self != Self::UNBOUND {
+            if self.addr() {
                 Some(Addr(self.0))
-            }else{
+            } else {
                 Some(Var(self.value()))
             }
-        }else{
+        } else {
             None
         }
     }
     pub fn bind(&mut self, binding: VarBind) {
-        debug_assert!(!self.bound(), "Should not overwrite existing binding");
-        match binding {
-            Unbound => unreachable!("Shouldn't bind to undbound"),
-            Var(value) => self.0 = value & VAR_MASK,
-            Addr(value) => self.0 = value,
-        }
+        debug_assert!(*self == Self::UNBOUND, "Should not overwrite existing binding");
+        *self = binding.into();
     }
 
     pub fn unbind(&mut self) {
@@ -79,17 +74,17 @@ impl From<VarBind> for VarReg {
     }
 }
 
-impl TryInto<VarBind> for VarReg{
+impl TryInto<VarBind> for VarReg {
     type Error = ();
 
     fn try_into(self) -> Result<VarBind, Self::Error> {
-        if self != Self::UNBOUND{
-            if self.var(){
+        if self != Self::UNBOUND {
+            if self.var() {
                 Ok(Var(self.value()))
-            }else{
+            } else {
                 Ok(Addr(self.0))
             }
-        }else{
+        } else {
             Err(())
         }
     }
@@ -99,14 +94,17 @@ impl TryInto<VarBind> for VarReg{
 mod tests {
     use std::assert_eq;
 
-use crate::heap::{VarBind::{self, Addr, Var}, varbind::VAR_MASK};
+    use crate::heap::{
+        varbind::VAR_MASK,
+        VarBind::{self, Addr, Var},
+    };
 
-use super::{VarReg, UNBOUND_VALUE};
+    use super::{VarReg, UNBOUND_VALUE};
 
     #[test]
-    fn bound(){
+    fn bound() {
         let var_reg = VarReg(UNBOUND_VALUE);
-        assert!(var_reg.bound());
+        assert!(!var_reg.bound());
         let var_reg = VarReg(0 | VAR_MASK);
         assert!(var_reg.bound());
         let var_reg = VarReg(0);
@@ -114,7 +112,27 @@ use super::{VarReg, UNBOUND_VALUE};
     }
 
     #[test]
-    fn from_var_bind(){
+    fn addr() {
+        let var_reg = VarReg(UNBOUND_VALUE);
+        assert!(!var_reg.addr());
+        let var_reg = VarReg(10 | VAR_MASK);
+        assert!(!var_reg.addr());
+        let var_reg = VarReg(10);
+        assert!(var_reg.addr());
+    }
+
+    #[test]
+    fn var() {
+        let var_reg = VarReg(UNBOUND_VALUE);
+        assert!(!var_reg.var());
+        let var_reg = VarReg(10 | VAR_MASK);
+        assert!(var_reg.var());
+        let var_reg = VarReg(10);
+        assert!(!var_reg.var());
+    }
+
+    #[test]
+    fn from_var_bind() {
         let var_reg: VarReg = Var(5).into();
         assert_eq!(var_reg.0, 5 | VAR_MASK);
         assert!(var_reg.bound());
@@ -127,20 +145,69 @@ use super::{VarReg, UNBOUND_VALUE};
     }
 
     #[test]
-    fn get_bind(){
+    fn bind(){
+        let mut var_reg = VarReg::UNBOUND;
+        var_reg.bind(Var(0));
+        assert_eq!(var_reg.0,0|VAR_MASK);
+        assert!(var_reg.bound());
+        assert!(var_reg.var());
+        assert!(!var_reg.addr());
+        assert_eq!(var_reg.get_bind(),Some(Var(0)));
+
+        let mut var_reg = VarReg::UNBOUND;
+        var_reg.bind(Var(5));
+        assert_eq!(var_reg.0,5|VAR_MASK);
+        assert!(var_reg.bound());
+        assert!(var_reg.var());
+        assert!(!var_reg.addr());
+        assert_eq!(var_reg.get_bind(),Some(Var(5)));
+
+        let mut var_reg = VarReg::UNBOUND;
+        var_reg.bind(Addr(0));
+        assert_eq!(var_reg.0,0);
+        assert!(var_reg.bound());
+        assert!(!var_reg.var());
+        assert!(var_reg.addr());
+        assert_eq!(var_reg.get_bind(),Some(Addr(0)));
+
+        let mut var_reg = VarReg::UNBOUND;
+        var_reg.bind(Addr(5));
+        assert_eq!(var_reg.0,5);
+        assert!(var_reg.bound());
+        assert!(!var_reg.var());
+        assert!(var_reg.addr());
+        assert_eq!(var_reg.get_bind(),Some(Addr(5)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn bind_already_bound_addr(){
+        let mut var_reg = VarReg(10);
+        var_reg.bind(Var(10));
+    }
+
+    #[test]
+    #[should_panic]
+    fn bind_already_bound_var(){
+        let mut var_reg = VarReg(10 | VAR_MASK);
+        var_reg.bind(Addr(10));
+    }
+
+    #[test]
+    fn get_bind() {
         let var_reg = VarReg(5);
         assert_eq!(var_reg.get_bind(), Some(Addr(5)));
-        let res: Result<VarBind,()> = var_reg.try_into();
+        let res: Result<VarBind, ()> = var_reg.try_into();
         assert_eq!(res, Ok(Addr(5)));
-        
+
         let var_reg = VarReg(5 | VAR_MASK);
         assert_eq!(var_reg.get_bind(), Some(Var(5)));
-        let res: Result<VarBind,()> = var_reg.try_into();
+        let res: Result<VarBind, ()> = var_reg.try_into();
         assert_eq!(res, Ok(Var(5)));
-        
+
         let var_reg = VarReg::UNBOUND;
         assert_eq!(var_reg.get_bind(), None);
-        let res: Result<VarBind,()> = var_reg.try_into();
+        let res: Result<VarBind, ()> = var_reg.try_into();
         assert_eq!(res, Err(()));
     }
 }
