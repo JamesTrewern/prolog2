@@ -1,9 +1,9 @@
 //! Term building: construct new heap terms from clause templates and substitutions.
 
-use std::{todo, unreachable};
-
 use crate::{
-    heap::{Cell, Heap, QueryHeap, Tag::*, TermWalk, VarBind::*, VarReg, Walk}, program::clause::BitFlag64, resolution::unification::Substitution,
+    heap::{Heap, QueryHeap, Tag::*, TermWalk, VarBind::*, Walk},
+    program::clause::BitFlag64,
+    resolution::Substitution,
 };
 
 /// If a ref if bound to some complex term which contains args we want
@@ -33,7 +33,7 @@ pub fn build(
     let mut walk = TermWalk::new(src_addr);
 
     while let Some(cell) = walk.next_cell(heap) {
-        if let (Arg, arg_id) = cell {
+        if cell.0 == Arg {
             build_arg(heap, substitution, meta_vars, src_addr);
         } else {
             heap.heap_push(cell);
@@ -52,9 +52,7 @@ fn build_arg(
     match meta_vars {
         Some(bit_flags) if !bit_flags.get(arg_id) => _ = heap.heap_push(heap[src_addr]),
         _ => match substitution.get_arg(arg_id) {
-            Some(Addr(bound_addr)) => {
-                _ = build(heap, substitution, meta_vars, bound_addr)
-            }
+            Some(Addr(bound_addr)) => _ = build(heap, substitution, meta_vars, bound_addr),
             Some(Var(var_id)) => _ = heap.heap_push((Ref, var_id)),
             None => {
                 let var_id = heap.set_var(None);
@@ -69,9 +67,9 @@ mod tests {
     use std::{assert_eq, vec};
 
     use crate::{
-        heap::{EMPTY_LIS, Heap, LIS, QueryHeap, SymbolDB, Tag::*, VarBind::*, VarReg}, program::clause::BitFlag64, resolution::{
-            build::{build, re_build_bound_arg_terms}, unification::{Substitution, unify},
-        },
+        heap::{Heap, QueryHeap, SymbolDB, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
+        program::clause::BitFlag64,
+        resolution::{build, re_build_bound_arg_terms, unify, Substitution},
     };
 
     #[test]
@@ -238,20 +236,17 @@ mod tests {
         // Built term should be q((a,b)).
         assert_eq!(heap.term_string(result), "q((a,b))");
 
-        assert_eq!(heap.cells[result..],[
-            (Comp, 2),
-            (Con, q),
-            (Tup, 2),
-            (Con, a),
-            (Con, b),
-        ]);
+        assert_eq!(
+            heap.cells[result..],
+            [(Comp, 2), (Con, q), (Tup, 2), (Con, a), (Con, b),]
+        );
     }
 
     #[test]
     fn test1() {
         let p = SymbolDB::set_const("p");
         let prog_heap = vec![];
-        
+
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
             (Ref, 0),  //0
@@ -279,7 +274,7 @@ mod tests {
     fn test2() {
         let p = SymbolDB::set_const("p");
         let prog_heap = vec![];
-        
+
         let mut heap = QueryHeap::new(&prog_heap, None);
         heap.cells.extend([
             (Ref, 0),  //0

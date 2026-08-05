@@ -14,7 +14,7 @@ use crate::{
     heap::{Cell, Heap, QueryHeap, Tag},
     parser::{TokenStream, build_clause, tokenise},
     program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
-    resolution::proof::Proof,
+    resolution::Proof,
     Config,
 };
 

@@ -269,6 +269,7 @@ pub trait Heap:
     }
 
     fn term_equal(&self, addr1: usize, addr2: usize) -> bool {
+        println!("{} =:= {}", self.term_string(addr1), self.term_string(addr2));
         let (mut walk1, mut walk2) = (TermWalk::new(addr1), TermWalk::new(addr2));
         loop {
             let (Some(cell1), Some(cell2)) = (walk1.next_cell(self), walk2.next_cell(self)) else {

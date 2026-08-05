@@ -10,7 +10,7 @@ use crate::{
     parser::{build_clause, execute_tree, tokenise, TokenStream},
     predicate_modules::{maths::set_approx_tolerance, PredicateModule, STANDARD_MODULES},
     program::predicate_table::PredicateTable,
-    resolution::proof::Proof,
+    resolution::Proof,
     Error, Result,
 };
 

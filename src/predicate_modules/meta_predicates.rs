@@ -1,8 +1,9 @@
 use crate::{
-    Config, heap::{
-        Heap,
-        QueryHeap,
-    }, predicate_modules::helpers::{goal_arg, resolve}, program::{hypothesis::Hypothesis, predicate_table::PredicateTable}, resolution::proof::Proof
+    heap::{Heap, QueryHeap},
+    predicate_modules::helpers::{goal_arg, resolve},
+    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    resolution::Proof,
+    Config,
 };
 
 use super::{PredReturn, PredicateModule};
@@ -54,18 +55,12 @@ pub fn not(
 
     if proved {
         if config.debug {
-            eprintln!(
-                "[FAILED_TO_NEGATE] {}",
-                heap.term_string(inner_goal)
-            );
+            eprintln!("[FAILED_TO_NEGATE] {}", heap.term_string(inner_goal));
         }
         PredReturn::False
     } else {
         if config.debug {
-            eprintln!(
-                "[NEGATED_THROUGH_FAILURE] {}",
-                heap.term_string(inner_goal)
-            );
+            eprintln!("[NEGATED_THROUGH_FAILURE] {}", heap.term_string(inner_goal));
         }
         PredReturn::True
     }

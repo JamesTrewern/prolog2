@@ -1,11 +1,10 @@
 //! Proof search via SLD resolution with backtracking and predicate invention.
 
 use crate::{
-    heap::{Heap, QueryHeap, Tag},
+    heap::{Heap, QueryHeap},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
 };
-
 use super::env::Env;
 
 /// The proof search engine.

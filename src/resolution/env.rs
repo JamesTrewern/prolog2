@@ -3,9 +3,6 @@
 //! Each [`Env`] represents a single goal on the proof stack. The [`Strategy`]
 //! enum separates clause-based resolution from native predicate evaluation,
 //! keeping the two execution paths explicit at the type level.
-
-use std::{matches, todo, unreachable};
-
 use smallvec::SmallVec;
 
 use crate::{

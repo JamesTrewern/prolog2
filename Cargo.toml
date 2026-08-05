@@ -31,6 +31,10 @@ rayon = "1.11.0"
 num_cpus = "1.17.0"
 smallvec = "1.13"
 
+[profile.test]
+debug-assertions = true
+
+
 [profile.dev]
 opt-level = 3
 debug-assertions = false

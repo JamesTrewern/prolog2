@@ -52,11 +52,15 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
     /// Add a frame to walk term from de reference
     /// Expects the jump_addr will be consumed
     fn add_jump_frame(&mut self, jump_addr: usize) {
-        self.push((jump_addr+1, 0));
+        self.push((jump_addr + 1, 0));
     }
 
     fn skip_addrs(&mut self, step: usize) {
-        unsafe { self.last_mut().unwrap_unchecked().0 += step }
+        unsafe {
+            let top_frame = self.last_mut().unwrap_unchecked();
+            top_frame.0 += step;
+            top_frame.1 -= step;
+        }
     }
 
     /// Decrease cells left counter
@@ -248,7 +252,7 @@ mod test {
 
     use crate::{
         heap::{QueryHeap, SymbolDB, EMPTY_LIS},
-        resolution::unification::Substitution,
+        resolution::Substitution,
     };
 
     use super::*;
