@@ -53,7 +53,7 @@ impl Substitution {
     }
 
     pub fn set_arg(&mut self, arg_id: usize, binding: VarBind) {
-        self.arg_regs[arg_id].bind(binding);
+        self.arg_regs[arg_id] = binding.into();
     }
 
     pub fn get_bound_vars(self) -> Box<[usize]> {
