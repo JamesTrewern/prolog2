@@ -9,11 +9,6 @@ pub fn unify(heap: &mut QueryHeap, addr1: usize, addr2: usize) -> Option<Substit
     while let Some((res1, res2)) = walk.next_cells_with_addrs_arg_deref(heap, &substitution) {
         let (addr1, (tag1, value1)) = res1;
         let (addr2, (tag2, value2)) = res2;
-        println!("----------------------------");
-        println!("Addr1: {addr1}, ({tag1}, {value1})");
-        println!("Addr2: {addr2}, ({tag2}, {value2})");
-        println!("----------------------------");
-
         match (tag1, tag2) {
             (Arg, Arg) => {
                 if value1 != value2 {

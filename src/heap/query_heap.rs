@@ -145,7 +145,6 @@ impl Heap for QueryHeap<'_> {
     fn var_deref(&self, mut var_id: usize) -> VarBind {
         loop {
             if self.var_regs[var_id].var() {
-                println!("{var_id}");
                 var_id = self.var_regs[var_id].value()
             } else {
                 if self.var_regs[var_id].bound() {
