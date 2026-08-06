@@ -54,15 +54,19 @@ impl Substitution {
         self.bound_vars.into_boxed_slice()
     }
 
-    pub fn push_bound_var(&mut self, var_id: usize, needs_rebuild: bool) {
+    pub fn push_bound_var(&mut self, var_id: usize, needs_rebuild: bool, binding: VarBind) {
         self.bound_vars.push(var_id);
         self.needs_rebuild.push(needs_rebuild);
+        self.update_arg_regs(var_id, binding);
     }
 
-    pub fn update_arg_regs(&mut self, var_id: usize, new_bind: VarBind){
-        let find_value: VarReg = Var(var_id).into();
-        let replace_value: VarReg = new_bind.into();
+    /// When binding a var in heap, check if any args are bound to var
+    /// and update arg binding if they are 
+    pub fn update_arg_regs(&mut self, var_id: usize, binding: VarBind){
+        let find: VarReg = Var(var_id).into();
+        let replace: VarReg = binding.into();
 
+        VarReg::replace_all(&mut self.arg_regs, find, replace);
         //SIMD find and replace values
         //self.arg_regs find replace
     }

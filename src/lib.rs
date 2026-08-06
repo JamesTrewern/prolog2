@@ -83,12 +83,16 @@ pub mod heap;
 /// Prolog source parsing: tokenisation, syntax tree construction, and term encoding.
 pub mod parser;
 /// Built-in predicate modules and the predicate module system.
+#[allow(dead_code)]
+#[allow(unused)]
 pub mod predicate_modules;
 /// Program representation: clauses, hypotheses, and the predicate table.
 pub mod program;
 /// Resolution engine: proof search, unification, and term building.
 pub mod resolution;
 /// Implementation of the Top Program Consturction algorithm with parallelism
+#[allow(dead_code)]
+#[allow(unused)]
 pub mod top_prog;
 
 // Re-export commonly used types at crate root.

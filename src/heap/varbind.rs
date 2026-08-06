@@ -1,4 +1,5 @@
 use self::VarBind::{Addr, Var};
+use multiversion::multiversion;
 
 const VAR_MASK: usize = 1 << (usize::BITS - 1);
 const UNBOUND_VALUE: usize = usize::MAX;
@@ -8,6 +9,8 @@ pub enum VarBind {
     Var(usize),
     Addr(usize),
 }
+
+#[repr(transparent)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct VarReg(pub(super) usize);
 
@@ -29,17 +32,7 @@ impl VarReg {
     pub fn addr(&self) -> bool {
         self.bound() && self.0 & VAR_MASK == 0
     }
-    // pub fn bind_type(&self) -> Option<VarBind> {
-    //     if self.bound() {
-    //         if self.0 & VAR_MASK == 0 {
-    //             Some(Addr)
-    //         } else {
-    //             Some(Var)
-    //         }
-    //     } else {
-    //         None
-    //     }
-    // }
+
     pub fn value(&self) -> usize {
         self.0 & !VAR_MASK
     }
@@ -55,13 +48,23 @@ impl VarReg {
         }
     }
     pub fn bind(&mut self, binding: VarBind) {
-        debug_assert!(*self == Self::UNBOUND, "Should not overwrite existing binding");
+        debug_assert!(
+            *self == Self::UNBOUND,
+            "Should not overwrite existing binding"
+        );
         *self = binding.into();
     }
 
     pub fn unbind(&mut self) {
         debug_assert!(self.bound(), "Can't unbind unbound");
         self.0 = UNBOUND_VALUE
+    }
+
+    #[multiversion(targets = "simd")] // generates avx512/avx2/sse2/neon clones + runtime dispatch
+    pub fn replace_all(regs: &mut [VarReg; 32], find: VarReg, replace: VarReg) {
+        for r in regs.iter_mut() {
+            *r = if r.0 == find.0 { replace } else { *r }; // autovectorizes per-clone
+        }
     }
 }
 
@@ -145,50 +148,50 @@ mod tests {
     }
 
     #[test]
-    fn bind(){
+    fn bind() {
         let mut var_reg = VarReg::UNBOUND;
         var_reg.bind(Var(0));
-        assert_eq!(var_reg.0,0|VAR_MASK);
+        assert_eq!(var_reg.0, 0 | VAR_MASK);
         assert!(var_reg.bound());
         assert!(var_reg.var());
         assert!(!var_reg.addr());
-        assert_eq!(var_reg.get_bind(),Some(Var(0)));
+        assert_eq!(var_reg.get_bind(), Some(Var(0)));
 
         let mut var_reg = VarReg::UNBOUND;
         var_reg.bind(Var(5));
-        assert_eq!(var_reg.0,5|VAR_MASK);
+        assert_eq!(var_reg.0, 5 | VAR_MASK);
         assert!(var_reg.bound());
         assert!(var_reg.var());
         assert!(!var_reg.addr());
-        assert_eq!(var_reg.get_bind(),Some(Var(5)));
+        assert_eq!(var_reg.get_bind(), Some(Var(5)));
 
         let mut var_reg = VarReg::UNBOUND;
         var_reg.bind(Addr(0));
-        assert_eq!(var_reg.0,0);
+        assert_eq!(var_reg.0, 0);
         assert!(var_reg.bound());
         assert!(!var_reg.var());
         assert!(var_reg.addr());
-        assert_eq!(var_reg.get_bind(),Some(Addr(0)));
+        assert_eq!(var_reg.get_bind(), Some(Addr(0)));
 
         let mut var_reg = VarReg::UNBOUND;
         var_reg.bind(Addr(5));
-        assert_eq!(var_reg.0,5);
+        assert_eq!(var_reg.0, 5);
         assert!(var_reg.bound());
         assert!(!var_reg.var());
         assert!(var_reg.addr());
-        assert_eq!(var_reg.get_bind(),Some(Addr(5)));
+        assert_eq!(var_reg.get_bind(), Some(Addr(5)));
     }
 
     #[test]
     #[should_panic]
-    fn bind_already_bound_addr(){
+    fn bind_already_bound_addr() {
         let mut var_reg = VarReg(10);
         var_reg.bind(Var(10));
     }
 
     #[test]
     #[should_panic]
-    fn bind_already_bound_var(){
+    fn bind_already_bound_var() {
         let mut var_reg = VarReg(10 | VAR_MASK);
         var_reg.bind(Addr(10));
     }

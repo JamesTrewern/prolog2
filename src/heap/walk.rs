@@ -1,3 +1,5 @@
+use crate::{heap::VarBind, resolution::Substitution};
+
 use super::{Cell, Heap, Tag::*, VarBind::*, VarReg, LIS};
 use smallvec::SmallVec;
 use std::ops::{Deref, DerefMut};
@@ -82,6 +84,22 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
         Some(addr)
     }
 
+    fn handle_var_bind(
+        &mut self,
+        var_bind: VarBind,
+        heap: &impl Heap,
+        addr: &mut usize,
+        cell: &mut Cell,
+    ) {
+        match var_bind {
+            Var(var_id) => *cell = (Ref, var_id),
+            Addr(jump_addr) => {
+                self.add_jump_frame(jump_addr);
+                (*addr, *cell) = (jump_addr, heap[jump_addr])
+            }
+        }
+    }
+
     fn handle_ref(&mut self, heap: &impl Heap, addr: &mut usize, cell: &mut Cell) {
         if let (Ref, var_id) = cell {
             match heap.var_deref(*var_id) {
@@ -121,23 +139,19 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
     fn next_cell_with_addr_arg_deref(
         &mut self,
         heap: &impl Heap,
-        arg_regs: &[VarReg],
+        sub: &Substitution,
     ) -> Option<(usize, Cell)> {
         let mut addr = self.next_addr()?;
         let mut cell = heap[addr];
-        if let (Arg, arg_id) = cell {
-            let arg = arg_regs[arg_id];
-            if arg.bound() {
-                if arg.addr() {
-                    let jump_addr = arg.0;
-                    self.add_jump_frame(jump_addr);
-                    (addr, cell) = (jump_addr, heap[jump_addr])
-                } else {
-                    cell = (Ref, arg.value())
-                }
+        match cell {
+            (Arg, arg_id) if let Some(var_bind) = sub.get_arg(arg_id) => {
+                self.handle_var_bind(var_bind, heap, &mut addr, &mut cell)
             }
+            (Ref, var_id) => {
+                self.handle_var_bind(heap.var_deref(var_id), heap, &mut addr, &mut cell);
+            }
+            _ => (),
         }
-        self.handle_ref(heap, &mut addr, &mut cell);
         self.handle_cell_increment(cell);
         Some((addr, cell))
     }
@@ -236,16 +250,18 @@ impl DualWalk {
     pub fn next_cells_with_addrs_arg_deref(
         &mut self,
         heap: &impl Heap,
-        arg_regs: &[VarReg],
+        sub: &Substitution,
     ) -> Option<((usize, Cell), (usize, Cell))> {
         Some((
-            self.walk1.next_cell_with_addr_arg_deref(heap, arg_regs)?,
-            self.walk2.next_cell_with_addr_arg_deref(heap, arg_regs)?,
+            self.walk1.next_cell_with_addr_arg_deref(heap, sub)?,
+            self.walk2.next_cell_with_addr_arg_deref(heap, sub)?,
         ))
     }
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
+#[allow(unused)]
 mod test {
     use core::panic;
     use std::{assert_eq, vec};
@@ -472,10 +488,10 @@ mod test {
     fn accumulate_cells(
         heap: &QueryHeap,
         walk: &mut impl Walk,
-        arg_regs: &[VarReg],
+        subs: &Substitution,
     ) -> Vec<(usize, Cell)> {
         let mut cells = Vec::new();
-        while let Some(cell) = walk.next_cell_with_addr_arg_deref(heap, arg_regs) {
+        while let Some(cell) = walk.next_cell_with_addr_arg_deref(heap, subs) {
             cells.push(cell);
             if cells.len() > 15 {
                 for cell in cells {
@@ -493,14 +509,14 @@ mod test {
         let p = SymbolDB::set_const("p");
         let a = SymbolDB::set_const("a");
         let mut heap = QueryHeap::new(&[], None);
-        let mut sub = Substitution::default();
+        let mut subs = Substitution::default();
 
         // Handle arg jump to strucuture
         heap.cells = vec![(Comp, 2), (Arg, 0), (Arg, 1), (Comp, 2), (Con, p), (Con, a)];
-        sub.set_arg(0, Addr(3));
-        sub.set_arg(1, Addr(3));
+        subs.set_arg(0, Addr(3));
+        subs.set_arg(1, Addr(3));
         let mut walk = TermWalk::new(0);
-        let cells = accumulate_cells(&heap, &mut walk, &sub.arg_regs);
+        let cells = accumulate_cells(&heap, &mut walk, &subs);
         assert_eq!(cells.len(), 7);
         assert_eq!(cells[0], (0, (Comp, 2)));
         assert_eq!(cells[1], (3, (Comp, 2)));
@@ -516,7 +532,7 @@ mod test {
         sub.set_arg(0, Var(0));
         heap.var_regs = vec![Addr(3).into()];
         let mut walk = TermWalk::new(0);
-        let cells = accumulate_cells(&heap, &mut walk, &sub.arg_regs);
+        let cells = accumulate_cells(&heap, &mut walk, &sub);
         assert_eq!(cells.len(), 5);
         assert_eq!(cells[0], (0, (Comp, 2)));
         assert_eq!(cells[1], (1, (Con, p)));
@@ -529,7 +545,7 @@ mod test {
         heap.cells = vec![(Comp, 2), (Con, p), (Arg, 0), (Comp, 2), (Con, p), (Con, a)];
         heap.var_regs = vec![Var(1).into(), Addr(3).into()];
         let mut walk = TermWalk::new(0);
-        let cells = accumulate_cells(&heap, &mut walk, &sub.arg_regs);
+        let cells = accumulate_cells(&heap, &mut walk, &sub);
         assert_eq!(cells.len(), 5);
         assert_eq!(cells[0], (0, (Comp, 2)));
         assert_eq!(cells[1], (1, (Con, p)));
@@ -562,7 +578,7 @@ mod test {
         assert_eq!(walk.next_cell(&heap), Some((Comp, 3)));
         //create sub_walk
         let mut sub_walk = walk.sub_walk(&heap);
-        let cells = accumulate_cells(&heap, &mut sub_walk, &subs.arg_regs);
+        let cells = accumulate_cells(&heap, &mut sub_walk, &subs);
         assert_eq!(
             cells,
             [(2, (Comp, 3)), (3, (Arg, 0)), (4, (Arg, 0)), (5, (Arg, 0)),]
@@ -599,7 +615,7 @@ mod test {
         assert_eq!(walk.next_cell(&heap), Some((Comp, 2)));
         //create sub_walk
         let mut sub_walk = walk.sub_walk(&heap);
-        let cells = accumulate_cells(&heap, &mut sub_walk, &subs.arg_regs);
+        let cells = accumulate_cells(&heap, &mut sub_walk, &subs);
         assert_eq!(
             cells,
             [
@@ -642,7 +658,7 @@ mod test {
         assert_eq!(walk.next_cell(&heap), Some((Comp, 2)));
         //create sub_walk
         let mut sub_walk = walk.sub_walk(&heap);
-        let cells = accumulate_cells(&heap, &mut sub_walk, &subs.arg_regs);
+        let cells = accumulate_cells(&heap, &mut sub_walk, &subs);
         assert_eq!(
             cells,
             [
@@ -691,7 +707,7 @@ mod test {
         assert_eq!(walk.next_cell(&heap), Some((Comp, 2)));
         //create sub_walk
         let mut sub_walk = walk.sub_walk(&heap);
-        let cells = accumulate_cells(&heap, &mut sub_walk, &subs.arg_regs);
+        let cells = accumulate_cells(&heap, &mut sub_walk, &subs);
         assert_eq!(
             cells,
             [
@@ -733,7 +749,7 @@ mod test {
         assert_eq!(walk.next_cell(&heap), Some((Comp, 2)));
         //create sub_walk
         let mut sub_walk = walk.sub_walk(&heap);
-        let cells = accumulate_cells(&heap, &mut sub_walk, &subs.arg_regs);
+        let cells = accumulate_cells(&heap, &mut sub_walk, &subs);
         assert_eq!(
             cells,
             [
@@ -772,7 +788,7 @@ mod test {
         assert_eq!(walk.next_cell(&heap), Some((Comp, 2)));
         //create sub_walk
         let mut sub_walk = walk.sub_walk(&heap);
-        let cells = accumulate_cells(&heap, &mut sub_walk, &subs.arg_regs);
+        let cells = accumulate_cells(&heap, &mut sub_walk, &subs);
         assert_eq!(
             cells,
             [
@@ -791,7 +807,7 @@ mod test {
     fn return_from_jump_before_subwalk() {
         let p = SymbolDB::set_const("p");
         let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
+        let heap = QueryHeap::new(&[], None);
         let subs = Substitution::default();
     }
 }

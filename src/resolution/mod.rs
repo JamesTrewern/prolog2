@@ -6,13 +6,14 @@
 //! [`build`](crate::resolution::build) constructs new terms from substitutions.
 
 mod build;
+#[allow(dead_code)]
+#[allow(unused)]
 mod env;
 mod proof;
 mod unification;
 mod substitution;
 
 pub use build::{build, re_build_bound_arg_terms};
-use env::Env;
 pub use proof::Proof;
 pub use unification::unify;
 pub use substitution::Substitution;

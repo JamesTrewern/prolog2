@@ -171,7 +171,7 @@ mod tests {
         ]);
         heap.var_regs.push(Addr(13).into());
         let mut substitution = Substitution::default();
-        substitution.push_bound_var(0, true);
+        substitution.push_bound_var(0, true,Addr(13).into());
         let idx = heap.heap_len();
         re_build_bound_arg_terms(&mut heap, &mut substitution);
         assert_eq!(heap.cells[idx..], [LIS, (Ref, 1), EMPTY_LIS,]);
