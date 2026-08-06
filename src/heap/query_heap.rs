@@ -269,7 +269,7 @@ impl Index<RangeFrom<usize>> for QueryHeap<'_> {
             self.root.is_none(),
             "Can't Index with RangeFrom on branched heap"
         );
-        index.start += self.prog_cells.len();
+        index.start -= self.prog_cells.len();
         &self.cells[index]
     }
 }
