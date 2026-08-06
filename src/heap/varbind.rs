@@ -1,3 +1,5 @@
+use crate::program::clause::MAX_ARG;
+
 use self::VarBind::{Addr, Var};
 use multiversion::multiversion;
 
@@ -61,7 +63,7 @@ impl VarReg {
     }
 
     #[multiversion(targets = "simd")] // generates avx512/avx2/sse2/neon clones + runtime dispatch
-    pub fn replace_all(regs: &mut [VarReg; 32], find: VarReg, replace: VarReg) {
+    pub fn replace_all(regs: &mut [VarReg; MAX_ARG], find: VarReg, replace: VarReg) {
         for r in regs.iter_mut() {
             *r = if r.0 == find.0 { replace } else { *r }; // autovectorizes per-clone
         }

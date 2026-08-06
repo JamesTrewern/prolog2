@@ -1,10 +1,9 @@
 //! Clause representation and metadata.
-
+use crate::heap::Heap;
+use smallvec::SmallVec;
 use std::ops::{Deref, DerefMut};
 
-use smallvec::SmallVec;
-
-use crate::heap::Heap;
+pub(crate) const MAX_ARG: usize = 64;
 
 /// Compact 64-bit flag set used to mark meta-variables and constrained variables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -38,8 +37,8 @@ impl Clause {
         let mut bit_flags = BitFlag64::default();
         for meta_var in meta_vars {
             assert!(
-                meta_var <= 63,
-                "meta clause cannot have more than 64 variables (variable index {meta_var} exceeds limit)"
+                meta_var < MAX_ARG,
+                "meta clause cannot have more than {MAX_ARG} variables (variable index {meta_var} exceeds limit)"
             );
             bit_flags.set(meta_var);
         }

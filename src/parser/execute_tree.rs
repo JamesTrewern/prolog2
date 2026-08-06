@@ -8,7 +8,10 @@ use super::{
 };
 use crate::{
     heap::Heap,
-    program::{clause::Clause, predicate_table::PredicateTable},
+    program::{
+        clause::{Clause, MAX_ARG},
+        predicate_table::PredicateTable,
+    },
 };
 
 pub fn build_clause(
@@ -24,6 +27,11 @@ pub fn build_clause(
         .into_iter()
         .map(|term| term.encode(heap, &mut var_values, query))
         .collect();
+
+    assert!(
+        var_values.len() <= MAX_ARG,
+        "Clauses can not contain more than {MAX_ARG} variables."
+    );
 
     let meta_vars = meta_vars.map(|vars| {
         vars.into_iter()

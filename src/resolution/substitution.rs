@@ -1,7 +1,13 @@
 use std::ops::{Deref, DerefMut};
 
+use crate::{
+    heap::{
+        VarBind::{self, *},
+        VarReg,
+    },
+    program::clause::MAX_ARG,
+};
 use smallvec::SmallVec;
-use crate::heap::{VarBind::{self,*}, VarReg};
 
 /// Substitution mapping clause `Arg` cells to heap addresses.
 ///
@@ -9,7 +15,7 @@ use crate::heap::{VarBind::{self,*}, VarReg};
 /// produced during unification.
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
-    pub(crate) arg_regs: [VarReg; 32],
+    pub(crate) arg_regs: [VarReg; MAX_ARG],
     pub(crate) bound_vars: SmallVec<[usize; 5]>, // List of bound variables
     pub(crate) needs_rebuild: SmallVec<[bool; 5]>, // Are bound variables bound to complex?
 }
@@ -30,7 +36,7 @@ impl DerefMut for Substitution {
 impl Default for Substitution {
     fn default() -> Self {
         Self {
-            arg_regs: [VarReg::UNBOUND; 32],
+            arg_regs: [VarReg::UNBOUND; MAX_ARG],
             bound_vars: SmallVec::new(),
             needs_rebuild: SmallVec::new(),
         }
@@ -61,8 +67,8 @@ impl Substitution {
     }
 
     /// When binding a var in heap, check if any args are bound to var
-    /// and update arg binding if they are 
-    pub fn update_arg_regs(&mut self, var_id: usize, binding: VarBind){
+    /// and update arg binding if they are
+    pub fn update_arg_regs(&mut self, var_id: usize, binding: VarBind) {
         let find: VarReg = Var(var_id).into();
         let replace: VarReg = binding.into();
 

@@ -12,7 +12,7 @@ use crate::{
     },
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
-        clause::Clause,
+        clause::{Clause, MAX_ARG},
         hypothesis::Hypothesis,
         predicate_table::{Predicate, PredicateTable},
     },
@@ -41,7 +41,7 @@ pub(crate) enum Strategy {
         function: PredicateFunction,
         /// Alternative results to try on backtracking. Each entry is a
         /// `(bindings, sub_goals)` pair, popped one at a time.
-        alternatives: Vec<(Vec<(usize,VarBind)>, Vec<usize>)>,
+        alternatives: Vec<(Vec<(usize, VarBind)>, Vec<usize>)>,
         /// Whether the predicate function has been called yet.
         called: bool,
     },
@@ -498,7 +498,7 @@ impl Env {
                     .collect();
 
                 let mut constraints = Vec::with_capacity(16);
-                for i in 0..32 {
+                for i in 0..MAX_ARG {
                     if clause.constrained_var(i) {
                         todo!("How to construct new contraints?")
                         // constraints.push(unsafe { let VarBind::substitution.get_arg(i).unwrap_unchecked() });
