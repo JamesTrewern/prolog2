@@ -4,9 +4,10 @@ use super::{
     VarBind::{self, *},
     VarReg, Walk,
 };
+use core::panic;
 use std::{
     collections::HashMap,
-    ops::{Index, IndexMut, Range},
+    ops::{Index, IndexMut, Range, RangeFrom},
     sync::atomic::{AtomicUsize, Ordering::Acquire},
 };
 
@@ -93,7 +94,6 @@ impl<'a> QueryHeap<'a> {
                 // follow var2 binding chain to value early return if hit var1_id
                 // if both unbound var compare id
                 // if both address use heap.term_equal()
-
             }
             i += 1;
         }
@@ -247,12 +247,29 @@ impl Index<Range<usize>> for QueryHeap<'_> {
     fn index(&self, index: Range<usize>) -> &Self::Output {
         let len = self.prog_cells.len();
 
-        if index.start < len && index.end < len {
+        if index.start < len && index.end <= len {
             &self.prog_cells[index]
         } else if index.start >= len && self.root.is_none() {
             &self.cells[index.start - len..index.end - len]
         } else {
             unreachable!("Index<Range>: range {index:?} spans the static program heap and mutable query cells")
         }
+    }
+}
+
+impl Index<RangeFrom<usize>> for QueryHeap<'_> {
+    type Output = [Cell];
+
+    fn index(&self, mut index: RangeFrom<usize>) -> &Self::Output {
+        assert!(
+            index.start > self.prog_cells.len(),
+            "Can't Index with RangeFrom in program heap space"
+        );
+        assert!(
+            self.root.is_none(),
+            "Can't Index with RangeFrom on branched heap"
+        );
+        index.start += self.prog_cells.len();
+        &self.cells[index]
     }
 }
