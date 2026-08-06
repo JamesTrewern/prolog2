@@ -262,7 +262,7 @@ impl Index<RangeFrom<usize>> for QueryHeap<'_> {
 
     fn index(&self, mut index: RangeFrom<usize>) -> &Self::Output {
         assert!(
-            index.start > self.prog_cells.len(),
+            index.start >= self.prog_cells.len(),
             "Can't Index with RangeFrom in program heap space"
         );
         assert!(
