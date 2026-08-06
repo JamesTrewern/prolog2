@@ -9,7 +9,7 @@ use std::{
     collections::HashMap,
     fmt::Write,
     mem,
-    ops::{Index, IndexMut, Range, RangeInclusive},
+    ops::{Index, IndexMut, Range, RangeFrom, RangeInclusive},
 };
 
 use fsize::fsize;
@@ -67,7 +67,10 @@ pub const EMPTY_LIS: Cell = (ELis, 0);
 /// query-time [`super::query_heap::QueryHeap`]. Provides cell access,
 /// term construction, dereferencing, and display.
 pub trait Heap:
-    Sized + IndexMut<usize, Output = Cell> + Index<Range<usize>, Output = [Cell]>
+    Sized
+    + IndexMut<usize, Output = Cell>
+    + Index<Range<usize>, Output = [Cell]>
+    + Index<RangeFrom<usize>>
 {
     /// Reset Ref cells affected by binding to self references
     /// @binding: List of (usize, usize) tuples representing heap indexes, left -> right
@@ -269,7 +272,11 @@ pub trait Heap:
     }
 
     fn term_equal(&self, addr1: usize, addr2: usize) -> bool {
-        println!("{} =:= {}", self.term_string(addr1), self.term_string(addr2));
+        println!(
+            "{} =:= {}",
+            self.term_string(addr1),
+            self.term_string(addr2)
+        );
         let (mut walk1, mut walk2) = (TermWalk::new(addr1), TermWalk::new(addr2));
         loop {
             let (Some(cell1), Some(cell2)) = (walk1.next_cell(self), walk2.next_cell(self)) else {
