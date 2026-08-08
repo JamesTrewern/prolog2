@@ -27,8 +27,14 @@ pub fn unify(heap: &mut QueryHeap, addr1: usize, addr2: usize) -> Option<Substit
             }
             (Ref, Ref) => {
                 if value1 != value2 {
-                    heap.bind(value1, Var(value2));
-                    substitution.push_bound_var(value1, false, Var(value2));
+                    // If var_id for lhs constrained reverse standard lhs -> rhs binding
+                    let (from, to) = if heap.constrained(value1) {
+                        (value2, value1)
+                    } else {
+                        (value1, value2)
+                    };
+                    heap.bind(from, Var(to));
+                    substitution.push_bound_var(from, false, Var(to));
                 }
             }
             (Ref, Lis | Comp | Set | Tup) => {
@@ -185,6 +191,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Constant Comp
         heap.cells = vec![(Comp, 2), (Con, p), (Con, a), (Comp, 2), (Con, p), (Con, a)];
@@ -209,6 +216,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Constant Comp
         heap.cells = vec![(Tup, 2), (Con, p), (Con, a), (Tup, 2), (Con, p), (Con, a)];
@@ -233,6 +241,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Simple ref jump
         heap.cells = vec![
@@ -259,6 +268,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Simple arg jump
 
@@ -273,6 +283,7 @@ mod tests {
         let p = SymbolDB::set_const("p");
         let q = SymbolDB::set_const("q");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Basic
         heap.cells = vec![
@@ -370,6 +381,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Same order
         heap.cells = vec![
@@ -408,6 +420,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Proper List
         heap.cells = vec![
@@ -501,6 +514,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Jump at a head position: [a,b,c] vs [X,b,c] where X -> a
         heap.cells = vec![
@@ -615,6 +629,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Jump at a head position: [a,b|c] vs [X,b|c] where X -> a
         heap.cells = vec![
@@ -713,6 +728,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Jump replacing the whole inner list: [[a,b],c] vs [X,c] where X -> [a,b]
         heap.cells = vec![
@@ -844,6 +860,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Arg jump at a head position: (A,[A,b,c]) vs (a,[a,b,c])
         heap.cells = vec![
@@ -960,6 +977,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Arg jump at the constant tail: (A,[a|A]) vs (c,[a|c])
         heap.cells = vec![
@@ -1048,6 +1066,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Arg standing for the inner list: (A,[A,c]) vs ([a,b],[[a,b],c])
         heap.cells = vec![
@@ -1157,6 +1176,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: (A,A,A)
@@ -1226,6 +1246,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: (A,A,A)
@@ -1291,6 +1312,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: (A,A,A)
@@ -1372,6 +1394,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //[a,b|A] vs [a,b|A]
         heap.cells = vec![
@@ -1436,6 +1459,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //arg to unbound ref: [a,b|A] vs [a,b|X]
         heap.cells = vec![
@@ -1486,6 +1510,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //[a,b|X] vs [a,b|Y]
         heap.cells = vec![
@@ -1571,6 +1596,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //([a|A],[a|A]) vs ([a|X],[a|Y])
         heap.cells = vec![
@@ -1637,6 +1663,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Standard
         heap.cells = vec![
@@ -1730,6 +1757,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Standard
         heap.cells = vec![
@@ -1858,6 +1886,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Standard
         heap.cells = vec![
@@ -1926,6 +1955,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Standard
         heap.cells = vec![
@@ -2024,6 +2054,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Standard
         heap.cells = vec![
@@ -2104,6 +2135,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Standard
         heap.cells = vec![
@@ -2188,6 +2220,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Standard
         heap.cells = vec![
@@ -2250,6 +2283,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Standard
         heap.cells = vec![
@@ -2339,6 +2373,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Arg Tail to Empty List
 
@@ -2360,6 +2395,7 @@ mod tests {
     #[test]
     fn unify_refs() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
         heap.cells = vec![(Ref, 0), (Ref, 1)];
 
         //Simplest
@@ -2405,6 +2441,7 @@ mod tests {
     #[test]
     fn arg_to_ref() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Bind arg to ref
         heap.cells = vec![(Arg, 0), (Ref, 0)];
@@ -2424,6 +2461,7 @@ mod tests {
     #[test]
     fn unify_ref_through_arg() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         // Unify through arg
         heap.cells = vec![(Tup, 2), (Arg, 0), (Arg, 0), (Tup, 2), (Ref, 0), (Ref, 1)];
@@ -2472,6 +2510,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![(Ref, 0), (Comp, 2), (Con, p), (Con, a)];
         heap.var_regs = vec![VarReg::UNBOUND];
@@ -2492,6 +2531,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![(Ref, 0), LIS, (Con, p), LIS, (Con, a), EMPTY_LIS];
         heap.var_regs = vec![VarReg::UNBOUND];
@@ -2506,6 +2546,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
         heap.cells = vec![
             //0: (p,a)
             (Tup, 2),
@@ -2534,6 +2575,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             //0: (A,A)
@@ -2559,6 +2601,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
     }
 
     #[test]
@@ -2566,6 +2609,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
     }
 
     //-----------------------------------------------------------
@@ -2575,6 +2619,7 @@ mod tests {
     #[test]
     fn arg_occurs() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
         heap.cells = vec![
             // 0: A
             (Arg, 0),
@@ -2599,6 +2644,7 @@ mod tests {
     #[test]
     fn ref_occurs() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
         heap.cells = vec![
             // 0: X
@@ -2624,6 +2670,7 @@ mod tests {
     #[test]
     fn arg_occurs_in_bound_ref() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
         heap.var_regs.push(VarReg::UNBOUND);
 
         heap.cells = vec![
@@ -2658,6 +2705,7 @@ mod tests {
     #[test]
     fn ref_occurs_in_bound_arg() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
 
         heap.cells = vec![
@@ -2692,6 +2740,7 @@ mod tests {
     #[test]
     fn occurs_two_args_bound_to_same_var() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
         heap.var_regs = vec![VarReg::UNBOUND];
 
         heap.cells = vec![
@@ -2730,6 +2779,7 @@ mod tests {
     #[test]
     fn occurs_arg_bound_to_structure_then_var() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
 
         heap.cells = vec![
@@ -2780,6 +2830,7 @@ mod tests {
     #[test]
     fn arg_occurs_arg_ref_chain() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
 
         heap.cells = vec![
@@ -2803,6 +2854,7 @@ mod tests {
     #[test]
     fn ref_occurs_arg_ref_chain() {
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
 
         heap.cells = vec![
@@ -2855,6 +2907,7 @@ mod tests {
         let b = SymbolDB::set_const("b");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //X = p(a,b)
         heap.cells = vec![(Ref, 0), (Comp, 3), (Con, p), (Con, a), (Con, b)];
@@ -2894,6 +2947,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //p(A) = X  -- ref on the rhs
         heap.cells = vec![(Comp, 2), (Con, p), (Arg, 0), (Ref, 0)];
@@ -2946,6 +3000,7 @@ mod tests {
     fn needs_rebuild_false_for_ref_and_atomic_bindings() {
         let a = SymbolDB::set_const("a");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //X = Y  -- (Ref, Ref)
         heap.cells = vec![(Ref, 0), (Ref, 1)];
@@ -2998,6 +3053,7 @@ mod tests {
         let p = SymbolDB::set_const("p");
         let q = SymbolDB::set_const("q");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: p(X)
@@ -3049,6 +3105,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: (A, p(A))
@@ -3081,6 +3138,7 @@ mod tests {
         let p = SymbolDB::set_const("p");
         let q = SymbolDB::set_const("q");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: (p(A), q(a), b)
@@ -3118,6 +3176,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Ground vs ground: nothing is recorded at all.
         heap.cells = vec![(Comp, 2), (Con, p), (Con, a), (Comp, 2), (Con, p), (Con, a)];
@@ -3158,6 +3217,7 @@ mod tests {
         let f = SymbolDB::set_const("f");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p([a|A], f(A))
@@ -3205,6 +3265,7 @@ mod tests {
         let c = SymbolDB::set_const("c");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p((A,b), [A,c])
@@ -3260,6 +3321,7 @@ mod tests {
         let f = SymbolDB::set_const("f");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p(f([a|A]), A)
@@ -3317,6 +3379,7 @@ mod tests {
         let f = SymbolDB::set_const("f");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p(f(a), [f(a)])
@@ -3365,6 +3428,7 @@ mod tests {
         let g = SymbolDB::set_const("g");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p([f(A)|B])
@@ -3412,6 +3476,7 @@ mod tests {
         let c = SymbolDB::set_const("c");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p([{a,b}|A])
@@ -3458,6 +3523,7 @@ mod tests {
         let f = SymbolDB::set_const("f");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p(A, A, f(A))
@@ -3502,6 +3568,7 @@ mod tests {
         let f = SymbolDB::set_const("f");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p(f([{a,b}, (c,A)]))
@@ -3555,6 +3622,7 @@ mod tests {
         let f = SymbolDB::set_const("f");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p(f(A), [A])
@@ -3598,6 +3666,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p(a)
@@ -3631,6 +3700,7 @@ mod tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p(a)
@@ -3656,6 +3726,7 @@ mod tests {
     fn int_zero_and_empty_list_must_not_unify() {
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         heap.cells = vec![
             // 0: head p(0)
@@ -3698,6 +3769,7 @@ mod tests {
         let f = SymbolDB::set_const("f");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
+        heap.var_constrained = vec![false; 32];
 
         //Head p(f(a), b) vs goal p(X, c) -- exits via the catch-all arm.
         heap.cells = vec![

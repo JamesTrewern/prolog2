@@ -12,6 +12,7 @@ mod env;
 mod proof;
 mod unification;
 mod substitution;
+mod constraints;
 
 pub use build::{build, re_build_bound_arg_terms};
 pub use proof::Proof;

@@ -25,19 +25,27 @@ impl Default for VarReg {
 impl VarReg {
     pub const UNBOUND: Self = Self(UNBOUND_VALUE);
 
+    /// Is the register bound?
     pub fn bound(&self) -> bool {
         self.0 != UNBOUND_VALUE
     }
+    /// Is the register bound to another variable?
     pub fn var(&self) -> bool {
         self.bound() && self.0 & VAR_MASK != 0
     }
+    /// Is the register bound to a heap address
     pub fn addr(&self) -> bool {
         self.bound() && self.0 & VAR_MASK == 0
     }
-
+    
+    /// Quick accessor for usize value represent by either address or variable binding.
+    /// No guards on if the register in unbound!
     pub fn value(&self) -> usize {
         self.0 & !VAR_MASK
     }
+    
+    /// If the register is bound convert to VarBind type,
+    /// else return None
     pub fn get_bind(&self) -> Option<VarBind> {
         if *self != Self::UNBOUND {
             if self.addr() {
@@ -49,6 +57,8 @@ impl VarReg {
             None
         }
     }
+    
+    /// Bind the register with guards against overwrite
     pub fn bind(&mut self, binding: VarBind) {
         debug_assert!(
             *self == Self::UNBOUND,
@@ -57,6 +67,7 @@ impl VarReg {
         *self = binding.into();
     }
 
+    /// Unbind register, guards against unbinding unbound
     pub fn unbind(&mut self) {
         debug_assert!(self.bound(), "Can't unbind unbound");
         self.0 = UNBOUND_VALUE
@@ -67,6 +78,14 @@ impl VarReg {
         for r in regs.iter_mut() {
             *r = if r.0 == find.0 { replace } else { *r }; // autovectorizes per-clone
         }
+    }
+
+    pub fn from_addr(addr: usize) -> Self{
+        Self(addr)
+    }
+
+    pub fn from_var(var_id: usize) -> Self{
+        Self(var_id | VAR_MASK)
     }
 }
 

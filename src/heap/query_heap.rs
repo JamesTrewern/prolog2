@@ -4,7 +4,6 @@ use super::{
     VarBind::{self, *},
     VarReg, Walk,
 };
-use core::panic;
 use std::{
     collections::HashMap,
     ops::{Index, IndexMut, Range, RangeFrom},
@@ -27,6 +26,7 @@ pub struct QueryHeap<'a> {
     // TODO: handle branching query heap multi-threading
     root: Option<*const QueryHeap<'a>>,
     pub(crate) var_regs: Vec<VarReg>, //Reference binding registers
+    pub(crate) var_constrained: Vec<bool>
 }
 
 impl<'a> QueryHeap<'a> {
@@ -43,6 +43,7 @@ impl<'a> QueryHeap<'a> {
             prog_cells,
             root,
             var_regs,
+            var_constrained: Vec::new()
         }
     }
 
@@ -98,6 +99,19 @@ impl<'a> QueryHeap<'a> {
             i += 1;
         }
         true
+    }
+
+    /// Acessor for constrained variable array
+    pub fn constrained(&self, var_id: usize) -> bool{
+        self.var_constrained[var_id]
+    }
+
+    /// Create a constrained variable register without pushing new cell
+    /// return new var id
+    pub fn set_constrained_var(&mut self, var_reg: VarReg) -> usize{
+        self.var_regs.push(var_reg);        
+        self.var_constrained.push(true);
+        self.var_regs.len() - 1
     }
 }
 
@@ -179,6 +193,7 @@ impl Heap for QueryHeap<'_> {
             //Create new var id
             let var_id = self.var_regs.len();
             self.var_regs.push(VarReg::UNBOUND);
+            self.var_constrained.push(false);
             var_id
         });
 
