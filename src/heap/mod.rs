@@ -12,7 +12,7 @@ mod walk;
 mod varbind;
 
 pub use heap::{Cell, Heap, Tag, CON_PTR, EMPTY_LIS, LIS};
-pub use query_heap::QueryHeap;
+pub use query_heap::{QueryHeap,HeapPoint};
 pub use symbol_db::{known_symbol_id, SymbolDB};
 pub use walk::{DualWalk, SubWalk, TermWalk, Walk};
 pub use varbind::{VarBind,VarReg};

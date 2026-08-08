@@ -33,7 +33,7 @@ pub fn not(
     // vars) and freshly-allocated cells in place; we undo every recorded binding
     // and truncate the inner allocations away so nothing dangles when the outer
     // proof later truncates the heap.
-    let snapshot_len = heap.heap_len();
+    let heap_point = heap.heap_point();
     let mut inner_proof = Proof::with_hypothesis(heap, &[inner_goal], hypothesis_clone);
 
     if config.debug {
@@ -51,7 +51,7 @@ pub fn not(
 
     // Restore the shared heap to its pre-call state.
     inner_proof.undo_all(heap);
-    heap.truncate(snapshot_len);
+    heap.truncate(heap_point);
 
     if proved {
         if config.debug {

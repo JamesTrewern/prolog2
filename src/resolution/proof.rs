@@ -25,7 +25,7 @@ impl Proof {
         let hypothesis = Hypothesis::new();
         let stack = goals
             .iter()
-            .map(|goal| Env::new(*goal, 0, heap.heap_len()))
+            .map(|goal| Env::new(*goal, 0, heap.heap_point()))
             .collect();
         Proof {
             stack,
@@ -41,7 +41,7 @@ impl Proof {
         let h_clauses = hypothesis.len();
         let stack = goals
             .iter()
-            .map(|goal| Env::new(*goal, 0, heap.heap_len()))
+            .map(|goal| Env::new(*goal, 0, heap.heap_point()))
             .collect();
         Proof {
             stack,

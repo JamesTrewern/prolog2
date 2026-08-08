@@ -6,21 +6,16 @@
 use smallvec::SmallVec;
 
 use crate::{
-    heap::{
-        Heap, QueryHeap, SymbolDB, Tag,
-        VarBind::{self, Addr},
-    },
-    predicate_modules::{PredReturn, PredicateFunction},
-    program::{
+    Config, heap::{
+        Heap, HeapPoint, QueryHeap, SymbolDB, Tag, VarBind::{self, Addr},
+    }, predicate_modules::{PredReturn, PredicateFunction}, program::{
         clause::{Clause, MAX_ARG},
         hypothesis::Hypothesis,
         predicate_table::{Predicate, PredicateTable},
-    },
-    resolution::{
+    }, resolution::{
         build::{build, re_build_bound_arg_terms},
         unification::unify,
     },
-    Config,
 };
 /// How a goal is resolved: either by unifying with clauses or by calling a
 /// native predicate function.
@@ -63,12 +58,12 @@ pub(super) struct Env {
     pub(super) children: usize,
     pub(super) depth: usize,
     pub(crate) got_choices: bool,
-    pub(super) heap_point: usize,
+    pub(super) heap_point: HeapPoint,
     pub(super) strategy: Strategy,
 }
 
 impl Env {
-    pub fn new(goal: usize, depth: usize, heap_point: usize) -> Self {
+    pub fn new(goal: usize, depth: usize, heap_point: HeapPoint) -> Self {
         Env {
             goal,
             bound_vars: Box::new([]),
@@ -114,7 +109,7 @@ impl Env {
         predicate_table: &PredicateTable,
     ) {
         self.got_choices = true;
-        self.heap_point = heap.heap_len();
+        self.heap_point = heap.heap_point();
 
         if heap[self.goal].0 == Tag::Tup {
             self.get_tup_goals(heap);
@@ -355,7 +350,7 @@ impl Env {
                     return Some(
                         goals
                             .into_iter()
-                            .map(|g| Env::new(g, self.depth + 1, heap.heap_len()))
+                            .map(|g| Env::new(g, self.depth + 1, heap.heap_point()))
                             .collect(),
                     );
                 }
@@ -382,7 +377,7 @@ impl Env {
             Some(
                 goals
                     .into_iter()
-                    .map(|g| Env::new(g, self.depth + 1, heap.heap_len()))
+                    .map(|g| Env::new(g, self.depth + 1, heap.heap_point()))
                     .collect(),
             )
         }
@@ -536,7 +531,7 @@ impl Env {
             return Some(
                 new_goals
                     .into_iter()
-                    .map(|goal| Env::new(goal, self.depth + 1, heap.heap_len()))
+                    .map(|goal| Env::new(goal, self.depth + 1, heap.heap_point()))
                     .collect(),
             );
         }
@@ -571,7 +566,7 @@ impl Env {
             Some(
                 goals
                     .iter()
-                    .map(|goal| Env::new(*goal, self.depth + 1, heap.heap_len()))
+                    .map(|goal| Env::new(*goal, self.depth + 1, heap.heap_point()))
                     .collect(),
             )
         }

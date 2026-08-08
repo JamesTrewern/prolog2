@@ -3,6 +3,7 @@ use super::{
     TermWalk,
     VarBind::{self, *},
     VarReg, Walk,
+    Cell,Heap
 };
 use std::{
     collections::HashMap,
@@ -10,9 +11,9 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering::Acquire},
 };
 
-use super::heap::{Cell, Heap};
-
 static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
+/// (Heap cells length, Variable registers length)
+pub type HeapPoint = (usize,usize);
 
 /// Working heap for proof search.
 ///
@@ -113,6 +114,17 @@ impl<'a> QueryHeap<'a> {
         self.var_constrained.push(true);
         self.var_regs.len() - 1
     }
+
+    /// Get heap point to truncate back to later upon backtracking
+    pub fn heap_point(&self) -> HeapPoint{
+        (self.cells.len(),self.var_regs.len())
+    } 
+
+    /// Free memory no longer needed upon back tracking
+    pub fn truncate(&mut self, (cells_len, var_regs_len): HeapPoint){
+        self.cells.truncate(cells_len);
+        self.var_regs.truncate(var_regs_len);
+    }
 }
 
 impl Heap for QueryHeap<'_> {
@@ -143,16 +155,6 @@ impl Heap for QueryHeap<'_> {
 
     fn heap_last(&mut self) -> &mut Cell {
         self.cells.last_mut().unwrap()
-    }
-
-    fn truncate(&mut self, mut len: usize) {
-        debug_assert!(
-            len >= self.prog_cells.len(),
-            "truncate: target length {len} is below prog_cells boundary {}",
-            self.prog_cells.len()
-        );
-        len -= self.prog_cells.len();
-        self.cells.resize(len, (Ref, 0));
     }
 
     #[inline(always)]

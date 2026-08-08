@@ -84,8 +84,6 @@ pub trait Heap:
 
     fn heap_len(&self) -> usize;
 
-    fn truncate(&mut self, len: usize);
-
     fn heap_last(&mut self) -> &mut Cell;
 
     fn set_var(&mut self, var_id: Option<usize>) -> usize;
@@ -471,10 +469,6 @@ impl Heap for Vec<Cell> {
 
     fn heap_len(&self) -> usize {
         self.len()
-    }
-
-    fn truncate(&mut self, len: usize) {
-        self.resize(len, (Ref, 0));
     }
 
     fn heap_last(&mut self) -> &mut Cell {
