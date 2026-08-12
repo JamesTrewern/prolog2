@@ -41,7 +41,7 @@ pub fn not_unify(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    unify(heap, goal + 2, goal + 3).is_none().into()
+    unify(heap, goal + 2, goal + 3, 63).is_none().into()
 }
 
 // ---------------------------------------------------------------------------
