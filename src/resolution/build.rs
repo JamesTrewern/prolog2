@@ -969,7 +969,7 @@ mod tests {
 
         let mut meta_vars = BitFlag64::default();
         meta_vars.set(MAX_ARG - 1);
-        let mut sub = Substitution::default();
+        let mut sub = Substitution::new(MAX_ARG - 1);
         sub.set_arg(MAX_ARG - 1, Addr(5));
 
         build(&mut heap, &mut sub, Some(meta_vars), 1);
