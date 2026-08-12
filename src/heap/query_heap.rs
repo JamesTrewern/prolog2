@@ -1,9 +1,9 @@
 use super::{
+    Cell, Heap,
     Tag::*,
     TermWalk,
     VarBind::{self, *},
     VarReg, Walk,
-    Cell,Heap
 };
 use std::{
     collections::HashMap,
@@ -13,7 +13,7 @@ use std::{
 
 static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 /// (Heap cells length, Variable registers length)
-pub type HeapPoint = (usize,usize);
+pub type HeapPoint = (usize, usize);
 
 /// Working heap for proof search.
 ///
@@ -27,7 +27,6 @@ pub struct QueryHeap<'a> {
     // TODO: handle branching query heap multi-threading
     root: Option<*const QueryHeap<'a>>,
     pub(crate) var_regs: Vec<VarReg>, //Reference binding registers
-    pub(crate) var_constrained: Vec<bool>
 }
 
 impl<'a> QueryHeap<'a> {
@@ -44,7 +43,6 @@ impl<'a> QueryHeap<'a> {
             prog_cells,
             root,
             var_regs,
-            var_constrained: Vec::new()
         }
     }
 
@@ -81,49 +79,35 @@ impl<'a> QueryHeap<'a> {
 
     /// If true passed contrains, false if failed contraints
     pub fn check_constraints(&self, cons: &[usize]) -> bool {
-        let mut i = 0;
-        while i < cons.len() {
-            let j = 0;
-            while j < cons.len() {
-                if i == j {
-                    continue;
+        let derefs: Vec<VarBind> = cons.iter().map(|var_id| self.var_deref(*var_id)).collect();
+        for i in 0..cons.len() {
+            for j in (i + 1)..cons.len() {
+                match (derefs[i], derefs[j]) {
+                    (Addr(addr1), Addr(addr2)) if self.term_equal(addr1, addr2) => return false,
+                    (v1, v2) if v1 == v2 => return false,
+                    _ => (),
                 }
-                let _var_id1 = cons[i];
-                let _var_id2 = cons[j];
-
-                todo!("Effeciently compared vars to ensure they don't have same value");
-                // follow var1 binding chain to value early return if hit var2_id
-                // follow var2 binding chain to value early return if hit var1_id
-                // if both unbound var compare id
-                // if both address use heap.term_equal()
             }
-            i += 1;
         }
         true
     }
 
-    /// Acessor for constrained variable array
-    pub fn constrained(&self, var_id: usize) -> bool{
-        self.var_constrained[var_id]
-    }
-
-    /// Create a constrained variable register without pushing new cell
-    /// return new var id
-    pub fn set_constrained_var(&mut self, var_reg: VarReg) -> usize{
-        self.var_regs.push(var_reg);        
-        self.var_constrained.push(true);
-        self.var_regs.len() - 1
-    }
-
     /// Get heap point to truncate back to later upon backtracking
-    pub fn heap_point(&self) -> HeapPoint{
-        (self.cells.len(),self.var_regs.len())
-    } 
+    pub fn heap_point(&self) -> HeapPoint {
+        (self.cells.len(), self.var_regs.len())
+    }
 
     /// Free memory no longer needed upon back tracking
-    pub fn truncate(&mut self, (cells_len, var_regs_len): HeapPoint){
+    pub fn truncate(&mut self, (cells_len, var_regs_len): HeapPoint) {
         self.cells.truncate(cells_len);
         self.var_regs.truncate(var_regs_len);
+    }
+
+    /// Create new variable register and return ID without creating cell
+    pub fn new_var(&mut self, value: VarReg) -> usize {
+        let var_id = self.var_regs.len();
+        self.var_regs.push(value);
+        var_id
     }
 }
 
@@ -195,7 +179,6 @@ impl Heap for QueryHeap<'_> {
             //Create new var id
             let var_id = self.var_regs.len();
             self.var_regs.push(VarReg::UNBOUND);
-            self.var_constrained.push(false);
             var_id
         });
 

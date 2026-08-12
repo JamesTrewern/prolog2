@@ -6,16 +6,22 @@
 use smallvec::SmallVec;
 
 use crate::{
-    Config, heap::{
-        Heap, HeapPoint, QueryHeap, SymbolDB, Tag, VarBind::{self, Addr},
-    }, predicate_modules::{PredReturn, PredicateFunction}, program::{
+    heap::{
+        Heap, HeapPoint, QueryHeap, SymbolDB, Tag,
+        VarBind::{self, Addr},
+    },
+    predicate_modules::{PredReturn, PredicateFunction},
+    program::{
         clause::{Clause, MAX_ARG},
         hypothesis::Hypothesis,
         predicate_table::{Predicate, PredicateTable},
-    }, resolution::{
+    },
+    resolution::{
         build::{build, re_build_bound_arg_terms},
+        constraints::pre_pass_constraint,
         unification::unify,
     },
+    Config,
 };
 /// How a goal is resolved: either by unifying with clauses or by calling a
 /// native predicate function.
@@ -432,7 +438,7 @@ impl Env {
                 }
             }
 
-            let Some(mut substitution) = unify(heap, head, self.goal) else {
+            let Some(mut substitution) = unify(heap, head, self.goal, clause.max_arg_id) else {
                 continue;
             };
             for constraints in &hypothesis.constraints {
@@ -440,6 +446,8 @@ impl Env {
                     continue 'choices;
                 }
             }
+
+            pre_pass_constraint(&mut substitution.arg_regs, clause.constrained_vars, heap);
 
             if debug {
                 let Strategy::Clause { choices, .. } = &self.strategy else {
@@ -489,7 +497,7 @@ impl Env {
 
                 let new_clause_literals: Vec<usize> = clause
                     .iter()
-                    .map(|literal| build(heap, &mut substitution, clause.meta_vars, *literal))
+                    .map(|literal| build(heap, &mut substitution, Some(clause.meta_vars), *literal))
                     .collect();
 
                 let mut constraints = Vec::with_capacity(16);
@@ -500,7 +508,7 @@ impl Env {
                     }
                 }
 
-                let new_clause = Clause::new(new_clause_literals, None, None);
+                let new_clause = Clause::new(new_clause_literals, None, None, clause.max_arg_id);
                 if debug {
                     eprintln!(
                         "[ADD_CLAUSE] depth={} goal={} clause={}",
