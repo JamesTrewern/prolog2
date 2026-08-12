@@ -2,10 +2,8 @@ use std::ops::{Deref, DerefMut};
 
 use crate::{
     heap::{
-        VarBind::{self, *},
-        VarReg,
-    },
-    program::clause::MAX_ARG,
+        ArgRegs, VarBind::{self, *}, VarReg,
+    }, program::clause::MAX_ARG,
 };
 use smallvec::SmallVec;
 
@@ -15,7 +13,7 @@ use smallvec::SmallVec;
 /// produced during unification.
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
-    pub(crate) arg_regs: [VarReg; MAX_ARG],
+    pub(crate) arg_regs: ArgRegs,
     pub(crate) bound_vars: SmallVec<[usize; 5]>, // List of bound variables
     pub(crate) needs_rebuild: SmallVec<[bool; 5]>, // Are bound variables bound to complex?
 }
@@ -36,7 +34,7 @@ impl DerefMut for Substitution {
 impl Default for Substitution {
     fn default() -> Self {
         Self {
-            arg_regs: [VarReg::UNBOUND; MAX_ARG],
+            arg_regs: ArgRegs::new_16(),
             bound_vars: SmallVec::new(),
             needs_rebuild: SmallVec::new(),
         }
@@ -44,6 +42,14 @@ impl Default for Substitution {
 }
 
 impl Substitution {
+    pub fn new(max_arg: usize) -> Self{
+        Self {
+            arg_regs: ArgRegs::new_from_max_arg(max_arg),
+            bound_vars: SmallVec::new(),
+            needs_rebuild: SmallVec::new(),
+        }
+    }
+
     pub fn bound(&self, var_id: usize) -> bool {
         self.bound_vars.contains(&var_id)
     }
@@ -71,9 +77,6 @@ impl Substitution {
     pub fn update_arg_regs(&mut self, var_id: usize, binding: VarBind) {
         let find: VarReg = Var(var_id).into();
         let replace: VarReg = binding.into();
-
-        VarReg::replace_all(&mut self.arg_regs, find, replace);
-        //SIMD find and replace values
-        //self.arg_regs find replace
+        self.arg_regs.find_replace(find, replace);
     }
 }

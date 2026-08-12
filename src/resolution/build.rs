@@ -1317,7 +1317,7 @@ mod tests {
         heap.cells.extend([(Comp, 2), (Con, p), (Ref, 0)]);
         heap.var_regs = vec![VarReg::UNBOUND];
 
-        let mut sub = unify(&mut heap, 1, q).expect("p(A0) must unify with p(X)");
+        let mut sub = unify(&mut heap, 1, q,31).expect("p(A0) must unify with p(X)");
 
         // `Arg` against `Ref` records a variable binding, not an address, so
         // nothing was bound in the heap and there is nothing to rebuild.
@@ -1365,7 +1365,7 @@ mod tests {
         heap.cells.extend([(Comp, 2), (Con, p), (Ref, 0)]);
         heap.var_regs = vec![VarReg::UNBOUND];
 
-        let mut sub = unify(&mut heap, 1, q).expect("p([A0]) must unify with p(X)");
+        let mut sub = unify(&mut heap, 1, q,31).expect("p([A0]) must unify with p(X)");
 
         // X is bound to the list *in the program heap*, and that list is
         // flagged for rebuild because it contains an `Arg`.
@@ -1437,7 +1437,7 @@ mod tests {
             .extend([(Comp, 3), (Con, p), (Ref, 0), (Ref, 1)]);
         heap.var_regs = vec![VarReg::UNBOUND; 2];
 
-        let mut sub = unify(&mut heap, 1, q).expect("p([A0], b) must unify with p(X, Z)");
+        let mut sub = unify(&mut heap, 1, q,31).expect("p([A0], b) must unify with p(X, Z)");
 
         assert_eq!(&sub[..], &[0, 1]);
         assert_eq!(&sub.needs_rebuild[..], &[true, false]);
@@ -1492,7 +1492,7 @@ mod tests {
         heap.cells
             .extend([(Comp, 2), (Con, p), LIS, (Con, a), EMPTY_LIS]);
 
-        let mut sub = unify(&mut heap, 1, q).expect("p(A0) must unify with p([a])");
+        let mut sub = unify(&mut heap, 1, q,31).expect("p(A0) must unify with p([a])");
 
         assert_eq!(sub.get_arg(0), Some(Addr(q + 2)), "A0 points at the goal's list");
         assert!(sub.is_empty(), "no heap variable was bound");

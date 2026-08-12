@@ -45,7 +45,7 @@ pub fn build_clause(
             .collect::<Vec<usize>>()
     });
 
-    Clause::new(literals, meta_vars, constrained_vars)
+    Clause::new(literals, meta_vars, constrained_vars, var_values.len())
 }
 
 /// Extract variable names from a Term::Set

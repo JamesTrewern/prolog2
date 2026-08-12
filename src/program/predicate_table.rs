@@ -237,15 +237,15 @@ mod tests {
         let p_entry = PredicateEntry {
             symbol_arity: (p, 2),
             predicate: Predicate::Clauses(Box::new([
-                Clause::new(vec![15, 19], None, None),
-                Clause::new(vec![23, 27], None, None),
+                Clause::new(vec![15, 19], None, None, 0),
+                Clause::new(vec![23, 27], None, None, 0),
             ])),
         };
         let q_entry = PredicateEntry {
             symbol_arity: (q, 2),
             predicate: Predicate::Clauses(Box::new([
-                Clause::new(vec![31, 35], None, None),
-                Clause::new(vec![39, 43], None, None),
+                Clause::new(vec![31, 35], None, None, 0),
+                Clause::new(vec![39, 43], None, None, 0),
             ])),
         };
         let func_entry = PredicateEntry {
@@ -255,8 +255,8 @@ mod tests {
         let zero_entry = PredicateEntry {
             symbol_arity: (0, 2),
             predicate: Predicate::Clauses(Box::new([
-                Clause::new(vec![0, 3], Some(vec![0, 1]), None),
-                Clause::new(vec![7, 11], Some(vec![0]), None),
+                Clause::new(vec![0, 3], Some(vec![0, 1]), None, 0),
+                Clause::new(vec![7, 11], Some(vec![0]), None, 0),
             ])),
         };
 
@@ -325,8 +325,8 @@ mod tests {
         assert_eq!(
             pred_table.get_predicate((p, 2)),
             Some(&Predicate::Clauses(Box::new([
-                Clause::new(vec![15, 19], None, None),
-                Clause::new(vec![23, 27], None, None),
+                Clause::new(vec![15, 19], None, None, 0),
+                Clause::new(vec![23, 27], None, None, 0),
             ])))
         );
     }
@@ -355,23 +355,23 @@ mod tests {
         let r = SymbolDB::set_const("r");
 
         pred_table
-            .add_clause_to_predicate(Clause::new(vec![], Some(vec![]), None), (p, 2))
+            .add_clause_to_predicate(Clause::new(vec![], Some(vec![]), None, 0), (p, 2))
             .unwrap();
         pred_table
-            .add_clause_to_predicate(Clause::new(vec![], Some(vec![]), None), (r, 2))
+            .add_clause_to_predicate(Clause::new(vec![], Some(vec![]), None, 0), (r, 2))
             .unwrap();
         assert_eq!(
             pred_table
-                .add_clause_to_predicate(Clause::new(vec![], Some(vec![]), None), (pred_func, 2)),
+                .add_clause_to_predicate(Clause::new(vec![], Some(vec![]), None, 0), (pred_func, 2)),
             Err("Cannot add clause to function predicate")
         );
 
         assert_eq!(
             pred_table.get_predicate((p, 2)),
             Some(&Predicate::Clauses(Box::new([
-                Clause::new(vec![15, 19], None, None),
-                Clause::new(vec![23, 27], None, None),
-                Clause::new(vec![], Some(vec![]), None)
+                Clause::new(vec![15, 19], None, None, 0),
+                Clause::new(vec![23, 27], None, None, 0),
+                Clause::new(vec![], Some(vec![]), None, 0)
             ])))
         );
         assert_eq!(
@@ -379,7 +379,8 @@ mod tests {
             Some(&Predicate::Clauses(Box::new([Clause::new(
                 vec![],
                 Some(vec![]),
-                None
+                None,
+                0
             )])))
         );
     }
@@ -448,8 +449,8 @@ mod tests {
         assert_eq!(
             body2,
             vec![
-                &Clause::new(vec![15, 19], None, None),
-                &Clause::new(vec![23, 27], None, None),
+                &Clause::new(vec![15, 19], None, None, 0),
+                &Clause::new(vec![23, 27], None, None, 0),
             ]
         );
 
@@ -459,9 +460,9 @@ mod tests {
         let body2_ext: Vec<&Clause> = pred_table.get_body_clauses(2).collect();
         assert_eq!(body2_ext.len(), 4);
         // Should contain both p's and q's clauses
-        assert!(body2_ext.contains(&&Clause::new(vec![15, 19], None, None)));
-        assert!(body2_ext.contains(&&Clause::new(vec![23, 27], None, None)));
-        assert!(body2_ext.contains(&&Clause::new(vec![31, 35], None, None)));
-        assert!(body2_ext.contains(&&Clause::new(vec![39, 43], None, None)));
+        assert!(body2_ext.contains(&&Clause::new(vec![15, 19], None, None, 0)));
+        assert!(body2_ext.contains(&&Clause::new(vec![23, 27], None, None, 0)));
+        assert!(body2_ext.contains(&&Clause::new(vec![31, 35], None, None, 0)));
+        assert!(body2_ext.contains(&&Clause::new(vec![39, 43], None, None, 0)));
     }
 }

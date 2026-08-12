@@ -21,6 +21,28 @@ impl BitFlag64 {
     pub fn get(&self, idx: usize) -> bool {
         self.0 & (1 << idx) != 0
     }
+
+    pub fn is_some(&self) -> bool{
+        self.0 != 0
+    }
+
+    pub fn is_none(&self) -> bool{
+        self.0 != 0
+    }
+}
+
+impl From<Vec<usize>> for BitFlag64 {
+    fn from(bit_positions: Vec<usize>) -> Self {
+        let mut bit_flags = Self(0);
+        for bit_pos in bit_positions{
+            assert!(
+                bit_pos < MAX_ARG,
+                "meta clause cannot have more than {MAX_ARG} variables (variable index {bit_pos} exceeds limit)"
+            );
+            bit_flags.set(bit_pos);
+        }
+        bit_flags
+    }
 }
 
 /// A compiled clause: a list of literal heap addresses with metadata
@@ -28,38 +50,30 @@ impl BitFlag64 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Clause {
     literals: SmallVec<[usize; 5]>,
-    pub meta_vars: Option<BitFlag64>,
+    pub max_arg_id: usize,
+    pub meta_vars: BitFlag64,
     pub constrained_vars: BitFlag64,
+    
 }
 
 impl Clause {
-    fn meta_vars_to_bit_flags(meta_vars: Vec<usize>) -> BitFlag64 {
-        let mut bit_flags = BitFlag64::default();
-        for meta_var in meta_vars {
-            assert!(
-                meta_var < MAX_ARG,
-                "meta clause cannot have more than {MAX_ARG} variables (variable index {meta_var} exceeds limit)"
-            );
-            bit_flags.set(meta_var);
-        }
-        bit_flags
-    }
-
     pub fn new(
         literals: Vec<usize>,
         meta_vars: Option<Vec<usize>>,
         constrained_vars: Option<Vec<usize>>,
+        max_arg_id: usize,
     ) -> Self {
-        let meta_vars = meta_vars.map(Self::meta_vars_to_bit_flags);
+        let meta_vars: BitFlag64 = meta_vars.map(|vars| vars.into()).unwrap_or_default();
         let constrained_vars = match constrained_vars {
-            Some(cv) => Self::meta_vars_to_bit_flags(cv),
-            None => meta_vars.unwrap_or_default(),
+            Some(cv) => cv.into(),
+            None => meta_vars,
         };
         let literals: SmallVec<[usize; 5]> = SmallVec::from_vec(literals);
         Clause {
             literals,
             meta_vars,
             constrained_vars,
+            max_arg_id
         }
     }
 
@@ -76,8 +90,10 @@ impl Clause {
     }
 
     pub fn meta_var(&self, arg_id: usize) -> Result<bool, &'static str> {
-        let meta_vars = self.meta_vars.ok_or("Clause is not a meta clause")?;
-        Ok(meta_vars.get(arg_id))
+        if self.meta_vars.is_none(){
+            return Err("Clause is not a meta clause");
+        }
+        Ok(self.meta_vars.get(arg_id))
     }
 
     pub fn constrained_var(&self, arg_id: usize) -> bool {

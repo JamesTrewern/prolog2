@@ -10,10 +10,11 @@ mod query_heap;
 mod symbol_db;
 mod walk;
 mod varbind;
+mod argument_registers;
 
 pub use heap::{Cell, Heap, Tag, CON_PTR, EMPTY_LIS, LIS};
 pub use query_heap::{QueryHeap,HeapPoint};
 pub use symbol_db::{known_symbol_id, SymbolDB};
 pub use walk::{DualWalk, SubWalk, TermWalk, Walk};
 pub use varbind::{VarBind,VarReg};
-
+pub use argument_registers::ArgRegs;
