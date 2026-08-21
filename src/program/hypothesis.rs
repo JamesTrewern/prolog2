@@ -1,4 +1,7 @@
-use std::{ops::{Deref, DerefMut}, sync::atomic::{AtomicUsize, Ordering::Relaxed}};
+use std::{
+    ops::{Deref, DerefMut},
+    sync::atomic::{AtomicUsize, Ordering::Relaxed},
+};
 
 use smallvec::SmallVec;
 
@@ -52,8 +55,20 @@ impl Hypothesis {
         buffer
     }
 
-    pub fn next_pred_id() -> usize{
+    pub fn next_pred_id() -> usize {
         PRED_N.fetch_add(1, Relaxed)
+    }
+
+    pub fn invented_pred_count(&self, heap: &impl Heap) -> usize {
+        let mut seen: SmallVec<[usize; 5]> = SmallVec::new();
+        for clause in &self.clauses {
+            if let Some(v) = heap.pred_var(clause.head()) {
+                if !seen.contains(&v) {
+                    seen.push(v)
+                }
+            }
+        }
+        seen.len()
     }
 }
 

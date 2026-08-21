@@ -207,6 +207,19 @@ pub trait Heap:
         }
     }
 
+    fn pred_var(&self, addr: usize) -> Option<usize>{
+        if self[addr].0 != Comp{
+            return None;
+        }
+        let (Ref, var_id) = self[addr+1] else{
+            return None;
+        };
+        match self.var_deref(var_id) {
+            Var(var_id) => Some(var_id),
+            Addr(_) => None,
+        }
+    }
+
     /// Given address to a str cell create an operator over the sub terms addresses, including functor/predicate
     fn str_iterator(&self, addr: usize) -> RangeInclusive<usize> {
         addr + 1..=addr + self[addr].1
