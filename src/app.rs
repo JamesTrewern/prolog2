@@ -367,12 +367,6 @@ impl App {
             top_prog,
         };
 
-        for predicate_module in STANDARD_MODULES {
-            app = app
-                .load_module(predicate_module)
-                .expect("built-in module should always load");
-        }
-
         for path in setup.files {
             let path = Path::new(&path);
             if path.metadata()?.is_dir() {
