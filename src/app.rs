@@ -367,6 +367,12 @@ impl App {
             top_prog,
         };
 
+        for predicate_module in STANDARD_MODULES {
+            app = app
+                .load_module(predicate_module)
+                .expect("built-in module should always load");
+        }
+
         for path in setup.files {
             let path = Path::new(&path);
             if path.metadata()?.is_dir() {
@@ -377,6 +383,26 @@ impl App {
         }
         app.add_body_predicates(setup.body_predicates)
     }
+
+    /// Load setup from a json file
+    pub fn load_setup(mut self, path: impl AsRef<str>) -> Result<Self>{
+        let path = path.as_ref();
+        let setup: SetUp = serde_json::from_str(&fs::read_to_string(path)?)?;
+
+        set_approx_tolerance(setup.approx_tolerance_pct);
+
+        self.top_prog = if setup.top_prog {
+            TopProg::True(setup.reduce)
+        } else {
+            TopProg::False
+        };
+
+        self.config = setup.config;
+        self.examples = setup.examples;
+        self.auto = setup.auto;
+        Ok(self)
+    }
+
 
     /// Parses a Prolog source string and adds all clauses to the program.
     ///
