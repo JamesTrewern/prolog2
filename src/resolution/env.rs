@@ -470,18 +470,20 @@ impl Env {
                 // Check if we need to invent a predicate BEFORE building goals
                 let mut invented_pred_addr: Option<usize> = None;
                 if clause.meta() {
-                    let var_goal_pred = if let Some(addr) = substitution.bound(self.goal+1){
-                        heap[addr].0 == Tag::Ref
-                    }else{
-                        heap[self.goal+1].0 == Tag::Ref
-                    };
+                    // Resolve the goal's predicate position through *both* the
+                    // heap's ref chain and the pending substitution. Only an
+                    // unbound Ref is a genuine variable predicate; anything
+                    // else (in particular a Con reached via a bound ref chain)
+                    // must not be overwritten by an invented predicate.
+                    let goal_pred_addr = substitution.full_deref(self.goal + 1, heap);
+                    let var_goal_pred = heap[goal_pred_addr].0 == Tag::Ref;
                     if heap.str_symbol_arity(head).0 == 0 && var_goal_pred
                     {
                         let pred_symbol = SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
                         let pred_addr = heap.set_const(pred_symbol);
                         substitution.set_arg(0, pred_addr);
                         substitution =
-                            substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
+                            substitution.push((goal_pred_addr, pred_addr, true));
                         invented_pred_addr = Some(pred_addr);
 
                         if let Strategy::Clause { invent_pred, .. } = &mut self.strategy {
