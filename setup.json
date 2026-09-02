@@ -1,10 +1,71 @@
 {
-    "config" : {
-        "max_depth": 10,
-        "max_clause": 4,
-        "max_pred": 1,
-        "debug": true
+    "config": {
+        "max_depth": 5,
+        "max_clause": 3,
+        "max_pred": 2,
+        "debug": false
     },
-    "body_predicates" : [],
-    "files" : []
+    "examples": {
+        "pos": "examples/colreg/pos/avoid.pl",
+        "neg": "examples/colreg/neg/avoid.pl"
+    },
+    "body_predicates": [
+        "sector/3",
+        "bearing/3",
+        "distance/3",
+        "arc_overtaking/2",
+        "status/2",
+        "waterway/2",
+        "constraint_draught/1",
+        "clock/1",
+        "port_forward/2",
+        "port_aft/2",
+        "starboard_forward/2",
+        "starboard_aft/2",
+        "port/2",
+        "starboard/2",
+        "forward/2",
+        "aft/2",
+        "dcpa_unsafe/2",
+        "dcpa_safe/2",
+        "tcpa_closing/2",
+        "range_actionable/2",
+        "time_ample/3",
+        "risk_collision/2",
+        "close_quarters_developing/2",
+        "close_quarters/2",
+        "conduct/4",
+        "extremis_override/2",
+        "cites/2",
+        "less_than/2",
+        "less_or_equal/2",
+        "greater_than/2",
+        "greater_or_equal/2",
+        "cpa_acceptable/2",
+        "insubstantial/1",
+        "small/1",
+        "moderate/1",
+        "large/1",
+        "very_large/1",
+        
+        "range_gt/3",
+        "range_lt/3",
+        "range_ge/3",
+        "range_le/3",
+
+        "tcpa_gt/3",
+        "tcpa_lt/3",
+        "tcpa_ge/3",
+        "tcpa_le/3",
+        
+        "dcpa_gt/3",
+        "dcpa_lt/3",
+        "dcpa_ge/3",
+        "dcpa_le/3"
+    ],
+    "files": [
+        "examples/colreg/combined_bk.pl", "examples/colreg/meta.pl", "examples/colreg/waypoint_meta.pl"
+    ],
+    "top_prog": true,
+    "reduce": true
 }

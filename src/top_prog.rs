@@ -10,15 +10,9 @@ use std::{
 };
 
 use crate::{
-    app::{App, TopProg},
-    heap::{
-        heap::{Cell, Heap, Tag},
-        query_heap::QueryHeap,
-    },
-    parser::{build_tree::TokenStream, execute_tree::build_clause, tokeniser::tokenise},
-    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
-    resolution::proof::Proof,
-    Config,
+    Config, app::{App, TopProg}, heap::{
+        heap::{Cell, Heap, Tag}, query_heap::QueryHeap,
+    }, parser::{build_tree::TokenStream, execute_tree::build_clause, tokeniser::tokenise}, program::{clause::{self, Clause}, hypothesis::Hypothesis, predicate_table::PredicateTable}, resolution::proof::Proof,
 };
 
 use lazy_static::lazy_static;
@@ -69,6 +63,15 @@ impl App {
             "\n=== Generalisation Results ===\n{} unique hypotheses",
             sub_hypotheses.len(),
         );
+        for (i,h) in sub_hypotheses.iter().enumerate(){
+            println!("=========================");
+            println!("==== Hypothesis {i}=======");
+            println!("=========================");
+            for clause in h{
+                println!("{}", clause.to_string(&cells))
+            }
+        }
+
 
         // Step 2: Specialise
         let retained = specialise(

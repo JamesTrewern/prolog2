@@ -1,0 +1,13 @@
+avoid(agent0,cruiseliner1_0,no_risk).
+avoid(agent1,cruiseliner1_1,no_risk).
+avoid(agent2,cruiseliner1_2,no_risk).
+avoid(agent3,cruiseliner1_3,no_risk).
+avoid(agent4,cruiseliner1_4,no_risk).
+avoid(agent5,cruiseliner1_5,no_risk).
+avoid(agent6,cruiseliner1_6,short_close).
+avoid(agent7,cruiseliner1_7,no_risk).
+avoid(agent8,cruiseliner1_8,no_risk).
+avoid(agent9,cruiseliner1_9,no_risk).
+avoid(agent10,cruiseliner1_10,no_risk).
+avoid(agent11,cruiseliner1_11,no_risk).
+avoid(agent12,cruiseliner1_12,no_risk).

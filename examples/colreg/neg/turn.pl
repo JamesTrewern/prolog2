@@ -1,0 +1,13 @@
+turn(agent0,insubstantial).
+turn(agent0,moderate).
+turn(agent1,insubstantial).
+turn(agent2,insubstantial).
+turn(agent3,insubstantial).
+turn(agent5,large).
+turn(agent6,large).
+turn(agent7,insubstantial).
+turn(agent8,insubstantial).
+turn(agent9,insubstantial).
+turn(agent10,insubstantial).
+turn(agent11,insubstantial).
+turn(agent13,large).
