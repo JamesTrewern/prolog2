@@ -1,3 +1,9 @@
+
+
+
+
+
+
 %  GEOMETRIC ABSTRACTION
 port_forward(X,Y)      :- sector(X,Y,port_bow_forward).
 port_forward(X,Y)      :- sector(X,Y,port_bow_broad).
@@ -51,6 +57,18 @@ less_and_adjacent(large,very_large).
 less_and_adjacent(moderate,large).
 less_and_adjacent(small,moderate).
 less_and_adjacent(insubstantial,small).
+
+% Avoid Resume Risks
+less_and_adjacent(no_risk, risk_developing).
+less_and_adjacent(risk_developing, medium_close).
+less_and_adjacent(medium_close, medium_veryclose).
+less_and_adjacent(medium_veryclose, medium_close).
+less_and_adjacent(medium_critical, short_close).
+less_and_adjacent(short_close, short_veryclose).
+less_and_adjacent(short_veryclose, short_critical).
+less_and_adjacent(short_critical, imminent_close).
+less_and_adjacent(imminent_close, imminent_veryclose).
+less_and_adjacent(imminent_veryclose, imminent_critical).
 
 less_than(X,Y) :- 
     less_and_adjacent(X,Z), 
@@ -179,6 +197,8 @@ encounter_and_duty(X,Y,rule13_overtaking,rule17_standon) :- encounter(Y,X,rule13
 encounter_and_duty(X,Y,rule14_head_on,rule16_giveway)    :- encounter(X,Y,rule14_head_on).        % head-on: mutual
 encounter_and_duty(X,Y,rule15_crossing,rule16_giveway)   :- encounter(X,Y,rule15_crossing), starboard(X,Y).
 encounter_and_duty(X,Y,rule15_crossing,rule17_standon)   :- encounter(X,Y,rule15_crossing), port(X,Y).
+encounter_and_duty(X,Y,rule15_crossing,rule16_giveway)   :- encounter(X,Y,rule15_crossing), port(Y,X).
+encounter_and_duty(X,Y,rule15_crossing,rule17_standon)   :- encounter(X,Y,rule15_crossing), starboard(Y,X).
 
 
 %  CONDUCT  (action form of the duty) - only stand-on is sub-classified, by ample_time
@@ -192,115 +212,115 @@ conduct(X,Y,rule17_standon_must_act) :- encounter_and_duty(X,Y,_,rule17_standon)
 
 rule2_extremis(X,Y) :- dcpa_unacceptable(X,Y), tcpa(X,Y,imminent).
 %might be a cleaner way to do this
-sector(agent0,cruiseliner1,starboard_bow_forward).
-range(agent0,cruiseliner1,very_far).
-dcpa(agent0,cruiseliner1,critical).
-tcpa(agent0,cruiseliner1,long).
-sector(cruiseliner1,agent0,port_bow_broad).
-range(cruiseliner1,agent0,very_far).
-dcpa(cruiseliner1,agent0,critical).
-tcpa(cruiseliner1,agent0,long).
-sector(agent1,cruiseliner1,starboard_bow_forward).
-range(agent1,cruiseliner1,middle).
-dcpa(agent1,cruiseliner1,critical).
-tcpa(agent1,cruiseliner1,short).
-sector(cruiseliner1,agent1,port_bow_broad).
-range(cruiseliner1,agent1,middle).
-dcpa(cruiseliner1,agent1,critical).
-tcpa(cruiseliner1,agent1,short).
-sector(agent2,cruiseliner1,starboard_bow_forward).
-range(agent2,cruiseliner1,far).
-dcpa(agent2,cruiseliner1,critical).
-tcpa(agent2,cruiseliner1,medium).
-sector(cruiseliner1,agent2,port_bow_broad).
-range(cruiseliner1,agent2,far).
-dcpa(cruiseliner1,agent2,critical).
-tcpa(cruiseliner1,agent2,medium).
-sector(agent3,cruiseliner1,port_bow_broad).
-range(agent3,cruiseliner1,very_far).
-dcpa(agent3,cruiseliner1,critical).
-tcpa(agent3,cruiseliner1,long).
-sector(cruiseliner1,agent3,starboard_bow_broad).
-range(cruiseliner1,agent3,very_far).
-dcpa(cruiseliner1,agent3,critical).
-tcpa(cruiseliner1,agent3,long).
-sector(agent4,cruiseliner1,port_bow_broad).
-range(agent4,cruiseliner1,far).
-dcpa(agent4,cruiseliner1,critical).
-tcpa(agent4,cruiseliner1,medium).
-sector(cruiseliner1,agent4,starboard_bow_broad).
-range(cruiseliner1,agent4,far).
-dcpa(cruiseliner1,agent4,critical).
-tcpa(cruiseliner1,agent4,medium).
-sector(agent5,cruiseliner1,port_bow_broad).
-range(agent5,cruiseliner1,middle).
-dcpa(agent5,cruiseliner1,critical).
-tcpa(agent5,cruiseliner1,short).
-sector(cruiseliner1,agent5,starboard_bow_broad).
-range(cruiseliner1,agent5,middle).
-dcpa(cruiseliner1,agent5,critical).
-tcpa(cruiseliner1,agent5,short).
-sector(agent6,cruiseliner1,port_bow_broad).
-range(agent6,cruiseliner1,very_near).
-dcpa(agent6,cruiseliner1,critical).
-tcpa(agent6,cruiseliner1,imminent).
-sector(cruiseliner1,agent6,starboard_bow_broad).
-range(cruiseliner1,agent6,very_near).
-dcpa(cruiseliner1,agent6,critical).
-tcpa(cruiseliner1,agent6,imminent).
-sector(agent7,cruiseliner1,ahead).
-range(agent7,cruiseliner1,very_far).
-sector(cruiseliner1,agent7,ahead).
-range(cruiseliner1,agent7,very_far).
-waypoint_reached(cruiseliner1).
-sector(agent8,cruiseliner1,ahead).
-range(agent8,cruiseliner1,very_far).
-dcpa(agent8,cruiseliner1,critical).
-tcpa(agent8,cruiseliner1,medium).
-sector(cruiseliner1,agent8,ahead).
-range(cruiseliner1,agent8,very_far).
-dcpa(cruiseliner1,agent8,critical).
-tcpa(cruiseliner1,agent8,medium).
-sector(agent9,cruiseliner1,ahead).
-range(agent9,cruiseliner1,middle).
-dcpa(agent9,cruiseliner1,critical).
-tcpa(agent9,cruiseliner1,short).
-sector(cruiseliner1,agent9,ahead).
-range(cruiseliner1,agent9,middle).
-dcpa(cruiseliner1,agent9,critical).
-tcpa(cruiseliner1,agent9,short).
-sector(agent10,cruiseliner1,ahead).
-range(agent10,cruiseliner1,middle).
-dcpa(agent10,cruiseliner1,critical).
-tcpa(agent10,cruiseliner1,long).
-sector(cruiseliner1,agent10,astern).
-arc_overtaking(agent10,cruiseliner1).
-range(cruiseliner1,agent10,middle).
-dcpa(cruiseliner1,agent10,critical).
-tcpa(cruiseliner1,agent10,long).
-sector(agent11,cruiseliner1,ahead).
-range(agent11,cruiseliner1,near).
-dcpa(agent11,cruiseliner1,critical).
-tcpa(agent11,cruiseliner1,medium).
-sector(cruiseliner1,agent11,astern).
-arc_overtaking(agent11,cruiseliner1).
-range(cruiseliner1,agent11,near).
-dcpa(cruiseliner1,agent11,critical).
-tcpa(cruiseliner1,agent11,medium).
-sector(agent12,cruiseliner1,ahead).
-range(agent12,cruiseliner1,very_near).
-dcpa(agent12,cruiseliner1,critical).
-tcpa(agent12,cruiseliner1,short).
-sector(cruiseliner1,agent12,astern).
-arc_overtaking(agent12,cruiseliner1).
-range(cruiseliner1,agent12,very_near).
-dcpa(cruiseliner1,agent12,critical).
-tcpa(cruiseliner1,agent12,short).
-sector(agent13,vessel1,starboard_beam_forward).
-range(agent13,vessel1,far).
-dcpa(agent13,vessel1,safe).
-tcpa(agent13,vessel1,short).
-sector(vessel1,agent13,starboard_bow_broad).
-range(vessel1,agent13,far).
-dcpa(vessel1,agent13,safe).
-tcpa(vessel1,agent13,short).
+sector(agent0,cruiseliner1_0,starboard_bow_forward).
+range(agent0,cruiseliner1_0,very_far).
+dcpa(agent0,cruiseliner1_0,critical).
+tcpa(agent0,cruiseliner1_0,long).
+sector(cruiseliner1_0,agent0,port_bow_broad).
+range(cruiseliner1_0,agent0,very_far).
+dcpa(cruiseliner1_0,agent0,critical).
+tcpa(cruiseliner1_0,agent0,long).
+sector(agent1,cruiseliner1_1,starboard_bow_forward).
+range(agent1,cruiseliner1_1,middle).
+dcpa(agent1,cruiseliner1_1,critical).
+tcpa(agent1,cruiseliner1_1,short).
+sector(cruiseliner1_1,agent1,port_bow_broad).
+range(cruiseliner1_1,agent1,middle).
+dcpa(cruiseliner1_1,agent1,critical).
+tcpa(cruiseliner1_1,agent1,short).
+sector(agent2,cruiseliner1_2,starboard_bow_forward).
+range(agent2,cruiseliner1_2,far).
+dcpa(agent2,cruiseliner1_2,critical).
+tcpa(agent2,cruiseliner1_2,medium).
+sector(cruiseliner1_2,agent2,port_bow_broad).
+range(cruiseliner1_2,agent2,far).
+dcpa(cruiseliner1_2,agent2,critical).
+tcpa(cruiseliner1_2,agent2,medium).
+sector(agent3,cruiseliner1_3,port_bow_broad).
+range(agent3,cruiseliner1_3,very_far).
+dcpa(agent3,cruiseliner1_3,critical).
+tcpa(agent3,cruiseliner1_3,long).
+sector(cruiseliner1_3,agent3,starboard_bow_broad).
+range(cruiseliner1_3,agent3,very_far).
+dcpa(cruiseliner1_3,agent3,critical).
+tcpa(cruiseliner1_3,agent3,long).
+sector(agent4,cruiseliner1_4,port_bow_broad).
+range(agent4,cruiseliner1_4,far).
+dcpa(agent4,cruiseliner1_4,critical).
+tcpa(agent4,cruiseliner1_4,medium).
+sector(cruiseliner1_4,agent4,starboard_bow_broad).
+range(cruiseliner1_4,agent4,far).
+dcpa(cruiseliner1_4,agent4,critical).
+tcpa(cruiseliner1_4,agent4,medium).
+sector(agent5,cruiseliner1_5,port_bow_broad).
+range(agent5,cruiseliner1_5,middle).
+dcpa(agent5,cruiseliner1_5,critical).
+tcpa(agent5,cruiseliner1_5,short).
+sector(cruiseliner1_5,agent5,starboard_bow_broad).
+range(cruiseliner1_5,agent5,middle).
+dcpa(cruiseliner1_5,agent5,critical).
+tcpa(cruiseliner1_5,agent5,short).
+sector(agent6,cruiseliner1_6,port_bow_broad).
+range(agent6,cruiseliner1_6,very_near).
+dcpa(agent6,cruiseliner1_6,critical).
+tcpa(agent6,cruiseliner1_6,imminent).
+sector(cruiseliner1_6,agent6,starboard_bow_broad).
+range(cruiseliner1_6,agent6,very_near).
+dcpa(cruiseliner1_6,agent6,critical).
+tcpa(cruiseliner1_6,agent6,imminent).
+sector(agent7,cruiseliner1_7,ahead).
+range(agent7,cruiseliner1_7,very_far).
+sector(cruiseliner1_7,agent7,ahead).
+range(cruiseliner1_7,agent7,very_far).
+waypoint_reached(cruiseliner1_7).
+sector(agent8,cruiseliner1_8,ahead).
+range(agent8,cruiseliner1_8,very_far).
+dcpa(agent8,cruiseliner1_8,critical).
+tcpa(agent8,cruiseliner1_8,medium).
+sector(cruiseliner1_8,agent8,ahead).
+range(cruiseliner1_8,agent8,very_far).
+dcpa(cruiseliner1_8,agent8,critical).
+tcpa(cruiseliner1_8,agent8,medium).
+sector(agent9,cruiseliner1_9,ahead).
+range(agent9,cruiseliner1_9,middle).
+dcpa(agent9,cruiseliner1_9,critical).
+tcpa(agent9,cruiseliner1_9,short).
+sector(cruiseliner1_9,agent9,ahead).
+range(cruiseliner1_9,agent9,middle).
+dcpa(cruiseliner1_9,agent9,critical).
+tcpa(cruiseliner1_9,agent9,short).
+sector(agent10,cruiseliner1_10,ahead).
+range(agent10,cruiseliner1_10,middle).
+dcpa(agent10,cruiseliner1_10,critical).
+tcpa(agent10,cruiseliner1_10,long).
+sector(cruiseliner1_10,agent10,astern).
+arc_overtaking(agent10,cruiseliner1_10).
+range(cruiseliner1_10,agent10,middle).
+dcpa(cruiseliner1_10,agent10,critical).
+tcpa(cruiseliner1_10,agent10,long).
+sector(agent11,cruiseliner1_11,ahead).
+range(agent11,cruiseliner1_11,near).
+dcpa(agent11,cruiseliner1_11,critical).
+tcpa(agent11,cruiseliner1_11,medium).
+sector(cruiseliner1_11,agent11,astern).
+arc_overtaking(agent11,cruiseliner1_11).
+range(cruiseliner1_11,agent11,near).
+dcpa(cruiseliner1_11,agent11,critical).
+tcpa(cruiseliner1_11,agent11,medium).
+sector(agent12,cruiseliner1_12,ahead).
+range(agent12,cruiseliner1_12,very_near).
+dcpa(agent12,cruiseliner1_12,critical).
+tcpa(agent12,cruiseliner1_12,short).
+sector(cruiseliner1_12,agent12,astern).
+arc_overtaking(agent12,cruiseliner1_12).
+range(cruiseliner1_12,agent12,very_near).
+dcpa(cruiseliner1_12,agent12,critical).
+tcpa(cruiseliner1_12,agent12,short).
+sector(agent13,vessel_13,starboard_beam_forward).
+range(agent13,vessel_13,far).
+dcpa(agent13,vessel_13,safe).
+tcpa(agent13,vessel_13,short).
+sector(vessel_13,agent13,starboard_bow_broad).
+range(vessel_13,agent13,far).
+dcpa(vessel_13,agent13,safe).
+tcpa(vessel_13,agent13,short).
