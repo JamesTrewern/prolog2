@@ -6,22 +6,17 @@
 use smallvec::SmallVec;
 
 use crate::{
-    heap::{
-        Heap, HeapPoint, QueryHeap, SymbolDB, Tag,
-        VarBind::{self, Addr},
-    },
-    predicate_modules::{PredReturn, PredicateFunction},
-    program::{
+    Config, heap::{
+        Heap, HeapPoint, QueryHeap, SymbolDB, Tag, VarBind::{self, Addr, Var},
+    }, predicate_modules::{PredReturn, PredicateFunction}, program::{
         clause::{Clause, MAX_ARG},
         hypothesis::Hypothesis,
         predicate_table::{Predicate, PredicateTable},
-    },
-    resolution::{
+    }, resolution::{
         build::{build, re_build_bound_arg_terms},
         constraints::pre_pass_constraint,
         unification::unify,
     },
-    Config,
 };
 /// How a goal is resolved: either by unifying with clauses or by calling a
 /// native predicate function.
@@ -248,9 +243,9 @@ impl Env {
                     *invent_pred = false;
                 }
             }
-            heap.truncate(self.heap_point);
         }
         heap.unbind(&self.bound_vars);
+        heap.truncate(self.heap_point);
         self.children
     }
 
@@ -443,6 +438,7 @@ impl Env {
             };
             for constraints in &hypothesis.constraints {
                 if !heap.check_constraints(constraints) {
+                    heap.unbind(&substitution.get_bound_vars());
                     continue 'choices;
                 }
             }
@@ -468,13 +464,14 @@ impl Env {
             let mut invented_pred_addr: Option<usize> = None;
             if clause.meta() {
                 if heap.symbol_arity(head).0 == 0 && heap.symbol_arity(self.goal).0 == 0 {
-                    let pred_symbol =
-                        SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
-                    let pred_addr = heap.set_const(pred_symbol);
-                    substitution.set_arg(0, Addr(pred_addr));
-                    // substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
-                    todo!("push invented pred, could be ignored");
-                    invented_pred_addr = Some(pred_addr);
+                    //TODO handle not meta clause with variable head.
+                    // let pred_symbol =
+                    //     SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
+                    // let pred_addr = heap.set_const(pred_symbol);
+                    // substitution.set_arg(0, Addr(pred_addr));
+                    // // substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
+                    // todo!("push invented pred, could be ignored");
+                    // invented_pred_addr = Some(pred_addr);
 
                     if let Strategy::Clause { invent_pred, .. } = &mut self.strategy {
                         *invent_pred = true;
@@ -503,7 +500,10 @@ impl Env {
                 let mut constraints = Vec::with_capacity(16);
                 for i in 0..MAX_ARG {
                     if clause.constrained_var(i) {
-                        todo!("How to construct new contraints?")
+                        let Some(Var(var_id)) = substitution.get_arg(i) else{
+                            unreachable!("All constrained args should have a var id");
+                        };
+                        constraints.push(var_id);
                         // constraints.push(unsafe { let VarBind::substitution.get_arg(i).unwrap_unchecked() });
                     }
                 }
