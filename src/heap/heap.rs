@@ -324,8 +324,13 @@ pub trait Heap:
 
     ///Debug function for printing formatted string of current heap state
     fn _print_heap(&self) {
+        self._print_heap_from(0);
+    }
+
+    ///Debug function for printing formatted string of current heap state
+    fn _print_heap_from(&self, from: usize) {
         let w = 6;
-        for i in 0..self.heap_len() {
+        for i in from..self.heap_len() {
             let (tag, value) = self[i];
             match tag {
                 Con => {
