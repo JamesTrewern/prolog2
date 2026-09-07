@@ -109,6 +109,18 @@ impl<'a> QueryHeap<'a> {
         self.var_regs.push(value);
         var_id
     }
+
+    pub fn _print_var_regs(&self){
+        println!("Var Regs");
+        println!("------------");
+        for (i, var_reg) in self.var_regs.iter().enumerate(){
+            match var_reg.get_bind() {
+                Some(bind) => println!("{i:3}: {bind:?}"),
+                None => println!("{i:3}: UNBOUND"),
+            }
+        }
+        println!("------------");
+    }
 }
 
 impl Heap for QueryHeap<'_> {
