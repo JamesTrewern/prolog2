@@ -151,7 +151,6 @@ pub trait Heap:
             match self[addr] {
                 (Arg, arg_id) => {
                     if let Some(pos) = args.iter().position(|&arg_id2| arg_id == arg_id2) {
-                        println!("pos: {pos}, arg_id: {arg_id}");
                         self[addr].1 = pos;
                     } else {
                         self[addr].1 = args.len();
