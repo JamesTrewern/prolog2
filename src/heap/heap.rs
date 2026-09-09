@@ -206,11 +206,11 @@ pub trait Heap:
         }
     }
 
-    fn pred_var(&self, addr: usize) -> Option<usize>{
-        if self[addr].0 != Comp{
+    fn pred_var(&self, addr: usize) -> Option<usize> {
+        if self[addr].0 != Comp {
             return None;
         }
-        let (Ref, var_id) = self[addr+1] else{
+        let (Ref, var_id) = self[addr + 1] else {
             return None;
         };
         match self.var_deref(var_id) {
@@ -222,6 +222,24 @@ pub trait Heap:
     /// Given address to a str cell create an operator over the sub terms addresses, including functor/predicate
     fn str_iterator(&self, addr: usize) -> RangeInclusive<usize> {
         addr + 1..=addr + self[addr].1
+    }
+
+    /// Find length of term on heap, ignoring dereference jumps.
+    /// This length can be used to skip over subterms
+    fn term_len(&self, mut addr: usize) -> usize {
+        let mut term_len = 0;
+        let mut cells_left = 1;
+        while cells_left > 0 {
+            match self[addr] {
+                (Comp | Tup | Set, len) => cells_left += len,
+                LIS => cells_left += 2,
+                _ => (),
+            }
+            cells_left -= 1;
+            term_len += 1;
+            addr += 1;
+        }
+        term_len
     }
 
     /// Clone term from another heap, replacing ref cells with fresh references
@@ -282,7 +300,7 @@ pub trait Heap:
     }
 
     fn term_equal(&self, addr1: usize, addr2: usize) -> bool {
-        if addr1 == addr2{
+        if addr1 == addr2 {
             return true;
         }
         let (mut walk1, mut walk2) = (TermWalk::new(addr1), TermWalk::new(addr2));
