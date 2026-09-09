@@ -547,10 +547,10 @@ impl App {
         let goals = build_clause(literals, None, None, &mut query_heap, true);
         let mut vars = Vec::new();
         for literal in goals.iter() {
-            vars.extend(query_heap.term_vars(*literal, false).iter().map(|addr| {
+            vars.extend(query_heap.term_vars(*literal, false).iter().map(|&var_id| {
                 (
-                    SymbolDB::get_var(*addr, query_heap.get_id(*addr)).unwrap(),
-                    *addr,
+                    SymbolDB::get_var(var_id, query_heap.get_id(var_id)).unwrap(),
+                    var_id,
                 )
             }));
         }
@@ -727,7 +727,15 @@ impl<'a> Iterator for QuerySession<'a> {
             let bindings = self
                 .vars
                 .iter()
-                .map(|(name, addr)| (name.clone(), self.heap.term_string(*addr)))
+                .map(|(name, var_id)| {
+                    (
+                        name.clone(),
+                        match self.heap.var_deref(*var_id) {
+                            crate::heap::VarBind::Var(var_id) => format!("Ref_{var_id}"),
+                            crate::heap::VarBind::Addr(addr) => self.heap.term_string(addr),
+                        },
+                    )
+                })
                 .collect();
             let hypothesis = if self.proof.hypothesis.len() > 0 {
                 for clause in self.proof.hypothesis.iter() {
