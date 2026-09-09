@@ -26,6 +26,45 @@ pub struct Config {
     /// Enable debug trace output.
     #[serde(default)]
     pub debug: bool,
+    /// Keep invented predicates insulated from the rest of the program.
+    ///
+    /// An invented predicate is an unbound variable shared across the
+    /// hypothesis rather than a minted constant symbol, which leaves it open
+    /// to two interactions. Both are sound second-order resolution, but both
+    /// destroy the invention:
+    ///
+    /// 1. A goal *on* an invented predicate resolves against a background
+    ///    fact, collapsing the invention into an existing predicate.
+    /// 2. A goal on a predicate that *has background clauses* resolves against
+    ///    a hypothesis clause whose head is an invented predicate, binding
+    ///    that variable to the background symbol and retroactively rewriting
+    ///    every clause in which the invented predicate appears.
+    ///
+    /// When true — the default, including when the field is absent from the
+    /// setup file — both are suppressed where choices are gathered. Set it
+    /// false to allow them.
+    ///
+    /// Note the scope of the second case: it covers only goals on predicates
+    /// the program actually defines. A goal on an *unknown* symbol — which is
+    /// what the target predicate is, having no background clauses of its own —
+    /// is always offered the whole hypothesis, protection or not. That is how
+    /// a clause learned to cover one example is reused to discharge the next,
+    /// and how negative examples are refuted against what has been learned.
+    /// Capture of an invented predicate by the target is left to the
+    /// inequality constraints, which do reach it: the target and the invented
+    /// predicate occur together in the constraint set of the clause that
+    /// introduced them.
+    #[serde(default = "protect_h_preds_default")]
+    pub protect_h_preds: bool,
+}
+
+/// Default for [`Config::protect_h_preds`]: absent means enabled.
+///
+/// `#[serde(default)]` on a `bool` would use `bool::default()`, which is
+/// `false` — the opposite of the intended default — so the field needs an
+/// explicit default function.
+fn protect_h_preds_default() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -35,6 +74,7 @@ impl Default for Config {
             max_clause: 4,
             max_pred: 2,
             debug: false,
+            protect_h_preds: protect_h_preds_default(),
         }
     }
 }

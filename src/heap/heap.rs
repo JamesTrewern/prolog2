@@ -450,7 +450,15 @@ pub trait Heap:
                 Addr(mut ref_addr) => self.term_string_rec(&mut ref_addr, buf),
                 Var(var_id) => match SymbolDB::get_var(var_id, self.get_id(*addr)).to_owned() {
                     Some(symbol) => buf.write_str(&symbol),
-                    None => write!(buf, "Ref_{}", self[*addr].1),
+                    // Name the *representative*, not the cell. Unifying two
+                    // free variables aliases one to the other without binding
+                    // either to a term, so several distinct cell ids can
+                    // denote a single variable. Printing the cell id gives
+                    // that one variable several names, which matters most for
+                    // invented predicates: an invented predicate reached
+                    // through an alias would render as a second, apparently
+                    // unrelated predicate.
+                    None => write!(buf, "Ref_{var_id}"),
                 },
             },
             Int => {

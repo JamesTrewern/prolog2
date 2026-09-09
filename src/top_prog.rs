@@ -307,6 +307,7 @@ fn specialise_thread(
         max_clause: 0,
         max_pred: 0,
         debug: false,
+        protect_h_preds: config.protect_h_preds,
     };
 
     // Build a Hypothesis from the clauses so we can use Proof::with_hypothesis
@@ -348,6 +349,7 @@ fn count_coverage(
         max_clause: 0,
         max_pred: 0,
         debug: false,
+        protect_h_preds: config.protect_h_preds,
     };
 
     let mut h = Hypothesis::new();
@@ -441,6 +443,7 @@ fn reduce<'a>(
         max_clause: 0,
         max_pred: 0,
         debug: false,
+        protect_h_preds: config.protect_h_preds,
     };
 
     let total = hypothesis.len();

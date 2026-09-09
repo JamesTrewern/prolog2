@@ -17,7 +17,6 @@ pub struct Proof {
     pointer: usize,
     pub hypothesis: Hypothesis,
     h_clauses: usize,
-    invented_preds: usize,
 }
 
 impl Proof {
@@ -32,7 +31,6 @@ impl Proof {
             pointer: 0,
             hypothesis,
             h_clauses: 0,
-            invented_preds: 0,
         }
     }
 
@@ -48,7 +46,6 @@ impl Proof {
             pointer: 0,
             hypothesis,
             h_clauses,
-            invented_preds: 0,
         }
     }
 
@@ -78,7 +75,6 @@ impl Proof {
                 &mut self.hypothesis,
                 heap,
                 &mut self.h_clauses,
-                &mut self.invented_preds,
                 config.debug,
             );
         }
@@ -93,7 +89,12 @@ impl Proof {
                     );
                 }
             } else {
-                self.stack[self.pointer].get_choices(heap, &mut self.hypothesis, &predicate_table);
+                self.stack[self.pointer].get_choices(
+                    heap,
+                    &mut self.hypothesis,
+                    &predicate_table,
+                    config.protect_h_preds,
+                );
                 if config.debug {
                     eprintln!(
                         "[TRY] goal={} addr={}",
@@ -106,7 +107,6 @@ impl Proof {
                 heap,
                 &mut self.hypothesis,
                 self.h_clauses < config.max_clause,
-                self.invented_preds < config.max_pred,
                 predicate_table,
                 config,
                 config.debug,
@@ -114,9 +114,6 @@ impl Proof {
                 Some(new_goals) => {
                     if self.stack[self.pointer].new_clause() {
                         self.h_clauses += 1;
-                    }
-                    if self.stack[self.pointer].invent_pred() {
-                        self.invented_preds += 1;
                     }
                     self.pointer += 1;
                     self.stack.splice(self.pointer..self.pointer, new_goals);
@@ -135,7 +132,6 @@ impl Proof {
                         &mut self.hypothesis,
                         heap,
                         &mut self.h_clauses,
-                        &mut self.invented_preds,
                         config.debug,
                     );
                     self.stack

@@ -194,74 +194,113 @@ pub fn normalise_hypothesis(clauses: &[String]) -> Vec<String> {
         }
     }
 
-    // Sort mapping by original token length descending so that
-    // "pred_10" is replaced before "pred_1" (avoids partial matches).
-    mapping.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
-
-    // 4. Apply renaming in sorted clause order
+    // 4. Apply renaming in sorted clause order.
+    //
+    // Rewritten in a single scanning pass rather than by repeated
+    // `str::replace`. Sequential replacement is unsound here because the
+    // names it writes are drawn from the same space as the names it is
+    // still looking for: renaming `pred_5` to `pred_2` and then `pred_2` to
+    // `pred_3` would rewrite the text produced by the first step. Scanning
+    // once and substituting each token as it is found cannot do that, and
+    // it also removes the need to order the mapping by token length to
+    // avoid `pred_1` matching inside `pred_10`.
     order
         .iter()
         .map(|&idx| {
-            let mut s = clauses[idx].clone();
-            for (old, new) in &mapping {
-                s = s.replace(old.as_str(), new.as_str());
+            let s = &clauses[idx];
+            let bytes = s.as_bytes();
+            let mut out = String::with_capacity(s.len());
+            let mut i = 0;
+            while i < bytes.len() {
+                match invented_pred_token_end(bytes, i) {
+                    Some(end) => {
+                        let token = &s[i..end];
+                        match mapping.iter().find(|(old, _)| old == token) {
+                            Some((_, new)) => out.push_str(new),
+                            None => out.push_str(token),
+                        }
+                        i = end;
+                    }
+                    None => {
+                        out.push(bytes[i] as char);
+                        i += 1;
+                    }
+                }
             }
-            s
+            out
         })
         .collect()
 }
 
-/// Replace every `pred_\d+` token in `s` with `replacement`.
+/// Find the invented-predicate token starting at `i`, if there is one.
+///
+/// Returns the index just past the token. Two spellings count:
+///
+/// * `pred_\d+` — the historical form, from when invention minted a fresh
+///   constant symbol for each new predicate.
+/// * `Ref_\d+` **immediately followed by `(`** — what an invented predicate
+///   renders as now that invention leaves it as an unbound variable. The
+///   `(` requirement restricts this to functor position, because an ordinary
+///   free variable sitting in an argument slot renders as `Ref_\d+` too and
+///   must not be renumbered as though it were a predicate.
+fn invented_pred_token_end(bytes: &[u8], i: usize) -> Option<usize> {
+    let (prefix, needs_functor_position) = if bytes[i..].starts_with(b"pred_") {
+        (&b"pred_"[..], false)
+    } else if bytes[i..].starts_with(b"Ref_") {
+        (&b"Ref_"[..], true)
+    } else {
+        return None;
+    };
+
+    let mut j = i + prefix.len();
+    if j >= bytes.len() || !bytes[j].is_ascii_digit() {
+        return None;
+    }
+    while j < bytes.len() && bytes[j].is_ascii_digit() {
+        j += 1;
+    }
+    // Word boundary: `pred_1x` and `pred_1_2` are not tokens.
+    if j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+        return None;
+    }
+    if needs_functor_position && bytes.get(j) != Some(&b'(') {
+        return None;
+    }
+    Some(j)
+}
+
+/// Replace every invented-predicate token in `s` with `replacement`.
 fn replace_pred_ids(s: &str, replacement: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i..].starts_with(b"pred_") {
-            let start = i;
-            i += 5; // skip "pred_"
-            if i < bytes.len() && bytes[i].is_ascii_digit() {
-                // Consume all digits
-                while i < bytes.len() && bytes[i].is_ascii_digit() {
-                    i += 1;
-                }
-                // Check the character after is not alphanumeric/underscore
-                // (word boundary check)
-                if i >= bytes.len() || !(bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
-                    result.push_str(replacement);
-                    continue;
-                }
+        match invented_pred_token_end(bytes, i) {
+            Some(end) => {
+                result.push_str(replacement);
+                i = end;
             }
-            // Not a pred_\d+ token, copy literally
-            result.push_str(&s[start..i]);
-        } else {
-            result.push(bytes[i] as char);
-            i += 1;
+            None => {
+                result.push(bytes[i] as char);
+                i += 1;
+            }
         }
     }
     result
 }
 
-/// Find all `pred_\d+` tokens in `s`, returned in order of appearance.
+/// Find all invented-predicate tokens in `s`, in order of appearance.
 pub fn find_pred_tokens(s: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i..].starts_with(b"pred_") {
-            let start = i;
-            i += 5;
-            if i < bytes.len() && bytes[i].is_ascii_digit() {
-                while i < bytes.len() && bytes[i].is_ascii_digit() {
-                    i += 1;
-                }
-                if i >= bytes.len() || !(bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
-                    tokens.push(s[start..i].to_string());
-                    continue;
-                }
+        match invented_pred_token_end(bytes, i) {
+            Some(end) => {
+                tokens.push(s[i..end].to_string());
+                i = end;
             }
-        } else {
-            i += 1;
+            None => i += 1,
         }
     }
     tokens

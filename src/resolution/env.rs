@@ -27,8 +27,12 @@ pub(crate) enum Strategy {
         choices: Vec<Clause>,
         /// Whether a hypothesis clause was added on the last successful try.
         new_clause: bool,
-        /// Whether a new predicate symbol was invented on the last successful try.
-        invent_pred: bool,
+        /// Var id of the predicate variable that this env registered as an
+        /// invented predicate on the last successful try, if any. Held so that
+        /// [`Env::undo_try`] removes exactly the entry this env added rather
+        /// than relying on the hypothesis' invented set unwinding in step with
+        /// the env stack.
+        invent_pred: Option<usize>,
         total_choice_count: usize,
     },
     /// Resolution via a native predicate function, with optional backtrackable
@@ -90,24 +94,44 @@ impl Env {
         )
     }
 
-    /// Whether the last successful clause try invented a new predicate.
-    pub fn invent_pred(&self) -> bool {
-        matches!(
-            &self.strategy,
-            Strategy::Clause {
-                invent_pred: true,
-                ..
-            }
-        )
+    /// The predicate variable invented by the last successful clause try, if any.
+    pub fn invent_pred(&self) -> Option<usize> {
+        match &self.strategy {
+            Strategy::Clause { invent_pred, .. } => *invent_pred,
+            _ => None,
+        }
     }
 
     // ── choice gathering ────────────────────────────────────────────────
 
+    /// Gather the clauses this goal may resolve against.
+    ///
+    /// `protect` is [`Config::protect_h_preds`]. It insulates invented
+    /// predicates from the rest of the program in the two directions they can
+    /// be reached from, which are separate cases needing separate treatment:
+    ///
+    /// * A goal *on* an invented predicate is denied the background facts,
+    ///   handled in [`Self::get_choices_var_pred`].
+    /// * A goal on a predicate that *has background clauses* is denied the
+    ///   hypothesis clauses that an invented predicate heads, handled in
+    ///   [`Self::get_choices_con_pred`].
+    ///
+    /// Guarding only the first is not enough. The two are not symmetric: the
+    /// first asks what an invented predicate may match, the second asks what
+    /// may match *it*, and a goal on a known predicate never consults the
+    /// invented set at all.
+    ///
+    /// The second guard stops at predicates the program defines. A goal on an
+    /// unknown symbol — the target predicate, which has no background clauses
+    /// — always sees the whole hypothesis, since reusing learned clauses
+    /// across examples is the point of resolving such a goal at all; see the
+    /// `None` arm of [`Self::get_choices_con_pred`].
     pub fn get_choices(
         &mut self,
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
+        protect: bool,
     ) {
         self.got_choices = true;
         self.heap_point = heap.heap_point();
@@ -116,8 +140,12 @@ impl Env {
             self.get_tup_goals(heap);
         } else {
             match heap.symbol_arity(self.goal) {
-                (0, arity) => self.get_choices_var_pred(hypothesis, predicate_table, arity),
-                sym_arr => self.get_choices_con_pred(hypothesis, predicate_table, sym_arr),
+                (0, arity) => {
+                    self.get_choices_var_pred(heap, hypothesis, predicate_table, arity, protect)
+                }
+                sym_arr => {
+                    self.get_choices_con_pred(heap, hypothesis, predicate_table, sym_arr, protect)
+                }
             }
         }
     }
@@ -133,26 +161,46 @@ impl Env {
 
     /// Get choices for a variable predicate goal
     /// Choices is built from:
-    /// body predicates, variable predicate clauses, hypothesis clauses
+    /// hypothesis clauses, variable predicate clauses, and — unless the goal's
+    /// predicate variable already names an invented predicate — body clauses.
+    ///
+    /// The body clauses are withheld for an invented predicate because a goal
+    /// on one must be discharged by the hypothesis or by extending it, never
+    /// by silently aliasing the invented predicate to a background relation.
+    /// The hypothesis itself is always offered: this goal may *be* the
+    /// invented predicate, and denying it its own clauses would leave the
+    /// predicate undefinable.
     fn get_choices_var_pred(
         &mut self,
+        heap: &QueryHeap,
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
         arity: usize,
+        protect: bool,
     ) {
-        // Variable goal — gather meta-rules and body clauses.
+        let invented = protect
+            && heap
+                .pred_var(self.goal)
+                .is_some_and(|var_id| hypothesis.is_invented_pred(heap, var_id));
+
+        // Variable goal — gather meta-rules and body clauses. The whole
+        // hypothesis is offered unfiltered: this goal may *be* an invented
+        // predicate, so the clauses defining invented predicates are exactly
+        // the ones it needs.
         let mut choices = Vec::new();
         choices.extend_from_slice(hypothesis);
 
         if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
             choices.extend_from_slice(clauses);
         }
-        choices.extend(predicate_table.get_body_clauses(arity).cloned());
+        if !invented {
+            choices.extend(predicate_table.get_body_clauses(arity).cloned());
+        }
         let total = choices.len();
         self.strategy = Strategy::Clause {
             choices,
             new_clause: false,
-            invent_pred: false,
+            invent_pred: None,
             total_choice_count: total,
         };
     }
@@ -163,9 +211,11 @@ impl Env {
     /// If symbol/arity is unkown predicate get hypothesis and variable predicate clauses
     fn get_choices_con_pred(
         &mut self,
+        heap: &QueryHeap,
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
         (symbol, arity): (usize, usize),
+        protect: bool,
     ) {
         match predicate_table.get_predicate((symbol, arity)) {
             Some(Predicate::Function(pred_function)) => {
@@ -177,17 +227,26 @@ impl Env {
             }
             Some(Predicate::Clauses(clauses)) => {
                 let mut choices = Vec::new();
-                choices.extend_from_slice(hypothesis);
+                hypothesis.extend_choices(&mut choices, heap, protect);
                 choices.extend_from_slice(clauses);
                 let total = choices.len();
                 self.strategy = Strategy::Clause {
                     choices,
                     new_clause: false,
-                    invent_pred: false,
+                    invent_pred: None,
                     total_choice_count: total,
                 };
             }
             None => {
+                // Unfiltered, unlike the known-predicate branch above. An
+                // unknown symbol is typically the target predicate, which by
+                // definition has no background clauses, so every goal on it
+                // must see the whole hypothesis: that is how a hypothesis
+                // learned from the first example is reused to discharge the
+                // rest. Capture of an invented predicate by the target is
+                // instead left to the inequality constraints, which do cover
+                // it — the target and the invented predicate appear together
+                // in the constraint set of the clause that introduced them.
                 let mut choices = Vec::new();
                 choices.extend_from_slice(hypothesis);
                 if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
@@ -197,7 +256,7 @@ impl Env {
                 self.strategy = Strategy::Clause {
                     choices,
                     new_clause: false,
-                    invent_pred: false,
+                    invent_pred: None,
                     total_choice_count: total,
                 };
             }
@@ -211,7 +270,6 @@ impl Env {
         hypothesis: &mut Hypothesis,
         heap: &mut QueryHeap,
         h_clauses: &mut usize,
-        invented_preds: &mut usize,
         debug: bool,
     ) -> usize {
         if debug {
@@ -238,9 +296,8 @@ impl Env {
                 }
                 *h_clauses -= 1;
                 *new_clause = false;
-                if *invent_pred {
-                    *invented_preds -= 1;
-                    *invent_pred = false;
+                if let Some(var_id) = invent_pred.take() {
+                    hypothesis.remove_invented_pred(var_id);
                 }
             }
         }
@@ -278,7 +335,6 @@ impl Env {
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
         allow_new_clause: bool,
-        allow_new_pred: bool,
         predicate_table: &PredicateTable,
         config: Config,
         debug: bool,
@@ -302,7 +358,6 @@ impl Env {
                 heap,
                 hypothesis,
                 allow_new_clause,
-                allow_new_pred,
                 predicate_table,
                 config,
                 debug,
@@ -391,7 +446,6 @@ impl Env {
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
         allow_new_clause: bool,
-        allow_new_pred: bool,
         _predicate_table: &PredicateTable,
         _config: Config,
         debug: bool,
@@ -422,20 +476,14 @@ impl Env {
             choices_tried += 1;
             let head = clause.head();
 
-            if clause.meta() {
-                if !allow_new_clause {
-                    continue;
-                } else if !allow_new_pred
-                    && heap.symbol_arity(head).0 == 0
-                    && heap.symbol_arity(self.goal).0 == 0
-                {
-                    continue;
-                }
+            if clause.meta() && !allow_new_clause {
+                continue;
             }
 
             let Some(mut substitution) = unify(heap, head, self.goal, clause.max_arg_id) else {
                 continue;
             };
+
             for constraints in &hypothesis.constraints {
                 if !heap.check_constraints(constraints) {
                     heap.unbind(&substitution.get_bound_vars());
@@ -460,21 +508,35 @@ impl Env {
 
             re_build_bound_arg_terms(heap, &mut substitution);
 
-            // Check if we need to invent a predicate BEFORE building goals
-            let mut invented_pred_addr: Option<usize> = None;
-            if clause.meta() {
-                if heap.symbol_arity(head).0 == 0 && heap.symbol_arity(self.goal).0 == 0 {
-                    //TODO handle not meta clause with variable head.
-                    // let pred_symbol =
-                    //     SymbolDB::set_const(format!("pred_{}", Hypothesis::next_pred_id()));
-                    // let pred_addr = heap.set_const(pred_symbol);
-                    // substitution.set_arg(0, Addr(pred_addr));
-                    // // substitution.push((heap.deref_addr(self.goal + 1), pred_addr, true));
-                    // todo!("push invented pred, could be ignored");
-                    // invented_pred_addr = Some(pred_addr);
-
-                    if let Strategy::Clause { invent_pred, .. } = &mut self.strategy {
-                        *invent_pred = true;
+            // Register an invented predicate BEFORE building goals.
+            //
+            // A meta clause with a variable head resolving a variable goal has
+            // just unified the two predicate variables, so the goal's predicate
+            // variable now names the head of the clause about to be added. That
+            // variable is the invented predicate; it is left unbound rather than
+            // given a fresh constant symbol, and recorded on the hypothesis so
+            // that later goals on it are denied the background facts.
+            //
+            // If it is already recorded, this clause is extending an existing
+            // invented predicate rather than creating a new one, so there is
+            // nothing for undo_try to remove.
+            if clause.meta()
+                && heap.symbol_arity(head).0 == 0
+                && heap.symbol_arity(self.goal).0 == 0
+            {
+                if let Some(var_id) = heap.pred_var(self.goal) {
+                    if hypothesis.add_invented_pred(heap, var_id) {
+                        if let Strategy::Clause { invent_pred, .. } = &mut self.strategy {
+                            *invent_pred = Some(var_id);
+                        }
+                        if debug {
+                            eprintln!(
+                                "[INVENT_PRED] depth={} var={} goal={}",
+                                self.depth,
+                                var_id,
+                                heap.term_string(self.goal)
+                            );
+                        }
                     }
                 }
             }
@@ -516,12 +578,6 @@ impl Env {
                         heap.term_string(self.goal),
                         new_clause.to_string(heap)
                     );
-                    if invented_pred_addr.is_some() {
-                        eprintln!(
-                            "[INVENT_PRED] invented predicate for goal={}",
-                            heap.term_string(self.goal)
-                        );
-                    }
                 }
                 hypothesis.push_clause(new_clause, SmallVec::from_vec(constraints));
                 if debug {
