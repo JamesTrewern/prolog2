@@ -2,9 +2,13 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use super::{PredReturn, PredicateModule};
 use crate::{
-    heap::{known_symbol_id, Cell, Heap, QueryHeap, Tag},
-    program::hypothesis::Hypothesis,
-    program::predicate_table::PredicateTable,
+    heap::{
+        known_symbol_id, Cell, Heap, QueryHeap,
+        Tag::{self, *},
+        VarBind::Addr,
+    },
+    predicate_modules::helpers::{goal_arg, resolve_to_cell_and_addr},
+    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
 };
 
@@ -77,8 +81,8 @@ impl Number {
 
     fn to_cell(&self) -> Cell {
         match self {
-            Number::Flt(value) => (Tag::Flt, f64::to_bits(*value) as usize),
-            Number::Int(value) => (Tag::Int, isize::cast_unsigned(*value)),
+            Number::Flt(value) => (Flt, f64::to_bits(*value) as usize),
+            Number::Int(value) => (Int, isize::cast_unsigned(*value)),
         }
     }
 
@@ -116,8 +120,8 @@ impl Number {
     /// programmer error and will hit the `unreachable!` branch.
     pub fn from_cell((tag, value): Cell) -> Self {
         match tag {
-            Tag::Flt => Self::flt_from_value(value),
-            Tag::Int => Self::int_from_value(value),
+            Flt => Self::flt_from_value(value),
+            Int => Self::int_from_value(value),
             _ => unreachable!("from_cell called with non-numeric tag {:?}", tag),
         }
     }
@@ -142,8 +146,8 @@ impl TryFrom<Cell> for Number {
 
     fn try_from(value: Cell) -> Result<Self, Self::Error> {
         match value.0 {
-            Tag::Flt => Ok(Self::flt_from_value(value.1)),
-            Tag::Int => Ok(Self::int_from_value(value.1)),
+            Flt => Ok(Self::flt_from_value(value.1)),
+            Int => Ok(Self::int_from_value(value.1)),
             tag => Err(tag),
         }
     }
@@ -228,91 +232,117 @@ impl PartialOrd for Number {
 // ---------------------------------------------------------------------------
 
 fn add(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(evaluate_term(addr + 2, heap)? + evaluate_term(addr + 3, heap)?)
+    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
+    Some(evaluate_term(lhs, heap)? + evaluate_term(rhs, heap)?)
 }
 
 fn sub(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(evaluate_term(addr + 2, heap)? - evaluate_term(addr + 3, heap)?)
+    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
+    Some(evaluate_term(lhs, heap)? - evaluate_term(rhs, heap)?)
 }
 
 fn mul(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(evaluate_term(addr + 2, heap)? * evaluate_term(addr + 3, heap)?)
+    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
+    Some(evaluate_term(lhs, heap)? * evaluate_term(rhs, heap)?)
 }
 
 fn div(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(evaluate_term(addr + 2, heap)? / evaluate_term(addr + 3, heap)?)
+    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
+    Some(evaluate_term(lhs, heap)? / evaluate_term(rhs, heap)?)
 }
 
 fn pow(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(evaluate_term(addr + 2, heap)?.power(evaluate_term(addr + 3, heap)?))
+    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
+    Some(evaluate_term(lhs, heap)?.power(evaluate_term(rhs, heap)?))
 }
 
 fn cos(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().cos()))
+    Some(Number::Flt(
+        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().cos(),
+    ))
 }
 
 fn sin(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().sin()))
+    Some(Number::Flt(
+        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().sin(),
+    ))
 }
 
 fn tan(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().tan()))
+    Some(Number::Flt(
+        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().tan(),
+    ))
 }
 
 fn acos(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().acos()))
+    Some(Number::Flt(
+        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().acos(),
+    ))
 }
 
 fn asin(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().asin()))
+    Some(Number::Flt(
+        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().asin(),
+    ))
 }
 
 fn atan(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().atan()))
+    Some(Number::Flt(
+        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().atan(),
+    ))
 }
 
 fn log(addr: usize, heap: &QueryHeap) -> Option<Number> {
     Some(Number::Flt(
         evaluate_term(addr + 2, heap)?
             .float()
-            .log(evaluate_term(addr + 3, heap)?.float()),
+            .log(evaluate_term(goal_arg(heap, addr, 0), heap)?.float()),
     ))
 }
 
 fn abs(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(evaluate_term(addr + 2, heap)?.abs())
+    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
+    Some(evaluate_term(lhs, heap)?.abs())
 }
 
 fn round(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(evaluate_term(addr + 2, heap)?.round())
+    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
+    Some(evaluate_term(lhs, heap)?.round())
 }
 
 fn to_radians(addr: usize, heap: &QueryHeap) -> Option<Number> {
     Some(Number::Flt(
-        evaluate_term(addr + 2, heap)?.float().to_radians(),
+        evaluate_term(goal_arg(heap, addr, 0), heap)?
+            .float()
+            .to_radians(),
     ))
 }
 
 fn to_degrees(addr: usize, heap: &QueryHeap) -> Option<Number> {
     Some(Number::Flt(
-        evaluate_term(addr + 2, heap)?.float().to_degrees(),
+        evaluate_term(goal_arg(heap, addr, 0), heap)?
+            .float()
+            .to_degrees(),
     ))
 }
 
 fn neg(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(match evaluate_term(addr + 2, heap)? {
+    Some(match evaluate_term(goal_arg(heap, addr, 0), heap)? {
         Number::Int(v) => Number::Int(-v),
         Number::Flt(v) => Number::Flt(-v),
     })
 }
 
 fn sqrt(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(evaluate_term(addr + 2, heap)?.float().sqrt()))
+    Some(Number::Flt(
+        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().sqrt(),
+    ))
 }
 
 /// Evaluate a functor/structure term as an arithmetic expression.
 /// Returns `None` if the functor is not a known arithmetic operator.
 fn evaluate_str(addr: usize, heap: &QueryHeap) -> Option<Number> {
+    println!("Evaluate str {}", heap.term_string(addr));
     let symbol = heap[addr + 1].1;
     let arity = heap[addr].1;
 
@@ -332,13 +362,16 @@ fn evaluate_str(addr: usize, heap: &QueryHeap) -> Option<Number> {
 /// Evaluate a heap term as an arithmetic expression.
 /// Returns `None` if the term is not a number or a known arithmetic expression.
 fn evaluate_term(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    // let addr = heap.deref_addr(addr);
-    // match heap[addr] {
-    //     (Tag::Comp, _) => evaluate_str(addr, heap),
-    //     (tag @ (Tag::Int | Tag::Flt), value) => Some(Number::from_cell((tag, value))),
-    //     _ => None,
-    // }
-    todo!()
+    let (cell, addr) = resolve_to_cell_and_addr(heap, addr);
+    println!(
+        "Evaluate Term: {cell:?}, @{addr}, {}",
+        heap.term_string(addr)
+    );
+    match cell {
+        (Comp, _) => evaluate_str(addr, heap),
+        (tag @ (Int | Flt), value) => Some(Number::from_cell((tag, value))),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -349,16 +382,14 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Option<Number> {
 /// Returns `None` if the goal is malformed or either argument is not a valid
 /// arithmetic expression — the caller should treat this as failure.
 fn eval_comparison(heap: &QueryHeap, goal: usize) -> Option<(Number, Number)> {
-    // let goal_addr = heap.deref_addr(goal);
-    // let func_addr = match heap[goal_addr] {
-    //     (Tag::Comp, _) => goal_addr,
-    //     _ => return None,
-    // };
-    // Some((
-    //     evaluate_term(func_addr + 2, heap)?,
-    //     evaluate_term(func_addr + 3, heap)?,
-    // ))
-    todo!()
+    let ((Comp, 3), comp_addr) = resolve_to_cell_and_addr(heap, goal) else {
+        return None;
+    };
+
+    Some((
+        evaluate_term(goal_arg(heap, goal, 0), heap)?,
+        evaluate_term(goal_arg(heap, goal, 1), heap)?,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -377,32 +408,41 @@ pub fn is_pred(
     _pred_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let goal_addr = heap.deref_addr(goal);
-    // let func_addr = match heap[goal_addr] {
-    //     (Tag::Comp, _) => goal_addr,
-    //     _ => return false.into(),
-    // };
+    let ((Comp, 3), comp_addr) = resolve_to_cell_and_addr(heap, goal) else {
+        return false.into();
+    };
 
-    // let Some(rhs) = evaluate_term(func_addr + 3, heap) else {
-    //     return false.into();
-    // };
-    // let lhs_addr = heap.deref_addr(func_addr + 2);
+    let rhs = match resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1)) {
+        ((Ref, _), _) => {
+            println!("got Ref");
+            return false.into();
+        }
+        (_, addr) => match evaluate_term(addr, heap) {
+            Some(number) => number,
+            None => {
+                println!("couldn't evaluate rhs {}", heap.term_string(addr));
+                return false.into();
+            }
+        },
+    };
 
-    // match heap[lhs_addr] {
-    //     (Tag::Ref, _) => {
-    //         // LHS is unbound — bind it to the result
-    //         let result_addr = heap.heap_push(rhs.to_cell());
-    //         PredReturn::Success(vec![(lhs_addr, result_addr)], vec![])
-    //     }
-    //     _ => {
-    //         // LHS is already bound — check numeric equality
-    //         match evaluate_term(lhs_addr, heap) {
-    //             Some(lhs) => (lhs == rhs).into(),
-    //             None => PredReturn::False,
-    //         }
-    //     }
-    // }
-    todo!()
+    let (cell, lhs_addr) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
+
+    match cell {
+        (Ref, var_id) => {
+            // LHS is unbound — bind it to the result
+            let result_addr = heap.heap_push(rhs.to_cell());
+            heap.bind(var_id, Addr(result_addr));
+            (&[var_id]).into()
+        }
+        _ => {
+            // LHS is already bound — check numeric equality
+            match evaluate_term(lhs_addr, heap) {
+                Some(lhs) => (lhs == rhs).into(),
+                None => PredReturn::False,
+            }
+        }
+    }
 }
 
 /// `</2`: succeeds if LHS evaluates to a number strictly less than RHS.

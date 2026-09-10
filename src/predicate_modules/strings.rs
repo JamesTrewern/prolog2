@@ -494,7 +494,7 @@ fn chars_impl(
     //             .chars()
     //             .map(|c| (Tag::Con, SymbolDB::set_const(c.to_string())))
     //             .collect();
-    //         PredReturn::Success(vec![(r, build_list(heap, &cells))], vec![])
+    //         PredReturn::Success(vec![(r, build_list_from_cells(heap, &cells))], vec![])
     //     }
     //     (None, _) if is_var(heap, text_a) => {
     //         let (Tag::Ref, r) = heap[text_a] else {
@@ -580,7 +580,7 @@ fn codes_impl(
     //             return false.into();
     //         };
     //         let cells: Vec<Cell> = text.chars().map(|c| (Tag::Int, c as usize)).collect();
-    //         PredReturn::Success(vec![(r, build_list(heap, &cells))], vec![])
+    //         PredReturn::Success(vec![(r, build_list_from_cells(heap, &cells))], vec![])
     //     }
     //     (None, _) if is_var(heap, text_a) => {
     //         let (Tag::Ref, r) = heap[text_a] else {

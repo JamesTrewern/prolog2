@@ -6,17 +6,22 @@
 use smallvec::SmallVec;
 
 use crate::{
-    Config, heap::{
-        Heap, HeapPoint, QueryHeap, SymbolDB, Tag, VarBind::{self, Addr, Var},
-    }, predicate_modules::{PredReturn, PredicateFunction}, program::{
+    heap::{
+        Heap, HeapPoint, QueryHeap, SymbolDB, Tag,
+        VarBind::{self, Addr, Var},
+    },
+    predicate_modules::{PredReturn, PredicateFunction},
+    program::{
         clause::{Clause, MAX_ARG},
         hypothesis::Hypothesis,
         predicate_table::{Predicate, PredicateTable},
-    }, resolution::{
+    },
+    resolution::{
         build::{build, re_build_bound_arg_terms},
         constraints::pre_pass_constraint,
         unification::unify,
     },
+    Config,
 };
 /// How a goal is resolved: either by unifying with clauses or by calling a
 /// native predicate function.
@@ -392,12 +397,7 @@ impl Env {
             match function(heap, hypothesis, self.goal, predicate_table, config) {
                 PredReturn::True => return Some(Vec::new()),
                 PredReturn::False => return None,
-                PredReturn::Success(bindings, goals) => {
-                    let mut bound_vars = Vec::with_capacity(bindings.len());
-                    for (var_id, binding) in bindings {
-                        bound_vars.push(var_id);
-                        heap.bind(var_id, binding);
-                    }
+                PredReturn::Success(bound_vars, goals) => {
                     self.bound_vars = bound_vars.into_boxed_slice();
                     if goals.is_empty() {
                         return Some(Vec::new());
@@ -562,7 +562,7 @@ impl Env {
                 let mut constraints = Vec::with_capacity(16);
                 for i in 0..MAX_ARG {
                     if clause.constrained_var(i) {
-                        let Some(Var(var_id)) = substitution.get_arg(i) else{
+                        let Some(Var(var_id)) = substitution.get_arg(i) else {
                             unreachable!("All constrained args should have a var id");
                         };
                         constraints.push(var_id);

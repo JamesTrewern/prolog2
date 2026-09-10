@@ -1,35 +1,49 @@
-use std::{matches, todo};
-
 use crate::{
-    Config, app::Solution, heap::{Cell, EMPTY_LIS, Heap, LIS, QueryHeap, Tag, TermWalk, Walk},
+    app::Solution,
+    heap::{Cell, Heap, QueryHeap, Tag::*, TermWalk, Walk, EMPTY_LIS, LIS},
+    Config,
 };
+
+/// Handle possible dereferencing of ref cells return the Cell value
+/// If addr is not a ref cell simply return `heap[addr]`
+pub fn resolve_to_cell(heap: &QueryHeap, addr: usize) -> Cell {
+    if let (Ref, var_id) = heap[addr] {
+        match heap.var_deref(var_id) {
+            crate::heap::VarBind::Var(var_id) => (Ref, var_id),
+            crate::heap::VarBind::Addr(addr) => heap[addr],
+        }
+    } else {
+        heap[addr]
+    }
+}
+
+/// Handle possible dereferencing of ref cells returning cell and address.
+/// In the case of dereferencing to variable the original addr is returned
+/// but may not point to ref cell with same variable ID.
+/// If addr is not a ref cell simply return `(heap[addr],addr)`
+pub fn resolve_to_cell_and_addr(heap: &QueryHeap, addr: usize) -> (Cell, usize) {
+    if let (Ref, var_id) = heap[addr] {
+        match heap.var_deref(var_id) {
+            crate::heap::VarBind::Var(var_id) => ((Ref, var_id), addr),
+            crate::heap::VarBind::Addr(addr) => (heap[addr], addr),
+        }
+    } else {
+        (heap[addr], addr)
+    }
+}
 
 /// Dereferenced heap address of the nth argument (0-indexed) of `goal`.
 pub fn goal_arg(heap: &QueryHeap, goal: usize, n: usize) -> usize {
-    let mut arg_addr = goal+2;
-    for _ in 0 .. n{
-        let mut cells_left = 1;
-        while cells_left > 0{
-            match heap[arg_addr] {
-                (Tag::Comp|Tag::Tup|Tag::Set, len) => cells_left += len,
-                LIS => cells_left+=2,
-                _ => ()
-            }
-            arg_addr += 1;
-            cells_left -= 1;
-        }
+    let mut arg_addr = goal + 2;
+    for _ in 0..n {
+        arg_addr += heap.term_len(arg_addr)
     }
     arg_addr
 }
 
 /// True if `addr` holds an unbound variable (self-referential `Ref`).
 pub fn is_var(heap: &QueryHeap, addr: usize) -> bool {
-    matches!(heap[addr], (Tag::Ref, r) if r == addr)
-}
-
-/// Resolve any `Str` indirection and return the structure's base address.
-pub fn resolve(heap: &QueryHeap, addr: usize) -> usize {
-    todo!()
+    matches!(heap[addr], (Ref, r) if r == addr)
 }
 
 // ---------------------------------------------------------------------------
@@ -42,13 +56,6 @@ pub fn resolve(heap: &QueryHeap, addr: usize) -> usize {
 // result always points to the actual header cell.
 // ---------------------------------------------------------------------------
 
-/// Return the cell to use when embedding the term at `addr` inside a new
-/// structure on the heap. Derefs, follows `Str`, and wraps compound-like
-/// terms in `Str` indirection.
-fn cell_for_addr(heap: &QueryHeap, addr: usize) -> Cell {
-    todo!()
-}
-
 // ---------------------------------------------------------------------------
 // List reading
 // ---------------------------------------------------------------------------
@@ -57,19 +64,13 @@ fn cell_for_addr(heap: &QueryHeap, addr: usize) -> Cell {
 /// For a proper list the tail will point to an `ELis` cell.
 /// For a partial list like `[a, b | T]` the tail will point to `T`.
 /// Element addresses are dereferenced.
-pub fn read_list_with_tail(heap: &QueryHeap, addr: usize) -> (Vec<usize>, usize) {
-    // let mut result = Vec::new();
-    // let mut current = heap.deref_addr(addr);
-    // loop {
-    //     match heap[current] {
-    //         (Tag::Lis, ptr) => {
-    //             result.push(heap.deref_addr(ptr));
-    //             current = heap.deref_addr(ptr + 1);
-    //         }
-    //         _ => return (result, current),
-    //     }
-    // }
-    todo!()
+pub fn read_list_with_tail(heap: &QueryHeap, mut addr: usize) -> (Vec<usize>, usize) {
+    let mut result = Vec::new();
+    while LIS == heap[addr] {
+        result.push(addr + 1);
+        addr += heap.term_len(addr + 1) + 1;
+    }
+    (result, addr)
 }
 
 /// Read a proper list and return element addresses.
@@ -92,8 +93,8 @@ pub fn read_list_addrs(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>> {
 pub fn read_structure_addrs(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>> {
     // let addr = heap.deref_addr(resolve(heap, addr));
     // match heap[addr].0 {
-    //     Tag::Comp | Tag::Tup | Tag::Set => Some(
-    //         heap.str_iterator(addr)
+    //     Comp | Tup | Set => Some(
+    //         heap.str_args(addr)
     //             .map(|a| heap.deref_addr(a))
     //             .collect(),
     //     ),
@@ -107,16 +108,16 @@ pub fn read_structure_addrs(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>>
 // ---------------------------------------------------------------------------
 
 /// Build a proper list on the heap from pre-made cells.
-pub fn build_list(heap: &mut QueryHeap, cells: &[Cell]) -> usize {
+pub fn build_list_from_cells(heap: &mut QueryHeap, cells: &[Cell]) -> usize {
     if cells.is_empty() {
-        return heap.heap_push((Tag::ELis, 0));
+        return heap.heap_push(EMPTY_LIS);
     }
-    let list_start = heap.heap_push((Tag::Lis, heap.heap_len() + 1));
+    let list_start = heap.heap_len();
     for cell in cells {
+        heap.heap_push(LIS);
         heap.heap_push(*cell);
-        heap.heap_push((Tag::Lis, heap.heap_len() + 1));
     }
-    *heap.cells.last_mut().unwrap() = (Tag::ELis, 0);
+    heap.heap_push(EMPTY_LIS);
     list_start
 }
 
@@ -124,8 +125,28 @@ pub fn build_list(heap: &mut QueryHeap, cells: &[Cell]) -> usize {
 /// Addresses are dereferenced and complex terms are wrapped in `Str`
 /// indirection automatically.
 pub fn build_list_from_addrs(heap: &mut QueryHeap, addrs: &[usize]) -> usize {
-    let cells: Vec<Cell> = addrs.iter().map(|&a| cell_for_addr(heap, a)).collect();
-    build_list(heap, &cells)
+    let list_start = heap.heap_len();
+    for addr in addrs {
+        heap.heap_push(LIS);
+        heap.copy_term(*addr);
+    }
+    heap.heap_push(EMPTY_LIS);
+    list_start
+}
+
+/// Build list from array of cell slices.
+/// Similar to [`predicate_modules::helpers::build_list_from_cells`] but allows pre compiled complex terms
+pub fn build_list_from_terms(heap: &mut QueryHeap, cells: &[&[Cell]]) -> usize {
+    if cells.is_empty() {
+        return heap.heap_push(EMPTY_LIS);
+    }
+    let list_start = heap.heap_len();
+    for cells in cells {
+        heap.heap_push(LIS);
+        heap.cells.extend_from_slice(cells);
+    }
+    heap.heap_push(EMPTY_LIS);
+    list_start
 }
 
 // ---------------------------------------------------------------------------
@@ -133,12 +154,13 @@ pub fn build_list_from_addrs(heap: &mut QueryHeap, addrs: &[usize]) -> usize {
 // ---------------------------------------------------------------------------
 
 /// Build a `Comp` structure on the heap from element addresses.
-/// The first address is typically the functor `Con` cell; the rest are args.
+/// The first address is the functor `Con` cell; the rest are args.
+/// Undefined behaviour may occur if the functor term is complex
 /// Returns the address of the `(Comp, arity)` header cell.
 pub fn build_compound_from_addrs(heap: &mut QueryHeap, addrs: &[usize]) -> usize {
-    let header = heap.heap_push((Tag::Comp, addrs.len()));
-    for &a in addrs {
-        heap.heap_push(cell_for_addr(heap, a));
+    let header = heap.heap_push((Comp, addrs.len()));
+    for &addr in addrs {
+        heap.copy_term(addr);
     }
     header
 }
@@ -146,9 +168,9 @@ pub fn build_compound_from_addrs(heap: &mut QueryHeap, addrs: &[usize]) -> usize
 /// Build a `Tup` structure on the heap from element addresses.
 /// Returns the address of the `(Tup, len)` header cell.
 pub fn build_tuple_from_addrs(heap: &mut QueryHeap, addrs: &[usize]) -> usize {
-    let header = heap.heap_push((Tag::Tup, addrs.len()));
-    for &a in addrs {
-        heap.heap_push(cell_for_addr(heap, a));
+    let header = heap.heap_push((Tup, addrs.len()));
+    for &addr in addrs {
+        heap.copy_term(addr);
     }
     header
 }
@@ -158,24 +180,22 @@ pub fn build_tuple_from_addrs(heap: &mut QueryHeap, addrs: &[usize]) -> usize {
 /// Returns the address of the `(Set, len)` header cell.
 pub fn build_set_from_addrs(heap: &mut QueryHeap, addrs: &[usize]) -> usize {
     let mut unique_addrs: Vec<usize> = Vec::with_capacity(addrs.len());
-    for &a in addrs {
-        if !unique_addrs.iter().any(|&u| heap.term_equal(a, u)) {
-            unique_addrs.push(a);
+    for &addr in addrs {
+        if !unique_addrs.iter().any(|&u| heap.term_equal(addr, u)) {
+            unique_addrs.push(addr);
         }
     }
-    let header = heap.heap_push((Tag::Set, unique_addrs.len()));
-    for &a in unique_addrs.iter() {
-        heap.heap_push(cell_for_addr(heap, a));
+    let header = heap.heap_push((Set, unique_addrs.len()));
+    for &addr in unique_addrs.iter() {
+        heap.copy_term(addr);
     }
     header
 }
 
 /// Build a `Set` on the heap from pre-made cells.
-pub fn build_set(heap: &mut QueryHeap, elements: &[Cell]) -> usize {
-    let addr = heap.heap_push((Tag::Set, elements.len()));
-    for &cell in elements {
-        heap.heap_push(cell);
-    }
+pub fn build_set_from_cells(heap: &mut QueryHeap, elements: &[Cell]) -> usize {
+    let addr = heap.heap_push((Set, elements.len()));
+    heap.cells.extend_from_slice(elements);
     addr
 }
 
@@ -233,6 +253,7 @@ impl TestWrapper {
             .expect("query should parse")
             .next()
             .and_then(|sol| {
+                println!("{:?}", sol.bindings);
                 sol.bindings
                     .into_iter()
                     .find(|(n, _)| n.as_ref() == var)
@@ -242,7 +263,6 @@ impl TestWrapper {
 
     pub fn assert_bindings(&self, query: &str, expected_bindings: &[(&str, &str)]) {
         let solutions: Vec<Solution> = self.app.query_session(query).unwrap().collect();
-        println!("Solution: {:?}", solutions);
         for expected in expected_bindings {
             println!("Test for binding: {} = {}", expected.0, expected.1);
             assert!(solutions.iter().any(|solution| solution
@@ -254,6 +274,7 @@ impl TestWrapper {
 
     pub fn assert_binding(&self, query: &str, expected: (&str, &str)) {
         let solution = self.app.query_session(query).unwrap().next().unwrap();
+        println!("{:?}", solution.bindings);
         assert!(solution
             .bindings
             .iter()

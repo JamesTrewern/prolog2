@@ -17,10 +17,14 @@ pub use defaults::DEFAULTS;
 pub use lists::LISTS;
 pub use maths::MATHS;
 pub use meta_predicates::META_PREDICATES;
+use smallvec::SmallVec;
 pub use strings::STRINGS;
 
 use crate::{
-    Config, heap::{VarBind, QueryHeap}, predicate_modules::sets::SETS, program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    heap::{QueryHeap, VarBind},
+    predicate_modules::sets::SETS,
+    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    Config,
 };
 
 /// Return type for predicate functions.
@@ -48,13 +52,13 @@ pub enum PredReturn {
     ///
     /// - First field: `(source_addr, target_addr)` heap bindings.
     /// - Second field: heap addresses of additional sub-goals to schedule (may be empty).
-    Success(Vec<(usize,VarBind)>, Vec<usize>),
+    Success(SmallVec<[usize; 5]>, Vec<usize>),
     /// Multiple alternative results — each tried on backtracking, like clause choices.
     ///
     /// Each element is a `(bindings, sub_goals)` pair, identical in meaning to
     /// [`Success`](PredReturn::Success). The engine stores these alternatives and
     /// pops one per attempt, undoing bindings on backtrack just like clause choices.
-    Choices(Vec<(Vec<(usize,VarBind)>, Vec<usize>)>),
+    Choices(Vec<(Vec<(usize, VarBind)>, Vec<usize>)>),
 }
 
 impl From<bool> for PredReturn {
@@ -64,6 +68,12 @@ impl From<bool> for PredReturn {
         } else {
             PredReturn::False
         }
+    }
+}
+
+impl<const N: usize> From<&[usize; N]> for PredReturn {
+    fn from(value: &[usize; N]) -> Self {
+        PredReturn::Success(SmallVec::from_slice(value), vec![])
     }
 }
 

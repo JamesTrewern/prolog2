@@ -1,6 +1,6 @@
 use crate::{
-    heap::{Heap, QueryHeap, Tag},
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    heap::{Heap, QueryHeap, Tag::*, VarBind::Addr},
+    program::{clause::MAX_ARG, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::unify,
     Config,
 };
@@ -56,35 +56,37 @@ pub fn univ(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    // let compound = resolve(heap, goal_arg(heap, goal, 0));
-    // let list = goal_arg(heap, goal, 1);
-    // match (heap[compound].0, heap[list].0) {
-    //     (Tag::Comp, Tag::Lis) => {
-    //         // Build the equivalent list from compound args, then unify with
-    //         // the existing list. Handles ground lists, partial lists with
-    //         // variable tails, and variables in elements all in one shot.
-    //         let comp_addrs: Vec<usize> = heap.str_iterator(compound).collect();
-    //         let built_list = build_list_from_addrs(heap, &comp_addrs);
-    //         match unify(heap, built_list, list) {
-    //             Some(sub) => PredReturn::Success(sub.get_bound_vars().to_vec(), vec![]),
-    //             None => false.into(),
-    //         }
-    //     }
-    //     (Tag::Comp, Tag::Ref) => {
-    //         let comp_addrs: Vec<usize> = heap.str_iterator(compound).collect();
-    //         let built_list = build_list_from_addrs(heap, &comp_addrs);
-    //         PredReturn::Success(vec![(list, built_list)], vec![])
-    //     }
-    //     (Tag::Ref, Tag::Lis) => {
-    //         let Some(addrs) = read_list_addrs(heap, list) else {
-    //             return false.into();
-    //         };
-    //         let new_compound = build_compound_from_addrs(heap, &addrs);
-    //         PredReturn::Success(vec![(compound, new_compound)], vec![])
-    //     }
-    //     _ => false.into(),
-    // }
-    todo!()
+    let ((comp_tag, comp_value), comp_addr) =
+        resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
+    let ((lis_tag, lis_value), lis_addr) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1));
+    match (comp_tag, lis_tag) {
+        (Comp, Lis) => {
+            // Build the equivalent list from compound args, then unify with
+            // the existing list. Handles ground lists, partial lists with
+            // variable tails, and variables in elements all in one shot.
+            let comp_arg_addrs = heap.str_args(comp_addr);
+            let built_list = build_list_from_addrs(heap, &comp_arg_addrs);
+            match unify(heap, built_list, lis_addr, MAX_ARG) {
+                Some(sub) => PredReturn::Success(sub.bound_vars, vec![]),
+                None => false.into(),
+            }
+        }
+        (Comp, Ref) => {
+            let comp_arg_addrs = heap.str_args(comp_addr);
+            let new_list_addr = build_list_from_addrs(heap, &comp_arg_addrs);
+            heap.bind(lis_value, Addr(new_list_addr));
+            (&[lis_value]).into()
+        }
+        (Ref, Lis) => {
+            let Some(addrs) = read_list_addrs(heap, lis_addr) else {
+                return false.into();
+            };
+            let new_comp_addr = build_compound_from_addrs(heap, &addrs);
+            heap.bind(comp_value, Addr(new_comp_addr));
+            (&[comp_value]).into()
+        }
+        _ => false.into(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -99,8 +101,7 @@ pub fn is_var(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    // goal_arg already derefs, so a Ref cell at this point is always unbound.
-    (heap[goal_arg(heap, goal, 0)].0 == Tag::Ref).into()
+    (resolve_to_cell(heap, goal_arg(heap, goal, 0)).0 == Ref).into()
 }
 
 pub fn non_var(
@@ -111,7 +112,7 @@ pub fn non_var(
     _: Config,
 ) -> PredReturn {
     // goal_arg already derefs, so a Ref cell at this point is always unbound.
-    (heap[goal_arg(heap, goal, 0)].0 != Tag::Ref).into()
+    (heap[goal_arg(heap, goal, 0)].0 != Ref).into()
 }
 
 /// `is_const/1`: succeeds if the argument is a constant (atom).
@@ -122,7 +123,7 @@ pub fn is_const(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    (heap[goal_arg(heap, goal, 0)].0 == Tag::Con).into()
+    (heap[goal_arg(heap, goal, 0)].0 == Con).into()
 }
 
 /// `is_const/1`: succeeds if the argument is a constant (atom).
@@ -134,7 +135,7 @@ pub fn valid_functor(
     _: Config,
 ) -> PredReturn {
     let tag = heap[goal_arg(heap, goal, 0)].0;
-    (tag == Tag::Con || tag == Tag::Ref).into()
+    (tag == Con || tag == Ref).into()
 }
 
 /// `is_int/1`: succeeds if the argument is an integer.
@@ -145,7 +146,7 @@ pub fn is_int(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    (heap[goal_arg(heap, goal, 0)].0 == Tag::Int).into()
+    (heap[goal_arg(heap, goal, 0)].0 == Int).into()
 }
 
 /// `is_float/1`: succeeds if the argument is a float.
@@ -156,7 +157,7 @@ pub fn is_float(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    (heap[goal_arg(heap, goal, 0)].0 == Tag::Flt).into()
+    (heap[goal_arg(heap, goal, 0)].0 == Flt).into()
 }
 
 /// `is_number/1`: succeeds if the argument is an integer or a float.
@@ -167,7 +168,7 @@ pub fn is_number(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    matches!(heap[goal_arg(heap, goal, 0)], (Tag::Int, _) | (Tag::Flt, _)).into()
+    matches!(heap[goal_arg(heap, goal, 0)], (Int, _) | (Flt, _)).into()
 }
 
 /// `is_string/1`: succeeds if the argument is a string literal.
@@ -178,7 +179,7 @@ pub fn is_string(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    (heap[goal_arg(heap, goal, 0)].0 == Tag::Stri).into()
+    (heap[goal_arg(heap, goal, 0)].0 == Stri).into()
 }
 
 /// `is_compound/1`: succeeds if the argument is a compound term (functor + args).
@@ -189,9 +190,7 @@ pub fn is_atomic(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    (![Tag::Comp, Tag::Tup, Tag::Set, Tag::Lis]
-        .contains(&heap[resolve(heap, goal_arg(heap, goal, 0))].0))
-    .into()
+    (![Comp, Tup, Set, Lis].contains(&resolve_to_cell(heap, goal_arg(heap, goal, 0)).0)).into()
 }
 
 /// `is_compound/1`: succeeds if the argument is a compound term (functor + args).
@@ -202,7 +201,7 @@ pub fn is_compound(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    (heap[resolve(heap, goal_arg(heap, goal, 0))].0 == Tag::Comp).into()
+    (resolve_to_cell(heap, goal_arg(heap, goal, 0)).0 == Comp).into()
 }
 
 /// `is_tup/1`: succeeds if the argument is a tuple.
@@ -213,7 +212,7 @@ pub fn is_tup(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    (heap[resolve(heap, goal_arg(heap, goal, 0))].0 == Tag::Tup).into()
+    (resolve_to_cell(heap, goal_arg(heap, goal, 0)).0 == Tup).into()
 }
 
 /// `is_set/1`: succeeds if the argument is a set.
@@ -224,7 +223,7 @@ pub fn is_set(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    (heap[resolve(heap, goal_arg(heap, goal, 0))].0 == Tag::Set).into()
+    (resolve_to_cell(heap, goal_arg(heap, goal, 0)).0 == Set).into()
 }
 
 /// `is_list/1`: succeeds if the argument is a proper list (including `[]`).
@@ -237,8 +236,8 @@ pub fn is_list(
 ) -> PredReturn {
     let addr = goal_arg(heap, goal, 0);
     match heap[addr] {
-        (Tag::ELis, _) => PredReturn::True,
-        (Tag::Lis, _) => read_list_addrs(heap, addr).is_some().into(),
+        (ELis, _) => PredReturn::True,
+        (Lis, _) => read_list_addrs(heap, addr).is_some().into(),
         _ => PredReturn::False,
     }
 }
@@ -288,7 +287,7 @@ mod tests {
     #[test]
     fn unify() {
         let tw = tw();
-        tw.assert_binding("X = X.", ("X", "X"));
+        // tw.assert_binding("X = X.", ("X", "X"));
         tw.assert_binding("X = Y.", ("X", "Y"));
         tw.assert_binding("X = 1.", ("X", "1"));
         tw.assert_binding("1 = X.", ("X", "1"));

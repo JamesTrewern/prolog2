@@ -1,6 +1,6 @@
 use crate::{
     heap::{Heap, QueryHeap},
-    predicate_modules::helpers::{goal_arg, resolve},
+    predicate_modules::helpers::{goal_arg, resolve_to_cell_and_addr},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::Proof,
     Config,
@@ -17,7 +17,7 @@ pub fn not(
     config: Config,
 ) -> PredReturn {
     //Extract inner negated goal
-    let inner_goal = resolve(heap, goal_arg(heap, goal, 0));
+    let (_, inner_goal) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
 
     // Create a config with learning disabled
     let mut inner_config = config;
