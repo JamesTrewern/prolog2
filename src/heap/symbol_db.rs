@@ -85,9 +85,9 @@ impl SymbolDB {
         SYMBOLS.read().unwrap().const_symbols[id - isize::MAX as usize].clone()
     }
 
-    pub fn get_var(addr: usize, heap_id: usize) -> Option<Arc<str>> {
+    pub fn get_var(var_id: usize, heap_id: usize) -> Option<Arc<str>> {
         let vars = &SYMBOLS.read().unwrap().var_symbol_map;
-        if let Some(symbol) = vars.get(&(addr, heap_id)) {
+        if let Some(symbol) = vars.get(&(var_id, heap_id)) {
             Some(symbol.clone())
         } else {
             None

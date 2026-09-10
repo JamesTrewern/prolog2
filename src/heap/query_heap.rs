@@ -1,3 +1,5 @@
+use crate::heap::SymbolDB;
+
 use super::{
     Cell, Heap,
     Tag::*,
@@ -21,7 +23,7 @@ pub type HeapPoint = (usize, usize);
 /// owned mutable cell buffer for query-time allocations. Supports
 /// branching via an optional parent pointer for backtracking.
 pub struct QueryHeap<'a> {
-    id: usize,
+    pub(crate) id: usize,
     pub(crate) cells: Vec<Cell>,
     prog_cells: &'a [Cell],
     // TODO: handle branching query heap multi-threading
@@ -110,16 +112,23 @@ impl<'a> QueryHeap<'a> {
         var_id
     }
 
-    pub fn _print_var_regs(&self){
+    pub fn _print_var_regs(&self) {
         println!("Var Regs");
         println!("------------");
-        for (i, var_reg) in self.var_regs.iter().enumerate(){
+        for (i, var_reg) in self.var_regs.iter().enumerate() {
             match var_reg.get_bind() {
                 Some(bind) => println!("{i:3}: {bind:?}"),
                 None => println!("{i:3}: UNBOUND"),
             }
         }
         println!("------------");
+    }
+
+    pub fn var_string(&self, var_id: usize) -> String {
+        match SymbolDB::get_var(var_id, self.id) {
+            Some(symbol) => symbol.to_string(),
+            None => format!("Ref_{var_id}"),
+        }
     }
 }
 

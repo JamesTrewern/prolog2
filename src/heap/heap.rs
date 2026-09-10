@@ -220,8 +220,15 @@ pub trait Heap:
     }
 
     /// Given address to a str cell create an operator over the sub terms addresses, including functor/predicate
-    fn str_iterator(&self, addr: usize) -> RangeInclusive<usize> {
-        addr + 1..=addr + self[addr].1
+    fn str_args(&self, mut addr: usize) -> Vec<usize> {
+        let len = self[addr].1;
+        let mut args = Vec::with_capacity(len);
+        addr += 1;
+        for _ in 0..len {
+            args.push(addr);
+            addr += self.term_len(addr);
+        }
+        args
     }
 
     /// Find length of term on heap, ignoring dereference jumps.

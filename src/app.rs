@@ -6,7 +6,7 @@ use console::Term;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    heap::{Cell, Heap, QueryHeap, SymbolDB},
+    heap::{Cell, Heap, QueryHeap, SymbolDB, VarBind::*},
     parser::{build_clause, execute_tree, tokenise, TokenStream},
     predicate_modules::{maths::set_approx_tolerance, PredicateModule, STANDARD_MODULES},
     program::predicate_table::PredicateTable,
@@ -544,15 +544,16 @@ impl App {
         let literals = TokenStream::new(tokenise(query)?).parse_goals()?;
 
         let mut query_heap = QueryHeap::new(&self.prog_heap, None);
-        let goals = build_clause(literals, None, None, &mut query_heap, true);
+        let heap_id = query_heap.id;
+        let goals = build_clause(literals, None, None, &mut query_heap, Some(heap_id));
         let mut vars = Vec::new();
         for literal in goals.iter() {
-            vars.extend(query_heap.term_vars(*literal, false).iter().map(|&var_id| {
-                (
-                    SymbolDB::get_var(var_id, query_heap.get_id(var_id)).unwrap(),
-                    var_id,
-                )
-            }));
+            vars.extend(
+                query_heap
+                    .term_vars(*literal, false)
+                    .iter()
+                    .map(|&var_id| (SymbolDB::get_var(var_id, query_heap.id).unwrap(), var_id)),
+            );
         }
         let proof = Proof::new(&query_heap, &goals);
         Ok(QuerySession {
@@ -731,8 +732,8 @@ impl<'a> Iterator for QuerySession<'a> {
                     (
                         name.clone(),
                         match self.heap.var_deref(*var_id) {
-                            crate::heap::VarBind::Var(var_id) => format!("Ref_{var_id}"),
-                            crate::heap::VarBind::Addr(addr) => self.heap.term_string(addr),
+                            Var(var_id) => self.heap.var_string(var_id),
+                            Addr(addr) => self.heap.term_string(addr),
                         },
                     )
                 })

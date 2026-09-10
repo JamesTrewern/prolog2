@@ -12,7 +12,7 @@ use std::{
 use crate::{
     app::{App, TopProg},
     heap::{Cell, Heap, QueryHeap, Tag},
-    parser::{TokenStream, build_clause, tokenise},
+    parser::{build_clause, tokenise, TokenStream},
     program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::Proof,
     Config,
@@ -121,7 +121,8 @@ fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, Str
     let literals = TokenStream::new(tokenise(example).map_err(|e| e.to_string())?)
         .parse_goals()
         .map_err(|e| format!("Example '{example}' incorrectly formatted: {e}"))?;
-    let clause = build_clause(literals, None, None, query_heap, true);
+    let heap_id = query_heap.id;
+    let clause = build_clause(literals, None, None, query_heap, Some(heap_id));
     Ok(clause[0])
 }
 
