@@ -1,11 +1,11 @@
 //! Proof search via SLD resolution with backtracking and predicate invention.
 
+use super::env::Env;
 use crate::{
     heap::{Heap, QueryHeap},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
 };
-use super::env::Env;
 
 /// The proof search engine.
 ///
@@ -83,7 +83,7 @@ impl Proof {
             if self.stack[self.pointer].got_choices {
                 if config.debug {
                     eprintln!(
-                        "[RETRY] goal={} addr={}",
+                        "[RETRY] {} @{}",
                         heap.term_string(self.stack[self.pointer].goal),
                         self.stack[self.pointer].goal
                     );
@@ -97,7 +97,7 @@ impl Proof {
                 );
                 if config.debug {
                     eprintln!(
-                        "[TRY] goal={} addr={}",
+                        "[TRY] {} @{}",
                         heap.term_string(self.stack[self.pointer].goal),
                         self.stack[self.pointer].goal
                     );
