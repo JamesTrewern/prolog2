@@ -342,7 +342,6 @@ fn sqrt(addr: usize, heap: &QueryHeap) -> Option<Number> {
 /// Evaluate a functor/structure term as an arithmetic expression.
 /// Returns `None` if the functor is not a known arithmetic operator.
 fn evaluate_str(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    println!("Evaluate str {}", heap.term_string(addr));
     let symbol = heap[addr + 1].1;
     let arity = heap[addr].1;
 
@@ -363,10 +362,6 @@ fn evaluate_str(addr: usize, heap: &QueryHeap) -> Option<Number> {
 /// Returns `None` if the term is not a number or a known arithmetic expression.
 fn evaluate_term(addr: usize, heap: &QueryHeap) -> Option<Number> {
     let (cell, addr) = resolve_to_cell_and_addr(heap, addr);
-    println!(
-        "Evaluate Term: {cell:?}, @{addr}, {}",
-        heap.term_string(addr)
-    );
     match cell {
         (Comp, _) => evaluate_str(addr, heap),
         (tag @ (Int | Flt), value) => Some(Number::from_cell((tag, value))),
@@ -413,16 +408,10 @@ pub fn is_pred(
     };
 
     let rhs = match resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1)) {
-        ((Ref, _), _) => {
-            println!("got Ref");
-            return false.into();
-        }
+        ((Ref, _), _) => return false.into(),
         (_, addr) => match evaluate_term(addr, heap) {
             Some(number) => number,
-            None => {
-                println!("couldn't evaluate rhs {}", heap.term_string(addr));
-                return false.into();
-            }
+            None => return false.into(),
         },
     };
 
