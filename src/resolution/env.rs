@@ -294,7 +294,7 @@ impl Env {
                 let clause = hypothesis.pop_clause();
                 if debug {
                     eprintln!(
-                        "[UNDO_CLAUSE] depth={} clause={}",
+                        "[UNDO_CLAUSE|{}] clause={}",
                         self.depth,
                         clause.to_string(heap)
                     );
@@ -347,7 +347,7 @@ impl Env {
         if self.depth > config.max_depth {
             if debug {
                 eprintln!(
-                    "[FAIL_ON_DEPTH] depth={} goal={}",
+                    "[FAIL_ON_DEPTH|{}] goal={}",
                     self.depth,
                     heap.term_string(self.goal),
                 );
@@ -396,7 +396,12 @@ impl Env {
             *called = true;
             match function(heap, hypothesis, self.goal, predicate_table, config) {
                 PredReturn::True => return Some(Vec::new()),
-                PredReturn::False => return None,
+                PredReturn::False => {
+                    if config.debug {
+                        println!("[FAILED] {}", heap.term_string(self.goal))
+                    }
+                    return None;
+                }
                 PredReturn::Success(bound_vars, goals) => {
                     self.bound_vars = bound_vars.into_boxed_slice();
                     if goals.is_empty() {
@@ -498,7 +503,7 @@ impl Env {
                     unreachable!()
                 };
                 eprintln!(
-                    "[MATCH] depth={} goal={} clause={}, choices_remaining={}",
+                    "[MATCH|{}] {} / {}, choices_remaining={}",
                     self.depth,
                     heap.term_string(self.goal),
                     clause.to_string(heap),
@@ -531,7 +536,7 @@ impl Env {
                         }
                         if debug {
                             eprintln!(
-                                "[INVENT_PRED] depth={} var={} goal={}",
+                                "[INVENT_PRED|{}] var={} goal={}",
                                 self.depth,
                                 var_id,
                                 heap.term_string(self.goal)
@@ -573,7 +578,7 @@ impl Env {
                 let new_clause = Clause::new(new_clause_literals, None, None, clause.max_arg_id);
                 if debug {
                     eprintln!(
-                        "[ADD_CLAUSE] depth={} goal={} clause={}",
+                        "[ADD_CLAUSE|{}] {} / {}",
                         self.depth,
                         heap.term_string(self.goal),
                         new_clause.to_string(heap)
@@ -608,7 +613,7 @@ impl Env {
                 _ => 0,
             };
             eprintln!(
-                "[NO_MATCH] depth={} goal={} tried {} choices, Originally had {} choices",
+                "[NO_MATCH|{}] goal={} tried {} choices, Originally had {} choices",
                 self.depth,
                 heap.term_string(self.goal),
                 choices_tried,
