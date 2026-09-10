@@ -75,7 +75,7 @@ pub fn univ(
             let comp_arg_addrs = heap.str_args(comp_addr);
             let new_list_addr = build_list_from_addrs(heap, &comp_arg_addrs);
             heap.bind(lis_value, Addr(new_list_addr));
-            (&[lis_value]).into()
+            [lis_value].into()
         }
         (Ref, Lis) => {
             let Some(addrs) = read_list_addrs(heap, lis_addr) else {
@@ -83,7 +83,7 @@ pub fn univ(
             };
             let new_comp_addr = build_compound_from_addrs(heap, &addrs);
             heap.bind(comp_value, Addr(new_comp_addr));
-            (&[comp_value]).into()
+            [comp_value].into()
         }
         _ => false.into(),
     }

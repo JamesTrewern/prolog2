@@ -433,7 +433,7 @@ pub fn is_pred(
             // LHS is unbound — bind it to the result
             let result_addr = heap.heap_push(rhs.to_cell());
             heap.bind(var_id, Addr(result_addr));
-            (&[var_id]).into()
+            [var_id].into()
         }
         _ => {
             // LHS is already bound — check numeric equality

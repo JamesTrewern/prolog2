@@ -45,7 +45,7 @@ pub fn length(
         (Ref, var_id) => {
             let int_addr = heap.heap_push((Int, len));
             heap.bind(var_id, Addr(int_addr));
-            (&[var_id]).into()
+            [var_id].into()
         }
         (Int, v) => (len == v).into(),
         _ => false.into(),
@@ -78,7 +78,7 @@ pub fn sort(
     if element_addrs.is_empty() {
         let empty = heap.heap_push((ELis, 0));
         heap.bind(var_id, Addr(empty));
-        return (&[var_id]).into();
+        return [var_id].into();
     }
 
     let first_tag = heap[element_addrs[0]].0;
@@ -100,7 +100,7 @@ pub fn sort(
             let sorted_addrs: Vec<usize> = indexed.into_iter().map(|(a, _)| a).collect();
             let list_addr = build_list_from_addrs(heap, &sorted_addrs);
             heap.bind(var_id, Addr(list_addr));
-            (&[var_id]).into()
+            [var_id].into()
         }
         Stri | Con => {
             if !element_addrs
@@ -124,7 +124,7 @@ pub fn sort(
             let sorted_addrs: Vec<usize> = indexed.into_iter().map(|(a, _)| a).collect();
             let list_addr = build_list_from_addrs(heap, &sorted_addrs);
             heap.bind(var_id, Addr(list_addr));
-            (&[var_id]).into()
+            [var_id].into()
         }
         _ => false.into(),
     }

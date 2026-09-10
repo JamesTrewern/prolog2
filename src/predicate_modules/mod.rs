@@ -71,9 +71,9 @@ impl From<bool> for PredReturn {
     }
 }
 
-impl<const N: usize> From<&[usize; N]> for PredReturn {
-    fn from(value: &[usize; N]) -> Self {
-        PredReturn::Success(SmallVec::from_slice(value), vec![])
+impl<const N: usize> From<[usize; N]> for PredReturn {
+    fn from(value: [usize; N]) -> Self {
+        PredReturn::Success(SmallVec::from_slice(&value), vec![])
     }
 }
 
