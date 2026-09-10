@@ -145,13 +145,18 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
         let mut cell = heap[addr];
         match cell {
             (Arg, arg_id) if let Some(var_bind) = sub.get_arg(arg_id) => {
-                self.handle_var_bind(var_bind, heap, &mut addr, &mut cell)
+                if let Var(var_id) = var_bind {
+                    self.handle_var_bind(heap.var_deref(var_id), heap, &mut addr, &mut cell);
+                } else {
+                    self.handle_var_bind(var_bind, heap, &mut addr, &mut cell);
+                }
             }
             (Ref, var_id) => {
                 self.handle_var_bind(heap.var_deref(var_id), heap, &mut addr, &mut cell);
             }
             _ => (),
         }
+
         self.handle_cell_increment(cell);
         Some((addr, cell))
     }
@@ -525,6 +530,8 @@ mod test {
         assert_eq!(cells[4], (3, (Comp, 2)));
         assert_eq!(cells[5], (4, (Con, p)));
         assert_eq!(cells[6], (5, (Con, a)));
+
+        println!("----------------------");
 
         // Arg -> Ref -> strucutre
         heap.cells = vec![(Comp, 2), (Con, p), (Arg, 0), (Comp, 2), (Con, p), (Con, a)];

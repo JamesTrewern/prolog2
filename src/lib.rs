@@ -34,7 +34,7 @@
 //! use prolog2::predicate_modules::{
 //!     MATHS, META_PREDICATES, PredReturn, PredicateFunction, PredicateModule,
 //! };
-//! use prolog2::heap::query_heap::QueryHeap;
+//! use prolog2::heap::QueryHeap;
 //! use prolog2::program::hypothesis::Hypothesis;
 //! use prolog2::program::predicate_table::PredicateTable;
 //!
