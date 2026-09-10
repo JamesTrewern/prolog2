@@ -364,5 +364,5 @@ mod normalise_tests {
     }
 }
 
-// #[cfg(test)]
-// mod examples;
+#[cfg(test)]
+mod examples;
