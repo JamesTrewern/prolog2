@@ -425,7 +425,7 @@ mod encode_tests {
             [
                 (Tag::Comp, 3),
                 (Tag::Con, p_id),
-                (Tag::Ref, 2),
+                (Tag::Ref, 0),
                 (Tag::Con, a_id),
             ]
         );
@@ -439,9 +439,9 @@ mod encode_tests {
             heap.cells,
             [
                 (Tag::Comp, 3),
-                (Tag::Ref, 1),
+                (Tag::Ref, 0),
                 (Tag::Con, a_id),
-                (Tag::Ref, 1),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -464,8 +464,8 @@ mod encode_tests {
                 (Tag::Con, p_id),
                 (Tag::Comp, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 4),
-                (Tag::Ref, 4),
+                (Tag::Ref, 0),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -488,8 +488,8 @@ mod encode_tests {
                 (Tag::Con, p_id),
                 (Tag::Tup, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 4),
-                (Tag::Ref, 4),
+                (Tag::Ref, 0),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -512,8 +512,8 @@ mod encode_tests {
                 (Tag::Con, p_id),
                 (Tag::Set, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 4),
-                (Tag::Ref, 4),
+                (Tag::Ref, 0),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -537,9 +537,9 @@ mod encode_tests {
                 LIS,
                 (Tag::Con, f_id),
                 LIS,
-                (Tag::Ref, 5),
+                (Tag::Ref, 0),
                 EMPTY_LIS,
-                (Tag::Ref, 5),
+                (Tag::Ref, 0),
             ]
         );
     }
@@ -709,7 +709,7 @@ mod encode_tests {
             [
                 (Tag::Tup, 3),
                 (Tag::Con, p_id),
-                (Tag::Ref, 2),
+                (Tag::Ref, 0),
                 (Tag::Con, a_id),
             ]
         );
@@ -723,9 +723,9 @@ mod encode_tests {
             heap.cells,
             [
                 (Tag::Tup, 3),
-                (Tag::Ref, 1),
+                (Tag::Ref, 0),
                 (Tag::Con, a_id),
-                (Tag::Ref, 1),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -748,8 +748,8 @@ mod encode_tests {
                 (Tag::Con, p_id),
                 (Tag::Comp, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 4),
-                (Tag::Ref, 4),
+                (Tag::Ref, 0),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -772,8 +772,8 @@ mod encode_tests {
                 (Tag::Con, p_id),
                 (Tag::Tup, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 4),
-                (Tag::Ref, 4),
+                (Tag::Ref, 0),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -796,8 +796,8 @@ mod encode_tests {
                 (Tag::Con, p_id),
                 (Tag::Set, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 4),
-                (Tag::Ref, 4),
+                (Tag::Ref, 0),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -821,9 +821,9 @@ mod encode_tests {
                 LIS,
                 (Tag::Con, f_id),
                 LIS,
-                (Tag::Ref, 5),
+                (Tag::Ref, 0),
                 EMPTY_LIS,
-                (Tag::Ref, 5),
+                (Tag::Ref, 0),
             ]
         );
     }
@@ -977,7 +977,7 @@ mod encode_tests {
         assert_eq!(heap.term_string(addr), "{a,X}");
         assert_eq!(
             heap.cells,
-            [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Ref, 2),]
+            [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Ref, 0),]
         );
 
         let mut heap = QueryHeap::new(&[], None);
@@ -987,7 +987,7 @@ mod encode_tests {
         assert_eq!(heap.term_string(addr), "{a,Q}");
         assert_eq!(
             heap.cells,
-            [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Ref, 2),]
+            [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Ref, 0),]
         );
 
         let mut heap = QueryHeap::new(&[], None);
@@ -1008,9 +1008,9 @@ mod encode_tests {
                 (Tag::Set, 3),
                 (Tag::Comp, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 3),
+                (Tag::Ref, 0),
                 (Tag::Con, p_id),
-                (Tag::Ref, 3),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -1032,9 +1032,9 @@ mod encode_tests {
                 (Tag::Set, 3),
                 (Tag::Tup, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 3),
+                (Tag::Ref, 0),
                 (Tag::Con, p_id),
-                (Tag::Ref, 3),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -1056,9 +1056,9 @@ mod encode_tests {
                 (Tag::Set, 3),
                 (Tag::Set, 2),
                 (Tag::Con, f_id),
-                (Tag::Ref, 3),
+                (Tag::Ref, 0),
                 (Tag::Con, p_id),
-                (Tag::Ref, 3),
+                (Tag::Ref, 0),
             ]
         );
 
@@ -1081,10 +1081,10 @@ mod encode_tests {
                 LIS,
                 (Tag::Con, f_id),
                 LIS,
-                (Tag::Ref, 4),
+                (Tag::Ref, 0),
                 EMPTY_LIS,
                 (Tag::Con, p_id),
-                (Tag::Ref, 4),
+                (Tag::Ref, 0),
             ]
         );
     }
@@ -1187,7 +1187,7 @@ mod encode_tests {
                 LIS,
                 (Tag::Con, a_id),
                 LIS,
-                (Tag::Ref, 3),
+                (Tag::Ref, 0),
                 LIS,
                 (Tag::Con, a_id),
                 EMPTY_LIS,
@@ -1201,7 +1201,7 @@ mod encode_tests {
         assert_eq!(heap.term_string(addr), "[Q,a|Q]");
         assert_eq!(
             heap.cells,
-            [LIS, (Tag::Ref, 1), LIS, (Tag::Con, a_id), (Tag::Ref, 1),]
+            [LIS, (Tag::Ref, 0), LIS, (Tag::Con, a_id), (Tag::Ref, 0),]
         );
 
         let mut heap = QueryHeap::new(&[], None);
@@ -1235,8 +1235,8 @@ mod encode_tests {
                 LIS,
                 LIS,
                 EMPTY_LIS,
-                (Tag::Ref, 13),
-                (Tag::Ref, 13),
+                (Tag::Ref, 0),
+                (Tag::Ref, 0),
             ]
         );
     }

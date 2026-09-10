@@ -165,19 +165,12 @@ mod invented_pred_tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
-        heap.cells = vec![
-            (Comp, 2),
-            (Ref, 0),
-            (Con, a),
-            (Comp, 2),
-            (Con, p),
-            (Con, a),
-        ];
+        heap.cells = vec![(Comp, 2), (Ref, 0), (Con, a), (Comp, 2), (Con, p), (Con, a)];
         heap.var_regs = vec![VarReg::UNBOUND; var_count];
         (
             heap,
-            Clause::new(vec![0], None, None, 0),
-            Clause::new(vec![3], None, None, 0),
+            Clause::new(vec![0], None, 0),
+            Clause::new(vec![3], None, 0),
         )
     }
 
@@ -236,7 +229,7 @@ mod invented_pred_tests {
         // The clause head at address 0 now reads Ref_1, which derefs to var 0.
         heap.cells[1] = (Ref, 1);
         heap.var_regs[1] = Var(0).into();
-        let aliased_head = Clause::new(vec![0], None, None, 0);
+        let aliased_head = Clause::new(vec![0], None, 0);
 
         let mut h = Hypothesis::new();
         h.add_invented_pred(&heap, 0);

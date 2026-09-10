@@ -22,19 +22,19 @@ impl BitFlag64 {
         self.0 & (1 << idx) != 0
     }
 
-    pub fn is_some(&self) -> bool{
+    pub fn is_some(&self) -> bool {
         self.0 != 0
     }
 
-    pub fn is_none(&self) -> bool{
-        self.0 != 0
+    pub fn is_none(&self) -> bool {
+        self.0 == 0
     }
 }
 
 impl From<Vec<usize>> for BitFlag64 {
     fn from(bit_positions: Vec<usize>) -> Self {
         let mut bit_flags = Self(0);
-        for bit_pos in bit_positions{
+        for bit_pos in bit_positions {
             assert!(
                 bit_pos < MAX_ARG,
                 "meta clause cannot have more than {MAX_ARG} variables (variable index {bit_pos} exceeds limit)"
@@ -53,27 +53,25 @@ pub struct Clause {
     pub max_arg_id: usize,
     pub meta_vars: BitFlag64,
     pub constrained_vars: BitFlag64,
-    
 }
 
 impl Clause {
     pub fn new(
         literals: Vec<usize>,
-        meta_vars: Option<Vec<usize>>,
-        constrained_vars: Option<Vec<usize>>,
+        meta_constrained_vars: Option<(Vec<usize>, Vec<usize>)>,
         max_arg_id: usize,
     ) -> Self {
-        let meta_vars: BitFlag64 = meta_vars.map(|vars| vars.into()).unwrap_or_default();
-        let constrained_vars = match constrained_vars {
-            Some(cv) => cv.into(),
-            None => meta_vars,
+        let (meta_vars, constrained_vars) = match meta_constrained_vars {
+            Some((mvs, cvs)) => (mvs.into(), cvs.into()),
+            None => (BitFlag64::default(), BitFlag64::default()),
         };
+
         let literals: SmallVec<[usize; 5]> = SmallVec::from_vec(literals);
         Clause {
             literals,
             meta_vars,
             constrained_vars,
-            max_arg_id
+            max_arg_id,
         }
     }
 
@@ -90,7 +88,7 @@ impl Clause {
     }
 
     pub fn meta_var(&self, arg_id: usize) -> Result<bool, &'static str> {
-        if self.meta_vars.is_none(){
+        if self.meta_vars.is_none() {
             return Err("Clause is not a meta clause");
         }
         Ok(self.meta_vars.get(arg_id))

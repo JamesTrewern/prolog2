@@ -545,7 +545,7 @@ impl App {
 
         let mut query_heap = QueryHeap::new(&self.prog_heap, None);
         let heap_id = query_heap.id;
-        let goals = build_clause(literals, None, None, &mut query_heap, Some(heap_id));
+        let goals = build_clause(literals, None, &mut query_heap, Some(heap_id));
         let mut vars = Vec::new();
         for literal in goals.iter() {
             vars.extend(

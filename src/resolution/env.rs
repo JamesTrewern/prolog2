@@ -575,7 +575,7 @@ impl Env {
                     }
                 }
 
-                let new_clause = Clause::new(new_clause_literals, None, None, clause.max_arg_id);
+                let new_clause = Clause::new(new_clause_literals, None, clause.max_arg_id);
                 if debug {
                     eprintln!(
                         "[ADD_CLAUSE|{}] {} / {}",

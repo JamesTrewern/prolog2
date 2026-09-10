@@ -122,7 +122,7 @@ fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, Str
         .parse_goals()
         .map_err(|e| format!("Example '{example}' incorrectly formatted: {e}"))?;
     let heap_id = query_heap.id;
-    let clause = build_clause(literals, None, None, query_heap, Some(heap_id));
+    let clause = build_clause(literals, None, query_heap, Some(heap_id));
     Ok(clause[0])
 }
 

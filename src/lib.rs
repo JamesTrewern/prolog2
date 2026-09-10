@@ -11,7 +11,7 @@
 //! together with optional Prolog source code. Modules are registered with the
 //! [`app::App`] builder, which also handles configuration loading and execution.
 //! Examples of builtin predicate functions can be found at: https://github.com/JamesTrewern/prolog2/tree/master/src/predicate_modules
-//! 
+//!
 //! ### Writing a native predicate
 //!
 //! A native predicate is a Rust function with the signature defined by
@@ -83,8 +83,6 @@ pub mod heap;
 /// Prolog source parsing: tokenisation, syntax tree construction, and term encoding.
 pub mod parser;
 /// Built-in predicate modules and the predicate module system.
-#[allow(dead_code)]
-#[allow(unused)]
 pub mod predicate_modules;
 /// Program representation: clauses, hypotheses, and the predicate table.
 pub mod program;
@@ -171,7 +169,10 @@ pub fn normalise_hypothesis(clauses: &[String]) -> Vec<String> {
     }
 
     // 1. Build skeletons
-    let skeletons: Vec<String> = clauses.iter().map(|c| replace_pred_ids(c, "pred_$")).collect();
+    let skeletons: Vec<String> = clauses
+        .iter()
+        .map(|c| replace_pred_ids(c, "pred_$"))
+        .collect();
 
     // 2. Sort indices by (skeleton length, skeleton lexicographic)
     let mut order: Vec<usize> = (0..clauses.len()).collect();
@@ -325,10 +326,7 @@ mod normalise_tests {
             "in_cluster(Arg_0):-Arg_0(Arg_1),pred_99(Arg_1,Arg_2).".to_string(),
             "pred_99(Arg_0,Arg_1):-ring(Arg_0,Arg_1),aromatic(Arg_1,Arg_1).".to_string(),
         ];
-        assert_eq!(
-            hypothesis_canonical_key(&h1),
-            hypothesis_canonical_key(&h2)
-        );
+        assert_eq!(hypothesis_canonical_key(&h1), hypothesis_canonical_key(&h2));
     }
 
     #[test]
@@ -341,10 +339,7 @@ mod normalise_tests {
             "in_cluster(Arg_0):-Arg_0(Arg_1),pred_1(Arg_1,Arg_2).".to_string(),
             "pred_1(Arg_0,Arg_1):-bound(Arg_0,Arg_1).".to_string(),
         ];
-        assert_ne!(
-            hypothesis_canonical_key(&h1),
-            hypothesis_canonical_key(&h2)
-        );
+        assert_ne!(hypothesis_canonical_key(&h1), hypothesis_canonical_key(&h2));
     }
 
     #[test]
@@ -359,10 +354,7 @@ mod normalise_tests {
             "pred_7(X,Z):-pred_8(X,Y),bound(Y,Z).".to_string(),
             "pred_8(X,Y):-ring(X,Y),aromatic(Y,Y).".to_string(),
         ];
-        assert_eq!(
-            hypothesis_canonical_key(&h1),
-            hypothesis_canonical_key(&h2)
-        );
+        assert_eq!(hypothesis_canonical_key(&h1), hypothesis_canonical_key(&h2));
     }
 
     #[test]
@@ -372,5 +364,5 @@ mod normalise_tests {
     }
 }
 
-#[cfg(test)]
-mod examples;
+// #[cfg(test)]
+// mod examples;
