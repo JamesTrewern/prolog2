@@ -80,6 +80,8 @@
 pub mod app;
 /// Heap memory management: cells, query heaps, and the symbol database.
 pub mod heap;
+/// Learning strategies built on top of prolog^2 engine
+pub mod learners;
 /// Prolog source parsing: tokenisation, syntax tree construction, and term encoding.
 pub mod parser;
 /// Built-in predicate modules and the predicate module system.
@@ -88,10 +90,6 @@ pub mod predicate_modules;
 pub mod program;
 /// Resolution engine: proof search, unification, and term building.
 pub mod resolution;
-/// Implementation of the Top Program Consturction algorithm with parallelism
-#[allow(dead_code)]
-#[allow(unused)]
-pub mod top_prog;
 
 // Re-export commonly used types at crate root.
 pub use app::{BodyPred, Config, Examples, SetUp};
