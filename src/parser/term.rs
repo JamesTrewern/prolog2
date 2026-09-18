@@ -99,6 +99,28 @@ impl Term {
             Term::AnonVar => _ = heap.heap_push((Tag::AVar, 0)),
         }
     }
+
+    pub fn extract_vars(&self, vars: &mut Vec<String>) {
+        match self {
+            Term::List(head, tail) => {
+                for term in head {
+                    term.extract_vars(vars);
+                }
+                tail.extract_vars(vars);
+            }
+            Term::Str(str_type, terms) => {
+                for term in terms {
+                    term.extract_vars(vars);
+                }
+            }
+            Term::Variable(symbol) => {
+                if !vars.contains(symbol) {
+                    vars.push(symbol.clone());
+                }
+            }
+            _ => (),
+        }
+    }
 }
 
 fn encode_var(

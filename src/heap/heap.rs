@@ -142,29 +142,6 @@ pub trait Heap:
         vars
     }
 
-    ///Normalise args across multiple terms to 0 index arg ids
-    fn normalise_args(&mut self, mut addr: usize, args: &mut Vec<usize>) {
-        // Can ignore variable dereferencing as refs can't bind to arg terms without rebuilding
-        let mut cells_left = 1;
-        while cells_left > 0 {
-            cells_left -= 1;
-            match self[addr] {
-                (Arg, arg_id) => {
-                    if let Some(pos) = args.iter().position(|&arg_id2| arg_id == arg_id2) {
-                        self[addr].1 = pos;
-                    } else {
-                        self[addr].1 = args.len();
-                        args.push(arg_id);
-                    }
-                }
-                LIS => cells_left += 2,
-                (Comp | Set | Tup, len) => cells_left += len,
-                _ => (),
-            }
-            addr += 1;
-        }
-    }
-
     fn occurs(&self, addr: usize, var_id: usize, bound_args: &[usize]) -> bool {
         let mut walk = TermWalk::new(addr);
         while let Some(cell) = walk.next_cell(self) {
@@ -730,45 +707,6 @@ mod tests {
             &heap.cells,
             &[(Comp, 2), (Con, p), LIS, (Con, p), LIS, (Con, f), (Con, a),]
         );
-    }
-
-    #[test]
-    fn normalise_args() {
-        let mut norm_args_map = Vec::new();
-        let mut heap = vec![
-            (Comp, 3),
-            (Arg, 2),
-            (Arg, 4),
-            (Arg, 1),
-            (Comp, 1),
-            LIS,
-            (Arg, 1),
-            LIS,
-            (Arg, 4),
-            LIS,
-            (Arg, 2),
-            EMPTY_LIS,
-        ];
-        heap.normalise_args(0, &mut norm_args_map);
-        heap.normalise_args(4, &mut norm_args_map);
-
-        assert_eq!(
-            &heap,
-            &[
-                (Comp, 3),
-                (Arg, 0),
-                (Arg, 1),
-                (Arg, 2),
-                (Comp, 1),
-                LIS,
-                (Arg, 2),
-                LIS,
-                (Arg, 1),
-                LIS,
-                (Arg, 0),
-                EMPTY_LIS
-            ]
-        )
     }
 
     #[test]

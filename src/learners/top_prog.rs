@@ -238,7 +238,6 @@ fn generalise_thread(
 
     while proof.prove(&mut query_heap, predicate_table, config) {
         for clause in proof.hypothesis.iter() {
-            clause.normalise_clause_vars(&mut query_heap);
             let (cells, h) = extract_hypothesis_local(&proof, &query_heap);
             if tx.send(HypothesisMsg { cells, h }).is_err() {
                 break; // Receiver dropped

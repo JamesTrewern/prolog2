@@ -98,13 +98,6 @@ impl Clause {
         self.constrained_vars.get(arg_id)
     }
 
-    pub fn normalise_clause_vars(&self, heap: &mut impl Heap) {
-        let mut arg_ids: Vec<usize> = Vec::new();
-        for &literal in self.literals.iter() {
-            heap.normalise_args(literal, &mut arg_ids);
-        }
-    }
-
     pub fn to_string(&self, heap: &impl Heap) -> String {
         if self.len() == 1 {
             return heap.term_string(self.head()) + ".";

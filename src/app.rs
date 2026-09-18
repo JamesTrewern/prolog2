@@ -739,9 +739,6 @@ impl<'a> Iterator for QuerySession<'a> {
                 })
                 .collect();
             let hypothesis = if self.proof.hypothesis.len() > 0 {
-                for clause in self.proof.hypothesis.iter() {
-                    clause.normalise_clause_vars(&mut self.heap);
-                }
                 let clause_strings: Vec<String> = self
                     .proof
                     .hypothesis

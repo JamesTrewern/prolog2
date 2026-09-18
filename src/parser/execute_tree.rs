@@ -22,6 +22,18 @@ pub fn build_clause(
 ) -> Clause {
     let mut var_values = HashMap::new();
 
+    //Pre order var_values so meta_rule instantiation arg ids are normalised
+    if let Some((meta_vars, _)) = &meta_vars {
+        let mut vars = Vec::new();
+        for literal in &literals {
+            literal.extract_vars(&mut vars);
+        }
+        for non_meta_var in vars.into_iter().filter(|var| !meta_vars.contains(var)) {
+            let v = var_values.len();
+            var_values.insert(non_meta_var, v);
+        }
+    }
+
     let literals: Vec<usize> = literals
         .into_iter()
         .map(|term| term.encode(heap, &mut var_values, query))
@@ -264,7 +276,42 @@ mod tests {
     }
 
     #[test]
-    fn meta_rules() {
+    fn meta_rule_simple() {
+        let mut heap = Vec::<Cell>::new();
+        let mut pred_table = PredicateTable::new();
+        let clause = TokenStream::new(tokenise("P(X,Y):-Q(X),R(Y),{P,Q,R}.").unwrap())
+            .parse_all()
+            .unwrap();
+        execute_tree(clause, &mut heap, &mut pred_table);
+
+        if let Predicate::Clauses(clauses) = pred_table.get_predicate((0, 2)).unwrap() {
+            let meta_rule = &clauses[0];
+            println!("{:?}", meta_rule.meta_vars);
+            assert_eq!(
+                &heap[meta_rule[0]..meta_rule[0] + 4],
+                &[(Tag::Comp, 3), (Tag::Arg, 2), (Tag::Arg, 0), (Tag::Arg, 1),]
+            );
+            assert_eq!(
+                &heap[meta_rule[1]..meta_rule[1] + 3],
+                &[(Tag::Comp, 2), (Tag::Arg, 3), (Tag::Arg, 0)]
+            );
+            assert_eq!(
+                &heap[meta_rule[2]..meta_rule[2] + 3],
+                &[(Tag::Comp, 2), (Tag::Arg, 4), (Tag::Arg, 1),]
+            );
+            assert!(meta_rule.meta_var(2).unwrap());
+            assert!(meta_rule.meta_var(3).unwrap());
+            assert!(meta_rule.meta_var(4).unwrap());
+            assert!(meta_rule.constrained_var(2));
+            assert!(meta_rule.constrained_var(3));
+            assert!(meta_rule.constrained_var(4));
+        } else {
+            panic!()
+        }
+    }
+
+    #[test]
+    fn meta_rule_complex() {
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
         let clause = TokenStream::new(tokenise("p(X,Y):-Q(X,a),R(Y,b),{Q,R}.").unwrap())
@@ -387,9 +434,9 @@ mod tests {
         // The head should be: (Func, 4), (Arg, 0), (ELis), (ELis), (Arg, 1)
         // where Arg 0 is the Map variable and Arg 1 is X
         assert_eq!(heap[0], (Tag::Comp, 4));
-        assert_eq!(heap[1], (Tag::Arg, 0)); // Map variable
+        assert_eq!(heap[1], (Tag::Arg, 1)); // Map variable
         assert_eq!(heap[2].0, Tag::ELis); // Empty list
         assert_eq!(heap[3].0, Tag::ELis); // Empty list
-        assert_eq!(heap[4], (Tag::Arg, 1)); // X variable
+        assert_eq!(heap[4], (Tag::Arg, 0)); // X variable
     }
 }
