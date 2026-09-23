@@ -1,8 +1,9 @@
 use crate::{
-    Config, heap::{
-        heap::Heap,
-        query_heap::QueryHeap,
-    }, predicate_modules::helpers::{goal_arg, resolve}, program::{hypothesis::Hypothesis, predicate_table::PredicateTable}, resolution::proof::Proof
+    heap::{Heap, QueryHeap},
+    predicate_modules::helpers::{goal_arg, resolve_to_cell_and_addr},
+    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    resolution::Proof,
+    Config,
 };
 
 use super::{PredReturn, PredicateModule};
@@ -16,7 +17,7 @@ pub fn not(
     config: Config,
 ) -> PredReturn {
     //Extract inner negated goal
-    let inner_goal = resolve(heap, goal_arg(heap, goal, 0));
+    let (_, inner_goal) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
 
     // Create a config with learning disabled
     let mut inner_config = config;
@@ -32,7 +33,7 @@ pub fn not(
     // vars) and freshly-allocated cells in place; we undo every recorded binding
     // and truncate the inner allocations away so nothing dangles when the outer
     // proof later truncates the heap.
-    let snapshot_len = heap.heap_len();
+    let heap_point = heap.heap_point();
     let mut inner_proof = Proof::with_hypothesis(heap, &[inner_goal], hypothesis_clone);
 
     if config.debug {
@@ -50,22 +51,16 @@ pub fn not(
 
     // Restore the shared heap to its pre-call state.
     inner_proof.undo_all(heap);
-    heap.truncate(snapshot_len);
+    heap.truncate(heap_point);
 
     if proved {
         if config.debug {
-            eprintln!(
-                "[FAILED_TO_NEGATE] {}",
-                heap.term_string(inner_goal)
-            );
+            eprintln!("[FAILED_TO_NEGATE] {}", heap.term_string(inner_goal));
         }
         PredReturn::False
     } else {
         if config.debug {
-            eprintln!(
-                "[NEGATED_THROUGH_FAILURE] {}",
-                heap.term_string(inner_goal)
-            );
+            eprintln!("[NEGATED_THROUGH_FAILURE] {}", heap.term_string(inner_goal));
         }
         PredReturn::True
     }

@@ -1,12 +1,11 @@
 //! Proof search via SLD resolution with backtracking and predicate invention.
 
+use super::env::Env;
 use crate::{
-    heap::{heap::Heap, query_heap::QueryHeap},
+    heap::{Heap, QueryHeap},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
 };
-
-use super::env::Env;
 
 /// The proof search engine.
 ///
@@ -18,7 +17,6 @@ pub struct Proof {
     pointer: usize,
     pub hypothesis: Hypothesis,
     h_clauses: usize,
-    invented_preds: usize,
 }
 
 impl Proof {
@@ -26,14 +24,13 @@ impl Proof {
         let hypothesis = Hypothesis::new();
         let stack = goals
             .iter()
-            .map(|goal| Env::new(*goal, 0, heap.heap_len()))
+            .map(|goal| Env::new(*goal, 0, heap.heap_point()))
             .collect();
         Proof {
             stack,
             pointer: 0,
             hypothesis,
             h_clauses: 0,
-            invented_preds: 0,
         }
     }
 
@@ -42,18 +39,22 @@ impl Proof {
         let h_clauses = hypothesis.len();
         let stack = goals
             .iter()
-            .map(|goal| Env::new(*goal, 0, heap.heap_len()))
+            .map(|goal| Env::new(*goal, 0, heap.heap_point()))
             .collect();
         Proof {
             stack,
             pointer: 0,
             hypothesis,
             h_clauses,
-            invented_preds: 0,
         }
     }
 
-    pub fn prove(&mut self, heap: &mut QueryHeap, predicate_table: &PredicateTable, config: Config) -> bool {
+    pub fn prove(
+        &mut self,
+        heap: &mut QueryHeap,
+        predicate_table: &PredicateTable,
+        config: Config,
+    ) -> bool {
         // Handle restart after previous success
         if self.pointer == self.stack.len() {
             if config.debug {
@@ -74,7 +75,6 @@ impl Proof {
                 &mut self.hypothesis,
                 heap,
                 &mut self.h_clauses,
-                &mut self.invented_preds,
                 config.debug,
             );
         }
@@ -83,7 +83,7 @@ impl Proof {
             if self.stack[self.pointer].got_choices {
                 if config.debug {
                     eprintln!(
-                        "[RETRY] goal={} addr={}",
+                        "[RETRY] {} @{}",
                         heap.term_string(self.stack[self.pointer].goal),
                         self.stack[self.pointer].goal
                     );
@@ -93,10 +93,11 @@ impl Proof {
                     heap,
                     &mut self.hypothesis,
                     &predicate_table,
+                    config.protect_h_preds,
                 );
                 if config.debug {
                     eprintln!(
-                        "[TRY] goal={} addr={}",
+                        "[TRY] {} @{}",
                         heap.term_string(self.stack[self.pointer].goal),
                         self.stack[self.pointer].goal
                     );
@@ -106,7 +107,6 @@ impl Proof {
                 heap,
                 &mut self.hypothesis,
                 self.h_clauses < config.max_clause,
-                self.invented_preds < config.max_pred,
                 predicate_table,
                 config,
                 config.debug,
@@ -114,9 +114,6 @@ impl Proof {
                 Some(new_goals) => {
                     if self.stack[self.pointer].new_clause() {
                         self.h_clauses += 1;
-                    }
-                    if self.stack[self.pointer].invent_pred() {
-                        self.invented_preds += 1;
                     }
                     self.pointer += 1;
                     self.stack.splice(self.pointer..self.pointer, new_goals);
@@ -135,7 +132,6 @@ impl Proof {
                         &mut self.hypothesis,
                         heap,
                         &mut self.h_clauses,
-                        &mut self.invented_preds,
                         config.debug,
                     );
                     self.stack
@@ -155,16 +151,9 @@ impl Proof {
     /// must call this and then truncate the heap back to its pre-call length
     /// so the inner proof leaves no trace on the parent heap.
     pub fn undo_all(&mut self, heap: &mut QueryHeap) {
-        let hl = heap.heap_len();
         for env in self.stack.iter_mut() {
-            for &(src, _) in env.bindings.iter() {
-                if src < hl {
-                    if let (crate::heap::heap::Tag::Ref, p) = &mut heap[src] {
-                        *p = src;
-                    }
-                }
-            }
-            env.bindings = Box::new([]);
+            heap.unbind(&env.bound_vars);
+            env.bound_vars = Box::new([]);
         }
     }
 }

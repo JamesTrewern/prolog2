@@ -8,11 +8,10 @@ pub mod lists;
 pub mod maths;
 /// Built-in meta-predicates (`not/1`).
 pub mod meta_predicates;
-/// Built-in set predicates
-pub mod sets;
 /// Built-in string and atom predicates.
 pub mod strings;
-
+/// Built-in set predicates
+// pub mod sets;
 pub use defaults::DEFAULTS;
 pub use lists::LISTS;
 pub use maths::MATHS;
@@ -20,11 +19,14 @@ pub use meta_predicates::META_PREDICATES;
 pub use strings::STRINGS;
 
 use crate::{
-    heap::query_heap::QueryHeap,
-    predicate_modules::sets::SETS,
+    heap::{
+        Heap, QueryHeap,
+        VarBind::{self, Addr},
+    },
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
 };
+use smallvec::SmallVec;
 
 /// Return type for predicate functions.
 ///
@@ -40,7 +42,7 @@ use crate::{
 /// - [`PredReturn::False`] — deterministic failure; the engine backtracks.
 /// - [`PredReturn::Success`] — success with optional variable bindings and/or new
 ///   sub-goals to schedule. Either field may be empty:
-///   - `Success(bindings, vec![])` — binds heap cells and succeeds (the former `Binding` case).
+///   - `Success(bindings, vec![])` — binds heap cells and succeeds (the former `VarBind` case).
 ///   - `Success(vec![], goals)` — schedules new sub-goals without touching the heap.
 ///   - `Success(bindings, goals)` — both; the engine applies the bindings *then* resolves
 ///     the additional goals as if they had been in the clause body.
@@ -51,13 +53,13 @@ pub enum PredReturn {
     ///
     /// - First field: `(source_addr, target_addr)` heap bindings.
     /// - Second field: heap addresses of additional sub-goals to schedule (may be empty).
-    Success(Vec<(usize, usize)>, Vec<usize>),
+    Success(SmallVec<[usize; 5]>, Vec<usize>),
     /// Multiple alternative results — each tried on backtracking, like clause choices.
     ///
     /// Each element is a `(bindings, sub_goals)` pair, identical in meaning to
     /// [`Success`](PredReturn::Success). The engine stores these alternatives and
     /// pops one per attempt, undoing bindings on backtrack just like clause choices.
-    Choices(Vec<(Vec<(usize, usize)>, Vec<usize>)>),
+    Choices(Vec<(Vec<(usize, VarBind)>, Vec<usize>)>),
 }
 
 impl From<bool> for PredReturn {
@@ -67,6 +69,34 @@ impl From<bool> for PredReturn {
         } else {
             PredReturn::False
         }
+    }
+}
+
+impl<const N: usize> From<[usize; N]> for PredReturn {
+    fn from(value: [usize; N]) -> Self {
+        PredReturn::Success(SmallVec::from_slice(&value), vec![])
+    }
+}
+
+impl From<&[usize]> for PredReturn {
+    fn from(value: &[usize]) -> Self {
+        PredReturn::Success(SmallVec::from_slice(&value), vec![])
+    }
+}
+
+impl PredReturn {
+    pub fn bind_addr(heap: &mut QueryHeap, var_id: usize, addr: usize) -> Self {
+        heap.bind(var_id, Addr(addr));
+        [var_id].into()
+    }
+
+    pub fn from_bindings(heap: &mut QueryHeap, bindings: &[(usize, VarBind)]) -> Self {
+        let mut bound_vars = Vec::with_capacity(bindings.len());
+        for (var_id, binding) in bindings {
+            heap.bind(*var_id, *binding);
+            bound_vars.push(*var_id);
+        }
+        bound_vars.as_slice().into()
     }
 }
 
@@ -114,4 +144,4 @@ pub type PredicateModule = (
 );
 
 pub static STANDARD_MODULES: &[PredicateModule] =
-    &[DEFAULTS, MATHS, META_PREDICATES, LISTS, STRINGS, SETS];
+    &[DEFAULTS, MATHS, META_PREDICATES, LISTS, STRINGS];

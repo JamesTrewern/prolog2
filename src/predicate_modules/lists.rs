@@ -9,11 +9,7 @@ use std::sync::Arc;
 
 use super::{helpers::*, maths::Number, PredReturn, PredicateModule};
 use crate::{
-    heap::{
-        heap::{Heap, Tag},
-        query_heap::QueryHeap,
-        symbol_db::SymbolDB,
-    },
+    heap::{Heap, QueryHeap, SymbolDB, Tag::*, VarBind::Addr, EMPTY_LIS, LIS},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
 };
@@ -34,20 +30,24 @@ pub fn length(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    let list_a = goal_arg(heap, goal, 0);
-    let len_a = goal_arg(heap, goal, 1);
+    let len_arg = resolve_to_cell(heap, goal_arg(heap, goal, 1));
 
-    let Some(elements) = read_list_addrs(heap, list_a) else {
-        return false.into();
+    let len = match resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0)) {
+        (LIS, list_addr) => match read_list_addrs(heap, list_addr) {
+            Some(addrs) => addrs.len(),
+            None => return false.into(),
+        },
+        (EMPTY_LIS, _) => 0,
+        _ => return false.into(),
     };
-    let n = elements.len();
 
-    match heap[len_a] {
-        (Tag::Ref, r) => {
-            let int_addr = heap.heap_push((Tag::Int, n));
-            PredReturn::Success(vec![(r, int_addr)], vec![])
+    match len_arg {
+        (Ref, var_id) => {
+            let int_addr = heap.heap_push((Int, len));
+            heap.bind(var_id, Addr(int_addr));
+            [var_id].into()
         }
-        (Tag::Int, v) => (n == v).into(),
+        (Int, v) => (len == v).into(),
         _ => false.into(),
     }
 }
@@ -67,29 +67,26 @@ pub fn sort(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    let list_a = goal_arg(heap, goal, 0);
-    let sorted_a = goal_arg(heap, goal, 1);
-
-    // Output must be an unbound variable.
-    let (Tag::Ref, r) = heap[sorted_a] else {
+    let (Ref, var_id) = resolve_to_cell(heap, goal_arg(heap, goal, 1)) else {
         return false.into();
     };
 
-    let Some(element_addrs) = read_list_addrs(heap, list_a) else {
+    let Some(element_addrs) = read_list_addrs(heap, goal_arg(heap, goal, 0)) else {
         return false.into();
     };
 
     if element_addrs.is_empty() {
-        let empty = heap.heap_push((Tag::ELis, 0));
-        return PredReturn::Success(vec![(r, empty)], vec![]);
+        let empty = heap.heap_push((ELis, 0));
+        heap.bind(var_id, Addr(empty));
+        return [var_id].into();
     }
 
     let first_tag = heap[element_addrs[0]].0;
     match first_tag {
-        Tag::Flt | Tag::Int => {
+        Flt | Int => {
             if !element_addrs
                 .iter()
-                .all(|&a| matches!(heap[a].0, Tag::Flt | Tag::Int))
+                .all(|&a| matches!(heap[a].0, Flt | Int))
             {
                 return false.into();
             }
@@ -102,12 +99,13 @@ pub fn sort(
             });
             let sorted_addrs: Vec<usize> = indexed.into_iter().map(|(a, _)| a).collect();
             let list_addr = build_list_from_addrs(heap, &sorted_addrs);
-            PredReturn::Success(vec![(r, list_addr)], vec![])
+            heap.bind(var_id, Addr(list_addr));
+            [var_id].into()
         }
-        Tag::Stri | Tag::Con => {
+        Stri | Con => {
             if !element_addrs
                 .iter()
-                .all(|&a| matches!(heap[a].0, Tag::Stri | Tag::Con))
+                .all(|&a| matches!(heap[a].0, Stri | Con))
             {
                 return false.into();
             }
@@ -115,8 +113,8 @@ pub fn sort(
                 .into_iter()
                 .map(|a| {
                     let s = match heap[a] {
-                        (Tag::Stri, idx) => SymbolDB::get_string(idx),
-                        (Tag::Con, id) => SymbolDB::get_const(id),
+                        (Stri, idx) => SymbolDB::get_string(idx),
+                        (Con, id) => SymbolDB::get_const(id),
                         _ => unreachable!("sort: tag changed unexpectedly"),
                     };
                     (a, s)
@@ -125,7 +123,8 @@ pub fn sort(
             indexed.sort_by(|(_, s1), (_, s2)| s1.cmp(s2));
             let sorted_addrs: Vec<usize> = indexed.into_iter().map(|(a, _)| a).collect();
             let list_addr = build_list_from_addrs(heap, &sorted_addrs);
-            PredReturn::Success(vec![(r, list_addr)], vec![])
+            heap.bind(var_id, Addr(list_addr));
+            [var_id].into()
         }
         _ => false.into(),
     }
@@ -250,16 +249,16 @@ mod tests {
     }
 
     #[test]
-    fn list_for_all(){
+    fn list_for_all() {
         let tw = tw();
         tw.assert_true("list_for_all([2,3,4],'<'(1)).");
     }
 
     #[test]
-    fn count_true(){
+    fn count_true() {
         let tw = tw();
         tw.assert_true("count_true([2,3,4],'<'(2),N).");
         let mut results = tw.all_bindings("count_true([X, b, c], nonvar, N).", "N");
-        assert_eq!(results.pop().unwrap(),"2");
+        assert_eq!(results.pop().unwrap(), "2");
     }
 }

@@ -1,15 +1,21 @@
-use crate::heap::{heap::Tag, symbol_db::SymbolDB};
-use fsize::fsize;
+use crate::heap::SymbolDB;
+
+use super::{
+    Cell, Heap,
+    Tag::*,
+    TermWalk,
+    VarBind::{self, *},
+    VarReg, Walk,
+};
 use std::{
     collections::HashMap,
-    mem,
-    ops::{Index, IndexMut, Range},
+    ops::{Index, IndexMut, Range, RangeFrom},
     sync::atomic::{AtomicUsize, Ordering::Acquire},
 };
 
-use super::heap::{Cell, Heap};
-
 static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
+/// (Heap cells length, Variable registers length)
+pub type HeapPoint = (usize, usize);
 
 /// Working heap for proof search.
 ///
@@ -17,21 +23,28 @@ static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 /// owned mutable cell buffer for query-time allocations. Supports
 /// branching via an optional parent pointer for backtracking.
 pub struct QueryHeap<'a> {
-    id: usize,
+    pub(crate) id: usize,
     pub(crate) cells: Vec<Cell>,
     prog_cells: &'a [Cell],
     // TODO: handle branching query heap multi-threading
     root: Option<*const QueryHeap<'a>>,
+    pub(crate) var_regs: Vec<VarReg>, //Reference binding registers
 }
 
 impl<'a> QueryHeap<'a> {
     pub fn new(prog_cells: &'a [Cell], root: Option<*const QueryHeap<'a>>) -> QueryHeap<'a> {
         let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
+        let var_regs = if let Some(root) = root {
+            unsafe { (&*root).var_regs.clone() }
+        } else {
+            Vec::new()
+        };
         QueryHeap {
             id,
             cells: Vec::new(),
             prog_cells,
             root,
+            var_regs,
         }
     }
 
@@ -43,14 +56,6 @@ impl<'a> QueryHeap<'a> {
         branch_heap
     }
 
-    fn get_symbol_db_id(&self, addr: usize) -> usize {
-        if addr < self.prog_cells.len() {
-            0
-        } else {
-            self.id
-        }
-    }
-
     /// Duplicate term from self, tracking variable identity
     /// via `ref_map`. Unbound Ref cells in `self` are mapped to fresh Ref
     /// cells in `self`; the same source Ref always maps to the same target Ref.
@@ -58,131 +63,76 @@ impl<'a> QueryHeap<'a> {
     /// sharing (e.g. across literals in a clause).
     /// Used to duplicate terms from immutable cells such as prog_cells or root_heap heap
     /// and place them in mutable cells.
-    pub fn dup_term(
-        &mut self,
-        addr: usize,
-        ref_map: &mut HashMap<usize, usize>,
-    ) -> usize {
-        let addr = self.deref_addr(addr);
-        match self[addr] {
-            (Tag::Str, pointer) => {
-                let new_ptr = self.dup_term( pointer, ref_map);
-                self.heap_push((Tag::Str, new_ptr));
-                self.heap_len() - 1
-            }
-            (Tag::Comp | Tag::Tup | Tag::Set, length) => {
-                // Pre-pass: recursively copy complex sub-terms
-                let mut pre: Vec<Option<Cell>> = Vec::with_capacity(length);
-                for i in 1..=length {
-                    pre.push(self.dup_complex( addr + i, ref_map));
-                }
-                // Lay down structure header + sub-terms
-                let h = self.heap_len();
-                self.heap_push((self[addr].0, length));
-                for (i, pre_cell) in pre.into_iter().enumerate() {
-                    match pre_cell {
-                        Some(cell) => {
-                            self.heap_push(cell);
-                        }
-                        None => self.dup_simple( addr + 1 + i, ref_map),
-                    }
-                }
-                h
-            }
-            (Tag::Lis, pointer) => {
-                let head = self.dup_complex( pointer, ref_map);
-                let tail = self.dup_complex( pointer + 1, ref_map);
-                let h = self.heap_len();
-                match head {
-                    Some(cell) => {
-                        self.heap_push(cell);
-                    }
-                    None => self.dup_simple( pointer, ref_map),
-                }
-                match tail {
-                    Some(cell) => {
-                        self.heap_push(cell);
-                    }
-                    None => self.dup_simple(pointer + 1, ref_map),
-                }
-                h
-            }
-            (Tag::Ref, r) if r == addr => {
-                // Unbound ref — use or create mapping
+    pub fn dup_term(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) {
+        let mut walk = TermWalk::new(addr);
+        while let Some(cell) = walk.next_cell(self) {
+            if cell.0 == Ref {
                 if let Some(&mapped) = ref_map.get(&addr) {
-                    mapped
+                    self.heap_push((Ref, mapped));
                 } else {
-                    let new_addr = self.heap_len();
-                    self.heap_push((Tag::Ref, new_addr));
-                    ref_map.insert(addr, new_addr);
-                    new_addr
+                    let new_var_id = self.set_var(None);
+                    ref_map.insert(cell.1, new_var_id);
                 }
-            }
-            (Tag::Arg | Tag::Con | Tag::Int | Tag::Flt | Tag::Stri | Tag::ELis, _) => {
-                self.heap_push(self[addr]);
-                self.heap_len() - 1
-            }
-            (tag, val) => unreachable!("dup_term_with_ref_map: unhandled cell ({tag:?}, {val})"),
-        }
-    }
-
-    /// Pre-pass helper for dup_term_with_ref_map: recursively copy complex
-    /// sub-terms and return the Cell to later insert, or None for simple cells.
-    fn dup_complex(
-        &mut self,
-        addr: usize,
-        ref_map: &mut HashMap<usize, usize>,
-    ) -> Option<Cell> {
-        let addr = self.deref_addr(addr);
-        match self[addr] {
-            (Tag::Comp | Tag::Tup | Tag::Set, _) => {
-                Some((Tag::Str, self.dup_term( addr, ref_map)))
-            }
-            (Tag::Str, ptr) => Some((Tag::Str, self.dup_term( ptr, ref_map))),
-            (Tag::Lis, _) => Some((Tag::Lis, self.dup_term( addr, ref_map))),
-            _ => None,
-        }
-    }
-
-    /// Post-pass helper for dup_term_with_ref_map: push a simple cell,
-    /// handling Ref identity via ref_map.
-    fn dup_simple(
-        &mut self,
-        addr: usize,
-        ref_map: &mut HashMap<usize, usize>,
-    ) {
-        let addr = self.deref_addr(addr);
-        match self[addr] {
-            (Tag::Ref, r) if r == addr => {
-                if let Some(&mapped) = ref_map.get(&addr) {
-                    self.heap_push((Tag::Ref, mapped));
-                } else {
-                    let new_addr = self.heap_len();
-                    self.heap_push((Tag::Ref, new_addr));
-                    ref_map.insert(addr, new_addr);
-                }
-            }
-            cell => {
+            } else {
                 self.heap_push(cell);
             }
         }
     }
 
+    /// If true passed contrains, false if failed contraints
+    pub fn check_constraints(&self, cons: &[usize]) -> bool {
+        let derefs: Vec<VarBind> = cons.iter().map(|var_id| self.var_deref(*var_id)).collect();
+        for i in 0..cons.len() {
+            for j in (i + 1)..cons.len() {
+                match (derefs[i], derefs[j]) {
+                    (Addr(addr1), Addr(addr2)) if self.term_equal(addr1, addr2) => return false,
+                    (v1, v2) if v1 == v2 => return false,
+                    _ => (),
+                }
+            }
+        }
+        true
+    }
+
+    /// Get heap point to truncate back to later upon backtracking
+    pub fn heap_point(&self) -> HeapPoint {
+        (self.cells.len(), self.var_regs.len())
+    }
+
+    /// Free memory no longer needed upon back tracking
+    pub fn truncate(&mut self, (cells_len, var_regs_len): HeapPoint) {
+        self.cells.truncate(cells_len);
+        self.var_regs.truncate(var_regs_len);
+    }
+
+    /// Create new variable register and return ID without creating cell
+    pub fn new_var(&mut self, value: VarReg) -> usize {
+        let var_id = self.var_regs.len();
+        self.var_regs.push(value);
+        var_id
+    }
+
+    pub fn _print_var_regs(&self) {
+        println!("Var Regs");
+        println!("------------");
+        for (i, var_reg) in self.var_regs.iter().enumerate() {
+            match var_reg.get_bind() {
+                Some(bind) => println!("{i:3}: {bind:?}"),
+                None => println!("{i:3}: UNBOUND"),
+            }
+        }
+        println!("------------");
+    }
+
+    pub fn var_string(&self, var_id: usize) -> String {
+        match SymbolDB::get_var(var_id, self.id) {
+            Some(symbol) => symbol.to_string(),
+            None => format!("Ref_{var_id}"),
+        }
+    }
 }
 
 impl Heap for QueryHeap<'_> {
-    #[inline(always)]
-    fn deref_addr(&self, mut addr: usize) -> usize {
-        loop {
-            let cell = self[addr];
-            match cell {
-                (Tag::Ref, pointer) if addr == pointer => return pointer,
-                (Tag::Ref, pointer) => addr = pointer,
-                _ => return addr,
-            }
-        }
-    }
-
     fn heap_push(&mut self, cell: Cell) -> usize {
         let i = self.heap_len();
         self.cells.push(cell);
@@ -196,8 +146,12 @@ impl Heap for QueryHeap<'_> {
         }
     }
 
-    fn get_id(&self) -> usize {
-        self.id
+    fn get_id(&self, addr: usize) -> usize {
+        if addr < self.prog_cells.len() {
+            0
+        } else {
+            self.id
+        }
     }
 
     fn prog_addr(&self, addr: usize) -> bool {
@@ -208,49 +162,53 @@ impl Heap for QueryHeap<'_> {
         self.cells.last_mut().unwrap()
     }
 
-    /** Create String to represent cell, can be recursively used to format complex structures or list */
-    fn term_string(&self, addr: usize) -> String {
-        // println!("[{addr}]:{:?}", self[addr]);
-        let addr = self.deref_addr(addr);
-        match self[addr].0 {
-            Tag::Con => SymbolDB::get_const(self[addr].1).to_string(),
-            Tag::Comp => self.func_string(addr),
-            Tag::Lis => self.list_string(addr),
-            Tag::ELis => "[]".into(),
-            Tag::Arg => match SymbolDB::get_var(addr, self.get_symbol_db_id(addr)) {
-                Some(symbol) => symbol.to_string(),
-                None => format!("Arg_{}", self[addr].1),
-            },
-            Tag::Ref => match SymbolDB::get_var(self.deref_addr(addr), self.get_symbol_db_id(addr))
-                .to_owned()
-            {
-                Some(symbol) => symbol.to_string(),
-                None => format!("Ref_{}", self[addr].1),
-            },
-            Tag::Int => {
-                let value: isize = unsafe { mem::transmute_copy(&self[addr].1) };
-                format!("{value}")
+    #[inline(always)]
+    fn var_deref(&self, mut var_id: usize) -> VarBind {
+        loop {
+            if self.var_regs[var_id].var() {
+                var_id = self.var_regs[var_id].value()
+            } else {
+                if self.var_regs[var_id].bound() {
+                    return Addr(self.var_regs[var_id].0);
+                } else {
+                    return Var(var_id);
+                }
             }
-            Tag::Flt => {
-                let value: fsize = unsafe { mem::transmute_copy(&self[addr].1) };
-                format!("{value}")
-            }
-            Tag::Tup => self.tuple_string(addr),
-            Tag::Set => self.set_string(addr),
-            Tag::Str => self.term_string(self[addr].1),
-            Tag::Stri => format!("\"{}\"", SymbolDB::get_string(self[addr].1)),
-            Tag::AVar => "_".into(),
         }
     }
 
-    fn truncate(&mut self, mut len: usize) {
-        debug_assert!(
-            len >= self.prog_cells.len(),
-            "truncate: target length {len} is below prog_cells boundary {}",
-            self.prog_cells.len()
-        );
-        len -= self.prog_cells.len();
-        self.cells.resize(len, (Tag::Ref, 0));
+    /// Bind variable of var_id
+    /// @var_id: variable id/bindinging index
+    /// @value: value to set in binding
+    /// @var: is binding to another variable id or an address
+    fn bind(&mut self, var_id: usize, binding: VarBind) {
+        self.var_regs[var_id].bind(binding);
+    }
+
+    fn unbind(&mut self, bound_vars: &[usize]) {
+        for var_id in bound_vars {
+            self.var_regs[*var_id].unbind();
+        }
+    }
+
+    /// Add variable cell to heap
+    /// If using existing var_id simple push new cell return var_id
+    /// If creating new var push unbound to var bindings array and return new index (var_id)
+    fn set_var(&mut self, var_id: Option<usize>) -> usize {
+        //If no address provided set addr to current heap len
+        let var_id = var_id.unwrap_or({
+            //Create new var id
+            let var_id = self.var_regs.len();
+            self.var_regs.push(VarReg::UNBOUND);
+            var_id
+        });
+
+        self.heap_push((Ref, var_id));
+        var_id
+    }
+
+    fn bound(&self, var_id: usize) -> Option<VarBind> {
+        self.var_regs[var_id].get_bind()
     }
 }
 
@@ -309,12 +267,29 @@ impl Index<Range<usize>> for QueryHeap<'_> {
     fn index(&self, index: Range<usize>) -> &Self::Output {
         let len = self.prog_cells.len();
 
-        if index.start < len && index.end < len {
+        if index.start < len && index.end <= len {
             &self.prog_cells[index]
         } else if index.start >= len && self.root.is_none() {
             &self.cells[index.start - len..index.end - len]
         } else {
             unreachable!("Index<Range>: range {index:?} spans the static program heap and mutable query cells")
         }
+    }
+}
+
+impl Index<RangeFrom<usize>> for QueryHeap<'_> {
+    type Output = [Cell];
+
+    fn index(&self, mut index: RangeFrom<usize>) -> &Self::Output {
+        assert!(
+            index.start >= self.prog_cells.len(),
+            "Can't Index with RangeFrom in program heap space"
+        );
+        assert!(
+            self.root.is_none(),
+            "Can't Index with RangeFrom on branched heap"
+        );
+        index.start -= self.prog_cells.len();
+        &self.cells[index]
     }
 }

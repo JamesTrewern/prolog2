@@ -85,9 +85,9 @@ impl SymbolDB {
         SYMBOLS.read().unwrap().const_symbols[id - isize::MAX as usize].clone()
     }
 
-    pub fn get_var(addr: usize, heap_id: usize) -> Option<Arc<str>> {
+    pub fn get_var(var_id: usize, heap_id: usize) -> Option<Arc<str>> {
         let vars = &SYMBOLS.read().unwrap().var_symbol_map;
-        if let Some(symbol) = vars.get(&(addr, heap_id)) {
+        if let Some(symbol) = vars.get(&(var_id, heap_id)) {
             Some(symbol.clone())
         } else {
             None
@@ -115,13 +115,13 @@ impl SymbolDB {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{heap::_CON_PTR, symbol_db::SymbolDB};
+    use super::super::{heap::CON_PTR, symbol_db::SymbolDB};
 
     #[test]
     //Check required symbols are preloaded
     fn known_symbols() {
-        assert_eq!(&*SymbolDB::get_const(_CON_PTR), "false");
-        assert_eq!(&*SymbolDB::get_const(_CON_PTR + 1), "true");
+        assert_eq!(&*SymbolDB::get_const(CON_PTR), "false");
+        assert_eq!(&*SymbolDB::get_const(CON_PTR + 1), "true");
     }
 
     #[test]

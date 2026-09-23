@@ -6,15 +6,12 @@ use console::Term;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Error, Result, heap::{
-        heap::{Cell, Heap},
-        query_heap::QueryHeap,
-        symbol_db::SymbolDB,
-    }, parser::{
-        build_tree::TokenStream,
-        execute_tree::{build_clause, execute_tree},
-        tokeniser::tokenise,
-    }, predicate_modules::{PredicateModule, STANDARD_MODULES, maths::set_approx_tolerance}, program::predicate_table::PredicateTable, resolution::proof::Proof,
+    heap::{Cell, Heap, QueryHeap, SymbolDB, VarBind::*},
+    parser::{build_clause, execute_tree, tokenise, TokenStream},
+    predicate_modules::{maths::set_approx_tolerance, PredicateModule, STANDARD_MODULES},
+    program::predicate_table::PredicateTable,
+    resolution::Proof,
+    Error, Result,
 };
 
 /// Engine configuration loaded from a JSON setup file.
@@ -29,6 +26,45 @@ pub struct Config {
     /// Enable debug trace output.
     #[serde(default)]
     pub debug: bool,
+    /// Keep invented predicates insulated from the rest of the program.
+    ///
+    /// An invented predicate is an unbound variable shared across the
+    /// hypothesis rather than a minted constant symbol, which leaves it open
+    /// to two interactions. Both are sound second-order resolution, but both
+    /// destroy the invention:
+    ///
+    /// 1. A goal *on* an invented predicate resolves against a background
+    ///    fact, collapsing the invention into an existing predicate.
+    /// 2. A goal on a predicate that *has background clauses* resolves against
+    ///    a hypothesis clause whose head is an invented predicate, binding
+    ///    that variable to the background symbol and retroactively rewriting
+    ///    every clause in which the invented predicate appears.
+    ///
+    /// When true — the default, including when the field is absent from the
+    /// setup file — both are suppressed where choices are gathered. Set it
+    /// false to allow them.
+    ///
+    /// Note the scope of the second case: it covers only goals on predicates
+    /// the program actually defines. A goal on an *unknown* symbol — which is
+    /// what the target predicate is, having no background clauses of its own —
+    /// is always offered the whole hypothesis, protection or not. That is how
+    /// a clause learned to cover one example is reused to discharge the next,
+    /// and how negative examples are refuted against what has been learned.
+    /// Capture of an invented predicate by the target is left to the
+    /// inequality constraints, which do reach it: the target and the invented
+    /// predicate occur together in the constraint set of the clause that
+    /// introduced them.
+    #[serde(default = "protect_h_preds_default")]
+    pub protect_h_preds: bool,
+}
+
+/// Default for [`Config::protect_h_preds`]: absent means enabled.
+///
+/// `#[serde(default)]` on a `bool` would use `bool::default()`, which is
+/// `false` — the opposite of the intended default — so the field needs an
+/// explicit default function.
+fn protect_h_preds_default() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -38,6 +74,7 @@ impl Default for Config {
             max_clause: 4,
             max_pred: 2,
             debug: false,
+            protect_h_preds: protect_h_preds_default(),
         }
     }
 }
@@ -150,7 +187,10 @@ where
         }
 
         // ["p(a)", "p(b)"] — take the strings directly
-        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> std::result::Result<Vec<String>, A::Error> {
+        fn visit_seq<A: SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> std::result::Result<Vec<String>, A::Error> {
             let mut items = Vec::with_capacity(seq.size_hint().unwrap_or(0));
             while let Some(item) = seq.next_element::<String>()? {
                 items.push(item);
@@ -219,13 +259,13 @@ impl Examples {
         buffer
     }
 
-    pub fn normalise_for_top_prog(&mut self){
-        fn normalise(ex: &mut String){
+    pub fn normalise_for_top_prog(&mut self) {
+        fn normalise(ex: &mut String) {
             *ex = ex.trim().into();
-            if ex.chars().last() != Some('.'){
+            if ex.chars().last() != Some('.') {
                 *ex += ".";
             }
-        } 
+        }
         self.pos.iter_mut().for_each(normalise);
         self.neg.iter_mut().for_each(normalise);
     }
@@ -385,7 +425,7 @@ impl App {
     }
 
     /// Load setup from a json file
-    pub fn load_setup(mut self, path: impl AsRef<str>) -> Result<Self>{
+    pub fn load_setup(mut self, path: impl AsRef<str>) -> Result<Self> {
         let path = path.as_ref();
         let setup: SetUp = serde_json::from_str(&fs::read_to_string(path)?)?;
 
@@ -402,7 +442,6 @@ impl App {
         self.auto = setup.auto;
         Ok(self)
     }
-
 
     /// Parses a Prolog source string and adds all clauses to the program.
     ///
@@ -568,15 +607,16 @@ impl App {
         let literals = TokenStream::new(tokenise(query)?).parse_goals()?;
 
         let mut query_heap = QueryHeap::new(&self.prog_heap, None);
-        let goals = build_clause(literals, None, None, &mut query_heap, true);
+        let heap_id = query_heap.id;
+        let goals = build_clause(literals, None, &mut query_heap, Some(heap_id));
         let mut vars = Vec::new();
         for literal in goals.iter() {
-            vars.extend(query_heap.term_vars(*literal, false).iter().map(|addr| {
-                (
-                    SymbolDB::get_var(*addr, query_heap.get_id()).unwrap(),
-                    *addr,
-                )
-            }));
+            vars.extend(
+                query_heap
+                    .term_vars(*literal, false)
+                    .iter()
+                    .map(|&var_id| (SymbolDB::get_var(var_id, query_heap.id).unwrap(), var_id)),
+            );
         }
         let proof = Proof::new(&query_heap, &goals);
         Ok(QuerySession {
@@ -744,17 +784,27 @@ impl<'a> Iterator for QuerySession<'a> {
     type Item = Solution;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.proof.prove(&mut self.heap,self.predicate_table, self.config) {
+        if self
+            .proof
+            .prove(&mut self.heap, self.predicate_table, self.config)
+        {
             let bindings = self
                 .vars
                 .iter()
-                .map(|(name, addr)| (name.clone(), self.heap.term_string(*addr)))
+                .map(|(name, var_id)| {
+                    (
+                        name.clone(),
+                        match self.heap.var_deref(*var_id) {
+                            Var(var_id) => self.heap.var_string(var_id),
+                            Addr(addr) => self.heap.term_string(addr),
+                        },
+                    )
+                })
                 .collect();
             let hypothesis = if self.proof.hypothesis.len() > 0 {
-                for clause in self.proof.hypothesis.iter() {
-                    clause.normalise_clause_vars(&mut self.heap);
-                }
-                let clause_strings: Vec<String> = self.proof.hypothesis
+                let clause_strings: Vec<String> = self
+                    .proof
+                    .hypothesis
                     .iter()
                     .map(|c| c.to_string(&self.heap))
                     .collect();

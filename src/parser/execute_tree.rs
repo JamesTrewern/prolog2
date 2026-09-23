@@ -4,49 +4,72 @@ use std::collections::HashMap;
 
 use super::{
     build_tree::TreeClause,
-    term::{Term, Unit},
+    term::{Str, Term},
 };
 use crate::{
-    heap::heap::Heap,
-    program::{clause::Clause, predicate_table::PredicateTable},
+    heap::Heap,
+    parser::{tokenise, TokenStream},
+    program::{
+        clause::{Clause, MAX_ARG},
+        predicate_table::PredicateTable,
+    },
 };
 
 pub fn build_clause(
     literals: Vec<Term>,
-    meta_vars: Option<Vec<String>>,
-    constrained_vars: Option<Vec<String>>,
+    meta_vars: Option<(Vec<String>, Vec<String>)>,
     heap: &mut impl Heap,
-    query: bool,
+    query: Option<usize>,
 ) -> Clause {
     let mut var_values = HashMap::new();
+
+    //Pre order var_values so meta_rule instantiation arg ids are normalised
+    if let Some((meta_vars, _)) = &meta_vars {
+        let mut vars = Vec::new();
+        for literal in &literals {
+            literal.extract_vars(&mut vars);
+        }
+        for non_meta_var in vars.into_iter().filter(|var| !meta_vars.contains(var)) {
+            let v = var_values.len();
+            var_values.insert(non_meta_var, v);
+        }
+    }
 
     let literals: Vec<usize> = literals
         .into_iter()
         .map(|term| term.encode(heap, &mut var_values, query))
         .collect();
 
+    assert!(
+        var_values.len() <= MAX_ARG,
+        "Clauses can not contain more than {MAX_ARG} variables."
+    );
+
     let meta_vars = meta_vars.map(|vars| {
-        vars.into_iter()
-            .map(|var| *var_values.get(&var).unwrap())
-            .collect::<Vec<usize>>()
+        (
+            vars.0
+                .into_iter()
+                .map(|var| *var_values.get(&var).unwrap())
+                .collect::<Vec<usize>>(),
+            vars.1
+                .into_iter()
+                .map(|var| *var_values.get(&var).unwrap())
+                .collect::<Vec<usize>>(),
+        )
     });
 
-    let constrained_vars = constrained_vars.map(|vars| {
-        vars.into_iter()
-            .map(|var| *var_values.get(&var).unwrap())
-            .collect::<Vec<usize>>()
-    });
+    println!("{meta_vars:?}");
 
-    Clause::new(literals, meta_vars, constrained_vars)
+    Clause::new(literals, meta_vars, var_values.len())
 }
 
 /// Extract variable names from a Term::Set
 fn extract_var_names_from_set(term: Term) -> Vec<String> {
-    if let Term::Set(set_terms) = term {
+    if let Term::Str(Str::Set, set_terms) = term {
         set_terms
             .into_iter()
             .map(|t| {
-                if let Term::Unit(Unit::Variable(symbol)) = t {
+                if let Term::Variable(symbol) = t {
                     symbol
                 } else {
                     panic!("meta variable set should only contain variables")
@@ -68,7 +91,7 @@ fn extract_var_names_from_list(term: Term) -> Vec<String> {
         list_terms
             .into_iter()
             .map(|t| {
-                if let Term::Unit(Unit::Variable(symbol)) = t {
+                if let Term::Variable(symbol) = t {
                     symbol
                 } else {
                     panic!("unconstrained variable list should only contain variables")
@@ -86,19 +109,19 @@ fn extract_var_names_from_list(term: Term) -> Vec<String> {
 /// - `...{P,Q,R}.` → meta_vars = {P,Q,R}, constrained_vars = None (defaults to all)
 /// - `...{P},[Q1,Q2].` → meta_vars = {P,Q1,Q2}, constrained_vars = Some({P})
 /// - `...[Q1,Q2].` → meta_vars = {Q1,Q2}, constrained_vars = Some({}) (empty)
-fn extract_meta_rule_vars(terms: &mut Vec<Term>) -> (Vec<String>, Option<Vec<String>>) {
+fn extract_meta_rule_vars(terms: &mut Vec<Term>) -> (Vec<String>, Vec<String>) {
     let last = terms.pop().unwrap();
     match last {
-        // Case 1: last is {P,Q,R} — all constrained (original behaviour)
-        Term::Set(_) => {
+        // Case 1: last is {P,Q,R}
+        Term::Str(Str::Set, _) => {
             let meta_vars = extract_var_names_from_set(last);
-            (meta_vars, None)
+            (meta_vars.clone(), meta_vars)
         }
         // Case 2 or 3: last is [Q1,Q2]
         Term::List(_, _) => {
             let unconstrained = extract_var_names_from_list(last);
             // Check if the new last element is a Set (Case 2: {P},[Q1,Q2])
-            let constrained = if matches!(terms.last(), Some(Term::Set(_))) {
+            let constrained = if matches!(terms.last(), Some(Term::Str(Str::Set, _))) {
                 extract_var_names_from_set(terms.pop().unwrap())
             } else {
                 // Case 3: [Q1,Q2] only — no constrained vars
@@ -106,13 +129,13 @@ fn extract_meta_rule_vars(terms: &mut Vec<Term>) -> (Vec<String>, Option<Vec<Str
             };
             let mut meta_vars = constrained.clone();
             meta_vars.extend(unconstrained);
-            (meta_vars, Some(constrained))
+            (meta_vars, constrained)
         }
         _ => panic!("Last literal in meta_rule wasn't a set or list"),
     }
 }
 
-pub(crate) fn execute_tree(
+pub fn execute_tree(
     syntax_tree: Vec<TreeClause>,
     heap: &mut impl Heap,
     pred_table: &mut PredicateTable,
@@ -120,31 +143,32 @@ pub(crate) fn execute_tree(
     for clause in syntax_tree {
         match clause {
             TreeClause::Fact(term) => {
-                let clause = build_clause(vec![term], None, None, heap, false);
-                let symbol_arity = heap.str_symbol_arity(clause[0]);
+                let clause = build_clause(vec![term], None, heap, None);
+                let symbol_arity = heap.symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
             TreeClause::Rule(terms) => {
-                let clause = build_clause(terms, None, None, heap, false);
-                let symbol_arity = heap.str_symbol_arity(clause[0]);
+                let clause = build_clause(terms, None, heap, None);
+                let symbol_arity = heap.symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
             TreeClause::MetaRule(mut terms) => {
                 let (meta_vars, constrained_vars) = extract_meta_rule_vars(&mut terms);
-                let clause = build_clause(terms, Some(meta_vars), constrained_vars, heap, false);
-                let symbol_arity = heap.str_symbol_arity(clause[0]);
+                let clause = build_clause(terms, Some((meta_vars, constrained_vars)), heap, None);
+                let symbol_arity = heap.symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
             TreeClause::MetaFact(head, meta_data) => {
                 let meta_vars = extract_var_names_from_set(meta_data);
-                let clause = build_clause(vec![head], Some(meta_vars), None, heap, false);
-                let symbol_arity = heap.str_symbol_arity(clause[0]);
+                let clause =
+                    build_clause(vec![head], Some((meta_vars.clone(), meta_vars)), heap, None);
+                let symbol_arity = heap.symbol_arity(clause[0]);
                 pred_table
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
@@ -153,13 +177,31 @@ pub(crate) fn execute_tree(
     }
 }
 
+/// Testing helper
+/// Build a single clause on heap without adding to a predicate table
+pub(crate) fn _build_clause(heap: &mut impl Heap, clause: &str) -> Clause {
+    let clause = TokenStream::new(tokenise(clause).unwrap())
+        .parse_clause()
+        .unwrap()
+        .unwrap();
+    match clause {
+        TreeClause::Fact(term) => build_clause(vec![term], None, heap, None),
+        TreeClause::Rule(terms) => build_clause(terms, None, heap, None),
+        TreeClause::MetaRule(mut terms) => {
+            let (meta_vars, constrained_vars) = extract_meta_rule_vars(&mut terms);
+            build_clause(terms, Some((meta_vars, constrained_vars)), heap, None)
+        }
+        TreeClause::MetaFact(head, meta_data) => {
+            let meta_vars = extract_var_names_from_set(meta_data);
+            build_clause(vec![head], Some((meta_vars.clone(), meta_vars)), heap, None)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
-        heap::{
-            heap::{Cell, Tag},
-            symbol_db::SymbolDB,
-        },
+        heap::{Cell, SymbolDB, Tag},
         parser::execute_tree::execute_tree,
         program::predicate_table::{Predicate, PredicateTable},
     };
@@ -203,11 +245,10 @@ mod tests {
     fn rules() {
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
-        let facts = TokenStream::new(
-            tokenise("p(X,Y):-q(X,a),q(Y,b). q(X):-r(X). q(X):-p(X).").unwrap(),
-        )
-        .parse_all()
-        .unwrap();
+        let facts =
+            TokenStream::new(tokenise("p(X,Y):-q(X,a),q(Y,b). q(X):-r(X). q(X):-p(X).").unwrap())
+                .parse_all()
+                .unwrap();
 
         let [p, q, r, a, b] = ["p", "q", "r", "a", "b"].map(|s| SymbolDB::set_const(s));
 
@@ -257,19 +298,54 @@ mod tests {
     }
 
     #[test]
-    fn meta_rules() {
+    fn meta_rule_simple() {
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
-        let facts = TokenStream::new(tokenise("p(X,Y):-Q(X,a),R(Y,b),{Q,R}.").unwrap())
+        let clause = TokenStream::new(tokenise("P(X,Y):-Q(X),R(Y),{P,Q,R}.").unwrap())
             .parse_all()
             .unwrap();
+        execute_tree(clause, &mut heap, &mut pred_table);
 
+        if let Predicate::Clauses(clauses) = pred_table.get_predicate((0, 2)).unwrap() {
+            let meta_rule = &clauses[0];
+            println!("{:?}", meta_rule.meta_vars);
+            assert_eq!(
+                &heap[meta_rule[0]..meta_rule[0] + 4],
+                &[(Tag::Comp, 3), (Tag::Arg, 2), (Tag::Arg, 0), (Tag::Arg, 1),]
+            );
+            assert_eq!(
+                &heap[meta_rule[1]..meta_rule[1] + 3],
+                &[(Tag::Comp, 2), (Tag::Arg, 3), (Tag::Arg, 0)]
+            );
+            assert_eq!(
+                &heap[meta_rule[2]..meta_rule[2] + 3],
+                &[(Tag::Comp, 2), (Tag::Arg, 4), (Tag::Arg, 1),]
+            );
+            assert!(meta_rule.meta_var(2).unwrap());
+            assert!(meta_rule.meta_var(3).unwrap());
+            assert!(meta_rule.meta_var(4).unwrap());
+            assert!(meta_rule.constrained_var(2));
+            assert!(meta_rule.constrained_var(3));
+            assert!(meta_rule.constrained_var(4));
+        } else {
+            panic!()
+        }
+    }
+
+    #[test]
+    fn meta_rule_complex() {
+        let mut heap = Vec::<Cell>::new();
+        let mut pred_table = PredicateTable::new();
+        let clause = TokenStream::new(tokenise("p(X,Y):-Q(X,a),R(Y,b),{Q,R}.").unwrap())
+            .parse_all()
+            .unwrap();
         let [p, _q, _r, a, b] = ["p", "q", "r", "a", "b"].map(|s| SymbolDB::set_const(s));
 
-        execute_tree(facts, &mut heap, &mut pred_table);
+        execute_tree(clause, &mut heap, &mut pred_table);
 
         if let Predicate::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
             let meta_rule = &clauses[0];
+            println!("{:?}", meta_rule.meta_vars);
             assert_eq!(
                 &heap[meta_rule[0]..meta_rule[0] + 4],
                 &[(Tag::Comp, 3), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 1),]
@@ -335,10 +411,9 @@ mod tests {
         // constrained_vars = {} (empty)
         let mut heap = Vec::<Cell>::new();
         let mut pred_table = PredicateTable::new();
-        let facts =
-            TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].").unwrap())
-                .parse_all()
-                .unwrap();
+        let facts = TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].").unwrap())
+            .parse_all()
+            .unwrap();
 
         let edge = SymbolDB::set_const("edge");
         let _q = SymbolDB::set_const("q");
@@ -381,9 +456,9 @@ mod tests {
         // The head should be: (Func, 4), (Arg, 0), (ELis), (ELis), (Arg, 1)
         // where Arg 0 is the Map variable and Arg 1 is X
         assert_eq!(heap[0], (Tag::Comp, 4));
-        assert_eq!(heap[1], (Tag::Arg, 0)); // Map variable
+        assert_eq!(heap[1], (Tag::Arg, 1)); // Map variable
         assert_eq!(heap[2].0, Tag::ELis); // Empty list
         assert_eq!(heap[3].0, Tag::ELis); // Empty list
-        assert_eq!(heap[4], (Tag::Arg, 1)); // X variable
+        assert_eq!(heap[4], (Tag::Arg, 0)); // X variable
     }
 }
