@@ -8,6 +8,7 @@ use super::{
 };
 use crate::{
     heap::Heap,
+    parser::{tokenise, TokenStream},
     program::{
         clause::{Clause, MAX_ARG},
         predicate_table::PredicateTable,
@@ -172,6 +173,27 @@ pub fn execute_tree(
                     .add_clause_to_predicate(clause, symbol_arity)
                     .unwrap();
             }
+        }
+    }
+}
+
+/// Testing helper
+/// Build a single clause on heap without adding to a predicate table
+pub(crate) fn _build_clause(heap: &mut impl Heap, clause: &str) -> Clause {
+    let clause = TokenStream::new(tokenise(clause).unwrap())
+        .parse_clause()
+        .unwrap()
+        .unwrap();
+    match clause {
+        TreeClause::Fact(term) => build_clause(vec![term], None, heap, None),
+        TreeClause::Rule(terms) => build_clause(terms, None, heap, None),
+        TreeClause::MetaRule(mut terms) => {
+            let (meta_vars, constrained_vars) = extract_meta_rule_vars(&mut terms);
+            build_clause(terms, Some((meta_vars, constrained_vars)), heap, None)
+        }
+        TreeClause::MetaFact(head, meta_data) => {
+            let meta_vars = extract_var_names_from_set(meta_data);
+            build_clause(vec![head], Some((meta_vars.clone(), meta_vars)), heap, None)
         }
     }
 }

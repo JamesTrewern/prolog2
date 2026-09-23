@@ -11,7 +11,7 @@ mod term;
 mod tokeniser;
 
 pub(crate) use build_tree::TokenStream;
-pub(crate) use execute_tree::{build_clause,execute_tree};
+pub(crate) use execute_tree::{_build_clause, build_clause, execute_tree};
 pub(crate) use tokeniser::tokenise;
 
 use std::fmt;
@@ -19,46 +19,56 @@ use std::fmt;
 #[derive(Debug)]
 pub enum ParserError {
     // --- Lexer ---
-    UnclosedStringLiteral { delimiter: char },
+    UnclosedStringLiteral {
+        delimiter: char,
+    },
     UnclosedComment,
     InvalidEscapeSequence,
     // --- Parser: token-level ---
     /// Expected a specific token; `got: None` means EOF was reached instead.
-    Expected { expected: String, got: Option<String> },
-    UnexpectedToken { token: String },
+    Expected {
+        expected: String,
+        got: Option<String>,
+    },
+    UnexpectedToken {
+        token: String,
+    },
     UnexpectedEof,
     // --- Parser: structural ---
     MalformedSet,
     /// Covers malformed existential-quantification syntax in meta-rules/meta-facts.
-    MalformedMetaRule { detail: String },
+    MalformedMetaRule {
+        detail: String,
+    },
     // --- Location wrapper ---
     /// Wraps any other variant with the source line number.
-    AtLine { line: usize, cause: Box<ParserError> },
+    AtLine {
+        line: usize,
+        cause: Box<ParserError>,
+    },
 }
 
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnclosedStringLiteral { delimiter } =>
-                write!(f, "unexpected end of file, missing closing `{delimiter}`"),
-            Self::UnclosedComment =>
-                write!(f, "unclosed multi-line comment"),
-            Self::InvalidEscapeSequence =>
-                write!(f, "invalid escape sequence"),
-            Self::Expected { expected, got: Some(got) } =>
-                write!(f, "expected `{expected}`, got `{got}`"),
-            Self::Expected { expected, got: None } =>
-                write!(f, "expected `{expected}`, got end of file"),
-            Self::UnexpectedToken { token } =>
-                write!(f, "unexpected token `{token}`"),
-            Self::UnexpectedEof =>
-                write!(f, "unexpected end of file"),
-            Self::MalformedSet =>
-                write!(f, "incorrectly formatted set"),
-            Self::MalformedMetaRule { detail } =>
-                write!(f, "malformed meta-rule: {detail}"),
-            Self::AtLine { line, cause } =>
-                write!(f, "line {line}: {cause}"),
+            Self::UnclosedStringLiteral { delimiter } => {
+                write!(f, "unexpected end of file, missing closing `{delimiter}`")
+            }
+            Self::UnclosedComment => write!(f, "unclosed multi-line comment"),
+            Self::InvalidEscapeSequence => write!(f, "invalid escape sequence"),
+            Self::Expected {
+                expected,
+                got: Some(got),
+            } => write!(f, "expected `{expected}`, got `{got}`"),
+            Self::Expected {
+                expected,
+                got: None,
+            } => write!(f, "expected `{expected}`, got end of file"),
+            Self::UnexpectedToken { token } => write!(f, "unexpected token `{token}`"),
+            Self::UnexpectedEof => write!(f, "unexpected end of file"),
+            Self::MalformedSet => write!(f, "incorrectly formatted set"),
+            Self::MalformedMetaRule { detail } => write!(f, "malformed meta-rule: {detail}"),
+            Self::AtLine { line, cause } => write!(f, "line {line}: {cause}"),
         }
     }
 }
