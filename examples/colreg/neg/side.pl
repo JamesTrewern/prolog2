@@ -1,0 +1,9 @@
+side(agent1,cruiseliner1_1,starboard).
+side(agent2,cruiseliner1_2,starboard).
+side(agent4,cruiseliner1_4,starboard).
+side(agent5,cruiseliner1_5,starboard).
+side(agent6,cruiseliner1_6,starboard).
+side(agent7,cruiseliner1_7,starboard).
+side(agent8,cruiseliner1_8,starboard).
+side(agent9,cruiseliner1_9,starboard).
+side(agent13,vessel1_13,port).

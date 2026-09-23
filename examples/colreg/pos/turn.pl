@@ -1,0 +1,15 @@
+turn(agent0,small).
+turn(agent1,moderate).
+turn(agent2,moderate).
+turn(agent3,moderate).
+turn(agent3,small).
+turn(agent4,moderate).
+turn(agent5,moderate).
+turn(agent6,moderate).
+turn(agent7,small).
+turn(agent8,moderate).
+turn(agent9,moderate).
+turn(agent10,moderate).
+turn(agent11,moderate).
+turn(agent12,moderate).
+turn(agent12,large).

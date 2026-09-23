@@ -2,12 +2,12 @@
     "config": {
         "max_depth": 5,
         "max_clause": 3,
-        "max_pred": 2,
+        "max_pred": 1,
         "debug": false
     },
     "examples": {
-        "pos": "examples/colreg/pos/avoid.pl",
-        "neg": "examples/colreg/neg/avoid.pl"
+        "pos": "examples/colreg/pos/turn.pl",
+        "neg": "examples/colreg/neg/turn.pl"
     },
     "body_predicates": [
         "sector/3",
@@ -47,7 +47,6 @@
         "moderate/1",
         "large/1",
         "very_large/1",
-        
         "range_gt/3",
         "range_lt/3",
         "range_ge/3",
@@ -64,7 +63,7 @@
         "dcpa_le/3"
     ],
     "files": [
-        "examples/colreg/combined_bk.pl", "examples/colreg/meta.pl", "examples/colreg/waypoint_meta.pl"
+        "examples/colreg/combined_bk.pl", "examples/colreg/meta.pl", "examples/colreg/turn_meta.pl"
     ],
     "top_prog": true,
     "reduce": true

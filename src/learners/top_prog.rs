@@ -36,6 +36,7 @@ struct HypothesisMsg {
 
 impl App {
     pub fn run_top_prog(&mut self) -> String {
+    pub fn run_top_prog(&mut self) -> String {
         let Some(mut examples) = self.examples.clone() else {
             panic!("Can't start top prog without examples");
         };
@@ -528,6 +529,7 @@ fn union_sub_hypotheses_renumbered(
     for hypothesis in sub_hypotheses {
         // Convert to strings, normalise within hypothesis
         let clause_strings: Vec<String> = hypothesis.iter().map(|c| c.to_string(heap)).collect();
+        let clause_strings: Vec<String> = hypothesis.iter().map(|c| c.to_string(heap)).collect();
         let normalised = crate::normalise_hypothesis(&clause_strings);
 
         // Group clauses by head predicate name
@@ -654,6 +656,15 @@ fn normalise_vars(clause: &str) -> String {
                     var_map.push((var_name.to_string(), canon.clone()));
                     canon
                 };
+            let canonical =
+                if let Some((_, canon)) = var_map.iter().find(|(orig, _)| orig == var_name) {
+                    canon.clone()
+                } else {
+                    let canon = format!("V{counter}");
+                    counter += 1;
+                    var_map.push((var_name.to_string(), canon.clone()));
+                    canon
+                };
             result.push_str(&canonical);
         } else {
             result.push(bytes[i] as char);
@@ -669,6 +680,10 @@ fn apply_mapping(clause: &str, mapping: &HashMap<String, String>) -> String {
     if mapping.is_empty() {
         return clause.to_string();
     }
+    let mut pairs: Vec<(&str, &str)> = mapping
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     let mut pairs: Vec<(&str, &str)> = mapping
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))

@@ -1,0 +1,11 @@
+avoid(agent0,cruiseliner1_0,medium_close).
+avoid(agent1,cruiseliner1_1,short_close).
+avoid(agent2,cruiseliner1_2,medium_close).
+avoid(agent3,cruiseliner1_3,risk_developing).
+avoid(agent6,cruiseliner1_6,imminent_close).
+avoid(agent7,cruiseliner1_7,risk_developing).
+avoid(agent8,cruiseliner1_8,medium_close).
+avoid(agent9,cruiseliner1_9,short_veryclose).
+avoid(agent10,cruiseliner1_10,risk_developing).
+avoid(agent11,cruiseliner1_11,medium_close).
+avoid(agent13,vessel1_13,medium_critical).

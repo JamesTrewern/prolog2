@@ -2,7 +2,7 @@
     "config": {
         "max_depth": 5,
         "max_clause": 3,
-        "max_pred": 2,
+        "max_pred": 0,
         "debug": false
     },
     "examples": {
@@ -64,7 +64,7 @@
         "dcpa_le/3"
     ],
     "files": [
-        "examples/colreg/combined_bk.pl", "examples/colreg/meta.pl", "examples/colreg/waypoint_meta.pl"
+        "examples/colreg/combined_bk.pl", "examples/colreg/meta.pl", "examples/colreg/avoid_resume_meta.pl"
     ],
     "top_prog": true,
     "reduce": true

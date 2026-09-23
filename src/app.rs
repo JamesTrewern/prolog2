@@ -158,12 +158,56 @@ impl<'de> serde::Deserialize<'de> for BodyPred {
     }
 }
 
+fn deserialize_examples<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, SeqAccess, Visitor};
+    use std::fmt;
+
+    struct ExamplesVisitor;
+
+    impl<'de> Visitor<'de> for ExamplesVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a file path string or a list of example strings")
+        }
+
+        // "examples/pos.pl" — treat as a file path and load it
+        fn visit_str<E: de::Error>(self, v: &str) -> std::result::Result<Vec<String>, E> {
+            let file = fs::read_to_string(v)
+                .map_err(|e| E::custom(format!("failed to read examples file {v:?}: {e}")))?;
+            Ok(file
+                .split(".\n")
+                .map(str::trim)
+                .filter(|ex| !ex.is_empty())
+                .map(String::from)
+                .collect())
+        }
+
+        // ["p(a)", "p(b)"] — take the strings directly
+        fn visit_seq<A: SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> std::result::Result<Vec<String>, A::Error> {
+            let mut items = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(item) = seq.next_element::<String>()? {
+                items.push(item);
+            }
+            Ok(items)
+        }
+    }
+
+    deserializer.deserialize_any(ExamplesVisitor)
+}
+
 /// Positive and negative training examples.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Examples {
-    /// Positive examples (goals that should succeed).
+    #[serde(deserialize_with = "deserialize_examples")]
     pub pos: Vec<String>,
-    /// Negative examples (goals that should fail).
+    #[serde(deserialize_with = "deserialize_examples")]
     pub neg: Vec<String>,
 }
 
@@ -378,6 +422,25 @@ impl App {
             }
         }
         app.add_body_predicates(setup.body_predicates)
+    }
+
+    /// Load setup from a json file
+    pub fn load_setup(mut self, path: impl AsRef<str>) -> Result<Self> {
+        let path = path.as_ref();
+        let setup: SetUp = serde_json::from_str(&fs::read_to_string(path)?)?;
+
+        set_approx_tolerance(setup.approx_tolerance_pct);
+
+        self.top_prog = if setup.top_prog {
+            TopProg::True(setup.reduce)
+        } else {
+            TopProg::False
+        };
+
+        self.config = setup.config;
+        self.examples = setup.examples;
+        self.auto = setup.auto;
+        Ok(self)
     }
 
     /// Parses a Prolog source string and adds all clauses to the program.

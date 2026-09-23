@@ -1,0 +1,13 @@
+resume(agent0,cruiseliner1_0,no_risk).
+resume(agent1,cruiseliner1_1,no_risk).
+resume(agent2,cruiseliner1_2,no_risk).
+resume(agent3,cruiseliner1_3,no_risk).
+resume(agent4,cruiseliner1_4,no_risk).
+resume(agent5,cruiseliner1_5,no_risk).
+resume(agent6,cruiseliner1_6,imminent_close).
+resume(agent7,cruiseliner1_7,no_risk).
+resume(agent8,cruiseliner1_8,no_risk).
+resume(agent9,cruiseliner1_9,no_risk).
+resume(agent10,cruiseliner1_10,no_risk).
+resume(agent11,cruiseliner1_11,no_risk).
+resume(agent12,cruiseliner1_12,no_risk).
