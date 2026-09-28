@@ -37,13 +37,13 @@ impl VarReg {
     pub fn addr(&self) -> bool {
         self.bound() && self.0 & VAR_MASK == 0
     }
-    
+
     /// Quick accessor for usize value represent by either address or variable binding.
     /// No guards on if the register in unbound!
     pub fn value(&self) -> usize {
         self.0 & !VAR_MASK
     }
-    
+
     /// If the register is bound convert to VarBind type,
     /// else return None
     pub fn get_bind(&self) -> Option<VarBind> {
@@ -57,7 +57,7 @@ impl VarReg {
             None
         }
     }
-    
+
     /// Bind the register with guards against overwrite
     pub fn bind(&mut self, binding: VarBind) {
         debug_assert!(
@@ -73,18 +73,11 @@ impl VarReg {
         self.0 = UNBOUND_VALUE
     }
 
-    #[multiversion(targets = "simd")] // generates avx512/avx2/sse2/neon clones + runtime dispatch
-    pub fn replace_all(regs: &mut [VarReg; MAX_ARG], find: VarReg, replace: VarReg) {
-        for r in regs.iter_mut() {
-            *r = if r.0 == find.0 { replace } else { *r }; // autovectorizes per-clone
-        }
-    }
-
-    pub fn from_addr(addr: usize) -> Self{
+    pub fn from_addr(addr: usize) -> Self {
         Self(addr)
     }
 
-    pub fn from_var(var_id: usize) -> Self{
+    pub fn from_var(var_id: usize) -> Self {
         Self(var_id | VAR_MASK)
     }
 }
