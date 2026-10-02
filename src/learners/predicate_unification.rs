@@ -1,50 +1,138 @@
-use std::cmp::Ordering;
-
-use crate::{
-    heap::{Heap, SymbolDB, Tag::*, TermWalk, Walk},
-    program::clause::Clause,
+use std::{
+    cmp::Ordering::{self, *},
+    collections::{HashMap, HashSet},
+    ops::{Deref, Range},
 };
 
+use smallvec::SmallVec;
+
+use crate::{
+    heap::{Heap, QueryHeap, SymbolDB, Tag::*, TermWalk, VarBind::Addr, Walk},
+    program::{clause::Clause, hypothesis::Hypothesis},
+    resolution::unify,
+    utils::{BitFlag16, DirGraph8, FindReturn},
+};
+
+/// Describe the structure of a clause by the size of it's literals in order
+#[derive(Debug, PartialOrd, PartialEq, Eq)]
+struct ClauseSignature(Box<[usize]>);
+
+impl ClauseSignature {
+    pub fn extract_clause_signature(clause: &Clause, heap: &impl Heap) -> Self {
+        Self(
+            clause
+                .iter()
+                .map(|literal_addr| {
+                    if let (Comp, len) = heap[*literal_addr] {
+                        len
+                    } else {
+                        panic!("Malformed clause, can't extract signature")
+                    }
+                })
+                .collect(),
+        )
+    }
+}
+
+impl Deref for ClauseSignature {
+    type Target = Box<[usize]>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Ord for ClauseSignature {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.len().cmp(&other.len()) {
+            Equal => {
+                for (len1, len2) in self.iter().zip(other.iter()) {
+                    match len1.cmp(len2) {
+                        Equal => continue,
+                        ordering => return ordering,
+                    }
+                }
+                Equal
+            }
+            ord => ord,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct PredDef {
     clauses: Vec<Clause>,
+    signatures: Vec<ClauseSignature>,
     // symbol: usize, //Con id for invented symbol
 }
 
+/// Order clauses by length
+/// Break ties by comparing length of literals in order
 fn cmp_clause(a: &Clause, b: &Clause, heap: &impl Heap) -> Ordering {
     match a.len().cmp(&b.len()) {
         ordering => ordering,
-        Ordering::Equal => {
+        Equal => {
             let len = a.len();
-            for i in 1..len {
+            for i in 0..len {
                 let (_, arr1) = heap[a[i]];
                 let (_, arr2) = heap[b[i]];
                 match arr1.cmp(&arr2) {
-                    Ordering::Equal => continue,
+                    Equal => continue,
                     ordering => return ordering,
                 }
             }
-            Ordering::Equal
+            Equal
         }
     }
 }
 
 impl PredDef {
-    pub fn new(heap: &mut impl Heap, mut clauses: Vec<Clause>) -> Self {
-        // Order Clauses by literal count
-        clauses.sort_by(|a, b| cmp_clause(a, b, heap));
-        // Order Clauses by literal count, break ties with 1st body arity
+    /// Take clauses to form new predicate definition (orders clauses)
+    pub fn new(heap: &impl Heap, clauses: Vec<Clause>) -> Self {
+        // TODO consider extra if memory allocation is slower than using cmp_clauses
+        // then getting clause defintions
+        // TODO? after safety guards to ensure no ref cells in literal arguments
 
-        Self { clauses }
+        // Create clause signatures
+        let mut clauses_signatures: Vec<(Clause, ClauseSignature)> = clauses
+            .into_iter()
+            .map(|clause| {
+                let cs = ClauseSignature::extract_clause_signature(&clause, heap);
+                (clause, cs)
+            })
+            .collect();
+        // Order clauses by signature
+        clauses_signatures.sort_by(|(_, a), (_, b)| a.cmp(b));
+        // Unzip
+        let (clauses, signatures) = clauses_signatures.into_iter().unzip();
+        Self {
+            clauses,
+            signatures,
+        }
     }
 
+    /// Update variable predicate defined by predicate
+    /// defintion to a newly coined constant predicate symbol
     pub fn make_const(&mut self, heap: &mut impl Heap, next_id: usize) {
-        // Extract var pred
-        let (Ref, var_pred) = heap[self.clauses[0][0] + 1] else {
-            panic!()
+        // Extract var pred in clause heads
+        let mut var_pred_ids = HashSet::new();
+
+        for clause in &self.clauses {
+            let (Ref, var_id) = heap[clause[0] + 1] else {
+                panic!("Predicate definition is already constant")
+            };
+            var_pred_ids.insert(var_id);
+        }
+
+        // Accept only 1 var pred
+        let (var_pred, first_addr) = if var_pred_ids.len() == 1 {
+            (*var_pred_ids.iter().next().unwrap(), self.clauses[0][0] + 1)
+        } else {
+            todo!("Not implemented mutually recursive predicate defintions yet");
         };
+
         // coin new const
         let pred_symbol = SymbolDB::set_const(format!("pred_{next_id}"));
-        let pred_addr = heap.heap_push((Con, pred_symbol));
         // Update Clauses with new symbol
         for clause in &self.clauses {
             for literal in clause.iter() {
@@ -56,50 +144,198 @@ impl PredDef {
                 }
             }
         }
+        // Add binding to update waiting variable pred defs
+        heap.bind(var_pred, Addr(first_addr));
     }
 
-    pub fn new_const(heap: &mut impl Heap, mut clauses: Vec<Clause>, next_id: usize) -> Self {
-        // Extract var pred
-        let (Ref, var_pred) = heap[clauses[0][0] + 1] else {
-            panic!()
-        };
-        // coin new const
-        let pred_symbol = SymbolDB::set_const(format!("pred_{next_id}"));
-        let pred_addr = heap.heap_push((Con, pred_symbol));
-
-        // Update Clauses with new symbol
-        // Assumes ownership of clause literals
-        for clause in &clauses {
-            for literal in clause.iter() {
-                let mut walk = TermWalk::new(*literal);
-                while let Some((addr, cell)) = walk.next_cell_with_addr(heap) {
-                    if cell == (Ref, var_pred) {
-                        heap[addr] = (Con, pred_symbol)
+    /// Attempt to unify two clause definitions
+    /// Self should be constant
+    /// will update variable bindings on heap effecting other variable clause defintions waiting to unify
+    pub fn unify(&self, var_pred_def: &PredDef, heap: &mut QueryHeap) -> bool {
+        // TODO? consider if comparing signatures is needed as
+        // table uses signatures to create matching range already
+        // if *self.signatures != *var_pred_def.signatures {
+        //     return false;
+        // }
+        let mut bound_vars = Vec::new();
+        for (c1, c2) in self.clauses.iter().zip(var_pred_def.clauses.iter()) {
+            for (&l1, &l2) in c1.iter().zip(c2.iter()) {
+                match unify(heap, l1, l2, 15) {
+                    Some(subs) => {
+                        bound_vars.extend(subs.bound_vars);
+                    }
+                    None => {
+                        // Ensure unbinding on failure
+                        heap.unbind(&bound_vars);
+                        return false;
                     }
                 }
             }
         }
 
-        //Order Clauses by literal count
-        // TODO move this out of new, assume pred defs come ordered
-        clauses.sort_by(|a, b| a.len().cmp(&b.len()));
-
-        Self {
-            clauses,
-            // symbol: pred_symbol,
-        }
-    }
-
-    /// Attempt to unify variable with constant predicate defintion
-    pub fn unify(&self, var_pred_def: &Vec<Clause>, heap: &impl Heap) -> bool {
-        if self.clauses.len() != var_pred_def.len() {
-            return false;
-        }
-
-        // Order
-
         true
     }
+
+    pub fn cmp(&self, other: &Self) -> Ordering {
+        match self.signatures.len().cmp(&other.signatures.len()) {
+            Equal => {
+                for (sig1, sig2) in self.signatures.iter().zip(other.signatures.iter()) {
+                    match sig1.cmp(sig2) {
+                        Equal => continue,
+                        ordering => return ordering,
+                    }
+                }
+                Equal
+            }
+            ord => ord,
+        }
+    }
+}
+
+#[derive(Default, Debug)]
+struct PredDefTable {
+    pred_defs: Vec<PredDef>,
+    next_id: usize,
+}
+
+impl PredDefTable {
+    pub fn len(&self) -> usize {
+        self.pred_defs.len()
+    }
+
+    pub fn insert(&mut self, pred_def: PredDef, heap: &mut QueryHeap) {
+        match self.binary_search(&pred_def, heap) {
+            FindReturn::InsertPos(insert_pos) => self.add_def(pred_def, insert_pos, heap),
+            FindReturn::Index(i) => {
+                let matching_range = self.find_matching_signature_range(&pred_def, heap, i);
+                let insert_pos = matching_range.start;
+                // Attempt to unify with existing pred def
+                for i in matching_range {
+                    if self.pred_defs[i].unify(&pred_def, heap) {
+                        // Unification successful
+                        // Pred defs from same hypothesis now updated with bindings
+                        return;
+                    }
+                }
+                //Insert new pred def at start of range
+                self.add_def(pred_def, insert_pos, heap);
+            }
+        }
+    }
+
+    fn add_def(&mut self, mut pred_def: PredDef, insert_pos: usize, heap: &mut QueryHeap) {
+        pred_def.make_const(heap, self.next_id);
+        self.next_id += 1;
+        self.pred_defs.insert(insert_pos, pred_def);
+    }
+
+    fn binary_search(&self, pred_def: &PredDef, heap: &impl Heap) -> FindReturn {
+        let mut lb: usize = 0;
+        let mut ub: usize = self.pred_defs.len();
+        let mut mid: usize;
+
+        while ub > lb {
+            mid = (lb + ub) / 2;
+            match pred_def.cmp(&self.pred_defs[mid]) {
+                Less => ub = mid,
+                Equal => return FindReturn::Index(mid),
+                Greater => lb = mid + 1,
+            }
+        }
+        FindReturn::InsertPos(lb)
+    }
+
+    fn find_matching_signature_range(
+        &self,
+        pred_def: &PredDef,
+        heap: &impl Heap,
+        i: usize,
+    ) -> Range<usize> {
+        let mut lb = i;
+
+        while lb > 0 && self.pred_defs[lb - 1].cmp(&pred_def) == Equal {
+            lb -= 1;
+        }
+        let mut ub = i + 1;
+        while ub < self.pred_defs.len() && self.pred_defs[ub].cmp(&pred_def) == Equal {
+            ub += 1;
+        }
+        lb..ub
+    }
+
+    fn print_defs(&self, heap: &impl Heap) {
+        for (i, pred_def) in self.pred_defs.iter().enumerate() {
+            println!("=====================");
+            println!("=== Definition {i} ===");
+            for clause in &pred_def.clauses {
+                println!("{}", clause.to_string(heap))
+            }
+            println!("=====================");
+        }
+    }
+}
+
+fn extract_body_var_preds(pred_set: &mut HashSet<usize>, clause: &Clause, heap: &impl Heap) {
+    for literal in clause.body() {
+        if let (Ref, var_id) = heap.get_deref_cell(literal + 1) {
+            pred_set.insert(var_id);
+        }
+    }
+}
+
+fn extract_pred_defs_from_h(hypothesis: Vec<Clause>, heap: &impl Heap) -> Vec<PredDef> {
+    // TODO clause sets as small vec of clause indexes
+
+    let mut clause_sets: Vec<SmallVec<[usize; 5]>> = Vec::with_capacity(hypothesis.len());
+    let mut var_preds = Vec::with_capacity(hypothesis.len());
+    let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(hypothesis.len());
+
+    // First pass seperate based on predicate in head
+    for (idx, clause) in hypothesis.iter().enumerate() {
+        if let (Ref, var_id) = heap.get_deref_cell(clause[0] + 1) {
+            match var_preds.iter().position(|var_pred| *var_pred == var_id) {
+                Some(def_index) => {
+                    extract_body_var_preds(&mut dependencies[def_index], &clause, heap);
+                    clause_sets[def_index].push(idx);
+                }
+                None => {
+                    var_preds.push(var_id);
+                    let mut body_var_preds = HashSet::new();
+                    extract_body_var_preds(&mut body_var_preds, &clause, heap);
+                    dependencies.push(body_var_preds);
+                    clause_sets.push(SmallVec::from_elem(idx, 1));
+                }
+            }
+        }
+    }
+
+    // Build dependency graph
+    // find SCCs
+    // merge SCCs into 1 pred def
+    // use new dependency graph to order pred defs
+    if clause_sets.len() <= 8 {
+        let mut graph: DirGraph8 = DirGraph8::new(clause_sets.len());
+        for (i, deps) in dependencies.into_iter().enumerate() {
+            for dep in deps {
+                graph.add_edge(
+                    i,
+                    var_preds
+                        .iter()
+                        .position(|var_pred| *var_pred == dep)
+                        .unwrap(),
+                );
+            }
+        }
+        for group in graph.cyclic_groups()
+    }
+
+    //find defs with no dependencies
+
+    // clause_sets
+    //     .into_iter()
+    //     .map(|clauses| PredDef::new(heap, clauses))
+    //     .collect()
+    todo!()
 }
 
 #[cfg(test)]
@@ -113,8 +349,13 @@ mod tests {
             VarBind::{self, *},
             VarReg,
         },
+        learners::predicate_unification::{PredDef, PredDefTable},
         parser::{_build_clause, execute_tree, tokenise, TokenStream},
-        program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
+        program::{
+            clause::Clause,
+            hypothesis::{Constraints, Hypothesis},
+            predicate_table::PredicateTable,
+        },
         resolution::{build, Substitution},
     };
 
@@ -152,74 +393,312 @@ mod tests {
         Clause::new(new_clause_literals, None, meta.max_arg_id)
     }
 
+    fn build_hypothesis<const N: usize, const M: usize>(
+        meta_rules: [(&Clause, usize); N],
+        meta_binds: [(usize, &[VarBind]); M],
+        heap: &mut QueryHeap,
+    ) -> Hypothesis {
+        let mut h = Hypothesis::new();
+        // Ensure heap has var regs
+        let mut max_var_id = 0;
+        for (_, binds) in &meta_binds {
+            for bind in *binds {
+                if let Var(var_id) = bind {
+                    max_var_id = max_var_id.max(*var_id);
+                }
+            }
+        }
+        if heap.var_regs.len() <= max_var_id {
+            heap.var_regs.resize(max_var_id + 1, VarReg::UNBOUND);
+        }
+
+        for (meta_idx, bindings) in meta_binds {
+            let (meta_rule, reg_offset) = meta_rules[meta_idx];
+            let bindings: Box<[(usize, VarBind)]> = bindings
+                .into_iter()
+                .enumerate()
+                .map(|(i, bind)| (i + reg_offset, bind.clone()))
+                .collect();
+            h.push_clause(
+                instantiate_meta_rule(heap, meta_rule, &bindings),
+                Constraints::default(),
+            );
+        }
+
+        h
+    }
+
+    fn print_hypothesis(clauses: &[Clause], id: usize, heap: &impl Heap) {
+        println!("=====================");
+        println!("Hypothesis {id}");
+        for c in clauses {
+            println!("{}", c.to_string(heap))
+        }
+        println!("=====================");
+    }
+
     /// Hypothesis 1
     ///     p(X,Y):- Var_0(X,Y).
     ///     Var_0(X,Y):- q(X), r(Y).
     /// Hypothesis 2
     ///     p(X,Y):- Var_1(X,Y).
     ///     Var_1(X,Y):- q(X), r(Y).
+    #[test]
     fn one_clause_pred() {
         // Create meta rules
         let mut prog_heap: Vec<Cell> = vec![];
-        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}");
-        let meta2 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}");
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         //Build hypotheses
-        let mut heap = QueryHeap::new(&[], None);
+        let mut heap = QueryHeap::new(&prog_heap, None);
         let [p, q, r] = get_const_ids(["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
-        let mut h1 = Hypothesis::new();
-        heap.var_regs.push(VarReg::UNBOUND);
-        h1.push_clause(
-            instantiate_meta_rule(&mut heap, &meta1, &[(2, Addr(p)), (3, Var(0))]),
-            SmallVec::new(),
-        );
-        h1.push_clause(
-            instantiate_meta_rule(
-                &mut heap,
-                &meta2,
-                &[(2, Var(0)), (3, Addr(q)), (4, Addr(r))],
-            ),
-            SmallVec::new(),
+        let h1 = build_hypothesis(
+            meta_rules,
+            [(0, &[Addr(p), Var(0)]), (1, &[Var(0), Addr(q), Addr(r)])],
+            &mut heap,
         );
 
-        let mut h2 = Hypothesis::new();
-        heap.var_regs.push(VarReg::UNBOUND);
-        h2.push_clause(
-            instantiate_meta_rule(&mut heap, &meta1, &[(2, Addr(p)), (3, Var(1))]),
-            SmallVec::new(),
+        let h2 = build_hypothesis(
+            meta_rules,
+            [(0, &[Addr(p), Var(1)]), (1, &[Var(1), Addr(q), Addr(r)])],
+            &mut heap,
         );
-        h2.push_clause(
-            instantiate_meta_rule(
-                &mut heap,
-                &meta2,
-                &[(2, Var(1)), (3, Addr(q)), (4, Addr(r))],
-            ),
-            SmallVec::new(),
-        );
+
+        let mut pdt = PredDefTable::default();
+
+        //Seperate out pred defs
+        let pd1 = PredDef::new(&mut heap, vec![h1[1].clone()]);
+        let pd2 = PredDef::new(&mut heap, vec![h2[1].clone()]);
+
+        pdt.insert(pd1, &mut heap);
+        pdt.insert(pd2, &mut heap);
+
+        pdt.print_defs(&heap);
+
+        // h2 pred unified
+        let h1_p1 = heap[h1[1][0] + 1];
+        let h2_p1 = match heap.var_deref(heap[h2[1][0] + 1].1) {
+            Addr(addr) => heap[addr],
+            _ => panic!(),
+        };
+
+        assert_eq!(h1_p1, h2_p1)
     }
 
-    // #[test]
-    // /// Hypothesis 1
-    // ///     p(X,Y):- Var_0(X,Y).
-    // ///     Var_0(X,Y):- q(X), r(Y).
-    // /// Hypothesis 2
-    // ///     p(X,Y):- Var_1(X,Y).
-    // ///     Var_1(X,Y):- q(X), r(Y).
-    // fn one_clause_pred_2() {
-    //     let [p, q, r] = get_const_ids(["p", "q", "r"]);
-    //     let mut heap = QueryHeap::new(&[], None);
-    //     let literals = [
-    //         &[(Con, p), (Arg, 0), (Arg, 1)][..],
-    //         &[(Ref, 0), (Arg, 0), (Arg, 1)][..],
-    //     ];
-    //     let clause1 = build_clause(&mut heap, &literals, 1);
-    //     let literals = [
-    //         &[(Ref, 1), (Arg, 0), (Arg, 1)][..],
-    //         &[(Con, q), (Arg, 0)][..],
-    //         &[(Con, q), (Arg, 1)][..],
-    //     ];
-    //     let clause2 = build_clause(&mut heap, &literals, 1);
-    // }
+    /// Hypothesis 1
+    ///     p(X,Y):- Var_0(X,Y).
+    ///     Var_0(X,Y):- q(X), r(Y).
+    ///     Var_0(X,Y):- r(X), q(Y).
+    /// Hypothesis 2
+    ///     p(X,Y):- Var_1(X,Y).
+    ///     Var_1(X,Y):- q(X), r(Y).
+    ///     Var_1(X,Y):- r(X), q(Y).
+    #[test]
+    fn two_clause_pred() {
+        // Create meta rules
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        //Build hypotheses
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+
+        let h1 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)]),
+                (1, &[Var(0), Addr(q), Addr(r)]),
+                (1, &[Var(0), Addr(r), Addr(q)]),
+            ],
+            &mut heap,
+        );
+
+        let h2 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(1)]),
+                (1, &[Var(1), Addr(q), Addr(r)]),
+                (1, &[Var(1), Addr(r), Addr(q)]),
+            ],
+            &mut heap,
+        );
+
+        let mut pdt = PredDefTable::default();
+
+        //Seperate out pred defs
+        let pd1 = PredDef::new(&mut heap, h1[1..].to_vec());
+        let pd2 = PredDef::new(&mut heap, h2[1..].to_vec());
+
+        pdt.insert(pd1, &mut heap);
+        pdt.insert(pd2, &mut heap);
+
+        pdt.print_defs(&heap);
+
+        // h2 pred unified
+        let h1_p1 = heap[h1[1][0] + 1];
+        let h2_p1 = match heap.var_deref(heap[h2[1][0] + 1].1) {
+            Addr(addr) => heap[addr],
+            _ => panic!(),
+        };
+
+        assert_eq!(h1_p1, h2_p1)
+    }
+
+    /// Hypothesis 1
+    ///     p(X,Y):- Var_0(X,Y).
+    ///     Var_0(X,Y):- Var_1(X,Y)
+    ///     Var_1(X,Y):- q(X), r(Y).
+    /// Hypothesis 2
+    ///     p(X,Y):- Var_2(X,Y).
+    ///     Var_2(X,Y):- Var_3(X,Y).
+    ///     Var_3(X,Y):- q(X), r(Y).
+    #[test]
+    fn dependent_pred() {
+        // Create meta rules
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        //Build hypotheses
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+
+        let h1 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)]),
+                (0, &[Var(0), Var(1)]),
+                (1, &[Var(1), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+
+        let h2 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(2)]),
+                (0, &[Var(2), Var(3)]),
+                (1, &[Var(3), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+
+        let mut pdt = PredDefTable::default();
+
+        //Seperate out pred defs
+        let h1pd1 = PredDef::new(&mut heap, vec![h1[1].clone()]);
+        let h1pd2 = PredDef::new(&mut heap, vec![h1[2].clone()]);
+        let h2pd1 = PredDef::new(&mut heap, vec![h2[1].clone()]);
+        let h2pd2 = PredDef::new(&mut heap, vec![h2[2].clone()]);
+
+        pdt.insert(h1pd2, &mut heap);
+        pdt.insert(h1pd1, &mut heap);
+        pdt.insert(h2pd2, &mut heap);
+        pdt.insert(h2pd1, &mut heap);
+
+        pdt.print_defs(&heap);
+
+        // h2 pred unified
+        let h1_p1 = heap[h1[1][0] + 1];
+        let h2_p1 = match heap.var_deref(heap[h2[1][0] + 1].1) {
+            Addr(addr) => heap[addr],
+            _ => panic!(),
+        };
+
+        assert_eq!(h1_p1, h2_p1)
+    }
+
+    /// Hypothesis 1
+    ///     p(X,Y):- Var_0(X,Y).
+    ///     Var_0(X,Y):- Var_1(X,Y).
+    ///     Var_0(X,Y):- p(X,Y).
+    ///     Var_1(X,Y):- q(X), r(Y).
+    /// Hypothesis 2
+    ///     p(X,Y):- Var_2(X,Y).
+    ///     Var_2(X,Y):- Var_3(X,Y).
+    ///     Var_3(X,Y):- q(X), r(Y).
+    #[test]
+    fn dependend_different() {
+        // Create meta rules
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        //Build hypotheses
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+        let h1 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)]),
+                (0, &[Var(0), Var(1)]),
+                (0, &[Var(0), Addr(p)]),
+                (1, &[Var(1), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+        let h2 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(2)]),
+                (0, &[Var(2), Var(3)]),
+                (1, &[Var(3), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+
+        // Build Pred Def table
+        let mut pdt = PredDefTable::default();
+
+        //Seperate out pred defs
+        let h1pd1 = PredDef::new(&mut heap, h1[1..3].to_vec());
+        let h1pd2 = PredDef::new(&mut heap, vec![h1[3].clone()]);
+        let h2pd1 = PredDef::new(&mut heap, vec![h2[1].clone()]);
+        let h2pd2 = PredDef::new(&mut heap, vec![h2[2].clone()]);
+
+        pdt.insert(h1pd2, &mut heap);
+        pdt.insert(h1pd1, &mut heap);
+        pdt.insert(h2pd2, &mut heap);
+        pdt.insert(h2pd1, &mut heap);
+
+        pdt.print_defs(&heap);
+        print_hypothesis(&h1, 1, &heap);
+        print_hypothesis(&h2, 2, &heap);
+
+        // correct preds unified across hypotheses
+        let (Con, h1_p1) = heap.get_deref_cell(h1[1][0] + 1) else {
+            panic!()
+        };
+        let (Con, h1_p2) = heap.get_deref_cell(h1[3][0] + 1) else {
+            panic!()
+        };
+        let (Con, h2_p1) = heap.get_deref_cell(h2[1][0] + 1) else {
+            panic!()
+        };
+        let (Con, h2_p2) = heap.get_deref_cell(h2[2][0] + 1) else {
+            panic!()
+        };
+        assert_eq!(h1_p2, h2_p2);
+        assert_ne!(h1_p1, h2_p1);
+
+        // body literal pred dependency shared
+        let (Con, h1_c1_b) = heap.get_deref_cell(h1[1][1] + 1) else {
+            panic!()
+        };
+        let (Con, h2_c1_b) = heap.get_deref_cell(h2[1][1] + 1) else {
+            panic!()
+        };
+        assert_eq!(h1_c1_b, h2_c1_b)
+    }
 }

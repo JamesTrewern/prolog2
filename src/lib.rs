@@ -91,6 +91,8 @@ pub mod program;
 /// Resolution engine: proof search, unification, and term building.
 pub mod resolution;
 
+mod utils;
+
 // Re-export commonly used types at crate root.
 pub use app::{BodyPred, Config, Examples, SetUp};
 

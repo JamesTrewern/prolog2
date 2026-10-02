@@ -97,6 +97,17 @@ pub trait Heap:
     /// Or return Addr(addr)
     fn var_deref(&self, var_id: usize) -> VarBind;
 
+    fn get_deref_cell(&self, addr: usize) -> Cell {
+        if let (Ref, var_id) = self[addr] {
+            match self.var_deref(var_id) {
+                Var(var_id) => (Ref, var_id),
+                Addr(addr) => self[addr],
+            }
+        } else {
+            self[addr]
+        }
+    }
+
     fn prog_addr(&self, _addr: usize) -> bool {
         true
     }

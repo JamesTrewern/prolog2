@@ -58,8 +58,6 @@ pub fn build_clause(
         )
     });
 
-    println!("{meta_vars:?}");
-
     Clause::new(literals, meta_vars, var_values.len())
 }
 
@@ -308,7 +306,6 @@ mod tests {
 
         if let Predicate::Clauses(clauses) = pred_table.get_predicate((0, 2)).unwrap() {
             let meta_rule = &clauses[0];
-            println!("{:?}", meta_rule.meta_vars);
             assert_eq!(
                 &heap[meta_rule[0]..meta_rule[0] + 4],
                 &[(Tag::Comp, 3), (Tag::Arg, 2), (Tag::Arg, 0), (Tag::Arg, 1),]
@@ -345,7 +342,6 @@ mod tests {
 
         if let Predicate::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
             let meta_rule = &clauses[0];
-            println!("{:?}", meta_rule.meta_vars);
             assert_eq!(
                 &heap[meta_rule[0]..meta_rule[0] + 4],
                 &[(Tag::Comp, 3), (Tag::Con, p), (Tag::Arg, 0), (Tag::Arg, 1),]

@@ -36,7 +36,6 @@ struct HypothesisMsg {
 
 impl App {
     pub fn run_top_prog(&mut self) -> String {
-    pub fn run_top_prog(&mut self) -> String {
         let Some(mut examples) = self.examples.clone() else {
             panic!("Can't start top prog without examples");
         };

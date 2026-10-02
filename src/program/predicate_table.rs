@@ -3,7 +3,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::predicate_modules::PredicateFunction;
+use crate::{predicate_modules::PredicateFunction, utils::FindReturn};
 
 use super::clause::Clause;
 
@@ -35,13 +35,6 @@ pub struct PredicateEntry {
 pub struct PredicateTable {
     predicates: Vec<PredicateEntry>,
     body_list: Vec<usize>,
-}
-
-//Return type for binary search of predicate keys
-#[derive(Debug, PartialEq, Eq)]
-enum FindReturn {
-    Index(usize),
-    InsertPos(usize),
 }
 
 impl PredicateTable {
