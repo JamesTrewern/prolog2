@@ -61,7 +61,7 @@ impl Ord for ClauseSignature {
 
 #[derive(Debug)]
 pub struct PredDef {
-    clauses: Vec<Clause>,
+    clauses: SmallVec<[Clause; 4]>,
     signatures: Vec<ClauseSignature>,
     // symbol: usize, //Con id for invented symbol
 }
@@ -88,7 +88,7 @@ fn cmp_clause(a: &Clause, b: &Clause, heap: &impl Heap) -> Ordering {
 
 impl PredDef {
     /// Take clauses to form new predicate definition (orders clauses)
-    pub fn new(heap: &impl Heap, clauses: Vec<Clause>) -> Self {
+    pub fn new(heap: &impl Heap, clauses: SmallVec<[Clause; 4]>) -> Self {
         // TODO consider extra if memory allocation is slower than using cmp_clauses
         // then getting clause defintions
         // TODO? after safety guards to ensure no ref cells in literal arguments
@@ -265,12 +265,74 @@ impl PredDefTable {
 
     fn print_defs(&self, heap: &impl Heap) {
         for (i, pred_def) in self.pred_defs.iter().enumerate() {
-            println!("=====================");
-            println!("=== Definition {i} ===");
+            println!("====== Definition {i} ======");
             for clause in &pred_def.clauses {
                 println!("{}", clause.to_string(heap))
             }
-            println!("=====================");
+            println!("===========================");
+        }
+    }
+
+    pub fn extract_pred_defs_from_h(&mut self, hypothesis: &mut Hypothesis, heap: &mut QueryHeap) {
+        let mut clause_sets: Vec<SmallVec<[Clause; 4]>> = Vec::with_capacity(hypothesis.len());
+        let mut var_preds = Vec::with_capacity(hypothesis.len());
+        let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(hypothesis.len());
+
+        for idx in (0..hypothesis.len()).rev() {
+            if let (Ref, var_id) = heap.get_deref_cell(hypothesis[idx].head() + 1) {
+                let clause = hypothesis.remove(idx);
+                match var_preds.iter().position(|var_pred| *var_pred == var_id) {
+                    Some(def_index) => {
+                        extract_body_var_preds(&mut dependencies[def_index], &clause, heap);
+                        clause_sets[def_index].push(clause);
+                    }
+                    None => {
+                        var_preds.push(var_id);
+                        let mut body_var_preds = HashSet::new();
+                        extract_body_var_preds(&mut body_var_preds, &clause, heap);
+                        dependencies.push(body_var_preds);
+                        clause_sets.push(SmallVec::from_elem(clause, 1));
+                    }
+                }
+            }
+        }
+
+        // Build dependency graph
+        // find SCCs
+        // merge SCCs into 1 pred def
+        // use new dependency graph to order pred defs
+        if clause_sets.len() <= 8 {
+            let mut graph: DirGraph8 = DirGraph8::new(clause_sets.len());
+            for (i, deps) in dependencies.into_iter().enumerate() {
+                for dep in deps {
+                    graph.add_edge(
+                        i,
+                        var_preds
+                            .iter()
+                            .position(|var_pred| *var_pred == dep)
+                            .unwrap(),
+                    );
+                }
+            }
+            if let Some(groups) = graph.ordered_cyclic_groups() {
+                for group in groups.iter() {
+                    let mut clauses: SmallVec<[Clause; 4]> = SmallVec::new();
+                    for i in 0..groups.size {
+                        if group & 1 << i != 0 {
+                            clauses.append(&mut clause_sets[i]);
+                        }
+                    }
+                    self.insert(PredDef::new(heap, clauses), heap);
+                }
+            } else {
+                let order = graph.order();
+                //TODO avoid cloning here
+                for &idx in &order[..graph.size] {
+                    self.insert(PredDef::new(heap, clause_sets[idx].clone()), heap);
+                }
+            }
+        } else {
+            todo!("Can't handle sub hypotheses greater than 8 clauses")
         }
     }
 }
@@ -283,27 +345,27 @@ fn extract_body_var_preds(pred_set: &mut HashSet<usize>, clause: &Clause, heap: 
     }
 }
 
-fn extract_pred_defs_from_h(hypothesis: Vec<Clause>, heap: &impl Heap) -> Vec<PredDef> {
+fn extract_pred_defs_from_h(hypothesis: &mut Hypothesis, heap: &impl Heap) -> Vec<PredDef> {
     // TODO clause sets as small vec of clause indexes
 
-    let mut clause_sets: Vec<SmallVec<[usize; 5]>> = Vec::with_capacity(hypothesis.len());
+    let mut clause_sets: Vec<SmallVec<[Clause; 4]>> = Vec::with_capacity(hypothesis.len());
     let mut var_preds = Vec::with_capacity(hypothesis.len());
     let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(hypothesis.len());
 
-    // First pass seperate based on predicate in head
-    for (idx, clause) in hypothesis.iter().enumerate() {
-        if let (Ref, var_id) = heap.get_deref_cell(clause[0] + 1) {
+    for idx in (0..hypothesis.len()).rev() {
+        if let (Ref, var_id) = heap.get_deref_cell(hypothesis[idx].head() + 1) {
+            let clause = hypothesis.remove(idx);
             match var_preds.iter().position(|var_pred| *var_pred == var_id) {
                 Some(def_index) => {
                     extract_body_var_preds(&mut dependencies[def_index], &clause, heap);
-                    clause_sets[def_index].push(idx);
+                    clause_sets[def_index].push(clause);
                 }
                 None => {
                     var_preds.push(var_id);
                     let mut body_var_preds = HashSet::new();
                     extract_body_var_preds(&mut body_var_preds, &clause, heap);
                     dependencies.push(body_var_preds);
-                    clause_sets.push(SmallVec::from_elem(idx, 1));
+                    clause_sets.push(SmallVec::from_elem(clause, 1));
                 }
             }
         }
@@ -326,16 +388,29 @@ fn extract_pred_defs_from_h(hypothesis: Vec<Clause>, heap: &impl Heap) -> Vec<Pr
                 );
             }
         }
-        for group in graph.cyclic_groups()
+        if let Some(groups) = graph.ordered_cyclic_groups() {
+            let mut pred_defs: Vec<PredDef> = Vec::with_capacity(groups.size);
+            for group in groups.iter() {
+                let mut clauses: SmallVec<[Clause; 4]> = SmallVec::new();
+                for i in 0..groups.size {
+                    if group & 1 << i != 0 {
+                        clauses.append(&mut clause_sets[i]);
+                    }
+                }
+                pred_defs.push(PredDef::new(heap, clauses));
+            }
+            pred_defs
+        } else {
+            let order = graph.order();
+            //TODO avoid cloning here
+            order
+                .into_iter()
+                .map(|i| PredDef::new(heap, clause_sets[i].clone()))
+                .collect()
+        }
+    } else {
+        todo!("Can't handle sub hypotheses greater than 8 clauses")
     }
-
-    //find defs with no dependencies
-
-    // clause_sets
-    //     .into_iter()
-    //     .map(|clauses| PredDef::new(heap, clauses))
-    //     .collect()
-    todo!()
 }
 
 #[cfg(test)]
@@ -349,7 +424,7 @@ mod tests {
             VarBind::{self, *},
             VarReg,
         },
-        learners::predicate_unification::{PredDef, PredDefTable},
+        learners::predicate_unification::{extract_pred_defs_from_h, PredDef, PredDefTable},
         parser::{_build_clause, execute_tree, tokenise, TokenStream},
         program::{
             clause::Clause,
@@ -456,13 +531,13 @@ mod tests {
         let [p, q, r] = get_const_ids(["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
-        let h1 = build_hypothesis(
+        let mut h1 = build_hypothesis(
             meta_rules,
             [(0, &[Addr(p), Var(0)]), (1, &[Var(0), Addr(q), Addr(r)])],
             &mut heap,
         );
 
-        let h2 = build_hypothesis(
+        let mut h2 = build_hypothesis(
             meta_rules,
             [(0, &[Addr(p), Var(1)]), (1, &[Var(1), Addr(q), Addr(r)])],
             &mut heap,
@@ -471,22 +546,12 @@ mod tests {
         let mut pdt = PredDefTable::default();
 
         //Seperate out pred defs
-        let pd1 = PredDef::new(&mut heap, vec![h1[1].clone()]);
-        let pd2 = PredDef::new(&mut heap, vec![h2[1].clone()]);
-
-        pdt.insert(pd1, &mut heap);
-        pdt.insert(pd2, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
 
         pdt.print_defs(&heap);
 
-        // h2 pred unified
-        let h1_p1 = heap[h1[1][0] + 1];
-        let h2_p1 = match heap.var_deref(heap[h2[1][0] + 1].1) {
-            Addr(addr) => heap[addr],
-            _ => panic!(),
-        };
-
-        assert_eq!(h1_p1, h2_p1)
+        assert_eq!(heap.var_deref(0), heap.var_deref(1))
     }
 
     /// Hypothesis 1
@@ -510,7 +575,7 @@ mod tests {
         let [p, q, r] = get_const_ids(["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
-        let h1 = build_hypothesis(
+        let mut h1 = build_hypothesis(
             meta_rules,
             [
                 (0, &[Addr(p), Var(0)]),
@@ -520,7 +585,7 @@ mod tests {
             &mut heap,
         );
 
-        let h2 = build_hypothesis(
+        let mut h2 = build_hypothesis(
             meta_rules,
             [
                 (0, &[Addr(p), Var(1)]),
@@ -532,23 +597,12 @@ mod tests {
 
         let mut pdt = PredDefTable::default();
 
-        //Seperate out pred defs
-        let pd1 = PredDef::new(&mut heap, h1[1..].to_vec());
-        let pd2 = PredDef::new(&mut heap, h2[1..].to_vec());
-
-        pdt.insert(pd1, &mut heap);
-        pdt.insert(pd2, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
 
         pdt.print_defs(&heap);
 
-        // h2 pred unified
-        let h1_p1 = heap[h1[1][0] + 1];
-        let h2_p1 = match heap.var_deref(heap[h2[1][0] + 1].1) {
-            Addr(addr) => heap[addr],
-            _ => panic!(),
-        };
-
-        assert_eq!(h1_p1, h2_p1)
+        assert_eq!(heap.var_deref(0), heap.var_deref(1));
     }
 
     /// Hypothesis 1
@@ -572,7 +626,7 @@ mod tests {
         let [p, q, r] = get_const_ids(["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
-        let h1 = build_hypothesis(
+        let mut h1 = build_hypothesis(
             meta_rules,
             [
                 (0, &[Addr(p), Var(0)]),
@@ -582,7 +636,7 @@ mod tests {
             &mut heap,
         );
 
-        let h2 = build_hypothesis(
+        let mut h2 = build_hypothesis(
             meta_rules,
             [
                 (0, &[Addr(p), Var(2)]),
@@ -593,28 +647,12 @@ mod tests {
         );
 
         let mut pdt = PredDefTable::default();
-
-        //Seperate out pred defs
-        let h1pd1 = PredDef::new(&mut heap, vec![h1[1].clone()]);
-        let h1pd2 = PredDef::new(&mut heap, vec![h1[2].clone()]);
-        let h2pd1 = PredDef::new(&mut heap, vec![h2[1].clone()]);
-        let h2pd2 = PredDef::new(&mut heap, vec![h2[2].clone()]);
-
-        pdt.insert(h1pd2, &mut heap);
-        pdt.insert(h1pd1, &mut heap);
-        pdt.insert(h2pd2, &mut heap);
-        pdt.insert(h2pd1, &mut heap);
-
+        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
         pdt.print_defs(&heap);
 
-        // h2 pred unified
-        let h1_p1 = heap[h1[1][0] + 1];
-        let h2_p1 = match heap.var_deref(heap[h2[1][0] + 1].1) {
-            Addr(addr) => heap[addr],
-            _ => panic!(),
-        };
-
-        assert_eq!(h1_p1, h2_p1)
+        assert_eq!(heap.var_deref(0), heap.var_deref(2));
+        assert_eq!(heap.var_deref(1), heap.var_deref(3));
     }
 
     /// Hypothesis 1
@@ -662,10 +700,10 @@ mod tests {
         let mut pdt = PredDefTable::default();
 
         //Seperate out pred defs
-        let h1pd1 = PredDef::new(&mut heap, h1[1..3].to_vec());
-        let h1pd2 = PredDef::new(&mut heap, vec![h1[3].clone()]);
-        let h2pd1 = PredDef::new(&mut heap, vec![h2[1].clone()]);
-        let h2pd2 = PredDef::new(&mut heap, vec![h2[2].clone()]);
+        let h1pd1 = PredDef::new(&mut heap, h1[1..3].to_vec().into());
+        let h1pd2 = PredDef::new(&mut heap, vec![h1[3].clone()].into());
+        let h2pd1 = PredDef::new(&mut heap, vec![h2[1].clone()].into());
+        let h2pd2 = PredDef::new(&mut heap, vec![h2[2].clone()].into());
 
         pdt.insert(h1pd2, &mut heap);
         pdt.insert(h1pd1, &mut heap);
