@@ -111,41 +111,40 @@ impl PredDef {
         }
     }
 
-    /// Update variable predicate defined by predicate
-    /// defintion to a newly coined constant predicate symbol
-    pub fn make_const(&mut self, heap: &mut impl Heap, next_id: usize) {
+    /// Update variable predicates in predicate defintion
+    /// to a newly coined constant predicate symbol
+    pub fn make_const(&mut self, heap: &mut impl Heap, next_id: &mut usize) {
         // Extract var pred in clause heads
-        let mut var_pred_ids = HashSet::new();
+        let mut var_pred_ids: HashMap<usize, usize> = HashMap::new(); // Map from var_id to new const id
 
+        // Make const all head predicates in definition
         for clause in &self.clauses {
-            let (Ref, var_id) = heap[clause[0] + 1] else {
+            let (Ref, var_id) = heap[clause.head() + 1] else {
                 panic!("Predicate definition is already constant")
             };
-            var_pred_ids.insert(var_id);
-        }
-
-        // Accept only 1 var pred
-        let (var_pred, first_addr) = if var_pred_ids.len() == 1 {
-            (*var_pred_ids.iter().next().unwrap(), self.clauses[0][0] + 1)
-        } else {
-            todo!("Not implemented mutually recursive predicate defintions yet");
-        };
-
-        // coin new const
-        let pred_symbol = SymbolDB::set_const(format!("pred_{next_id}"));
-        // Update Clauses with new symbol
-        for clause in &self.clauses {
-            for literal in clause.iter() {
-                let mut walk = TermWalk::new(*literal);
-                while let Some((addr, cell)) = walk.next_cell_with_addr(heap) {
-                    if cell == (Ref, var_pred) {
-                        heap[addr] = (Con, pred_symbol)
-                    }
+            match var_pred_ids.get(&var_id) {
+                Some(pred_symbol) => heap[clause.head() + 1] = (Con, *pred_symbol),
+                None => {
+                    let pred_symbol = SymbolDB::set_const(format!("pred_{next_id}"));
+                    *next_id += 1;
+                    var_pred_ids.insert(var_id, pred_symbol);
+                    heap[clause.head() + 1] = (Con, pred_symbol);
+                    heap.bind(var_id, Addr(clause.head() + 1));
                 }
             }
         }
-        // Add binding to update waiting variable pred defs
-        heap.bind(var_pred, Addr(first_addr));
+
+        // Make const instances of head predicates in body literals
+        for clause in &self.clauses {
+            for literal in clause.body() {
+                let (Ref, var_id) = heap[literal + 1] else {
+                    continue;
+                };
+                if let Some(pred_symbol) = var_pred_ids.get(&var_id) {
+                    heap[literal + 1] = (Con, *pred_symbol)
+                }
+            }
+        }
     }
 
     /// Attempt to unify two clause definitions
@@ -224,7 +223,7 @@ impl PredDefTable {
     }
 
     fn add_def(&mut self, mut pred_def: PredDef, insert_pos: usize, heap: &mut QueryHeap) {
-        pred_def.make_const(heap, self.next_id);
+        pred_def.make_const(heap, &mut self.next_id);
         self.next_id += 1;
         self.pred_defs.insert(insert_pos, pred_def);
     }
@@ -315,9 +314,9 @@ impl PredDefTable {
                 }
             }
             if let Some(groups) = graph.ordered_cyclic_groups() {
-                for group in groups.iter() {
+                for group in &groups[..groups.size] {
                     let mut clauses: SmallVec<[Clause; 4]> = SmallVec::new();
-                    for i in 0..groups.size {
+                    for i in 0..graph.size {
                         if group & 1 << i != 0 {
                             clauses.append(&mut clause_sets[i]);
                         }
@@ -676,7 +675,7 @@ mod tests {
         let mut heap = QueryHeap::new(&prog_heap, None);
         let [p, q, r] = get_const_ids(["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
-        let h1 = build_hypothesis(
+        let mut h1 = build_hypothesis(
             meta_rules,
             [
                 (0, &[Addr(p), Var(0)]),
@@ -686,7 +685,7 @@ mod tests {
             ],
             &mut heap,
         );
-        let h2 = build_hypothesis(
+        let mut h2 = build_hypothesis(
             meta_rules,
             [
                 (0, &[Addr(p), Var(2)]),
@@ -698,45 +697,144 @@ mod tests {
 
         // Build Pred Def table
         let mut pdt = PredDefTable::default();
-
-        //Seperate out pred defs
-        let h1pd1 = PredDef::new(&mut heap, h1[1..3].to_vec().into());
-        let h1pd2 = PredDef::new(&mut heap, vec![h1[3].clone()].into());
-        let h2pd1 = PredDef::new(&mut heap, vec![h2[1].clone()].into());
-        let h2pd2 = PredDef::new(&mut heap, vec![h2[2].clone()].into());
-
-        pdt.insert(h1pd2, &mut heap);
-        pdt.insert(h1pd1, &mut heap);
-        pdt.insert(h2pd2, &mut heap);
-        pdt.insert(h2pd1, &mut heap);
-
+        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
         pdt.print_defs(&heap);
+
         print_hypothesis(&h1, 1, &heap);
         print_hypothesis(&h2, 2, &heap);
 
-        // correct preds unified across hypotheses
-        let (Con, h1_p1) = heap.get_deref_cell(h1[1][0] + 1) else {
-            panic!()
-        };
-        let (Con, h1_p2) = heap.get_deref_cell(h1[3][0] + 1) else {
-            panic!()
-        };
-        let (Con, h2_p1) = heap.get_deref_cell(h2[1][0] + 1) else {
-            panic!()
-        };
-        let (Con, h2_p2) = heap.get_deref_cell(h2[2][0] + 1) else {
-            panic!()
-        };
-        assert_eq!(h1_p2, h2_p2);
-        assert_ne!(h1_p1, h2_p1);
+        assert_ne!(heap.var_deref(0), heap.var_deref(2));
+        assert_eq!(heap.var_deref(1), heap.var_deref(3));
+    }
 
-        // body literal pred dependency shared
-        let (Con, h1_c1_b) = heap.get_deref_cell(h1[1][1] + 1) else {
+    /// Hypothesis 1
+    ///     p(X,Y):- Var_0(X,Y).
+    ///     Var_0(X,Y):- Var_1(X,Y).
+    ///     Var_1(X,Y):- Var_0(X,Y).
+    /// Hypothesis 2
+    ///     p(X,Y):- Var_2(X,Y).
+    ///     Var_2(X,Y):- Var_3(X,Y).
+    ///     Var_3(X,Y):- Var_2(X,Y).
+    #[test]
+    fn simple_mutual() {
+        // Create meta rules
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta_rules = [(&meta0, 2)];
+
+        //Build hypotheses
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+        let mut h1 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)]),
+                (0, &[Var(0), Var(1)]),
+                (0, &[Var(1), Var(0)]),
+            ],
+            &mut heap,
+        );
+        let mut h2 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(2)]),
+                (0, &[Var(2), Var(3)]),
+                (0, &[Var(3), Var(2)]),
+            ],
+            &mut heap,
+        );
+
+        // Build Pred Def table
+        let mut pdt = PredDefTable::default();
+        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
+        pdt.print_defs(&heap);
+
+        print_hypothesis(&h1, 1, &heap);
+        print_hypothesis(&h2, 2, &heap);
+
+        let (Addr(addr1), Addr(addr2)) = (heap.var_deref(0), heap.var_deref(2)) else {
             panic!()
         };
-        let (Con, h2_c1_b) = heap.get_deref_cell(h2[1][1] + 1) else {
+        assert_eq!(heap[addr1], heap[addr2]);
+
+        let (Addr(addr1), Addr(addr2)) = (heap.var_deref(1), heap.var_deref(3)) else {
             panic!()
         };
-        assert_eq!(h1_c1_b, h2_c1_b)
+        assert_eq!(heap[addr1], heap[addr2]);
+    }
+
+    /// Hypothesis 1
+    ///     p(X,Y):- Var_0(X,Y).
+    ///     Var_0(X,Y):- Var_1(X,Y).
+    ///     Var_0(X,Y):- Var_2(X,Y).
+    ///     Var_1(X,Y):- Var_0(X,Y).
+    ///     Var_2(X,Y):- q(X), r(Y).
+    /// Hypothesis 2
+    ///     p(X,Y):- Var_0(X,Y).
+    ///     Var_3(X,Y):- Var_4(X,Y).
+    ///     Var_3(X,Y):- Var_5(X,Y).
+    ///     Var_4(X,Y):- Var_3(X,Y).
+    ///     Var_5(X,Y):- q(X), r(Y).
+    #[test]
+    fn mutual_dependent() {
+        // Create meta rules
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        //Build hypotheses
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+        let mut h1 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)]),
+                (0, &[Var(0), Var(1)]),
+                (0, &[Var(0), Var(2)]),
+                (0, &[Var(1), Var(0)]),
+                (1, &[Var(2), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+        let mut h2 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)]),
+                (0, &[Var(3), Var(4)]),
+                (0, &[Var(3), Var(5)]),
+                (0, &[Var(4), Var(3)]),
+                (1, &[Var(5), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+
+        // Build Pred Def table
+        let mut pdt = PredDefTable::default();
+        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
+        pdt.print_defs(&heap);
+
+        print_hypothesis(&h1, 1, &heap);
+        print_hypothesis(&h2, 2, &heap);
+
+        let (Addr(addr1), Addr(addr2)) = (heap.var_deref(0), heap.var_deref(3)) else {
+            panic!()
+        };
+        assert_eq!(heap[addr1], heap[addr2]);
+
+        let (Addr(addr1), Addr(addr2)) = (heap.var_deref(1), heap.var_deref(4)) else {
+            panic!()
+        };
+        assert_eq!(heap[addr1], heap[addr2]);
+
+        let (Addr(addr1), Addr(addr2)) = (heap.var_deref(2), heap.var_deref(5)) else {
+            panic!()
+        };
+        assert_eq!(heap[addr1], heap[addr2]);
     }
 }
