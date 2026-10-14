@@ -3,7 +3,7 @@ use std::{
     io::{self, Write},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        mpsc::{self, Sender},
+        mpsc::{self, Receiver, Sender},
         Arc,
     },
     thread, usize,
@@ -11,7 +11,14 @@ use std::{
 
 use crate::{
     app::{App, TopProg},
-    heap::{Cell, Heap, QueryHeap, Tag},
+    heap::{
+        Cell, Heap, QueryHeap,
+        Tag::{self, Ref},
+        TermWalk,
+        VarBind::Addr,
+        VarReg, Walk,
+    },
+    learners::predicate_unification::PredDefTable,
     parser::{build_clause, tokenise, TokenStream},
     program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::Proof,
@@ -51,7 +58,7 @@ impl App {
         );
         examples.normalise_for_top_prog();
 
-        let (cells, mut sub_hypotheses) = generalise(
+        let (cells, mut sub_hypotheses, mut pdt) = generalise(
             &examples.pos,
             &self.predicate_table,
             &self.prog_heap,
@@ -59,6 +66,7 @@ impl App {
         );
 
         self.prog_heap.extend_from_slice(&cells);
+        todo!("add pdt to program");
 
         println!(
             "\n=== Generalisation Results ===\n{} unique hypotheses",
@@ -126,19 +134,26 @@ fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, Str
     Ok(clause[0])
 }
 
-/// Minimal work on the worker thread — just the copy.
-fn extract_hypothesis_local(proof: &Proof, heap: &impl Heap) -> (Vec<Cell>, Vec<Clause>) {
-    let mut local_cells: Vec<Cell> = Vec::new();
-    // let mut ref_map = HashMap::new();
-    let mut clauses = Vec::new();
-    todo!();
-    // for clause in proof.hypothesis.iter() {
-    //     let new_literals: Vec<usize> = clause
-    //         .iter()
-    //         .map(|&lit_addr| local_cells.clone_term(heap, lit_addr, &mut ref_map))
-    //         .collect();
-    //     clauses.push(Clause::new(new_literals, None, None));
-    // }
+fn extract_literal(dst: &mut Vec<Cell>, src: &QueryHeap, addr: usize) -> usize {
+    let addr = dst.heap_len();
+    let mut walk = TermWalk::new(addr);
+    while let Some(cell) = walk.next_cell(src) {
+        dst.push(cell);
+    }
+    addr
+}
+
+/// Extract cells and remap literal addrs from hypothesis
+fn extract_hypothesis_local(proof: &Proof, heap: &QueryHeap) -> (Vec<Cell>, Vec<Clause>) {
+    let mut local_cells: Vec<Cell> = Vec::with_capacity(12 * proof.hypothesis.len());
+    let mut clauses = Vec::with_capacity(proof.hypothesis.len());
+    for clause in proof.hypothesis.iter() {
+        let new_literals: Vec<usize> = clause
+            .iter()
+            .map(|&lit_addr| extract_literal(&mut local_cells, &heap, lit_addr))
+            .collect();
+        clauses.push(Clause::new(new_literals, None, clause.max_arg_id));
+    }
 
     (local_cells, clauses)
 }
@@ -148,7 +163,7 @@ fn generalise(
     predicate_table: &PredicateTable,
     heap: &[Cell],
     config: Config,
-) -> (Vec<Cell>, Vec<Vec<Clause>>) {
+) -> (Vec<Cell>, Vec<Vec<Clause>>, PredDefTable) {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT - 1)
         .build()
@@ -157,66 +172,96 @@ fn generalise(
     let (tx, rx) = mpsc::channel::<HypothesisMsg>();
     let total = pos_examples.len();
     let completed = Arc::new(AtomicUsize::new(0));
-    let heap_len = heap.len();
 
-    // Collector runs on its own OS thread, processing results as they arrive
-    let collector = thread::spawn(move || {
-        let mut hypothesis_cells = Vec::new();
-        let mut hypotheses = Vec::new();
-        let mut seen = HashSet::new();
-        let mut offset = heap_len;
-
-        for HypothesisMsg { cells, mut h } in rx {
-            // Build canonical key before offset adjustment, using local cells.
-            // Normalise invented predicate names so that structurally identical
-            // hypotheses (differing only in pred_N numbering) are deduplicated.
-            let clause_strings: Vec<String> =
-                h.iter().map(|clause| clause.to_string(&cells)).collect();
-            let key = crate::hypothesis_canonical_key(&clause_strings);
-
-            if !seen.insert(key) {
-                continue; // Duplicate hypothesis, skip
-            }
-
-            let len = cells.len();
-            for cell in cells {
-                let adjusted = match cell {
-                    // (Tag::Str, addr) => (Tag::Str, addr + offset),
-                    (Tag::Lis, addr) => (Tag::Lis, addr + offset),
-                    (Tag::Ref, addr) => (Tag::Ref, addr + offset),
-                    other => other,
-                };
-                hypothesis_cells.push(adjusted);
-            }
-            for clause in h.iter_mut() {
-                for literal in clause.iter_mut() {
-                    *literal += offset;
-                }
-            }
-            hypotheses.push(h);
-            offset += len;
-        }
-
-        (hypothesis_cells, hypotheses)
-    });
-
-    // Workers — scope blocks until all are done, then drops tx clones
-    pool.scope(|s| {
+    pool.in_place_scope(|s| {
         for example in pos_examples {
             let tx = tx.clone();
             let completed = completed.clone();
             s.spawn(move |_| {
-                generalise_thread(example, predicate_table, &heap, config, tx);
+                generalise_thread(example, predicate_table, heap, config, tx);
                 let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                 eprint!("\rGeneralise: {done}/{total} examples");
                 let _ = io::stderr().flush();
             });
         }
-    });
-    drop(tx); // drop the original sender so the collector's rx iterator ends
-    eprintln!(" ...done");
+        drop(tx); // only the workers' clones are left, so rx ends when they finish
+        generalise_collector(heap, rx)
+    })
+}
 
-    collector.join().unwrap()
+fn generalise_collector(
+    heap: &[Cell],
+    rx: Receiver<HypothesisMsg>,
+) -> (Vec<Cell>, Vec<Vec<Clause>>, PredDefTable) {
+    let mut seen = HashSet::new();
+    let mut hypotheses = Vec::new();
+    let mut pdt = PredDefTable::default();
+    let mut acc_heap = QueryHeap::new(heap, None);
+
+    acc_heap.var_regs.extend_from_slice(&[VarReg::UNBOUND; 20]);
+
+    for HypothesisMsg { mut cells, mut h } in rx {
+        let heap_point = acc_heap.heap_point();
+        // translate hypothesis message to local context
+        // update var ids with var map
+        let mut var_map = HashMap::new();
+        for cell in &mut cells {
+            if cell.0 == Ref {
+                match var_map.get(&cell.1) {
+                    Some(var_id) => cell.1 = *var_id,
+                    None => {
+                        let var_id = var_map.len();
+                        var_map.insert(cell.1, var_id);
+                        cell.1 = var_id;
+                    }
+                }
+            }
+        }
+        // Add more variable registers if needed
+        if var_map.len() > acc_heap.var_regs.len() {
+            for _ in 0..var_map.len() - acc_heap.var_regs.len() {
+                acc_heap.var_regs.push(VarReg::UNBOUND);
+            }
+        }
+        // update clause literal addresses
+        for clause in &mut h {
+            for literal in clause.iter_mut() {
+                *literal += acc_heap.heap_len()
+            }
+        }
+        acc_heap.cells.append(&mut cells);
+
+        // Extract/Unify predicate defintions
+        pdt.extract_pred_defs_from_h(&mut h, &mut acc_heap);
+
+        // Create key, if not in seen add to hypotheses accumulator
+        let mut clause_strings: Vec<String> = h.iter().map(|c| c.to_string(&acc_heap)).collect();
+        clause_strings.sort_by_key(|s| s.len());
+        let key = clause_strings.concat();
+        // If seen revert to heap point
+        if seen.insert(key) {
+            // replace ref cells in h with the referenced value
+            for clause in &h {
+                for literal in clause.body() {
+                    if let (Ref, value) = acc_heap[*literal] {
+                        let Addr(addr) = acc_heap.var_deref(value) else {
+                            panic!("Not all variable predicates given constant terms")
+                        };
+                        acc_heap[*literal] = acc_heap[addr]
+                    }
+                }
+            }
+            hypotheses.push(h);
+        } else {
+            acc_heap.truncate(heap_point);
+        }
+        // After predicate coining no ref cells should be left, set all regs to unbound
+        for var_reg in &mut acc_heap.var_regs {
+            *var_reg = VarReg::UNBOUND;
+        }
+    }
+
+    (acc_heap.cells, hypotheses, pdt)
 }
 
 fn generalise_thread(

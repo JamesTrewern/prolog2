@@ -192,7 +192,7 @@ impl PredDef {
 }
 
 #[derive(Default, Debug)]
-struct PredDefTable {
+pub struct PredDefTable {
     pred_defs: Vec<PredDef>,
     next_id: usize,
 }
@@ -272,7 +272,7 @@ impl PredDefTable {
         }
     }
 
-    pub fn extract_pred_defs_from_h(&mut self, hypothesis: &mut Hypothesis, heap: &mut QueryHeap) {
+    pub fn extract_pred_defs_from_h(&mut self, hypothesis: &mut Vec<Clause>, heap: &mut QueryHeap) {
         let mut clause_sets: Vec<SmallVec<[Clause; 4]>> = Vec::with_capacity(hypothesis.len());
         let mut var_preds = Vec::with_capacity(hypothesis.len());
         let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(hypothesis.len());
@@ -344,78 +344,8 @@ fn extract_body_var_preds(pred_set: &mut HashSet<usize>, clause: &Clause, heap: 
     }
 }
 
-fn extract_pred_defs_from_h(hypothesis: &mut Hypothesis, heap: &impl Heap) -> Vec<PredDef> {
-    // TODO clause sets as small vec of clause indexes
-
-    let mut clause_sets: Vec<SmallVec<[Clause; 4]>> = Vec::with_capacity(hypothesis.len());
-    let mut var_preds = Vec::with_capacity(hypothesis.len());
-    let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(hypothesis.len());
-
-    for idx in (0..hypothesis.len()).rev() {
-        if let (Ref, var_id) = heap.get_deref_cell(hypothesis[idx].head() + 1) {
-            let clause = hypothesis.remove(idx);
-            match var_preds.iter().position(|var_pred| *var_pred == var_id) {
-                Some(def_index) => {
-                    extract_body_var_preds(&mut dependencies[def_index], &clause, heap);
-                    clause_sets[def_index].push(clause);
-                }
-                None => {
-                    var_preds.push(var_id);
-                    let mut body_var_preds = HashSet::new();
-                    extract_body_var_preds(&mut body_var_preds, &clause, heap);
-                    dependencies.push(body_var_preds);
-                    clause_sets.push(SmallVec::from_elem(clause, 1));
-                }
-            }
-        }
-    }
-
-    // Build dependency graph
-    // find SCCs
-    // merge SCCs into 1 pred def
-    // use new dependency graph to order pred defs
-    if clause_sets.len() <= 8 {
-        let mut graph: DirGraph8 = DirGraph8::new(clause_sets.len());
-        for (i, deps) in dependencies.into_iter().enumerate() {
-            for dep in deps {
-                graph.add_edge(
-                    i,
-                    var_preds
-                        .iter()
-                        .position(|var_pred| *var_pred == dep)
-                        .unwrap(),
-                );
-            }
-        }
-        if let Some(groups) = graph.ordered_cyclic_groups() {
-            let mut pred_defs: Vec<PredDef> = Vec::with_capacity(groups.size);
-            for group in groups.iter() {
-                let mut clauses: SmallVec<[Clause; 4]> = SmallVec::new();
-                for i in 0..groups.size {
-                    if group & 1 << i != 0 {
-                        clauses.append(&mut clause_sets[i]);
-                    }
-                }
-                pred_defs.push(PredDef::new(heap, clauses));
-            }
-            pred_defs
-        } else {
-            let order = graph.order();
-            //TODO avoid cloning here
-            order
-                .into_iter()
-                .map(|i| PredDef::new(heap, clause_sets[i].clone()))
-                .collect()
-        }
-    } else {
-        todo!("Can't handle sub hypotheses greater than 8 clauses")
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use smallvec::SmallVec;
-
     use crate::{
         heap::{
             Cell, Heap, QueryHeap, SymbolDB,
@@ -423,12 +353,11 @@ mod tests {
             VarBind::{self, *},
             VarReg,
         },
-        learners::predicate_unification::{extract_pred_defs_from_h, PredDef, PredDefTable},
-        parser::{_build_clause, execute_tree, tokenise, TokenStream},
+        learners::predicate_unification::PredDefTable,
+        parser::_build_clause,
         program::{
             clause::Clause,
             hypothesis::{Constraints, Hypothesis},
-            predicate_table::PredicateTable,
         },
         resolution::{build, Substitution},
     };
