@@ -65,8 +65,15 @@ impl App {
             self.config,
         );
 
+        // TODO consider more effecient method for adding pdt clauses to program
         self.prog_heap.extend_from_slice(&cells);
-        todo!("add pdt to program");
+        for pred_def in pdt.pred_defs {
+            for clause in pred_def.clauses {
+                let symbol_arity = self.prog_heap.symbol_arity(clause.head());
+                self.predicate_table
+                    .add_clause_to_predicate(clause, symbol_arity);
+            }
+        }
 
         println!(
             "\n=== Generalisation Results ===\n{} unique hypotheses",

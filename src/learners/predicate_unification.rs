@@ -61,7 +61,7 @@ impl Ord for ClauseSignature {
 
 #[derive(Debug)]
 pub struct PredDef {
-    clauses: SmallVec<[Clause; 4]>,
+    pub clauses: SmallVec<[Clause; 4]>,
     signatures: Vec<ClauseSignature>,
     // symbol: usize, //Con id for invented symbol
 }
@@ -193,7 +193,7 @@ impl PredDef {
 
 #[derive(Default, Debug)]
 pub struct PredDefTable {
-    pred_defs: Vec<PredDef>,
+    pub pred_defs: Vec<PredDef>,
     next_id: usize,
 }
 
