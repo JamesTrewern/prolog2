@@ -7,10 +7,10 @@ use std::{
 use smallvec::SmallVec;
 
 use crate::{
-    heap::{Heap, QueryHeap, SymbolDB, Tag::*, TermWalk, VarBind::Addr, Walk},
-    program::{clause::Clause, hypothesis::Hypothesis},
+    heap::{Heap, QueryHeap, SymbolDB, Tag::*, VarBind::Addr},
+    program::clause::Clause,
     resolution::unify,
-    utils::{BitFlag16, DirGraph8, FindReturn},
+    utils::{DirGraph8, FindReturn},
 };
 
 /// Describe the structure of a clause by the size of it's literals in order
@@ -64,26 +64,6 @@ pub struct PredDef {
     pub clauses: SmallVec<[Clause; 4]>,
     signatures: Vec<ClauseSignature>,
     // symbol: usize, //Con id for invented symbol
-}
-
-/// Order clauses by length
-/// Break ties by comparing length of literals in order
-fn cmp_clause(a: &Clause, b: &Clause, heap: &impl Heap) -> Ordering {
-    match a.len().cmp(&b.len()) {
-        ordering => ordering,
-        Equal => {
-            let len = a.len();
-            for i in 0..len {
-                let (_, arr1) = heap[a[i]];
-                let (_, arr2) = heap[b[i]];
-                match arr1.cmp(&arr2) {
-                    Equal => continue,
-                    ordering => return ordering,
-                }
-            }
-            Equal
-        }
-    }
 }
 
 impl PredDef {
@@ -198,15 +178,11 @@ pub struct PredDefTable {
 }
 
 impl PredDefTable {
-    pub fn len(&self) -> usize {
-        self.pred_defs.len()
-    }
-
     pub fn insert(&mut self, pred_def: PredDef, heap: &mut QueryHeap) {
-        match self.binary_search(&pred_def, heap) {
+        match self.binary_search(&pred_def) {
             FindReturn::InsertPos(insert_pos) => self.add_def(pred_def, insert_pos, heap),
             FindReturn::Index(i) => {
-                let matching_range = self.find_matching_signature_range(&pred_def, heap, i);
+                let matching_range = self.find_matching_signature_range(&pred_def, i);
                 let insert_pos = matching_range.start;
                 // Attempt to unify with existing pred def
                 for i in matching_range {
@@ -228,7 +204,7 @@ impl PredDefTable {
         self.pred_defs.insert(insert_pos, pred_def);
     }
 
-    fn binary_search(&self, pred_def: &PredDef, heap: &impl Heap) -> FindReturn {
+    fn binary_search(&self, pred_def: &PredDef) -> FindReturn {
         let mut lb: usize = 0;
         let mut ub: usize = self.pred_defs.len();
         let mut mid: usize;
@@ -244,12 +220,7 @@ impl PredDefTable {
         FindReturn::InsertPos(lb)
     }
 
-    fn find_matching_signature_range(
-        &self,
-        pred_def: &PredDef,
-        heap: &impl Heap,
-        i: usize,
-    ) -> Range<usize> {
+    fn find_matching_signature_range(&self, pred_def: &PredDef, i: usize) -> Range<usize> {
         let mut lb = i;
 
         while lb > 0 && self.pred_defs[lb - 1].cmp(&pred_def) == Equal {
@@ -262,7 +233,7 @@ impl PredDefTable {
         lb..ub
     }
 
-    fn print_defs(&self, heap: &impl Heap) {
+    fn _print_defs(&self, heap: &impl Heap) {
         for (i, pred_def) in self.pred_defs.iter().enumerate() {
             println!("====== Definition {i} ======");
             for clause in &pred_def.clauses {
@@ -372,12 +343,6 @@ mod tests {
         res
     }
 
-    fn push_literal(heap: &mut QueryHeap, sub_terms: &[Cell]) -> usize {
-        let addr = heap.heap_push((Comp, sub_terms.len()));
-        heap.cells.extend_from_slice(&sub_terms);
-        addr
-    }
-
     fn instantiate_meta_rule(
         heap: &mut QueryHeap,
         meta: &Clause,
@@ -477,7 +442,7 @@ mod tests {
         pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
         pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
 
-        pdt.print_defs(&heap);
+        pdt._print_defs(&heap);
 
         assert_eq!(heap.var_deref(0), heap.var_deref(1))
     }
@@ -528,7 +493,7 @@ mod tests {
         pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
         pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
 
-        pdt.print_defs(&heap);
+        pdt._print_defs(&heap);
 
         assert_eq!(heap.var_deref(0), heap.var_deref(1));
     }
@@ -577,7 +542,7 @@ mod tests {
         let mut pdt = PredDefTable::default();
         pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
         pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
-        pdt.print_defs(&heap);
+        pdt._print_defs(&heap);
 
         assert_eq!(heap.var_deref(0), heap.var_deref(2));
         assert_eq!(heap.var_deref(1), heap.var_deref(3));
@@ -628,7 +593,7 @@ mod tests {
         let mut pdt = PredDefTable::default();
         pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
         pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
-        pdt.print_defs(&heap);
+        pdt._print_defs(&heap);
 
         print_hypothesis(&h1, 1, &heap);
         print_hypothesis(&h2, 2, &heap);
@@ -655,7 +620,7 @@ mod tests {
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
         let [p, q, r] = get_const_ids(["p", "q", "r"]);
-        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+        let [p, _, _] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
         let mut h1 = build_hypothesis(
             meta_rules,
             [
@@ -679,7 +644,7 @@ mod tests {
         let mut pdt = PredDefTable::default();
         pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
         pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
-        pdt.print_defs(&heap);
+        pdt._print_defs(&heap);
 
         print_hypothesis(&h1, 1, &heap);
         print_hypothesis(&h2, 2, &heap);
@@ -746,7 +711,7 @@ mod tests {
         let mut pdt = PredDefTable::default();
         pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
         pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
-        pdt.print_defs(&heap);
+        pdt._print_defs(&heap);
 
         print_hypothesis(&h1, 1, &heap);
         print_hypothesis(&h2, 2, &heap);

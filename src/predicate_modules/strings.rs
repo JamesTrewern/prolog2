@@ -83,8 +83,8 @@ pub fn atom_string_pred(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    let (con_cell, con_addr) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
-    let (stri_cell, stri_addr) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1));
+    let (con_cell, _) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
+    let (stri_cell, _) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1));
     match (con_cell, stri_cell) {
         ((Con, id), (Stri, idx)) => (SymbolDB::get_const(id) == SymbolDB::get_string(idx)).into(),
         ((Con, id), (Ref, var_id)) => {

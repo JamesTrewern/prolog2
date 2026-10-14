@@ -1,6 +1,6 @@
 use crate::{
     app::Solution,
-    heap::{Cell, Heap, QueryHeap, Tag::*, TermWalk, Walk, EMPTY_LIS, LIS},
+    heap::{Cell, Heap, QueryHeap, Tag::*, EMPTY_LIS, LIS},
     Config,
 };
 
@@ -90,7 +90,7 @@ pub fn read_list_addrs(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>> {
 /// Read a Comp, Tup, or Set structure and return its child addresses.
 /// Each address is dereferenced. Returns `None` if `addr` does not point to
 /// one of these tags.
-pub fn read_structure_addrs(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>> {
+pub fn read_structure_addrs(_heap: &QueryHeap, _addr: usize) -> Option<Vec<usize>> {
     // let addr = heap.deref_addr(resolve(heap, addr));
     // match heap[addr].0 {
     //     Comp | Tup | Set => Some(

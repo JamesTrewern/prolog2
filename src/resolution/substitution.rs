@@ -1,9 +1,9 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::{
-    heap::{
-        ArgRegs, VarBind::{self, *}, VarReg,
-    }, program::clause::MAX_ARG,
+use crate::heap::{
+    ArgRegs,
+    VarBind::{self, *},
+    VarReg,
 };
 use smallvec::SmallVec;
 
@@ -42,7 +42,7 @@ impl Default for Substitution {
 }
 
 impl Substitution {
-    pub fn new(max_arg: usize) -> Self{
+    pub fn new(max_arg: usize) -> Self {
         Self {
             arg_regs: ArgRegs::new_from_max_arg(max_arg),
             bound_vars: SmallVec::new(),

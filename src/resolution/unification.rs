@@ -177,7 +177,7 @@ fn arg_occurs(heap: &mut QueryHeap, arg_id: usize, mut walk: SubWalk) -> bool {
 mod tests {
     use super::Substitution;
     use crate::{
-        heap::{Heap, QueryHeap, SymbolDB, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
+        heap::{QueryHeap, SymbolDB, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
         resolution::unification::unify,
     };
 
@@ -261,9 +261,9 @@ mod tests {
 
     #[test]
     fn equal_comp_arg_jump() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        // let a = SymbolDB::set_const("a");
+        // let p = SymbolDB::set_const("p");
+        // let mut heap = QueryHeap::new(&[], None);
 
         //Simple arg jump
 
@@ -1375,7 +1375,6 @@ mod tests {
     fn unify_tail_same_arg() {
         let a = SymbolDB::set_const("a");
         let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
 
         //[a,b|A] vs [a,b|A]
@@ -1439,7 +1438,6 @@ mod tests {
     fn unify_tail_arg_to_ref() {
         let a = SymbolDB::set_const("a");
         let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
 
         //arg to unbound ref: [a,b|A] vs [a,b|X]
@@ -1489,7 +1487,6 @@ mod tests {
     fn unify_ref_tails() {
         let a = SymbolDB::set_const("a");
         let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
 
         //[a,b|X] vs [a,b|Y]
@@ -1573,8 +1570,6 @@ mod tests {
     #[test]
     fn unify_ref_tails_through_arg() {
         let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
 
         //([a|A],[a|A]) vs ([a|X],[a|Y])
@@ -1640,7 +1635,6 @@ mod tests {
     fn bind_ref_tail_to_empty_list() {
         let a = SymbolDB::set_const("a");
         let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
 
         //Standard
@@ -2027,7 +2021,6 @@ mod tests {
     fn bind_arg_tail_to_empty_list() {
         let a = SymbolDB::set_const("a");
         let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
         let mut heap = QueryHeap::new(&[], None);
 
         //Standard
@@ -2340,10 +2333,10 @@ mod tests {
 
     #[test]
     fn bind_variable_tail() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        // let a = SymbolDB::set_const("a");
+        // let b = SymbolDB::set_const("b");
+        // let c = SymbolDB::set_const("c");
+        // let mut heap = QueryHeap::new(&[], None);
 
         //Arg Tail to Empty List
 
@@ -2563,16 +2556,16 @@ mod tests {
 
     #[test]
     fn bind_arg_to_con_comp() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        // let a = SymbolDB::set_const("a");
+        // let p = SymbolDB::set_const("p");
+        // let mut heap = QueryHeap::new(&[], None);
     }
 
     #[test]
     fn bind_arg_to_con_tup() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        // let a = SymbolDB::set_const("a");
+        // let p = SymbolDB::set_const("p");
+        // let mut heap = QueryHeap::new(&[], None);
     }
 
     //-----------------------------------------------------------

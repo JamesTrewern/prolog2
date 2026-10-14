@@ -9,7 +9,7 @@ use std::{
     collections::HashMap,
     fmt::Write,
     mem,
-    ops::{Index, IndexMut, Range, RangeFrom, RangeInclusive},
+    ops::{Index, IndexMut, Range, RangeFrom},
 };
 
 use fsize::fsize;

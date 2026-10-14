@@ -1,7 +1,5 @@
 // Broad test on example files to prove working state of application
-use std::path::Path;
-
-use crate::app::{App, Config, Examples, Solution};
+use crate::app::{App, Solution};
 
 pub fn contains_clause(solution: &Solution, clause: &str) -> bool {
     solution
@@ -163,13 +161,13 @@ fn fsm_parity() {
 
 // ── Top Program Construction tests ──
 
-// #[test]
-// fn top_prog_robots() {
-//     let mut app = App::from_setup_json("examples/robots/tpc_config.json")
-//         .expect("failed to load config")
-//         .auto(true);
-//     app.run_top_prog();
-// }
+#[test]
+fn top_prog_robots() {
+    let mut app = App::from_setup_json("examples/robots/tpc_config.json")
+        .expect("failed to load config")
+        .auto(true);
+    app.run_top_prog();
+}
 
 // Regression test for the molecules example.
 //

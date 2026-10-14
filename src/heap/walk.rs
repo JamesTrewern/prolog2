@@ -1,6 +1,6 @@
 use crate::{heap::VarBind, resolution::Substitution};
 
-use super::{Cell, Heap, Tag::*, VarBind::*, VarReg, LIS};
+use super::{Cell, Heap, Tag::*, VarBind::*, LIS};
 use smallvec::SmallVec;
 use std::ops::{Deref, DerefMut};
 
@@ -272,7 +272,7 @@ mod test {
     use std::{assert_eq, vec};
 
     use crate::{
-        heap::{QueryHeap, SymbolDB, EMPTY_LIS},
+        heap::{QueryHeap, SymbolDB, VarReg, EMPTY_LIS},
         resolution::Substitution,
     };
 

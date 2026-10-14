@@ -1,40 +1,10 @@
 use std::ops::{Deref, DerefMut};
 
-use multiversion::multiversion;
-use num_traits::{PrimInt, Unsigned};
-use smallvec::SmallVec;
-
 //Return type for binary search of predicate keys
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum FindReturn {
     Index(usize),
     InsertPos(usize),
-}
-
-/// Compact 64-bit flag set used to mark meta-variables and constrained variables.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct BitFlag16(u16);
-
-impl BitFlag16 {
-    pub fn set(&mut self, idx: usize) {
-        self.0 = self.0 | 1 << idx;
-    }
-
-    pub fn _unset(&mut self, idx: usize) {
-        self.0 = self.0 & !(1 << idx);
-    }
-
-    pub fn get(&self, idx: usize) -> bool {
-        self.0 & (1 << idx) != 0
-    }
-
-    pub fn is_some(&self) -> bool {
-        self.0 != 0
-    }
-
-    pub fn is_none(&self) -> bool {
-        self.0 == 0
-    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -55,6 +25,7 @@ impl DerefMut for DirGraph8 {
     }
 }
 
+#[cfg(test)]
 fn row_to_string(row: u8, size: usize) -> String {
     let mut buf = String::from("|");
     for i in 0..size {
@@ -67,6 +38,7 @@ fn row_to_string(row: u8, size: usize) -> String {
     buf
 }
 
+#[cfg(test)]
 fn print_table(table: [u8; 8], size: usize) {
     println!("{:-<1$}", "", size * 2 + 1);
     for i in 0..size {
@@ -83,6 +55,7 @@ impl DirGraph8 {
 
     const IDENTITY64: u64 = u64::from_ne_bytes(Self::IDENTITYB);
 
+    #[cfg(test)]
     fn from_edges<const N: usize>(edge_rows: [u8; N]) -> Self {
         if N > 8 {
             panic!("Can't have more than 8 nodes")
@@ -236,6 +209,7 @@ impl DirGraph8 {
         order
     }
 
+    #[cfg(test)]
     fn print_table(&self) {
         print_table(self.edges, self.size);
     }
@@ -425,7 +399,7 @@ fn from_halves(a: u128, b: u128) -> [u16; 16] {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::{print_table, DirGraph8};
+    use crate::utils::DirGraph8;
 
     use super::DirGraph16;
 

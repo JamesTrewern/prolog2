@@ -1,7 +1,4 @@
-use crate::program::clause::MAX_ARG;
-
 use self::VarBind::{Addr, Var};
-use multiversion::multiversion;
 
 const VAR_MASK: usize = 1 << (usize::BITS - 1);
 const UNBOUND_VALUE: usize = usize::MAX;

@@ -301,12 +301,12 @@ fn log(addr: usize, heap: &QueryHeap) -> Option<Number> {
 }
 
 fn abs(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
+    let lhs = goal_arg(heap, addr, 0);
     Some(evaluate_term(lhs, heap)?.abs())
 }
 
 fn round(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
+    let lhs = goal_arg(heap, addr, 0);
     Some(evaluate_term(lhs, heap)?.round())
 }
 
@@ -377,7 +377,7 @@ fn evaluate_term(addr: usize, heap: &QueryHeap) -> Option<Number> {
 /// Returns `None` if the goal is malformed or either argument is not a valid
 /// arithmetic expression — the caller should treat this as failure.
 fn eval_comparison(heap: &QueryHeap, goal: usize) -> Option<(Number, Number)> {
-    let ((Comp, 3), comp_addr) = resolve_to_cell_and_addr(heap, goal) else {
+    let ((Comp, 3), _) = resolve_to_cell_and_addr(heap, goal) else {
         return None;
     };
 
@@ -403,7 +403,7 @@ pub fn is_pred(
     _pred_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    let ((Comp, 3), comp_addr) = resolve_to_cell_and_addr(heap, goal) else {
+    let ((Comp, 3), _) = resolve_to_cell_and_addr(heap, goal) else {
         return false.into();
     };
 

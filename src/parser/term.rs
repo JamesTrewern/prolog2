@@ -108,7 +108,7 @@ impl Term {
                 }
                 tail.extract_vars(vars);
             }
-            Term::Str(str_type, terms) => {
+            Term::Str(_, terms) => {
                 for term in terms {
                     term.extract_vars(vars);
                 }
@@ -195,7 +195,6 @@ mod encode_tests {
     #[test]
     fn encode_argument() {
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
         let mut var_values = HashMap::new();
         let x = Term::Variable("X".into());
         let y = Term::Variable("Y".into());
@@ -233,21 +232,18 @@ mod encode_tests {
         let a = SymbolDB::set_const("a");
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
         let unit = Term::Constant("a".into());
         let addr = unit.encode(&mut heap, &mut HashMap::new(), None);
         assert_eq!(heap.term_string(addr), "a");
         assert_eq!(heap.cells, [(Tag::Con, a)]);
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
         let unit = Term::Int(10);
         let addr = unit.encode(&mut heap, &mut HashMap::new(), None);
         assert_eq!(heap.term_string(addr), "10");
         assert_eq!(heap.cells, [(Tag::Int, 10)]);
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
         let value: isize = -10;
         let unit = Term::Int(value);
         let addr = unit.encode(&mut heap, &mut HashMap::new(), None);
@@ -255,7 +251,6 @@ mod encode_tests {
         assert_eq!(heap.cells, [(Tag::Int, isize::cast_unsigned(value))]);
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
         let value: fsize = 1.1;
         let unit = Term::Float(value);
         let addr = unit.encode(&mut heap, &mut HashMap::new(), None);
@@ -268,7 +263,6 @@ mod encode_tests {
         assert_eq!(heap.cells, [(Tag::Flt, value.to_bits() as usize)]);
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
         let value: fsize = -1.1;
         let unit = Term::Float(value);
         let addr = unit.encode(&mut heap, &mut HashMap::new(), None);
@@ -295,7 +289,6 @@ mod encode_tests {
         let f = Term::Constant("f".into());
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
         let term = Term::Str(Str::Comp, vec![p.clone(), x.clone(), a.clone()]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), None);
         SymbolDB::_see_var_map();
@@ -311,7 +304,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(Str::Comp, vec![q.clone(), a.clone(), q.clone()]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), None);
         assert_eq!(heap.term_string(addr), "Q(a,Q)");
@@ -326,7 +319,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Comp,
             vec![
@@ -350,7 +343,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Comp,
             vec![
@@ -374,7 +367,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Comp,
             vec![
@@ -398,7 +391,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Comp,
             vec![
@@ -580,7 +573,7 @@ mod encode_tests {
         let f = Term::Constant("f".into());
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(Str::Tup, vec![p.clone(), x.clone(), a.clone()]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), None);
         assert_eq!(heap.term_string(addr), "(p,X,a)");
@@ -595,7 +588,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(Str::Tup, vec![q.clone(), a.clone(), q.clone()]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), None);
         assert_eq!(heap.term_string(addr), "(Q,a,Q)");
@@ -610,7 +603,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Tup,
             vec![
@@ -634,7 +627,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Tup,
             vec![
@@ -658,7 +651,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Tup,
             vec![
@@ -682,7 +675,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Tup,
             vec![
@@ -864,7 +857,7 @@ mod encode_tests {
         let f = Term::Constant("f".into());
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(Str::Set, vec![a.clone(), x.clone(), a.clone()]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), None);
         assert_eq!(heap.term_string(addr), "{a,X}");
@@ -874,14 +867,14 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(Str::Set, vec![q.clone(), a.clone(), q.clone()]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), None);
         assert_eq!(heap.term_string(addr), "{a,Q}");
         assert_eq!(heap.cells, [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Arg, 0)]);
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Set,
             vec![
@@ -905,7 +898,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Set,
             vec![
@@ -929,7 +922,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Set,
             vec![
@@ -953,7 +946,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::Str(
             Str::Set,
             vec![
@@ -1120,7 +1113,7 @@ mod encode_tests {
         let a = Term::Constant("a".into());
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::List(
             vec![a.clone(), x.clone(), a.clone()],
             Box::new(Term::EmptyList),
@@ -1141,7 +1134,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::List(vec![q.clone(), a.clone()], Box::new(q.clone()));
         let addr = term.encode(&mut heap, &mut HashMap::new(), None);
         assert_eq!(heap.term_string(addr), "[Q,a|Q]");
@@ -1151,7 +1144,7 @@ mod encode_tests {
         );
 
         let mut heap = QueryHeap::new(&[], None);
-        let heap_id = heap.id;
+
         let term = Term::List(
             vec![
                 Term::List(
