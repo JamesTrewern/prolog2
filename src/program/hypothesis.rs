@@ -137,6 +137,7 @@ impl Hypothesis {
             buffer += &clause.to_string(heap);
             buffer += "\n"
         }
+        buffer.pop();
         buffer
     }
 

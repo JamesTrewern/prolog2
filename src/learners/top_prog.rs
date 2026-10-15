@@ -142,12 +142,12 @@ fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, Str
 }
 
 fn extract_literal(dst: &mut Vec<Cell>, src: &QueryHeap, addr: usize) -> usize {
-    let addr = dst.heap_len();
+    let return_addr = dst.heap_len();
     let mut walk = TermWalk::new(addr);
     while let Some(cell) = walk.next_cell(src) {
         dst.push(cell);
     }
-    addr
+    return_addr
 }
 
 /// Extract cells and remap literal addrs from hypothesis
@@ -289,11 +289,9 @@ fn generalise_thread(
     let mut proof = Proof::new(&query_heap, &[goal]);
 
     while proof.prove(&mut query_heap, predicate_table, config) {
-        for clause in proof.hypothesis.iter() {
-            let (cells, h) = extract_hypothesis_local(&proof, &query_heap);
-            if tx.send(HypothesisMsg { cells, h }).is_err() {
-                break; // Receiver dropped
-            }
+        let (cells, h) = extract_hypothesis_local(&proof, &query_heap);
+        if tx.send(HypothesisMsg { cells, h }).is_err() {
+            break; // Receiver dropped
         }
     }
 }

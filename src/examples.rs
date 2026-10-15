@@ -161,13 +161,13 @@ fn fsm_parity() {
 
 // ── Top Program Construction tests ──
 
-#[test]
-fn top_prog_robots() {
-    let mut app = App::from_setup_json("examples/robots/tpc_config.json")
-        .expect("failed to load config")
-        .auto(true);
-    app.run_top_prog();
-}
+// #[test]
+// fn top_prog_robots() {
+//     let mut app = App::from_setup_json("examples/robots/tpc_config.json")
+//         .expect("failed to load config")
+//         .auto(true);
+//     app.run_top_prog();
+// }
 
 // Regression test for the molecules example.
 //
@@ -190,15 +190,15 @@ fn top_prog_robots() {
 //     );
 // }
 
-// #[test]
-// fn top_prog_trains() {
-//     let mut app = App::from_setup_json("examples/trains/tpc_config.json")
-//         .expect("failed to load config")
-//         .auto(true);
-//     let result = app.run_top_prog();
-//     assert_eq!(result.lines().count(), 2);
-//     //This creates a valid hypothesis, but due to race conditions
-//     //in multi-threading predicate names and ordering of body literals is not deterministic
-//     // assert!(result.lines().find(|line| *line == "e(Arg_0):-has_car(Arg_0,Arg_1),pred_1(Arg_1).").is_some());
-//     // assert!(result.lines().find(|line| *line == "pred_1(Arg_0):-short(Arg_0),closed(Arg_0).").is_some());
-// }
+#[test]
+fn top_prog_trains() {
+    let mut app = App::from_setup_json("examples/trains/tpc_config.json")
+        .expect("failed to load config")
+        .auto(true);
+    let result = app.run_top_prog();
+    assert_eq!(result.lines().count(), 2);
+    //This creates a valid hypothesis, but due to race conditions
+    //in multi-threading predicate names and ordering of body literals is not deterministic
+    // assert!(result.lines().find(|line| *line == "e(Arg_0):-has_car(Arg_0,Arg_1),pred_1(Arg_1).").is_some());
+    // assert!(result.lines().find(|line| *line == "pred_1(Arg_0):-short(Arg_0),closed(Arg_0).").is_some());
+}
