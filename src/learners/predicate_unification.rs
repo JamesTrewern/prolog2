@@ -162,7 +162,7 @@ impl PredDef {
 #[derive(Default, Debug)]
 pub struct PredDefTable {
     pub pred_defs: Vec<PredDef>,
-    next_id: usize,
+    pub next_id: usize,
 }
 
 impl PredDefTable {

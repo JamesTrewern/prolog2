@@ -12,7 +12,7 @@ use std::{
 use crate::{
     app::{App, TopProg},
     heap::{
-        Cell, Heap, QueryHeap,
+        Cell, Heap, QueryHeap, SymbolDB,
         Tag::{self, Ref},
         TermWalk,
         VarBind::Addr,
@@ -20,7 +20,11 @@ use crate::{
     },
     learners::predicate_unification::PredDefTable,
     parser::{build_clause, tokenise, TokenStream},
-    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{
+        clause::Clause,
+        hypothesis::Hypothesis,
+        predicate_table::{Predicate, PredicateTable},
+    },
     resolution::Proof,
     Config,
 };
@@ -110,29 +114,19 @@ impl App {
 
         // Build final top program from surviving hypotheses
         if reduce {
-            let reduced = reduce_hypotheses(
+            let mut top_program = reduce_hypotheses(
                 &examples.pos,
                 sub_hypotheses,
                 &self.prog_heap,
                 &self.predicate_table,
                 self.config,
             );
-            println!("\n=== Reduced Program ({} clauses) ===", reduced.len());
-            let mut buffer = String::new();
-            for clause in &reduced {
-                buffer += &format!("{}\n", clause.to_string(&self.prog_heap));
-            }
-            println!("{buffer}");
-            buffer
+            collect_used_pred(&mut top_program, &self.prog_heap, &self.predicate_table);
+            top_prog_to_string(top_program, &self.prog_heap)
         } else {
-            let top_program = union_sub_hypotheses_renumbered(sub_hypotheses, &self.prog_heap);
-            println!("\n=== Top Program ({} clauses) ===", top_program.len());
-            let mut buffer = String::new();
-            for clause in &top_program {
-                buffer += &format!("{clause}\n");
-            }
-            println!("{buffer}");
-            buffer
+            let mut top_program = union_sub_hypotheses(sub_hypotheses, &self.prog_heap);
+            collect_used_pred(&mut top_program, &self.prog_heap, &self.predicate_table);
+            top_prog_to_string(top_program, &self.prog_heap)
         }
     }
 }
@@ -561,129 +555,6 @@ fn union_sub_hypotheses(sub_hypotheses: Vec<Vec<Clause>>, heap: &Vec<Cell>) -> V
     top_program
 }
 
-/// String-based union that deduplicates invented predicates across hypotheses.
-///
-/// For each hypothesis, invented predicates are processed bottom-up (leaves
-/// first). Each predicate's definition — with callees already resolved to
-/// their canonical union names — is checked against a global registry. If an
-/// identical definition already exists, the predicate is mapped to the
-/// existing name. Otherwise it gets a fresh global name and its clauses are
-/// added to the union.
-fn union_sub_hypotheses_renumbered(
-    sub_hypotheses: Vec<Vec<Clause>>,
-    heap: &Vec<Cell>,
-) -> Vec<String> {
-    // Registry: skeleton key → global pred name
-    let mut registry: HashMap<String, String> = HashMap::new();
-    let mut top_program: Vec<String> = Vec::new();
-    let mut global_counter = 1usize;
-    // Also dedup non-invented clauses (e.g. in_cluster bridge clauses)
-    let mut seen_clauses: HashSet<String> = HashSet::new();
-
-    for hypothesis in sub_hypotheses {
-        // Convert to strings, normalise within hypothesis
-        let clause_strings: Vec<String> = hypothesis.iter().map(|c| c.to_string(heap)).collect();
-        let clause_strings: Vec<String> = hypothesis.iter().map(|c| c.to_string(heap)).collect();
-        let normalised = crate::normalise_hypothesis(&clause_strings);
-
-        // Group clauses by head predicate name
-        let mut pred_clauses: HashMap<String, Vec<String>> = HashMap::new();
-        let mut non_invented: Vec<String> = Vec::new();
-
-        for clause in &normalised {
-            let head_name = clause.split('(').next().unwrap_or("");
-            if head_name.starts_with("pred_") {
-                pred_clauses
-                    .entry(head_name.to_string())
-                    .or_default()
-                    .push(clause.clone());
-            } else {
-                non_invented.push(clause.clone());
-            }
-        }
-
-        // Build dependency graph: which invented preds does each one call?
-        let pred_names: Vec<String> = pred_clauses.keys().cloned().collect();
-        let mut deps: HashMap<String, Vec<String>> = HashMap::new();
-        for (pred_name, clauses) in &pred_clauses {
-            let mut callees = Vec::new();
-            for clause in clauses {
-                for token in crate::find_pred_tokens(clause) {
-                    if token != *pred_name
-                        && pred_names.contains(&token)
-                        && !callees.contains(&token)
-                    {
-                        callees.push(token);
-                    }
-                }
-            }
-            deps.insert(pred_name.clone(), callees);
-        }
-
-        // Topological sort: leaves first (preds with no invented-pred dependencies)
-        let topo_order = topo_sort(&pred_names, &deps);
-
-        // Process each predicate in bottom-up order
-        // Maps local normalised name → global union name
-        let mut local_to_global: HashMap<String, String> = HashMap::new();
-
-        for pred_name in &topo_order {
-            let clauses = match pred_clauses.get(pred_name) {
-                Some(c) => c,
-                None => continue,
-            };
-
-            // Apply already-resolved mappings to callee names in these clauses
-            let resolved_clauses: Vec<String> = clauses
-                .iter()
-                .map(|c| apply_mapping(c, &local_to_global))
-                .collect();
-
-            // Build skeleton: replace THIS pred's name with "$HEAD",
-            // normalise variable names, sort clauses
-            let mut skeleton_clauses: Vec<String> = resolved_clauses
-                .iter()
-                .map(|c| {
-                    let replaced = c.replace(pred_name.as_str(), "$HEAD");
-                    normalise_vars(&replaced)
-                })
-                .collect();
-            skeleton_clauses.sort();
-            let skeleton_key = skeleton_clauses.join("|");
-
-            if let Some(existing_name) = registry.get(&skeleton_key) {
-                // This predicate already exists in the union — reuse it
-                local_to_global.insert(pred_name.clone(), existing_name.clone());
-            } else {
-                // New predicate — assign global name, add clauses
-                let global_name = format!("pred_{global_counter}");
-                global_counter += 1;
-
-                registry.insert(skeleton_key, global_name.clone());
-                local_to_global.insert(pred_name.clone(), global_name.clone());
-
-                // Add clauses with the global name
-                for clause in &resolved_clauses {
-                    let final_clause = clause.replace(pred_name.as_str(), global_name.as_str());
-                    if seen_clauses.insert(final_clause.clone()) {
-                        top_program.push(final_clause);
-                    }
-                }
-            }
-        }
-
-        // Add non-invented clauses (e.g. in_cluster bridge), applying mappings
-        for clause in &non_invented {
-            let final_clause = apply_mapping(clause, &local_to_global);
-            if seen_clauses.insert(final_clause.clone()) {
-                top_program.push(final_clause);
-            }
-        }
-    }
-
-    top_program
-}
-
 /// Normalise variable names in a clause string by replacing each `Arg_N` with
 /// `V0`, `V1`, … in order of first appearance.
 fn normalise_vars(clause: &str) -> String {
@@ -807,4 +678,49 @@ fn topo_sort(nodes: &[String], deps: &HashMap<String, Vec<String>>) -> Vec<Strin
     }
 
     result
+}
+
+fn collect_used_pred(
+    hypothesis: &mut Vec<Clause>,
+    heap: &impl Heap,
+    predicate_table: &PredicateTable,
+) {
+    let min_pred_con_id = SymbolDB::set_const("pred_0");
+    let mut pred_set = HashMap::new();
+    loop {
+        let start_len = pred_set.len();
+        for clause in hypothesis.iter() {
+            for literal in clause.body() {
+                if heap[literal + 1].1 > min_pred_con_id {
+                    pred_set.insert(heap[literal + 1].1, (heap[*literal].1 - 1, false));
+                    println!("collect pred: {}", heap.term_string(*literal))
+                }
+            }
+        }
+        if start_len == pred_set.len() {
+            break;
+        }
+        for (symbol, (arity, collected)) in pred_set.iter_mut() {
+            if !*collected {
+                println!("collect symbol arity: {symbol}, {arity}");
+                let Predicate::Clauses(clauses) =
+                    predicate_table.get_predicate((*symbol, *arity)).unwrap()
+                else {
+                    panic!();
+                };
+                hypothesis.extend_from_slice(clauses);
+                *collected = true
+            }
+        }
+    }
+}
+
+fn top_prog_to_string(top_program: Vec<Clause>, heap: &impl Heap) -> String {
+    let mut buffer = String::new();
+    for clause in &top_program {
+        buffer += &format!("{}\n", clause.to_string(heap));
+    }
+    println!("\n=== Top Program ({} clauses) ===", top_program.len());
+    println!("{buffer}");
+    buffer
 }
