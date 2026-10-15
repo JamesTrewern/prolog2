@@ -59,7 +59,8 @@ impl VarReg {
     pub fn bind(&mut self, binding: VarBind) {
         debug_assert!(
             *self == Self::UNBOUND,
-            "Should not overwrite existing binding"
+            "Should not overwrite existing binding {:?}",
+            self.get_bind()
         );
         *self = binding.into();
     }

@@ -213,7 +213,6 @@ fn generalise_collector(
             }
         }
         acc_heap.cells.append(&mut cells);
-
         // Extract/Unify predicate defintions
         pdt.extract_pred_defs_from_h(&mut h, &mut acc_heap);
 

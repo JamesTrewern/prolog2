@@ -205,7 +205,7 @@ impl DirGraph8 {
     pub fn order(&self) -> [usize; 8] {
         let r = self.closure();
         let mut order: [usize; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
-        order[..self.size].sort_by_key(|&i| std::cmp::Reverse(r[i].count_ones()));
+        order[..self.size].sort_by_key(|&i| r[i].count_ones());
         order
     }
 
