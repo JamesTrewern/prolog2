@@ -55,9 +55,6 @@ impl std::fmt::Display for Tag {
 /// A single heap cell: a `(Tag, value)` pair.
 pub type Cell = (Tag, usize);
 
-pub const CON_PTR: usize = isize::MAX as usize;
-pub const _FALSE: Cell = (Con, CON_PTR);
-pub const _TRUE: Cell = (Con, CON_PTR + 1);
 pub const LIS: Cell = (Lis, 0);
 pub const EMPTY_LIS: Cell = (ELis, 0);
 

@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use super::{PredReturn, PredicateModule};
 use crate::{
     heap::{
-        known_symbol_id, Cell, Heap, QueryHeap,
+        Cell, Heap, QueryHeap,
         Tag::{self, *},
         VarBind::Addr,
     },
@@ -38,7 +38,7 @@ pub(crate) fn set_approx_tolerance(pct: u8) {
 type MathFn = fn(usize, &QueryHeap) -> Option<Number>;
 
 // Minus symbol ID for distinguishing unary negation from binary subtraction
-const MINUS_SYMBOL: usize = known_symbol_id(3);
+const MINUS_SYMBOL: usize = 3;
 
 // Math functions array using compile-time known symbol IDs
 // Indices match KNOWN_SYMBOLS in symbol_db.rs:
@@ -46,23 +46,23 @@ const MINUS_SYMBOL: usize = known_symbol_id(3);
 // 7: cos, 8: sin, 9: tan, 10: acos, 11: asin, 12: atan
 // 13: log, 14: abs, 15: round, 16: sqrt, 17: to_degrees, 18: to_radians
 const FUNCTIONS: [(usize, MathFn); 17] = [
-    (known_symbol_id(2), add),         // +
-    (known_symbol_id(3), sub),         // -
-    (known_symbol_id(4), mul),         // *
-    (known_symbol_id(5), div),         // /
-    (known_symbol_id(6), pow),         // **
-    (known_symbol_id(7), cos),         // cos
-    (known_symbol_id(8), sin),         // sin
-    (known_symbol_id(9), tan),         // tan
-    (known_symbol_id(10), acos),       // acos
-    (known_symbol_id(11), asin),       // asin
-    (known_symbol_id(12), atan),       // atan
-    (known_symbol_id(13), log),        // log
-    (known_symbol_id(14), abs),        // abs
-    (known_symbol_id(15), round),      // round
-    (known_symbol_id(16), sqrt),       // sqrt
-    (known_symbol_id(17), to_degrees), // to_degrees
-    (known_symbol_id(18), to_radians), // to_radians
+    (2, add),         // +
+    (3, sub),         // -
+    (4, mul),         // *
+    (5, div),         // /
+    (6, pow),         // **
+    (7, cos),         // cos
+    (8, sin),         // sin
+    (9, tan),         // tan
+    (10, acos),       // acos
+    (11, asin),       // asin
+    (12, atan),       // atan
+    (13, log),        // log
+    (14, abs),        // abs
+    (15, round),      // round
+    (16, sqrt),       // sqrt
+    (17, to_degrees), // to_degrees
+    (18, to_radians), // to_radians
 ];
 
 #[derive(Debug, Clone, Copy)]

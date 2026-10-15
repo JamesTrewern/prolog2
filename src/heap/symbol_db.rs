@@ -33,11 +33,6 @@ const KNOWN_SYMBOLS: &[&str] = &[
     "to_radians", // indices 13-18
 ];
 
-/// Compute the symbol ID for a known symbol at compile time
-pub const fn known_symbol_id(index: usize) -> usize {
-    isize::MAX as usize + index
-}
-
 lazy_static! {
     static ref SYMBOLS: RwLock<SymbolDB> = RwLock::new(SymbolDB {
         const_symbols: KNOWN_SYMBOLS
@@ -65,10 +60,10 @@ impl SymbolDB {
         let mut symbols = SYMBOLS.write().unwrap();
         let symbol: Arc<str> = symbol.into();
         match symbols.const_symbols.iter().position(|e| *e == symbol) {
-            Some(i) => i + isize::MAX as usize,
+            Some(i) => i,
             None => {
                 symbols.const_symbols.push(symbol);
-                symbols.const_symbols.len() - 1 + isize::MAX as usize
+                symbols.const_symbols.len() - 1
             }
         }
     }
@@ -82,7 +77,7 @@ impl SymbolDB {
     }
 
     pub fn get_const(id: usize) -> Arc<str> {
-        SYMBOLS.read().unwrap().const_symbols[id - isize::MAX as usize].clone()
+        SYMBOLS.read().unwrap().const_symbols[id].clone()
     }
 
     pub fn get_var(var_id: usize, heap_id: usize) -> Option<Arc<str>> {
@@ -111,17 +106,21 @@ impl SymbolDB {
             println!("{k:?}:\t{v}")
         }
     }
+
+    pub fn last_const() -> usize {
+        SYMBOLS.read().unwrap().const_symbols.len()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::{heap::CON_PTR, symbol_db::SymbolDB};
+    use super::super::symbol_db::SymbolDB;
 
     #[test]
     //Check required symbols are preloaded
     fn known_symbols() {
-        assert_eq!(&*SymbolDB::get_const(CON_PTR), "false");
-        assert_eq!(&*SymbolDB::get_const(CON_PTR + 1), "true");
+        assert_eq!(&*SymbolDB::get_const(0), "false");
+        assert_eq!(&*SymbolDB::get_const(1), "true");
     }
 
     #[test]
