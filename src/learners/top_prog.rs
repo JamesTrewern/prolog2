@@ -65,6 +65,12 @@ impl App {
             self.config,
         );
 
+        for (i, cell) in cells.iter().enumerate() {
+            if cell.0 == Ref {
+                panic!("{cell:?}@{i}\n{:?}", &cells[i - 5..i + 5])
+            }
+        }
+
         // TODO consider more effecient method for adding pdt clauses to program
         self.prog_heap.extend_from_slice(&cells);
         for pred_def in pdt.pred_defs {
@@ -139,30 +145,6 @@ fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, Str
     let heap_id = query_heap.id;
     let clause = build_clause(literals, None, query_heap, Some(heap_id));
     Ok(clause[0])
-}
-
-fn extract_literal(dst: &mut Vec<Cell>, src: &QueryHeap, addr: usize) -> usize {
-    let return_addr = dst.heap_len();
-    let mut walk = TermWalk::new(addr);
-    while let Some(cell) = walk.next_cell(src) {
-        dst.push(cell);
-    }
-    return_addr
-}
-
-/// Extract cells and remap literal addrs from hypothesis
-fn extract_hypothesis_local(proof: &Proof, heap: &QueryHeap) -> (Vec<Cell>, Vec<Clause>) {
-    let mut local_cells: Vec<Cell> = Vec::with_capacity(12 * proof.hypothesis.len());
-    let mut clauses = Vec::with_capacity(proof.hypothesis.len());
-    for clause in proof.hypothesis.iter() {
-        let new_literals: Vec<usize> = clause
-            .iter()
-            .map(|&lit_addr| extract_literal(&mut local_cells, &heap, lit_addr))
-            .collect();
-        clauses.push(Clause::new(new_literals, None, clause.max_arg_id));
-    }
-
-    (local_cells, clauses)
 }
 
 fn generalise(
@@ -247,15 +229,14 @@ fn generalise_collector(
         let key = clause_strings.concat();
         // If seen revert to heap point
         if seen.insert(key) {
-            // replace ref cells in h with the referenced value
-            for clause in &h {
-                for literal in clause.body() {
-                    if let (Ref, value) = acc_heap[*literal] {
-                        let Addr(addr) = acc_heap.var_deref(value) else {
-                            panic!("Not all variable predicates given constant terms")
-                        };
-                        acc_heap[*literal] = acc_heap[addr]
-                    }
+            // Ground all ref cells to referenced value
+            // TODO Attempt to make branchless vectorisable
+            for i in (heap_point.0..acc_heap.cells.len()) {
+                if let (Ref, var_id) = acc_heap.cells[i] {
+                    let Addr(addr) = acc_heap.var_deref(var_id) else {
+                        panic!("Not all variable predicates given constant terms")
+                    };
+                    acc_heap.cells[i] = acc_heap[addr];
                 }
             }
             hypotheses.push(h);
@@ -294,6 +275,30 @@ fn generalise_thread(
             break; // Receiver dropped
         }
     }
+}
+
+/// Extract cells and remap literal addrs from hypothesis
+fn extract_hypothesis_local(proof: &Proof, heap: &QueryHeap) -> (Vec<Cell>, Vec<Clause>) {
+    let mut local_cells: Vec<Cell> = Vec::with_capacity(12 * proof.hypothesis.len());
+    let mut clauses = Vec::with_capacity(proof.hypothesis.len());
+    for clause in proof.hypothesis.iter() {
+        let new_literals: Vec<usize> = clause
+            .iter()
+            .map(|&lit_addr| extract_literal(&mut local_cells, &heap, lit_addr))
+            .collect();
+        clauses.push(Clause::new(new_literals, None, clause.max_arg_id));
+    }
+
+    (local_cells, clauses)
+}
+
+fn extract_literal(dst: &mut Vec<Cell>, src: &QueryHeap, addr: usize) -> usize {
+    let return_addr = dst.heap_len();
+    let mut walk = TermWalk::new(addr);
+    while let Some(cell) = walk.next_cell(src) {
+        dst.push(cell);
+    }
+    return_addr
 }
 
 fn specialise(

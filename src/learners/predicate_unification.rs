@@ -113,18 +113,6 @@ impl PredDef {
                 }
             }
         }
-
-        // Make const instances of head predicates in body literals
-        for clause in &self.clauses {
-            for literal in clause.body() {
-                let (Ref, var_id) = heap[literal + 1] else {
-                    continue;
-                };
-                if let Some(pred_symbol) = var_pred_ids.get(&var_id) {
-                    heap[literal + 1] = (Con, *pred_symbol)
-                }
-            }
-        }
     }
 
     /// Attempt to unify two clause definitions
@@ -233,7 +221,7 @@ impl PredDefTable {
         lb..ub
     }
 
-    fn _print_defs(&self, heap: &impl Heap) {
+    pub fn _print_defs(&self, heap: &impl Heap) {
         for (i, pred_def) in self.pred_defs.iter().enumerate() {
             println!("====== Definition {i} ======");
             for clause in &pred_def.clauses {
