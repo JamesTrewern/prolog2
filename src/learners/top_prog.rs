@@ -11,15 +11,8 @@ use std::{
 
 use crate::{
     app::{App, TopProg},
-    heap::{
-        Cell, Heap, QueryHeap, SymbolDB,
-        Tag::{self, Ref},
-        TermWalk,
-        VarBind::Addr,
-        VarReg, Walk,
-    },
-    learners::predicate_unification::PredDefTable,
-    parser::{build_clause, tokenise, TokenStream},
+    heap::{Cell, Heap, QueryHeap, SymbolDB, Tag::Ref, TermWalk, VarBind::Addr, VarReg, Walk},
+    learners::{predicate_unification::PredDefTable, utils::parse_example},
     program::{
         clause::Clause,
         hypothesis::Hypothesis,
@@ -29,6 +22,8 @@ use crate::{
     Config,
 };
 
+use super::{reduce::reduce_hypotheses, utils::union_sub_hypotheses};
+
 use lazy_static::lazy_static;
 use rayon;
 use smallvec::SmallVec;
@@ -36,9 +31,6 @@ use smallvec::SmallVec;
 lazy_static! {
     static ref CPU_COUNT: usize = num_cpus::get();
 }
-
-pub enum TopProgError {}
-
 /// Message sent from a proof thread to the main thread.
 struct HypothesisMsg {
     cells: Vec<Cell>,
@@ -131,16 +123,6 @@ impl App {
     }
 }
 
-/// Parse a single example string into a goal on the given query heap.
-fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, String> {
-    let literals = TokenStream::new(tokenise(example).map_err(|e| e.to_string())?)
-        .parse_goals()
-        .map_err(|e| format!("Example '{example}' incorrectly formatted: {e}"))?;
-    let heap_id = query_heap.id;
-    let clause = build_clause(literals, None, query_heap, Some(heap_id));
-    Ok(clause[0])
-}
-
 fn generalise(
     pos_examples: &[String],
     predicate_table: &PredicateTable,
@@ -183,7 +165,14 @@ fn generalise_collector(
 
     acc_heap.var_regs.extend_from_slice(&[VarReg::UNBOUND; 20]);
 
+    let mut messages_handled = 0;
+
+    eprint!("\rwating");
+    let _ = io::stderr().flush();
+
     for HypothesisMsg { mut cells, mut h } in rx {
+        io::stderr().flush();
+        eprint!("{messages_handled}");
         let heap_point = acc_heap.heap_point();
         // translate hypothesis message to local context
         // update var ids with var map
@@ -232,6 +221,7 @@ fn generalise_collector(
                     acc_heap.cells[i] = acc_heap[addr];
                 }
             }
+            todo!("Convert Vec<Clause> to Box<[Clause]>");
             hypotheses.push(h);
         } else {
             acc_heap.truncate(heap_point);
@@ -239,6 +229,11 @@ fn generalise_collector(
         // After predicate coining no ref cells should be left, set all regs to unbound
         for var_reg in &mut acc_heap.var_regs {
             *var_reg = VarReg::UNBOUND;
+        }
+
+        messages_handled += 1;
+        if messages_handled % 50 == 1 {
+            println!("Handled {messages_handled} messages")
         }
     }
 
@@ -382,176 +377,6 @@ fn specialise_thread(
         h = std::mem::replace(&mut proof.hypothesis, Hypothesis::new());
     }
     true
-}
-
-/// Count how many positive examples a set of clauses can prove.
-fn count_coverage(
-    pos_examples: &[String],
-    clauses: &[Clause],
-    heap: &[Cell],
-    predicate_table: &PredicateTable,
-    config: Config,
-) -> usize {
-    let config = Config {
-        max_depth: config.max_depth,
-        max_clause: 0,
-        max_pred: 0,
-        debug: false,
-        protect_h_preds: config.protect_h_preds,
-    };
-
-    let mut h = Hypothesis::new();
-    for clause in clauses {
-        h.push_clause((*clause).clone(), SmallVec::new());
-    }
-
-    pos_examples
-        .iter()
-        .filter(|example| {
-            let mut query_heap = QueryHeap::new(heap, None);
-            let goal = match parse_example(example, &mut query_heap) {
-                Ok(g) => g,
-                Err(_) => return false,
-            };
-            let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h.clone());
-            proof.prove(&mut query_heap, predicate_table, config)
-        })
-        .count()
-}
-
-fn reduce_hypotheses(
-    pos_examples: &[String],
-    sub_hypotheses: Vec<Vec<Clause>>,
-    heap: &Vec<Cell>,
-    predicate_table: &PredicateTable,
-    config: Config,
-) -> Vec<Clause> {
-    // Step 2b: Per-hypothesis reduction — remove redundant clauses within each
-    // sub-hypothesis before union, so specific clauses don't drown out general ones.
-
-    let sub_total = sub_hypotheses.len();
-
-    // Reduce each sub-hypothesis and score by coverage (number of positives entailed)
-    let mut scored: Vec<(usize, Vec<Clause>)> = Vec::new();
-    for (idx, hypothesis) in sub_hypotheses.into_iter().enumerate() {
-        eprint!("\rSub-reduce: {}/{sub_total}    ", idx + 1);
-        let _ = io::stderr().flush();
-        let reduced = reduce(
-            pos_examples,
-            hypothesis,
-            &heap,
-            predicate_table,
-            config,
-            false,
-        );
-        let coverage = count_coverage(pos_examples, &reduced, &heap, predicate_table, config);
-        scored.push((coverage, reduced));
-    }
-    eprintln!("\rSub-reduce: {sub_total}/{sub_total} ...done    ");
-
-    // Sort by coverage ascending — specific hypotheses first in the union.
-    // Plotkin's reduction checks clauses front-to-back: specific clauses get
-    // checked first and removed (the general ones behind them cover the same
-    // examples). By the time we reach the general clauses, the specific ones
-    // are gone and the general ones become essential.
-    scored.sort_by(|a, b| a.0.cmp(&b.0));
-
-    // Union all reduced sub-hypothesis clauses, deduplicated
-    let top_program = union_sub_hypotheses(scored.into_iter().map(|(_, h)| h).collect(), heap);
-
-    println!("\n=== Top Program ({} clauses) ===", top_program.len());
-    for clause in &top_program {
-        println!("  {}", clause.to_string(heap));
-    }
-
-    // Step 3: Final reduction on the union
-    reduce(
-        pos_examples,
-        top_program,
-        &heap,
-        predicate_table,
-        config,
-        true,
-    )
-}
-
-/// Plotkin's program reduction (Algorithm 3).
-/// Sequentially tries removing each clause; if all positives are still provable
-/// without it, the clause is redundant and permanently removed.
-fn reduce<'a>(
-    pos_examples: &[String],
-    mut hypothesis: Vec<Clause>,
-    heap: &[Cell],
-    predicate_table: &PredicateTable,
-    config: Config,
-    verbose: bool,
-) -> Vec<Clause> {
-    let config = Config {
-        max_depth: config.max_depth,
-        max_clause: 0,
-        max_pred: 0,
-        debug: false,
-        protect_h_preds: config.protect_h_preds,
-    };
-
-    let total = hypothesis.len();
-    let mut removed = 0usize;
-    let mut i = 0;
-    while i < hypothesis.len() {
-        if verbose {
-            eprint!(
-                "\rReduce: {}/{total} checked, {removed} removed    ",
-                i + removed + 1
-            );
-            let _ = io::stderr().flush();
-        }
-
-        // Build hypothesis from all clauses except the one at index i
-        let mut h = Hypothesis::new();
-        for (j, clause) in hypothesis.iter().enumerate() {
-            if j != i {
-                h.push_clause((*clause).clone(), SmallVec::new());
-            }
-        }
-
-        // Check if all positive examples are still provable without clause i
-        let redundant = pos_examples.iter().all(|example| {
-            let mut query_heap = QueryHeap::new(heap, None);
-            let goal = match parse_example(example, &mut query_heap) {
-                Ok(g) => g,
-                Err(_) => return true, // skip unparseable examples
-            };
-            let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h.clone());
-            proof.prove(&mut query_heap, predicate_table, config)
-        });
-
-        if redundant {
-            hypothesis.remove(i);
-            removed += 1;
-            // Don't increment i — next clause slides into this position
-        } else {
-            i += 1;
-        }
-    }
-    if verbose {
-        eprintln!(" ...done");
-    }
-
-    hypothesis
-}
-
-fn union_sub_hypotheses(sub_hypotheses: Vec<Vec<Clause>>, heap: &Vec<Cell>) -> Vec<Clause> {
-    let mut top_program = Vec::new();
-    let mut seen = HashSet::new();
-    for hypothesis in sub_hypotheses {
-        for clause in hypothesis {
-            let key = clause.to_string(heap);
-            if seen.insert(key) {
-                top_program.push(clause);
-            }
-        }
-    }
-    top_program
 }
 
 /// Normalise variable names in a clause string by replacing each `Arg_N` with
