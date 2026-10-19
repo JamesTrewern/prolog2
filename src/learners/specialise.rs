@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 
 /// Test one hypothesis against all negative examples.
 /// Returns `true` if the hypothesis should be retained (no negative is provable).
-fn specialise_h(
+pub(super) fn specialise_h(
     neg_examples: &[String],
     hypothesis: &[Clause],
     heap: &[Cell],
@@ -54,7 +54,7 @@ fn specialise_h(
 
 /// Test one hypothesis against all negative examples.
 /// Returns `true` if the hypothesis should be retained (no negative is provable).
-fn specialise_h_threaded(
+pub(super) fn specialise_h_threaded(
     neg_examples: &[String],
     hypothesis: &[Clause],
     heap: &[Cell],

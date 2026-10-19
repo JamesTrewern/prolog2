@@ -3,6 +3,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use super::utils::count_coverage;
 use crate::{
     heap::{Cell, QueryHeap},
+    learners::specialise::specialise_h_threaded,
     parser::{build_clause, tokenise, TokenStream},
     program::{clause::Clause, predicate_table::PredicateTable},
     utils::SubSetIterator,
@@ -30,7 +31,7 @@ fn smallest_h(
     heap: &[Cell],
     predicate_table: &PredicateTable,
     max_depth: usize,
-) {
+) -> Option<Vec<Vec<Clause>>> {
     let config = Config {
         max_depth,
         max_clause: 0,
@@ -77,10 +78,28 @@ fn smallest_h(
             }
         }
         if !valid_sub_sets.is_empty() {
+            //Build grouped hypotheses from indexs
+            let mut hs = Vec::new();
+            for indexes in &valid_sub_sets {
+                let mut h = Vec::new();
+                for i in indexes {
+                    h.extend(h_coverage[*i].0.iter().map(|c| c.clone()));
+                }
+                hs.push(h)
+            }
             // Filter any negative entailers
+            hs.retain(|h| specialise_h_threaded(neg_examples, h, heap, predicate_table, config));
+            //If no h survives continue loop
+            //Else return hs
+            if hs.is_empty() {
+                continue;
+            } else {
+                return Some(hs);
+            }
             // Possible extra step:
             // Sort by clause count
             // Return smallest clause count
         }
     }
+    None
 }
