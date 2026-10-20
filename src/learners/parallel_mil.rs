@@ -34,7 +34,7 @@ struct HypothesisMsg {
 }
 
 impl App {
-    pub fn run_top_prog(&mut self) -> String {
+    pub fn run_top_prog(&mut self) -> Option<Vec<String>> {
         let Some(mut examples) = self.examples.clone() else {
             panic!("Can't start top prog without examples");
         };
@@ -101,19 +101,24 @@ impl App {
             .collect();
 
         // Build final top program from surviving hypotheses
-        let mut top_programs = least_sub_h(
+        let Some(mut top_programs) = least_sub_h(
             &examples.pos,
             &examples.neg,
             sub_hypotheses,
             &self.prog_heap,
             &self.predicate_table,
             self.config.max_depth,
-        )
-        .unwrap();
-        let mut top_program = top_programs.pop().unwrap();
-
-        collect_used_pred(&mut top_program, &self.prog_heap, &self.predicate_table);
-        top_prog_to_string(top_program, &self.prog_heap)
+        ) else {
+            println!("No Valid Hypothesis Found");
+            return None;
+        };
+        let mut buffer = Vec::new();
+        for (i, mut top_program) in top_programs.into_iter().enumerate() {
+            println!("Program {i}");
+            collect_used_pred(&mut top_program, &self.prog_heap, &self.predicate_table);
+            buffer.push(top_prog_to_string(top_program, &self.prog_heap));
+        }
+        Some(buffer)
     }
 }
 
