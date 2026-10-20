@@ -18,7 +18,7 @@ use crate::{
     Config,
 };
 
-use super::{sub_h_unification::smallest_h, utils::collect_used_pred};
+use super::{sub_h_unification::least_sub_h, utils::collect_used_pred};
 
 use lazy_static::lazy_static;
 use rayon;
@@ -101,7 +101,7 @@ impl App {
             .collect();
 
         // Build final top program from surviving hypotheses
-        let mut top_programs = smallest_h(
+        let mut top_programs = least_sub_h(
             &examples.pos,
             &examples.neg,
             sub_hypotheses,

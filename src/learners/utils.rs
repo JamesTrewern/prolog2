@@ -112,3 +112,41 @@ pub(super) fn collect_used_pred(
         }
     }
 }
+
+/// Count how many predicate clauses are used hypothesis
+pub(super) fn count_pred_clauses(
+    h: &Box<[Clause]>,
+    heap: &[Cell],
+    predicate_table: &PredicateTable,
+) -> usize {
+    let mut count = 0;
+    let min_pred_con_id = SymbolDB::set_const("pred_0");
+    let mut pred_set = HashSet::new();
+    let mut pred_list = Vec::new();
+    for clause in h.iter() {
+        for literal in clause.body() {
+            if heap[literal + 1].1 > min_pred_con_id {
+                if pred_set.insert((heap[literal + 1].1, heap[*literal].1 - 1)) {
+                    pred_list.push((heap[literal + 1].1, heap[*literal].1 - 1));
+                }
+            }
+        }
+    }
+    while let Some(symbol_arity) = pred_list.pop() {
+        let Predicate::Clauses(clauses) = predicate_table.get_predicate(symbol_arity).unwrap()
+        else {
+            panic!();
+        };
+        count += clauses.len();
+        for clause in clauses.iter() {
+            for literal in clause.body() {
+                if heap[literal + 1].1 > min_pred_con_id {
+                    if pred_set.insert((heap[literal + 1].1, heap[*literal].1 - 1)) {
+                        pred_list.push((heap[literal + 1].1, heap[*literal].1 - 1));
+                    }
+                }
+            }
+        }
+    }
+    count
+}
