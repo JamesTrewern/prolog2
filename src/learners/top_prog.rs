@@ -11,18 +11,14 @@ use std::{
 
 use crate::{
     app::{App, TopProg},
-    heap::{Cell, Heap, QueryHeap, SymbolDB, Tag::Ref, TermWalk, VarBind::Addr, VarReg, Walk},
+    heap::{Cell, Heap, QueryHeap, Tag::Ref, TermWalk, VarBind::Addr, VarReg, Walk},
     learners::{predicate_unification::PredDefTable, utils::parse_example},
-    program::{
-        clause::Clause,
-        hypothesis::Hypothesis,
-        predicate_table::{Predicate, PredicateTable},
-    },
+    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::Proof,
     Config,
 };
 
-use super::{reduce::reduce_hypotheses, utils::union_sub_hypotheses};
+use super::{sub_h_unification::smallest_h, utils::collect_used_pred};
 
 use lazy_static::lazy_static;
 use rayon;
@@ -105,21 +101,19 @@ impl App {
             .collect();
 
         // Build final top program from surviving hypotheses
-        if reduce {
-            let mut top_program = reduce_hypotheses(
-                &examples.pos,
-                sub_hypotheses,
-                &self.prog_heap,
-                &self.predicate_table,
-                self.config,
-            );
-            collect_used_pred(&mut top_program, &self.prog_heap, &self.predicate_table);
-            top_prog_to_string(top_program, &self.prog_heap)
-        } else {
-            let mut top_program = union_sub_hypotheses(sub_hypotheses, &self.prog_heap);
-            collect_used_pred(&mut top_program, &self.prog_heap, &self.predicate_table);
-            top_prog_to_string(top_program, &self.prog_heap)
-        }
+        let mut top_programs = smallest_h(
+            &examples.pos,
+            &examples.neg,
+            sub_hypotheses,
+            &self.prog_heap,
+            &self.predicate_table,
+            self.config.max_depth,
+        )
+        .unwrap();
+        let mut top_program = top_programs.pop().unwrap();
+
+        collect_used_pred(&mut top_program, &self.prog_heap, &self.predicate_table);
+        top_prog_to_string(top_program, &self.prog_heap)
     }
 }
 
@@ -128,7 +122,7 @@ fn generalise(
     predicate_table: &PredicateTable,
     heap: &[Cell],
     config: Config,
-) -> (Vec<Cell>, Vec<Vec<Clause>>, PredDefTable) {
+) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT - 1)
         .build()
@@ -157,7 +151,7 @@ fn generalise(
 fn generalise_collector(
     heap: &[Cell],
     rx: Receiver<HypothesisMsg>,
-) -> (Vec<Cell>, Vec<Vec<Clause>>, PredDefTable) {
+) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
     let mut seen = HashSet::new();
     let mut hypotheses = Vec::new();
     let mut pdt = PredDefTable::default();
@@ -165,14 +159,9 @@ fn generalise_collector(
 
     acc_heap.var_regs.extend_from_slice(&[VarReg::UNBOUND; 20]);
 
-    let mut messages_handled = 0;
-
-    eprint!("\rwating");
     let _ = io::stderr().flush();
 
     for HypothesisMsg { mut cells, mut h } in rx {
-        io::stderr().flush();
-        eprint!("{messages_handled}");
         let heap_point = acc_heap.heap_point();
         // translate hypothesis message to local context
         // update var ids with var map
@@ -221,19 +210,13 @@ fn generalise_collector(
                     acc_heap.cells[i] = acc_heap[addr];
                 }
             }
-            todo!("Convert Vec<Clause> to Box<[Clause]>");
-            hypotheses.push(h);
+            hypotheses.push(h.into_boxed_slice());
         } else {
             acc_heap.truncate(heap_point);
         }
         // After predicate coining no ref cells should be left, set all regs to unbound
         for var_reg in &mut acc_heap.var_regs {
             *var_reg = VarReg::UNBOUND;
-        }
-
-        messages_handled += 1;
-        if messages_handled % 50 == 1 {
-            println!("Handled {messages_handled} messages")
         }
     }
 
@@ -291,7 +274,7 @@ fn extract_literal(dst: &mut Vec<Cell>, src: &QueryHeap, addr: usize) -> usize {
 
 fn specialise(
     neg_examples: &[String],
-    hypotheses: &[Vec<Clause>],
+    hypotheses: &[Box<[Clause]>],
     heap: &[Cell],
     predicate_table: &PredicateTable,
     config: Config,
@@ -502,41 +485,6 @@ fn topo_sort(nodes: &[String], deps: &HashMap<String, Vec<String>>) -> Vec<Strin
     }
 
     result
-}
-
-fn collect_used_pred(
-    hypothesis: &mut Vec<Clause>,
-    heap: &impl Heap,
-    predicate_table: &PredicateTable,
-) {
-    let min_pred_con_id = SymbolDB::set_const("pred_0");
-    let mut pred_set = HashMap::new();
-    loop {
-        let start_len = pred_set.len();
-        for clause in hypothesis.iter() {
-            for literal in clause.body() {
-                if heap[literal + 1].1 > min_pred_con_id {
-                    pred_set.insert(heap[literal + 1].1, (heap[*literal].1 - 1, false));
-                    println!("collect pred: {}", heap.term_string(*literal))
-                }
-            }
-        }
-        if start_len == pred_set.len() {
-            break;
-        }
-        for (symbol, (arity, collected)) in pred_set.iter_mut() {
-            if !*collected {
-                println!("collect symbol arity: {symbol}, {arity}");
-                let Predicate::Clauses(clauses) =
-                    predicate_table.get_predicate((*symbol, *arity)).unwrap()
-                else {
-                    panic!();
-                };
-                hypothesis.extend_from_slice(clauses);
-                *collected = true
-            }
-        }
-    }
 }
 
 fn top_prog_to_string(top_program: Vec<Clause>, heap: &impl Heap) -> String {

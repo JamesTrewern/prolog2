@@ -24,7 +24,7 @@ fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, Str
 /// a hypothesis covering all positives
 /// and no negatives
 /// with the fewest possible sub h
-fn smallest_h(
+pub(super) fn smallest_h(
     pos_examples: &[String],
     neg_examples: &[String],
     hypotheses: Vec<Box<[Clause]>>,
@@ -51,33 +51,25 @@ fn smallest_h(
     h_coverage.sort_by_key(|(_, _, k)| *k);
     // Sort by coverage & clause count (maybe body literals, less conditions more general)
 
-    // Find groups with n_sub_h sub hypotheses which cover all positives
-    // using depth first search with back tracking
-    // halt when 1st added sub h covers less than examples/n_sub_h
-    // filter any entailing negatives
-    // If no groups increment n_sub_h
-    // sort by clause count
-    let mut combined_coverage = vec![false; pos_examples.len()].into_boxed_slice();
-    let mut valid_sub_sets: Vec<Box<[usize]>> = Vec::new();
-    for n_sub_h in 1..h_coverage.len() {
-        let mut ssi = SubSetIterator::new(h_coverage.len(), n_sub_h);
+    eprintln!("Attempting to form top prog from 1 sub hypothesis");
+    let single_h_valid: Vec<Vec<Clause>> = h_coverage
+        .iter()
+        .filter_map(|(clauses, _, count)| {
+            if *count == pos_examples.len() {
+                Some(clauses.to_vec())
+            } else {
+                None
+            }
+        })
+        .collect();
+    if !single_h_valid.is_empty() {
+        return Some(single_h_valid);
+    }
 
-        while let Some(subset) = ssi.next() {
-            let sum_coverage: usize = subset.iter().map(|i| h_coverage[*i].2).sum();
-            if sum_coverage < pos_examples.len() {
-                continue;
-            }
-            combined_coverage.fill(false);
-            for (_, coverage, _) in subset.iter().map(|i| &h_coverage[*i]) {
-                for (combined, h) in combined_coverage.iter_mut().zip(coverage.iter()) {
-                    *combined |= h
-                }
-            }
-            if combined_coverage.iter().all(|covered| *covered) {
-                valid_sub_sets.push(Box::from(subset));
-            }
-        }
-        if !valid_sub_sets.is_empty() {
+    for n_sub_h in 2..h_coverage.len().min(pos_examples.len()) {
+        eprintln!("Attempting to form top prog from {n_sub_h} sub hypotheses");
+        if let Some(valid_sub_sets) = find_coverage_groups(&h_coverage, n_sub_h, pos_examples.len())
+        {
             //Build grouped hypotheses from indexs
             let mut hs = Vec::new();
             for indexes in &valid_sub_sets {
@@ -89,17 +81,50 @@ fn smallest_h(
             }
             // Filter any negative entailers
             hs.retain(|h| specialise_h_threaded(neg_examples, h, heap, predicate_table, config));
-            //If no h survives continue loop
-            //Else return hs
             if hs.is_empty() {
                 continue;
             } else {
                 return Some(hs);
             }
-            // Possible extra step:
-            // Sort by clause count
-            // Return smallest clause count
         }
     }
     None
+}
+
+/// Find subsets of coverage groups of size n_sub_h
+/// where all positive examples are covered
+/// return None if no valid sub sets found
+fn find_coverage_groups(
+    h_coverage: &Vec<(Box<[Clause]>, Vec<bool>, usize)>,
+    n_sub_h: usize,
+    n_pos_examples: usize,
+) -> Option<Vec<Box<[usize]>>> {
+    let mut combined_coverage = vec![false; n_pos_examples].into_boxed_slice();
+
+    let mut valid_sub_sets: Vec<Box<[usize]>> = Vec::new();
+    let mut ssi = SubSetIterator::new(h_coverage.len(), n_sub_h);
+    while let Some(subset) = ssi.next() {
+        // halt when 1st added sub h coverage * sub set size is less than the number of examples
+        if h_coverage[subset[0]].2 * n_sub_h < n_pos_examples {
+            break;
+        }
+        //Skip if coverage sum less than number of examples
+        if subset.iter().map(|i| h_coverage[*i].2).sum::<usize>() < n_pos_examples {
+            continue;
+        }
+        combined_coverage.fill(false);
+        for (_, coverage, _) in subset.iter().map(|i| &h_coverage[*i]) {
+            for (combined, h) in combined_coverage.iter_mut().zip(coverage.iter()) {
+                *combined |= h
+            }
+        }
+        if combined_coverage.iter().all(|covered| *covered) {
+            valid_sub_sets.push(Box::from(subset));
+        }
+    }
+    if valid_sub_sets.is_empty() {
+        None
+    } else {
+        Some(valid_sub_sets)
+    }
 }

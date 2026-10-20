@@ -1,12 +1,16 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use smallvec::SmallVec;
 
 use crate::{
-    heap::{Cell, QueryHeap},
+    heap::{Cell, Heap, QueryHeap, SymbolDB},
     parser::{build_clause, tokenise, TokenStream},
-    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{
+        clause::Clause,
+        hypothesis::Hypothesis,
+        predicate_table::{Predicate, PredicateTable},
+    },
     resolution::Proof,
     Config,
 };
@@ -74,4 +78,37 @@ pub(super) fn union_sub_hypotheses(
         }
     }
     top_program
+}
+
+pub(super) fn collect_used_pred(
+    hypothesis: &mut Vec<Clause>,
+    heap: &impl Heap,
+    predicate_table: &PredicateTable,
+) {
+    let min_pred_con_id = SymbolDB::set_const("pred_0");
+    let mut pred_set = HashMap::new();
+    loop {
+        let start_len = pred_set.len();
+        for clause in hypothesis.iter() {
+            for literal in clause.body() {
+                if heap[literal + 1].1 > min_pred_con_id {
+                    pred_set.insert(heap[literal + 1].1, (heap[*literal].1 - 1, false));
+                }
+            }
+        }
+        if start_len == pred_set.len() {
+            break;
+        }
+        for (symbol, (arity, collected)) in pred_set.iter_mut() {
+            if !*collected {
+                let Predicate::Clauses(clauses) =
+                    predicate_table.get_predicate((*symbol, *arity)).unwrap()
+                else {
+                    panic!();
+                };
+                hypothesis.extend_from_slice(clauses);
+                *collected = true
+            }
+        }
+    }
 }

@@ -397,6 +397,7 @@ fn from_halves(a: u128, b: u128) -> [u16; 16] {
     })
 }
 
+#[derive(Debug)]
 pub struct SubSetIterator {
     set_size: usize,
     sub_set_size: usize,
