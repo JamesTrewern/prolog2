@@ -52,6 +52,8 @@ pub(super) fn least_sub_h(
     // Sort by coverage count and clause count
     h_profiles
         .sort_by_key(|h_profile| (pos_examples.len() - h_profile.n_covered, h_profile.h.len()));
+    // Filter any profiles whose coverage is a subset of another profile
+    filter_coverage_sub_sets(&mut h_profiles);
 
     eprintln!("Attempting to form top prog from 1 sub hypothesis");
     let single_h_valid: Vec<Vec<Clause>> = h_profiles
@@ -151,6 +153,26 @@ fn find_coverage_groups(
         }
     }
     (!valid_sub_sets.is_empty()).then_some(valid_sub_sets)
+}
+
+/// If any profiles coverage is a sub set of another remove that profile
+fn filter_coverage_sub_sets(h_profiles: &mut Vec<HProfile>) {
+    let mut filtered = 0;
+    for i in (0..h_profiles.len()).rev() {
+        let p_i = &h_profiles[i];
+        for j in 0..i {
+            let p_j = &h_profiles[j];
+            if p_i.n_clauses == p_j.n_clauses {
+                break;
+            }
+            if p_i.coverage.sub_set(&p_j.coverage) {
+                h_profiles.remove(i);
+                filtered += 1;
+                break;
+            }
+        }
+    }
+    eprintln!("Filtered {filtered} Sub Hypotheses for coverage sub set");
 }
 
 struct HProfile {

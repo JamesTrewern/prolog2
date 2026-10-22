@@ -43,6 +43,10 @@ impl Coverage {
         }
         self
     }
+
+    pub fn sub_set(&self, other: &Self) -> bool {
+        !self.iter().zip(other.iter()).any(|(s, other)| *s && !other)
+    }
 }
 
 /// Parse a single example string into a goal on the given query heap.
