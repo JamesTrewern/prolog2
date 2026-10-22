@@ -157,6 +157,67 @@ impl PredDef {
             ord => ord,
         }
     }
+
+    pub fn extract_pred_defs_from_h(h: &mut Vec<Clause>, heap: &impl Heap) -> Vec<Self> {
+        let mut clause_sets: Vec<SmallVec<[Clause; 4]>> = Vec::with_capacity(h.len());
+        let mut var_preds = Vec::with_capacity(h.len());
+        let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(h.len());
+
+        for idx in (0..h.len()).rev() {
+            if let (Ref, var_id) = heap.get_deref_cell(h[idx].head() + 1) {
+                let clause = h.remove(idx);
+                match var_preds.iter().position(|var_pred| *var_pred == var_id) {
+                    Some(def_index) => {
+                        extract_body_var_preds(&mut dependencies[def_index], &clause, heap);
+                        clause_sets[def_index].push(clause);
+                    }
+                    None => {
+                        var_preds.push(var_id);
+                        let mut body_var_preds = HashSet::new();
+                        extract_body_var_preds(&mut body_var_preds, &clause, heap);
+                        dependencies.push(body_var_preds);
+                        clause_sets.push(SmallVec::from_elem(clause, 1));
+                    }
+                }
+            }
+        }
+
+        if clause_sets.len() <= 8 {
+            let mut graph: DirGraph8 = DirGraph8::new(clause_sets.len());
+            for (i, deps) in dependencies.into_iter().enumerate() {
+                for dep in deps {
+                    graph.add_edge(
+                        i,
+                        var_preds
+                            .iter()
+                            .position(|var_pred| *var_pred == dep)
+                            .unwrap(),
+                    );
+                }
+            }
+            if let Some(groups) = graph.ordered_cyclic_groups() {
+                groups[..groups.size]
+                    .into_iter()
+                    .map(|group| {
+                        let mut clauses: SmallVec<[Clause; 4]> = SmallVec::new();
+                        for i in 0..graph.size {
+                            if group & 1 << i != 0 {
+                                clauses.append(&mut clause_sets[i]);
+                            }
+                        }
+                        PredDef::new(heap, clauses)
+                    })
+                    .collect()
+            } else {
+                graph.order()[..graph.size]
+                    .iter()
+                    .map(|i| PredDef::new(heap, clause_sets[*i].clone()))
+                    .collect()
+            }
+        } else {
+            todo!("Can't handle sub hypotheses greater than 8 clauses")
+        }
+    }
 }
 
 #[derive(Default, Debug)]
