@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::{self, Deref, DerefMut},
+};
 
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use smallvec::SmallVec;
@@ -14,6 +17,33 @@ use crate::{
     resolution::Proof,
     Config,
 };
+
+pub(super) struct Coverage(Box<[bool]>);
+
+impl Deref for Coverage {
+    type Target = [bool];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl DerefMut for Coverage {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl Coverage {
+    pub fn from_len(len: usize) -> Self {
+        Self(vec![false; len].into_boxed_slice())
+    }
+
+    pub fn or(mut self, other: &Self) -> Self {
+        for (lhs, rhs) in self.iter_mut().zip(other.iter()) {
+            *lhs |= rhs
+        }
+        self
+    }
+}
 
 /// Parse a single example string into a goal on the given query heap.
 pub(super) fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, String> {
@@ -31,7 +61,7 @@ pub(super) fn count_coverage(
     heap: &[Cell],
     predicate_table: &PredicateTable,
     max_depth: usize,
-) -> (Vec<bool>, usize) {
+) -> (Coverage, usize) {
     let config = Config {
         max_depth,
         max_clause: 0,
@@ -45,7 +75,7 @@ pub(super) fn count_coverage(
         h.push_clause((*clause).clone(), SmallVec::new());
     }
 
-    let coverage: Vec<bool> = pos_examples
+    let coverage: Box<[bool]> = pos_examples
         .par_iter()
         .map(|example| {
             let mut query_heap = QueryHeap::new(heap, None);
@@ -60,7 +90,7 @@ pub(super) fn count_coverage(
 
     let count = coverage.iter().filter(|v| **v).count();
 
-    (coverage, count)
+    (Coverage(coverage), count)
 }
 
 pub(super) fn union_sub_hypotheses(

@@ -5,7 +5,7 @@ use crate::{
     heap::{Cell, Heap, QueryHeap},
     learners::{
         specialise::specialise_h_threaded,
-        utils::{collect_used_pred, count_pred_clauses},
+        utils::{collect_used_pred, count_pred_clauses, Coverage},
     },
     parser::{build_clause, tokenise, TokenStream},
     program::{clause::Clause, predicate_table::PredicateTable},
@@ -35,17 +35,13 @@ pub(super) fn least_sub_h(
         protect_h_preds: false,
     };
     // Count coverage
-    let mut h_coverage: Vec<(Box<[Clause]>, Vec<bool>, usize)> = hypotheses
+    let mut h_profiles: Vec<HProfile> = hypotheses
         .into_par_iter()
-        .map(|h| {
-            let (coverage, count) =
-                count_coverage(pos_examples, &h, heap, predicate_table, max_depth);
-            (h, coverage, count)
-        })
+        .map(|h| HProfile::new(h, pos_examples, heap, predicate_table, max_depth))
         .collect();
 
     //Ensure all positives covered by at least 1 hypothesis
-    if let Some(uncovered) = find_uncovered(&h_coverage, pos_examples.len()) {
+    if let Some(uncovered) = find_uncovered(&h_profiles, pos_examples.len()) {
         println!("Some positve examples uncovered:");
         for i in uncovered {
             println!("\t{}", pos_examples[i])
@@ -54,39 +50,36 @@ pub(super) fn least_sub_h(
     }
 
     // Sort by coverage count and clause count
-    h_coverage.sort_by_cached_key(|(h, _, count)| {
-        (
-            pos_examples.len() - count,
-            h.len() + count_pred_clauses(h, &heap, predicate_table),
-        )
-    });
+    h_profiles
+        .sort_by_key(|h_profile| (pos_examples.len() - h_profile.n_covered, h_profile.h.len()));
 
     eprintln!("Attempting to form top prog from 1 sub hypothesis");
-    let single_h_valid: Vec<Vec<Clause>> = h_coverage
+    let single_h_valid: Vec<Vec<Clause>> = h_profiles
         .iter()
-        .filter_map(|(clauses, _, count)| {
-            if *count == pos_examples.len() {
-                Some(clauses.to_vec())
+        .filter_map(|h_profile| {
+            if h_profile.n_covered == pos_examples.len() {
+                Some(h_profile.h.to_vec())
             } else {
                 None
             }
         })
         .filter(|h| specialise_h_threaded(neg_examples, h, heap, predicate_table, config))
         .collect();
+
     if !single_h_valid.is_empty() {
         return Some(single_h_valid);
     }
 
-    for n_sub_h in 2..h_coverage.len().min(pos_examples.len() + 1) {
+    for n_sub_h in 2..h_profiles.len().min(pos_examples.len() + 1) {
         eprintln!("Attempting to form top prog from {n_sub_h} sub hypotheses");
-        if let Some(valid_sub_sets) = find_coverage_groups(&h_coverage, n_sub_h, pos_examples.len())
+        if let Some(valid_sub_sets) = find_coverage_groups(&h_profiles, n_sub_h, pos_examples.len())
         {
-            //Build grouped hypotheses from indexs
+            //Build grouped hypotheses from indexes
             let mut hs = Vec::new();
             for indexes in &valid_sub_sets {
                 let mut h = Vec::new();
                 for i in indexes {
-                    h.extend(h_coverage[*i].0.iter().map(|c| c.clone()));
+                    h.extend(h_profiles[*i].h.iter().map(|c| c.clone()));
                 }
                 hs.push(h)
             }
@@ -106,18 +99,10 @@ pub(super) fn least_sub_h(
     None
 }
 
-fn find_uncovered(
-    h_coverage: &Vec<(Box<[Clause]>, Vec<bool>, usize)>,
-    n_pos_examples: usize,
-) -> Option<Vec<usize>> {
-    let covered = h_coverage.iter().fold(
-        vec![false; n_pos_examples].into_boxed_slice(),
-        |mut acc, (_, coverage, _)| {
-            for (a, c) in acc.iter_mut().zip(coverage.iter()) {
-                *a |= c;
-            }
-            acc
-        },
+fn find_uncovered(h_profiles: &Vec<HProfile>, n_pos_examples: usize) -> Option<Vec<usize>> {
+    let covered = h_profiles.iter().fold(
+        Coverage::from_len(n_pos_examples),
+        |acc, HProfile { coverage, .. }| acc.or(coverage),
     );
     let mut not_covered = Vec::new();
     for (i, b) in covered.iter().enumerate() {
@@ -132,31 +117,33 @@ fn find_uncovered(
 /// where all positive examples are covered
 /// return None if no valid sub sets found
 fn find_coverage_groups(
-    h_coverage: &Vec<(Box<[Clause]>, Vec<bool>, usize)>,
+    h_profiles: &[HProfile],
     n_sub_h: usize,
     n_pos_examples: usize,
 ) -> Option<Vec<Box<[usize]>>> {
-    let mut combined_coverage = vec![false; n_pos_examples].into_boxed_slice();
+    let mut sub_set_coverage = Coverage::from_len(n_pos_examples);
 
     let mut valid_sub_sets: Vec<Box<[usize]>> = Vec::new();
-    let mut ssi = SubSetIterator::new(h_coverage.len(), n_sub_h);
-    let mut n = 0;
+    let mut ssi = SubSetIterator::new(h_profiles.len(), n_sub_h);
     while let Some(subset) = ssi.next() {
         // halt when 1st added sub h coverage * sub set size is less than the number of examples
-        if h_coverage[subset[0]].2 * n_sub_h < n_pos_examples {
+        if h_profiles[subset[0]].n_covered * n_sub_h < n_pos_examples {
             break;
         }
         //Skip if coverage sum less than number of examples
-        if subset.iter().map(|i| h_coverage[*i].2).sum::<usize>() < n_pos_examples {
+        if subset
+            .iter()
+            .map(|i| h_profiles[*i].n_covered)
+            .sum::<usize>()
+            < n_pos_examples
+        {
             continue;
         }
-        combined_coverage.fill(false);
-        for (_, coverage, _) in subset.iter().map(|i| &h_coverage[*i]) {
-            for (combined, h) in combined_coverage.iter_mut().zip(coverage.iter()) {
-                *combined |= h
-            }
+        sub_set_coverage.fill(false);
+        for HProfile { coverage, .. } in subset.iter().map(|i| &h_profiles[*i]) {
+            sub_set_coverage = sub_set_coverage.or(coverage);
         }
-        if combined_coverage.iter().all(|covered| *covered) {
+        if sub_set_coverage.iter().all(|covered| *covered) {
             valid_sub_sets.push(Box::from(subset));
             if valid_sub_sets.len() == MAX_VALID_SUB_SETS {
                 return Some(valid_sub_sets);
@@ -164,6 +151,33 @@ fn find_coverage_groups(
         }
     }
     (!valid_sub_sets.is_empty()).then_some(valid_sub_sets)
+}
+
+struct HProfile {
+    h: Box<[Clause]>,
+    coverage: Coverage,
+    n_covered: usize,
+    n_clauses: usize,
+}
+
+impl HProfile {
+    fn new(
+        h: Box<[Clause]>,
+        pos_examples: &[String],
+        heap: &[Cell],
+        predicate_table: &PredicateTable,
+        max_depth: usize,
+    ) -> Self {
+        let (coverage, n_covered) =
+            count_coverage(pos_examples, &h, heap, predicate_table, max_depth);
+        let n_clauses = count_pred_clauses(&h, heap, predicate_table) + h.len();
+        Self {
+            h,
+            coverage,
+            n_covered,
+            n_clauses,
+        }
+    }
 }
 
 mod tests {
