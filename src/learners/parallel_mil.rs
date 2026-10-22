@@ -12,7 +12,10 @@ use std::{
 use crate::{
     app::{App, TopProg},
     heap::{Cell, Heap, QueryHeap, Tag::Ref, TermWalk, VarBind::Addr, VarReg, Walk},
-    learners::{predicate_unification::PredDefTable, utils::parse_example},
+    learners::{
+        predicate_unification::{PredDef, PredDefTable},
+        utils::parse_example,
+    },
     program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::Proof,
     Config,
@@ -30,7 +33,8 @@ lazy_static! {
 /// Message sent from a proof thread to the main thread.
 struct HypothesisMsg {
     cells: Vec<Cell>,
-    h: Vec<Clause>,
+    h: Box<[Clause]>,
+    pred_defs: Vec<PredDef>,
 }
 
 impl App {
@@ -162,42 +166,36 @@ fn generalise_collector(
     let mut pdt = PredDefTable::default();
     let mut acc_heap = QueryHeap::new(heap, None);
 
-    acc_heap.var_regs.extend_from_slice(&[VarReg::UNBOUND; 20]);
+    acc_heap.var_regs.extend_from_slice(&[VarReg::UNBOUND; 64]);
 
     let _ = io::stderr().flush();
 
-    for HypothesisMsg { mut cells, mut h } in rx {
+    for HypothesisMsg {
+        mut cells,
+        mut h,
+        mut pred_defs,
+    } in rx
+    {
         let heap_point = acc_heap.heap_point();
         // translate hypothesis message to local context
-        // update var ids with var map
-        let mut var_map = HashMap::new();
-        for cell in &mut cells {
-            if cell.0 == Ref {
-                match var_map.get(&cell.1) {
-                    Some(var_id) => cell.1 = *var_id,
-                    None => {
-                        let var_id = var_map.len();
-                        var_map.insert(cell.1, var_id);
-                        cell.1 = var_id;
-                    }
-                }
-            }
-        }
-        // Add more variable registers if needed
-        if var_map.len() > acc_heap.var_regs.len() {
-            for _ in 0..var_map.len() - acc_heap.var_regs.len() {
-                acc_heap.var_regs.push(VarReg::UNBOUND);
-            }
-        }
         // update clause literal addresses
         for clause in &mut h {
             for literal in clause.iter_mut() {
                 *literal += acc_heap.heap_len()
             }
         }
+        for pred_def in &mut pred_defs {
+            for clause in &mut pred_def.clauses {
+                for literal in clause.iter_mut() {
+                    *literal += acc_heap.heap_len()
+                }
+            }
+        }
         acc_heap.cells.append(&mut cells);
-        // Extract/Unify predicate defintions
-        pdt.extract_pred_defs_from_h(&mut h, &mut acc_heap);
+        // Unify predicate defintions with table
+        for pred_def in pred_defs {
+            pdt.insert(pred_def, &mut acc_heap);
+        }
 
         // Create key, if not in seen add to hypotheses accumulator
         let mut clause_strings: Vec<String> = h.iter().map(|c| c.to_string(&acc_heap)).collect();
@@ -215,7 +213,7 @@ fn generalise_collector(
                     acc_heap.cells[i] = acc_heap[addr];
                 }
             }
-            hypotheses.push(h.into_boxed_slice());
+            hypotheses.push(h);
         } else {
             acc_heap.truncate(heap_point);
         }
@@ -246,21 +244,34 @@ fn generalise_thread(
     let mut proof = Proof::new(&query_heap, &[goal]);
 
     while proof.prove(&mut query_heap, predicate_table, config) {
-        let (cells, h) = extract_hypothesis_local(&proof, &query_heap);
-        if tx.send(HypothesisMsg { cells, h }).is_err() {
+        let (cells, mut h) = extract_hypothesis_local(&proof, &query_heap);
+        let pred_defs = PredDef::extract_pred_defs_from_h(&mut h, &cells);
+        if tx
+            .send(HypothesisMsg {
+                cells: cells.cells,
+                h: h.into_boxed_slice(),
+                pred_defs,
+            })
+            .is_err()
+        {
             break; // Receiver dropped
         }
     }
 }
 
 /// Extract cells and remap literal addrs from hypothesis
-fn extract_hypothesis_local(proof: &Proof, heap: &QueryHeap) -> (Vec<Cell>, Vec<Clause>) {
-    let mut local_cells: Vec<Cell> = Vec::with_capacity(12 * proof.hypothesis.len());
+fn extract_hypothesis_local(proof: &Proof, heap: &QueryHeap) -> (QueryHeap<'static>, Vec<Clause>) {
+    let mut local_cells = QueryHeap::new(&[], None);
     let mut clauses = Vec::with_capacity(proof.hypothesis.len());
+    let mut ref_map = HashMap::new();
     for clause in proof.hypothesis.iter() {
         let new_literals: Vec<usize> = clause
             .iter()
-            .map(|&lit_addr| extract_literal(&mut local_cells, &heap, lit_addr))
+            .map(|&lit_addr| {
+                let addr = local_cells.heap_len();
+                local_cells.clone_term_from_other(heap, lit_addr, &mut ref_map);
+                addr
+            })
             .collect();
         clauses.push(Clause::new(new_literals, None, clause.max_arg_id));
     }
