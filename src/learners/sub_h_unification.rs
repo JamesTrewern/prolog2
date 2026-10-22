@@ -72,6 +72,12 @@ pub(super) fn least_sub_h(
         return Some(single_h_valid);
     }
 
+    let mut program: Vec<Clause> = Vec::new();
+    for i in greedy(&h_profiles, pos_examples.len()) {
+        program.extend_from_slice(&*h_profiles[i].h);
+    }
+    return Some(vec![program]);
+
     for n_sub_h in 2..h_profiles.len().min(pos_examples.len() + 1) {
         eprintln!("Attempting to form top prog from {n_sub_h} sub hypotheses");
         if let Some(valid_sub_sets) = find_coverage_groups(&h_profiles, n_sub_h, pos_examples.len())
@@ -102,17 +108,17 @@ pub(super) fn least_sub_h(
 }
 
 fn find_uncovered(h_profiles: &Vec<HProfile>, n_pos_examples: usize) -> Option<Vec<usize>> {
-    let covered = h_profiles.iter().fold(
-        Coverage::from_len(n_pos_examples),
-        |acc, HProfile { coverage, .. }| acc.or(coverage),
-    );
-    let mut not_covered = Vec::new();
-    for (i, b) in covered.iter().enumerate() {
-        if !b {
-            not_covered.push(i);
-        }
+    let mut covered = Coverage::from_len(n_pos_examples);
+
+    for HProfile { coverage, .. } in h_profiles {
+        *covered |= **coverage;
     }
-    (!not_covered.is_empty()).then_some(not_covered)
+
+    if !covered.0 == 0 {
+        None
+    } else {
+        Some((0..n_pos_examples).filter(|i| !covered.get(*i)).collect())
+    }
 }
 
 /// Find subsets of coverage groups of size n_sub_h
@@ -123,7 +129,7 @@ fn find_coverage_groups(
     n_sub_h: usize,
     n_pos_examples: usize,
 ) -> Option<Vec<Box<[usize]>>> {
-    let mut sub_set_coverage = Coverage::from_len(n_pos_examples);
+    let no_coverage = Coverage::from_len(n_pos_examples);
 
     let mut valid_sub_sets: Vec<Box<[usize]>> = Vec::new();
     let mut ssi = SubSetIterator::new(h_profiles.len(), n_sub_h);
@@ -141,11 +147,11 @@ fn find_coverage_groups(
         {
             continue;
         }
-        sub_set_coverage.fill(false);
+        let mut sub_set_coverage = no_coverage;
         for HProfile { coverage, .. } in subset.iter().map(|i| &h_profiles[*i]) {
-            sub_set_coverage = sub_set_coverage.or(coverage);
+            *sub_set_coverage |= **coverage;
         }
-        if sub_set_coverage.iter().all(|covered| *covered) {
+        if sub_set_coverage.all() {
             valid_sub_sets.push(Box::from(subset));
             if valid_sub_sets.len() == MAX_VALID_SUB_SETS {
                 return Some(valid_sub_sets);
@@ -172,7 +178,30 @@ fn filter_coverage_sub_sets(h_profiles: &mut Vec<HProfile>) {
             }
         }
     }
-    eprintln!("Filtered {filtered} Sub Hypotheses for coverage sub set");
+    eprintln!(
+        "Filtered {filtered} Sub Hypotheses for coverage sub set, {} remaining sub hypotheses",
+        h_profiles.len()
+    );
+}
+
+fn greedy(h_profiles: &[HProfile], n_pos_examples: usize) -> Vec<usize> {
+    let mut res = vec![0];
+    let mut covered = h_profiles[0].coverage;
+    while !covered.all() {
+        let mut best = (0, 0);
+        for i in 1..h_profiles.len() {
+            if res.contains(&i) || h_profiles[i].coverage.sub_set(&covered) {
+                continue;
+            }
+            let a = (*h_profiles[i].coverage & !*covered).count_ones();
+            if best.0 < a {
+                best = (a, i)
+            }
+        }
+        res.push(best.1);
+        *covered |= *h_profiles[best.1].coverage;
+    }
+    res
 }
 
 struct HProfile {

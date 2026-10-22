@@ -18,10 +18,11 @@ use crate::{
     Config,
 };
 
-pub(super) struct Coverage(Box<[bool]>);
+#[derive(Clone, Copy)]
+pub(super) struct Coverage(pub u128);
 
 impl Deref for Coverage {
-    type Target = [bool];
+    type Target = u128;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -32,20 +33,38 @@ impl DerefMut for Coverage {
         &mut self.0
     }
 }
+
 impl Coverage {
     pub fn from_len(len: usize) -> Self {
-        Self(vec![false; len].into_boxed_slice())
-    }
-
-    pub fn or(mut self, other: &Self) -> Self {
-        for (lhs, rhs) in self.iter_mut().zip(other.iter()) {
-            *lhs |= rhs
+        if len > 128 {
+            todo!("More than 128 pos examples not yet implemented");
         }
-        self
+        let mask = u128::MAX << len;
+        Self(mask)
     }
 
     pub fn sub_set(&self, other: &Self) -> bool {
-        !self.iter().zip(other.iter()).any(|(s, other)| *s && !other)
+        other.0 & self.0 == other.0
+    }
+
+    pub fn count(&self, max_bit: usize) -> usize {
+        (self.0 & !(u128::MAX << max_bit)).count_ones() as usize
+    }
+
+    pub fn set(&mut self, i: usize) {
+        self.0 |= 1 << i
+    }
+
+    pub fn get(&self, i: usize) -> bool {
+        self.0 & 1 << i != 0
+    }
+
+    pub fn all(&self) -> bool {
+        self.0 == u128::MAX
+    }
+
+    pub fn none(&self) -> bool {
+        self.0 == 0
     }
 }
 
@@ -79,22 +98,20 @@ pub(super) fn count_coverage(
         h.push_clause((*clause).clone(), SmallVec::new());
     }
 
-    let coverage: Box<[bool]> = pos_examples
-        .par_iter()
-        .map(|example| {
-            let mut query_heap = QueryHeap::new(heap, None);
-            let goal = match parse_example(example, &mut query_heap) {
-                Ok(g) => g,
-                Err(_) => return false,
-            };
-            let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h.clone());
-            proof.prove(&mut query_heap, predicate_table, config)
-        })
-        .collect();
+    let mut coverage = Coverage::from_len(pos_examples.len());
 
-    let count = coverage.iter().filter(|v| **v).count();
-
-    (Coverage(coverage), count)
+    for (i, example) in pos_examples.into_iter().enumerate() {
+        let mut query_heap = QueryHeap::new(heap, None);
+        let Ok(goal) = parse_example(example, &mut query_heap) else {
+            panic!("Could not parse example {example}");
+        };
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h.clone());
+        if proof.prove(&mut query_heap, predicate_table, config) {
+            coverage.set(i);
+        }
+    }
+    let count = coverage.count(pos_examples.len());
+    (coverage, count)
 }
 
 pub(super) fn union_sub_hypotheses(
@@ -183,4 +200,12 @@ pub(super) fn count_pred_clauses(
         }
     }
     count
+}
+
+mod tests {
+    #[test]
+    fn shift_mask() {
+        let a = u8::MAX << 4;
+        println!("{a:0b}");
+    }
 }
