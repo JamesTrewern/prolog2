@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::utils::count_coverage;
@@ -55,56 +57,24 @@ pub(super) fn least_sub_h(
     // Filter any profiles whose coverage is a subset of another profile
     filter_coverage_sub_sets(&mut h_profiles);
 
-    eprintln!("Attempting to form top prog from 1 sub hypothesis");
-    let single_h_valid: Vec<Vec<Clause>> = h_profiles
-        .iter()
-        .filter_map(|h_profile| {
-            if h_profile.n_covered == pos_examples.len() {
-                Some(h_profile.h.to_vec())
-            } else {
-                None
-            }
-        })
-        .filter(|h| specialise_h_threaded(neg_examples, h, heap, predicate_table, config))
-        .collect();
+    let greedy = greedy_find_coverage_group(&h_profiles, pos_examples.len());
+    let max_k = greedy.len();
+    eprintln!("Found full coverage from greedy with {max_k} sub hypotheses");
 
-    if !single_h_valid.is_empty() {
-        return Some(single_h_valid);
-    }
+    let groups = find_coverage_groups(&h_profiles, max_k, pos_examples.len());
 
-    let mut program: Vec<Clause> = Vec::new();
-    for i in greedy(&h_profiles, pos_examples.len()) {
-        program.extend_from_slice(&*h_profiles[i].h);
-    }
-    return Some(vec![program]);
-
-    for n_sub_h in 2..h_profiles.len().min(pos_examples.len() + 1) {
-        eprintln!("Attempting to form top prog from {n_sub_h} sub hypotheses");
-        if let Some(valid_sub_sets) = find_coverage_groups(&h_profiles, n_sub_h, pos_examples.len())
-        {
-            //Build grouped hypotheses from indexes
-            let mut hs = Vec::new();
-            for indexes in &valid_sub_sets {
-                let mut h = Vec::new();
-                for i in indexes {
-                    h.extend(h_profiles[*i].h.iter().map(|c| c.clone()));
-                }
-                hs.push(h)
-            }
-            let n_sets = hs.len();
-            println!("Found {n_sets} sets of hypotheses covering all positives");
-            // Filter any negative entailers
-            hs.retain(|h| specialise_h_threaded(neg_examples, h, heap, predicate_table, config));
-
-            if hs.is_empty() {
-                println!("No hypotheses sets entailing no negatives");
-                continue;
-            } else {
-                return Some(hs);
-            }
-        }
-    }
-    None
+    Some(
+        groups
+            .into_iter()
+            .map(|indexes| {
+                indexes
+                    .into_iter()
+                    .map(|i| h_profiles[*i].h.clone().to_vec())
+                    .collect::<Vec<Vec<Clause>>>()
+                    .concat()
+            })
+            .collect(),
+    )
 }
 
 fn find_uncovered(h_profiles: &Vec<HProfile>, n_pos_examples: usize) -> Option<Vec<usize>> {
@@ -124,7 +94,7 @@ fn find_uncovered(h_profiles: &Vec<HProfile>, n_pos_examples: usize) -> Option<V
 /// Find subsets of coverage groups of size n_sub_h
 /// where all positive examples are covered
 /// return None if no valid sub sets found
-fn find_coverage_groups(
+fn find_coverage_groups_old(
     h_profiles: &[HProfile],
     n_sub_h: usize,
     n_pos_examples: usize,
@@ -161,6 +131,124 @@ fn find_coverage_groups(
     (!valid_sub_sets.is_empty()).then_some(valid_sub_sets)
 }
 
+/// Find subsets of coverage groups up to size max_k
+/// return None if no valid sub sets found
+fn find_coverage_groups(
+    h_profiles: &[HProfile],
+    max_k: usize,
+    n_pos_examples: usize,
+) -> Vec<Box<[usize]>> {
+    let no_coverage = Coverage::from_len(n_pos_examples);
+    let mut groups = Vec::new();
+
+    // Where in the sorted list is the first index covering count examples
+    let coverage_count_barriers: Vec<usize> = (0..h_profiles[0].n_covered)
+        .map(|count| {
+            for c in (1..count).rev() {
+                if let Some(i) = h_profiles
+                    .iter()
+                    .position(|profile| profile.n_covered == count)
+                {
+                    return i;
+                }
+            }
+            h_profiles.len()
+        })
+        .collect();
+
+    let mut group_coverage = h_profiles[0].coverage;
+    let mut group = Vec::with_capacity(max_k);
+    let mut depth = 1;
+    group.push(0);
+
+    let back_track = |group: &mut Vec<usize>, group_coverage: &mut Coverage, depth: &mut usize| {
+        if *depth == 0 {
+            return false;
+        }
+        group.pop();
+        *group_coverage = no_coverage;
+        for i in group {
+            **group_coverage |= *h_profiles[*i].coverage;
+        }
+        *depth -= 1;
+        true
+    };
+
+    loop {
+        let left_to_cover = n_pos_examples - group_coverage.count(n_pos_examples);
+        let choices_left = max_k - depth;
+        let min_covered = left_to_cover / choices_left;
+        let max_i = coverage_count_barriers[min_covered];
+        println!("left_to_cover: {left_to_cover}, choices_left: {choices_left}, min_covered: {min_covered}");
+        if depth == group.len() {
+            // Push next i that isn't a sub set of coverage
+            if let Some(i) = h_profiles[..max_i]
+                .iter()
+                .enumerate()
+                .find_map(|(i, profile)| {
+                    if profile.coverage.sub_set(&group_coverage) | group.contains(&i) {
+                        None
+                    } else {
+                        Some(i)
+                    }
+                })
+            {
+                group.push(i);
+                *group_coverage |= *h_profiles[i].coverage;
+            } else {
+                if back_track(&mut group, &mut group_coverage, &mut depth) {
+                    continue;
+                } else {
+                    break;
+                }
+            }
+        } else {
+            // Try the next i that isn't a sub set of coverage
+            let last_i = group.last().unwrap();
+            if let Some(i) = h_profiles[(*last_i + 1)..coverage_count_barriers[min_covered]]
+                .iter()
+                .enumerate()
+                .find_map(|(i, profile)| {
+                    if profile.coverage.sub_set(&group_coverage) | group.contains(&i) {
+                        None
+                    } else {
+                        Some(i)
+                    }
+                })
+            {
+                *group.last_mut().unwrap() = i;
+                *group_coverage |= *h_profiles[i].coverage;
+            } else {
+                if back_track(&mut group, &mut group_coverage, &mut depth) {
+                    continue;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if group_coverage.all() {
+            //Found valid group
+            groups.push(group.clone().into_boxed_slice());
+            eprintln!("Found Valid Group");
+            if groups.len() == MAX_VALID_SUB_SETS {
+                break;
+            }
+            back_track(&mut group, &mut group_coverage, &mut depth);
+        } else if depth + 1 == max_k {
+            if back_track(&mut group, &mut group_coverage, &mut depth) {
+                continue;
+            } else {
+                break;
+            }
+        } else {
+            depth += 1;
+        }
+    }
+
+    groups
+}
+
 /// If any profiles coverage is a sub set of another remove that profile
 fn filter_coverage_sub_sets(h_profiles: &mut Vec<HProfile>) {
     let mut filtered = 0;
@@ -184,7 +272,7 @@ fn filter_coverage_sub_sets(h_profiles: &mut Vec<HProfile>) {
     );
 }
 
-fn greedy(h_profiles: &[HProfile], n_pos_examples: usize) -> Vec<usize> {
+fn greedy_find_coverage_group(h_profiles: &[HProfile], n_pos_examples: usize) -> Vec<usize> {
     let mut res = vec![0];
     let mut covered = h_profiles[0].coverage;
     while !covered.all() {
