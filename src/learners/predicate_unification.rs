@@ -404,7 +404,7 @@ mod tests {
 
         let new_clause_literals: Vec<usize> = meta
             .iter()
-            .map(|literal| build(heap, &mut subs, Some(meta.meta_vars), *literal))
+            .map(|literal| build(heap, &mut subs, meta.meta_vars(), *literal))
             .collect();
 
         Clause::new(new_clause_literals, None, meta.max_arg_id)

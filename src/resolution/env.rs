@@ -496,7 +496,7 @@ impl Env {
                 }
             }
 
-            pre_pass_constraint(&mut substitution.arg_regs, clause.constrained_vars, heap);
+            pre_pass_constraint(&mut substitution.arg_regs, clause.constrained_vars(), heap);
 
             if debug {
                 let Strategy::Clause { choices, .. } = &self.strategy else {
@@ -554,14 +554,14 @@ impl Env {
                 .collect();
 
             // Build hypothesis clause if meta
-            if clause.meta() {
+            if let Some(meta_data) = &clause.meta_data {
                 if let Strategy::Clause { new_clause, .. } = &mut self.strategy {
                     *new_clause = true;
                 }
 
                 let new_clause_literals: Vec<usize> = clause
                     .iter()
-                    .map(|literal| build(heap, &mut substitution, Some(clause.meta_vars), *literal))
+                    .map(|literal| build(heap, &mut substitution, clause.meta_vars(), *literal))
                     .collect();
 
                 let mut constraints = Vec::with_capacity(16);
@@ -587,7 +587,10 @@ impl Env {
                 hypothesis.push_clause(
                     new_clause,
                     SmallVec::from_vec(constraints),
-                    (todo!(), substitution.arg_regs.to_meta_sub(clause.meta_vars)),
+                    (
+                        meta_data.id,
+                        substitution.arg_regs.to_meta_sub(meta_data.meta_vars),
+                    ),
                 );
                 if debug {
                     eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));

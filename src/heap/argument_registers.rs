@@ -42,13 +42,14 @@ impl ArgRegs {
         }
     }
 
-    pub fn to_meta_sub(mut self, meta_vars: BitFlag64) -> Self {
-        for (i, reg) in self.iter_mut().enumerate() {
+    pub fn to_meta_sub(&self, meta_vars: BitFlag64) -> Self {
+        let mut res = self.clone();
+        for (i, reg) in res.iter_mut().enumerate() {
             if !meta_vars.get(i) {
                 *reg = VarReg::UNBOUND;
             }
         }
-        self
+        res
     }
 }
 

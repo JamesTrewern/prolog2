@@ -1,7 +1,10 @@
 //! Clause representation and metadata.
 use crate::heap::Heap;
 use smallvec::SmallVec;
-use std::ops::{Deref, DerefMut};
+use std::{
+    ops::{Deref, DerefMut},
+    sync::atomic::{AtomicUsize, Ordering::Relaxed},
+};
 
 pub(crate) const MAX_ARG: usize = 64;
 
@@ -45,14 +48,22 @@ impl From<Vec<usize>> for BitFlag64 {
     }
 }
 
+static META_CLAUSE_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MetaData {
+    pub meta_vars: BitFlag64,
+    pub constrained_vars: BitFlag64,
+    pub id: usize,
+}
+
 /// A compiled clause: a list of literal heap addresses with metadata
 /// about which variables are second-order (meta) and which are constrained.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Clause {
     literals: SmallVec<[usize; 5]>,
     pub max_arg_id: usize,
-    pub meta_vars: BitFlag64,
-    pub constrained_vars: BitFlag64,
+    pub meta_data: Option<MetaData>,
 }
 
 impl Clause {
@@ -61,17 +72,17 @@ impl Clause {
         meta_constrained_vars: Option<(Vec<usize>, Vec<usize>)>,
         max_arg_id: usize,
     ) -> Self {
-        let (meta_vars, constrained_vars) = match meta_constrained_vars {
-            Some((mvs, cvs)) => (mvs.into(), cvs.into()),
-            None => (BitFlag64::default(), BitFlag64::default()),
-        };
+        let meta_data = meta_constrained_vars.map(|(mvs, cvs)| MetaData {
+            meta_vars: mvs.into(),
+            constrained_vars: cvs.into(),
+            id: META_CLAUSE_COUNT.fetch_add(1, Relaxed),
+        });
 
         let literals: SmallVec<[usize; 5]> = SmallVec::from_vec(literals);
         Clause {
             literals,
-            meta_vars,
-            constrained_vars,
             max_arg_id,
+            meta_data,
         }
     }
 
@@ -84,18 +95,36 @@ impl Clause {
     }
 
     pub fn meta(&self) -> bool {
-        self.meta_vars.is_some()
+        self.meta_data.is_some()
     }
 
     pub fn meta_var(&self, arg_id: usize) -> Result<bool, &'static str> {
-        if self.meta_vars.is_none() {
+        if let Some(MetaData { meta_vars, .. }) = self.meta_data {
+            Ok(meta_vars.get(arg_id))
+        } else {
             return Err("Clause is not a meta clause");
         }
-        Ok(self.meta_vars.get(arg_id))
     }
 
     pub fn constrained_var(&self, arg_id: usize) -> bool {
-        self.constrained_vars.get(arg_id)
+        if let Some(MetaData {
+            constrained_vars, ..
+        }) = self.meta_data
+        {
+            constrained_vars.get(arg_id)
+        } else {
+            false
+        }
+    }
+
+    pub fn meta_vars(&self) -> Option<BitFlag64> {
+        self.meta_data.as_ref().map(|meta_data| meta_data.meta_vars)
+    }
+
+    pub fn constrained_vars(&self) -> Option<BitFlag64> {
+        self.meta_data
+            .as_ref()
+            .map(|meta_data| meta_data.constrained_vars)
     }
 
     pub fn to_string(&self, heap: &impl Heap) -> String {
