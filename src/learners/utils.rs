@@ -44,7 +44,7 @@ impl Coverage {
     }
 
     pub fn sub_set(&self, other: &Self) -> bool {
-        other.0 & self.0 == other.0
+        other.0 | self.0 == other.0
     }
 
     pub fn count(&self, max_bit: usize) -> usize {
@@ -203,9 +203,21 @@ pub(super) fn count_pred_clauses(
 }
 
 mod tests {
+    use crate::learners::utils::Coverage;
+
     #[test]
-    fn shift_mask() {
-        let a = u8::MAX << 4;
-        println!("{a:0b}");
+    fn coverage_sub_set() {
+        let mut a = Coverage::from_len(4);
+        let mut b = Coverage::from_len(4);
+
+        a.set(0);
+        a.set(1);
+        b.set(1);
+        assert!(!a.sub_set(&b));
+        assert!(b.sub_set(&a));
+
+        b.set(0);
+        assert!(a.sub_set(&b));
+        assert!(b.sub_set(&a));
     }
 }
