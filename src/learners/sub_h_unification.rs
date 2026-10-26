@@ -184,21 +184,6 @@ fn find_coverage_groups(
     let no_coverage = Coverage::from_len(n_pos_examples);
     let mut groups = Vec::new();
 
-    // Where in the sorted list is the first index covering count examples
-    let coverage_count_barriers: Vec<usize> = (0..h_profiles[0].n_covered)
-        .map(|count| {
-            for c in (1..count).rev() {
-                if let Some(i) = h_profiles
-                    .iter()
-                    .position(|profile| profile.n_covered == count)
-                {
-                    return i;
-                }
-            }
-            h_profiles.len()
-        })
-        .collect();
-
     let mut group_coverage = h_profiles[0].coverage;
     let mut group = Vec::with_capacity(max_k);
     let mut depth = 1;
@@ -221,52 +206,23 @@ fn find_coverage_groups(
         let left_to_cover = n_pos_examples - group_coverage.count(n_pos_examples);
         let choices_left = max_k - depth;
         let min_covered = left_to_cover / choices_left;
-        let max_i = coverage_count_barriers[min_covered];
         // println!("left_to_cover: {left_to_cover}, choices_left: {choices_left}, min_covered: {min_covered}");
-        if depth == group.len() {
-            // Push next i that isn't a sub set of coverage
-            if let Some(i) = h_profiles[..max_i]
-                .iter()
-                .enumerate()
-                .find_map(|(i, profile)| {
-                    if profile.coverage.sub_set(&group_coverage) | group.contains(&i) {
-                        None
-                    } else {
-                        Some(i)
-                    }
-                })
-            {
-                group.push(i);
-                *group_coverage |= *h_profiles[i].coverage;
+
+        let min_i = *group.get(depth).unwrap_or(&0);
+        if let Some(next_i) =
+            find_next_choice(h_profiles, min_i, min_covered, group_coverage, &group)
+        {
+            group_coverage.0 |= h_profiles[next_i].coverage.0;
+            if let Some(last_i) = group.get_mut(depth) {
+                *last_i = next_i
             } else {
-                if back_track(&mut group, &mut group_coverage, &mut depth) {
-                    continue;
-                } else {
-                    break;
-                }
+                group.push(next_i);
             }
         } else {
-            // Try the next i that isn't a sub set of coverage
-            let last_i = group.last().unwrap();
-            if let Some(i) = h_profiles[(*last_i + 1)..coverage_count_barriers[min_covered]]
-                .iter()
-                .enumerate()
-                .find_map(|(i, profile)| {
-                    if profile.coverage.sub_set(&group_coverage) | group.contains(&i) {
-                        None
-                    } else {
-                        Some(i)
-                    }
-                })
-            {
-                *group.last_mut().unwrap() = i;
-                *group_coverage |= *h_profiles[i].coverage;
+            if back_track(&mut group, &mut group_coverage, &mut depth) {
+                continue;
             } else {
-                if back_track(&mut group, &mut group_coverage, &mut depth) {
-                    continue;
-                } else {
-                    break;
-                }
+                break;
             }
         }
 
@@ -279,6 +235,10 @@ fn find_coverage_groups(
             }
             back_track(&mut group, &mut group_coverage, &mut depth);
         } else if depth + 1 == max_k {
+            println!(
+                "Coverage({}/{n_pos_examples}) at max_k({max_k}), {group:?}",
+                group_coverage.count(n_pos_examples)
+            );
             if back_track(&mut group, &mut group_coverage, &mut depth) {
                 continue;
             } else {
@@ -290,6 +250,26 @@ fn find_coverage_groups(
     }
 
     groups
+}
+
+/// Search coverage profiles for next valid index, None if no valid
+fn find_next_choice(
+    h_profiles: &[HProfile],
+    min_i: usize,
+    min_covered: usize,
+    group_coverage: Coverage,
+    group: &[usize],
+) -> Option<usize> {
+    for i in min_i..h_profiles.len() {
+        if h_profiles[i].n_covered < min_covered {
+            break;
+        }
+        if group.contains(&i) || h_profiles[i].coverage.difference(&group_coverage) < min_covered {
+            continue;
+        }
+        return Some(i);
+    }
+    None
 }
 
 struct HProfile {

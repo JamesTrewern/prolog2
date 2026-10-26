@@ -47,6 +47,11 @@ impl Coverage {
         other.0 | self.0 == other.0
     }
 
+    /// How many bits set in self not set in other
+    pub fn difference(&self, other: &Self) -> usize {
+        (self.0 & !other.0).count_ones() as usize
+    }
+
     pub fn count(&self, max_bit: usize) -> usize {
         (self.0 & !(u128::MAX << max_bit)).count_ones() as usize
     }
