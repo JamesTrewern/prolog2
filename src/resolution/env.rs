@@ -7,12 +7,12 @@ use smallvec::SmallVec;
 
 use crate::{
     heap::{
-        Heap, HeapPoint, QueryHeap, SymbolDB, Tag,
+        ArgRegs, Heap, HeapPoint, QueryHeap, SymbolDB, Tag,
         VarBind::{self, Addr, Var},
     },
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
-        clause::{Clause, MAX_ARG},
+        clause::{BitFlag64, Clause, MAX_ARG},
         hypothesis::Hypothesis,
         predicate_table::{Predicate, PredicateTable},
     },
@@ -584,7 +584,11 @@ impl Env {
                         new_clause.to_string(heap)
                     );
                 }
-                hypothesis.push_clause(new_clause, SmallVec::from_vec(constraints));
+                hypothesis.push_clause(
+                    new_clause,
+                    SmallVec::from_vec(constraints),
+                    (todo!(), substitution.arg_regs.to_meta_sub(clause.meta_vars)),
+                );
                 if debug {
                     eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
                 }

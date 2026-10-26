@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::heap::VarReg;
+use crate::{heap::VarReg, program::clause::BitFlag64};
 use multiversion::multiversion;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -40,6 +40,15 @@ impl ArgRegs {
             ArgRegs::A32(regs) => find_replace_32(regs, find, replace),
             ArgRegs::A64(regs) => find_replace_64(regs, find, replace),
         }
+    }
+
+    pub fn to_meta_sub(mut self, meta_vars: BitFlag64) -> Self {
+        for (i, reg) in self.iter_mut().enumerate() {
+            if !meta_vars.get(i) {
+                *reg = VarReg::UNBOUND;
+            }
+        }
+        self
     }
 }
 

@@ -5,7 +5,7 @@ use std::{
 
 use smallvec::SmallVec;
 
-use crate::heap::{Heap, VarBind::*};
+use crate::heap::{ArgRegs, Heap, VarBind::*};
 
 use super::clause::Clause;
 
@@ -21,6 +21,7 @@ static PRED_N: AtomicUsize = AtomicUsize::new(0);
 #[derive(Clone)]
 pub struct Hypothesis {
     clauses: Vec<Clause>,
+    meta_subs: Vec<(usize, ArgRegs)>,
     pub constraints: Vec<Constraints>,
     /// Var ids of predicate variables that name an invented predicate.
     ///
@@ -41,6 +42,7 @@ impl Hypothesis {
     pub fn new() -> Self {
         Hypothesis {
             clauses: Vec::new(),
+            meta_subs: Vec::new(),
             constraints: Vec::new(),
             invented_preds: Vec::new(),
         }
@@ -121,13 +123,20 @@ impl Hypothesis {
         self.clauses.len()
     }
 
-    pub fn push_clause(&mut self, clause: Clause, constraints: Constraints) {
+    pub fn push_clause(
+        &mut self,
+        clause: Clause,
+        constraints: Constraints,
+        meta_sub: (usize, ArgRegs),
+    ) {
         self.clauses.push(clause);
         self.constraints.push(constraints);
+        self.meta_subs.push(meta_sub);
     }
 
     pub fn pop_clause(&mut self) -> Clause {
         self.constraints.pop();
+        self.meta_subs.pop();
         self.clauses.pop().unwrap()
     }
 
@@ -147,6 +156,20 @@ impl Hypothesis {
 
     pub fn invented_pred_count(&self) -> usize {
         self.invented_preds.len()
+    }
+}
+
+impl Deref for Hypothesis {
+    type Target = Vec<Clause>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.clauses
+    }
+}
+
+impl DerefMut for Hypothesis {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.clauses
     }
 }
 
@@ -199,8 +222,8 @@ mod invented_pred_tests {
     fn protection_withholds_invented_headed_clauses_and_keeps_the_rest() {
         let (heap, var_headed, con_headed) = heap_with_two_heads(1);
         let mut h = Hypothesis::new();
-        h.push_clause(var_headed, Constraints::new());
-        h.push_clause(con_headed, Constraints::new());
+        h.push_clause(var_headed, Constraints::new(), (0, ArgRegs::new_16()));
+        h.push_clause(con_headed, Constraints::new(), (0, ArgRegs::new_16()));
         h.add_invented_pred(&heap, 0);
 
         let mut protected = Vec::new();
@@ -234,7 +257,7 @@ mod invented_pred_tests {
 
         let mut h = Hypothesis::new();
         h.add_invented_pred(&heap, 0);
-        h.push_clause(aliased_head, Constraints::new());
+        h.push_clause(aliased_head, Constraints::new(), (0, ArgRegs::new_16()));
 
         assert!(
             h.clause_head_is_invented(&heap, &h[0]),
@@ -257,19 +280,5 @@ mod invented_pred_tests {
             "the same variable must not be recorded twice"
         );
         assert_eq!(h.invented_pred_count(), 1);
-    }
-}
-
-impl Deref for Hypothesis {
-    type Target = Vec<Clause>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.clauses
-    }
-}
-
-impl DerefMut for Hypothesis {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.clauses
     }
 }

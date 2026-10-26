@@ -42,7 +42,7 @@ impl Proof {
     pub fn with_hypothesis(heap: &QueryHeap, goals: &[usize], clauses: &[Clause]) -> Self {
         let mut hypothesis = Hypothesis::new();
         for clause in clauses {
-            hypothesis.push_clause(clause.clone(), Constraints::new());
+            hypothesis.push_clause(clause.clone(), Constraints::new(), (0, ArgRegs::new_16()));
         }
         let h_clauses = clauses.len();
         let stack = goals
