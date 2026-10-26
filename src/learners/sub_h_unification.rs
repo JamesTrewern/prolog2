@@ -63,6 +63,8 @@ pub(super) fn least_sub_h(
 
     let groups = find_coverage_groups(&h_profiles, max_k, pos_examples.len());
 
+    //TODO filter any groups entailing negatives
+
     Some(
         groups
             .into_iter()
@@ -123,7 +125,7 @@ fn greedy_find_coverage_group(h_profiles: &[HProfile], n_pos_examples: usize) ->
             if res.contains(&i) || h_profiles[i].coverage.sub_set(&covered) {
                 continue;
             }
-            let a = (*h_profiles[i].coverage & !*covered).count_ones();
+            let a = h_profiles[i].coverage.difference(&covered);
             if best.0 < a {
                 best = (a, i)
             }
@@ -132,46 +134,6 @@ fn greedy_find_coverage_group(h_profiles: &[HProfile], n_pos_examples: usize) ->
         *covered |= *h_profiles[best.1].coverage;
     }
     res
-}
-
-/// Find subsets of coverage groups of size n_sub_h
-/// where all positive examples are covered
-/// return None if no valid sub sets found
-fn find_coverage_groups_old(
-    h_profiles: &[HProfile],
-    n_sub_h: usize,
-    n_pos_examples: usize,
-) -> Option<Vec<Box<[usize]>>> {
-    let no_coverage = Coverage::from_len(n_pos_examples);
-
-    let mut valid_sub_sets: Vec<Box<[usize]>> = Vec::new();
-    let mut ssi = SubSetIterator::new(h_profiles.len(), n_sub_h);
-    while let Some(subset) = ssi.next() {
-        // halt when 1st added sub h coverage * sub set size is less than the number of examples
-        if h_profiles[subset[0]].n_covered * n_sub_h < n_pos_examples {
-            break;
-        }
-        //Skip if coverage sum less than number of examples
-        if subset
-            .iter()
-            .map(|i| h_profiles[*i].n_covered)
-            .sum::<usize>()
-            < n_pos_examples
-        {
-            continue;
-        }
-        let mut sub_set_coverage = no_coverage;
-        for HProfile { coverage, .. } in subset.iter().map(|i| &h_profiles[*i]) {
-            *sub_set_coverage |= **coverage;
-        }
-        if sub_set_coverage.all() {
-            valid_sub_sets.push(Box::from(subset));
-            if valid_sub_sets.len() == MAX_VALID_SUB_SETS {
-                return Some(valid_sub_sets);
-            }
-        }
-    }
-    (!valid_sub_sets.is_empty()).then_some(valid_sub_sets)
 }
 
 /// Find subsets of coverage groups up to size max_k
