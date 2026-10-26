@@ -23,9 +23,6 @@ pub fn not(
     let mut inner_config = config;
     inner_config.max_clause = 0; // Disable learning by not allowing new clauses
 
-    // Clone the current hypothesis so the inner proof can use the learned clauses
-    let hypothesis_clone = hypothesis.clone();
-
     // The inner proof runs on this *same* shared heap. Negation-as-failure must
     // not have any side effect on the outer proof's heap, so record the current
     // heap length and restore the heap afterwards. On success the inner proof
@@ -34,7 +31,7 @@ pub fn not(
     // and truncate the inner allocations away so nothing dangles when the outer
     // proof later truncates the heap.
     let heap_point = heap.heap_point();
-    let mut inner_proof = Proof::with_hypothesis(heap, &[inner_goal], hypothesis_clone);
+    let mut inner_proof = Proof::with_hypothesis(heap, &[inner_goal], &hypothesis);
 
     if config.debug {
         eprintln!(

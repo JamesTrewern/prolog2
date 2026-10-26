@@ -1,12 +1,11 @@
 use super::utils::parse_example;
 use crate::{
     heap::{Cell, QueryHeap},
-    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{clause::Clause, predicate_table::PredicateTable},
     resolution::Proof,
     Config,
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use smallvec::SmallVec;
 
 /// Test one hypothesis against all negative examples.
 /// Returns `true` if the hypothesis should be retained (no negative is provable).
@@ -26,12 +25,6 @@ pub(super) fn specialise_h(
         protect_h_preds: config.protect_h_preds,
     };
 
-    // Build a Hypothesis from the clauses so we can use Proof::with_hypothesis
-    let mut h = Hypothesis::new();
-    for clause in hypothesis {
-        h.push_clause(clause.clone(), SmallVec::new());
-    }
-
     for example in neg_examples {
         let mut query_heap = QueryHeap::new(heap, None);
         let goal = match parse_example(example, &mut query_heap) {
@@ -41,13 +34,11 @@ pub(super) fn specialise_h(
                 continue;
             }
         };
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], hypothesis);
         // If any negative example is provable, reject this hypothesis
         if proof.prove(&mut query_heap, predicate_table, config) {
             return false;
         }
-        // Reclaim the hypothesis — it was never mutated since max_clause is 0
-        h = std::mem::replace(&mut proof.hypothesis, Hypothesis::new());
     }
     true
 }
@@ -78,11 +69,7 @@ pub(super) fn specialise_h_threaded(
                 panic!("Failed to parse negative example '{}': {}", example, e);
             }
         };
-        let mut h = Hypothesis::new();
-        for clause in hypothesis {
-            h.push_clause(clause.clone(), SmallVec::new());
-        }
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], hypothesis);
         // If any negative example is provable, reject this hypothesis
         proof.prove(&mut query_heap, predicate_table, config)
     })

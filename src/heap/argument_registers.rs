@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use crate::heap::VarReg;
 use multiversion::multiversion;
 
-#[derive(Debug,PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ArgRegs {
     A16([VarReg; 16]),
     A32([VarReg; 32]),
@@ -64,7 +64,7 @@ pub fn find_replace_16(regs: &mut [VarReg; 16], find: VarReg, replace: VarReg) {
     }
 }
 
-impl Deref for ArgRegs{
+impl Deref for ArgRegs {
     type Target = [VarReg];
 
     fn deref(&self) -> &Self::Target {
@@ -76,7 +76,7 @@ impl Deref for ArgRegs{
     }
 }
 
-impl DerefMut for ArgRegs{
+impl DerefMut for ArgRegs {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             ArgRegs::A16(inner) => inner,

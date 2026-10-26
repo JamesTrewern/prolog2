@@ -368,7 +368,7 @@ fn extract_body_var_preds(pred_set: &mut HashSet<usize>, clause: &Clause, heap: 
 mod tests {
     use crate::{
         heap::{
-            Cell, Heap, QueryHeap, SymbolDB,
+            ArgRegs, Cell, Heap, QueryHeap, SymbolDB,
             Tag::*,
             VarBind::{self, *},
             VarReg,
@@ -439,6 +439,7 @@ mod tests {
             h.push_clause(
                 instantiate_meta_rule(heap, meta_rule, &bindings),
                 Constraints::default(),
+                (meta_idx, ArgRegs::new_16()),
             );
         }
 

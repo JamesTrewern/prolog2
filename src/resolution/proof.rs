@@ -2,8 +2,12 @@
 
 use super::env::Env;
 use crate::{
-    heap::{Heap, QueryHeap},
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    heap::{ArgRegs, Heap, QueryHeap},
+    program::{
+        clause::Clause,
+        hypothesis::{Constraints, Hypothesis},
+        predicate_table::PredicateTable,
+    },
     Config,
 };
 
@@ -35,8 +39,12 @@ impl Proof {
     }
 
     /// Create a new proof with an existing hypothesis (for negation-as-failure checks)
-    pub fn with_hypothesis(heap: &QueryHeap, goals: &[usize], hypothesis: Hypothesis) -> Self {
-        let h_clauses = hypothesis.len();
+    pub fn with_hypothesis(heap: &QueryHeap, goals: &[usize], clauses: &[Clause]) -> Self {
+        let mut hypothesis = Hypothesis::new();
+        for clause in clauses {
+            hypothesis.push_clause(clause.clone(), Constraints::new());
+        }
+        let h_clauses = clauses.len();
         let stack = goals
             .iter()
             .map(|goal| Env::new(*goal, 0, heap.heap_point()))

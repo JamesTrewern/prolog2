@@ -98,11 +98,6 @@ pub(super) fn count_coverage(
         protect_h_preds: false,
     };
 
-    let mut h = Hypothesis::new();
-    for clause in clauses {
-        h.push_clause((*clause).clone(), SmallVec::new());
-    }
-
     let mut coverage = Coverage::from_len(pos_examples.len());
 
     for (i, example) in pos_examples.into_iter().enumerate() {
@@ -110,7 +105,7 @@ pub(super) fn count_coverage(
         let Ok(goal) = parse_example(example, &mut query_heap) else {
             panic!("Could not parse example {example}");
         };
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h.clone());
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], clauses);
         if proof.prove(&mut query_heap, predicate_table, config) {
             coverage.set(i);
         }

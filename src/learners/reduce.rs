@@ -107,13 +107,7 @@ pub(super) fn reduce<'a>(
             let _ = io::stderr().flush();
         }
 
-        // Build hypothesis from all clauses except the one at index i
-        let mut h = Hypothesis::new();
-        for (j, clause) in hypothesis.iter().enumerate() {
-            if j != i {
-                h.push_clause((*clause).clone(), SmallVec::new());
-            }
-        }
+        let c = hypothesis.remove(i);
 
         // Check if all positive examples are still provable without clause i
         let redundant = pos_examples.iter().all(|example| {
@@ -122,15 +116,15 @@ pub(super) fn reduce<'a>(
                 Ok(g) => g,
                 Err(_) => return true, // skip unparseable examples
             };
-            let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h.clone());
+            let mut proof = Proof::with_hypothesis(&query_heap, &[goal], &hypothesis);
             proof.prove(&mut query_heap, predicate_table, config)
         });
 
         if redundant {
-            hypothesis.remove(i);
             removed += 1;
             // Don't increment i — next clause slides into this position
         } else {
+            hypothesis.insert(i, c);
             i += 1;
         }
     }

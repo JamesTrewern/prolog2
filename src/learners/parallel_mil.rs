@@ -352,12 +352,6 @@ fn specialise_thread(
         protect_h_preds: config.protect_h_preds,
     };
 
-    // Build a Hypothesis from the clauses so we can use Proof::with_hypothesis
-    let mut h = Hypothesis::new();
-    for clause in hypothesis {
-        h.push_clause(clause.clone(), SmallVec::new());
-    }
-
     for example in neg_examples {
         let mut query_heap = QueryHeap::new(heap, None);
         let goal = match parse_example(example, &mut query_heap) {
@@ -367,13 +361,11 @@ fn specialise_thread(
                 continue;
             }
         };
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], h);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], &hypothesis);
         // If any negative example is provable, reject this hypothesis
         if proof.prove(&mut query_heap, predicate_table, config) {
             return false;
         }
-        // Reclaim the hypothesis — it was never mutated since max_clause is 0
-        h = std::mem::replace(&mut proof.hypothesis, Hypothesis::new());
     }
     true
 }
