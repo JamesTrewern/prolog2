@@ -136,6 +136,7 @@ impl Env {
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
+        test_clauses: Option<&[Clause]>,
         protect: bool,
     ) {
         self.got_choices = true;
@@ -145,12 +146,22 @@ impl Env {
             self.get_tup_goals(heap);
         } else {
             match heap.symbol_arity(self.goal) {
-                (0, arity) => {
-                    self.get_choices_var_pred(heap, hypothesis, predicate_table, arity, protect)
-                }
-                sym_arr => {
-                    self.get_choices_con_pred(heap, hypothesis, predicate_table, sym_arr, protect)
-                }
+                (0, arity) => self.get_choices_var_pred(
+                    heap,
+                    hypothesis,
+                    predicate_table,
+                    test_clauses,
+                    arity,
+                    protect,
+                ),
+                sym_arr => self.get_choices_con_pred(
+                    heap,
+                    hypothesis,
+                    predicate_table,
+                    test_clauses,
+                    sym_arr,
+                    protect,
+                ),
             }
         }
     }
@@ -180,6 +191,7 @@ impl Env {
         heap: &QueryHeap,
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
+        test_clauses: Option<&[Clause]>,
         arity: usize,
         protect: bool,
     ) {
@@ -201,6 +213,9 @@ impl Env {
         if !invented {
             choices.extend(predicate_table.get_body_clauses(arity).cloned());
         }
+        if let Some(test_clauses) = test_clauses {
+            choices.extend_from_slice(test_clauses);
+        }
         let total = choices.len();
         self.strategy = Strategy::Clause {
             choices,
@@ -219,6 +234,7 @@ impl Env {
         heap: &QueryHeap,
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
+        test_clauses: Option<&[Clause]>,
         (symbol, arity): (usize, usize),
         protect: bool,
     ) {
@@ -234,6 +250,9 @@ impl Env {
                 let mut choices = Vec::new();
                 hypothesis.extend_choices(&mut choices, heap, protect);
                 choices.extend_from_slice(clauses);
+                if let Some(test_clauses) = test_clauses {
+                    choices.extend_from_slice(test_clauses);
+                }
                 let total = choices.len();
                 self.strategy = Strategy::Clause {
                     choices,
@@ -257,6 +276,9 @@ impl Env {
                 if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
                     choices.extend_from_slice(clauses);
                 }
+                if let Some(test_clauses) = test_clauses {
+                    choices.extend_from_slice(test_clauses);
+                }
                 let total = choices.len();
                 self.strategy = Strategy::Clause {
                     choices,
@@ -274,7 +296,6 @@ impl Env {
         &mut self,
         hypothesis: &mut Hypothesis,
         heap: &mut QueryHeap,
-        h_clauses: &mut usize,
         debug: bool,
     ) -> usize {
         if debug {
@@ -299,7 +320,6 @@ impl Env {
                         clause.to_string(heap)
                     );
                 }
-                *h_clauses -= 1;
                 *new_clause = false;
                 if let Some(var_id) = invent_pred.take() {
                     hypothesis.remove_invented_pred(var_id);
@@ -339,13 +359,11 @@ impl Env {
         &mut self,
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
-        allow_new_clause: bool,
         predicate_table: &PredicateTable,
         config: Config,
-        debug: bool,
     ) -> Option<Vec<Env>> {
         if self.depth > config.max_depth {
-            if debug {
+            if config.debug {
                 eprintln!(
                     "[FAIL_ON_DEPTH|{}] goal={}",
                     self.depth,
@@ -356,16 +374,12 @@ impl Env {
         }
 
         match &self.strategy {
-            Strategy::Native { .. } => {
-                self.try_native(heap, hypothesis, predicate_table, config, debug)
-            }
+            Strategy::Native { .. } => self.try_native(heap, hypothesis, predicate_table, config),
             Strategy::Clause { .. } => self.try_clause(
                 heap,
                 hypothesis,
-                allow_new_clause,
-                predicate_table,
-                config,
-                debug,
+                hypothesis.len() < config.max_clause,
+                config.debug,
             ),
             Strategy::Conjunction { .. } => self.try_conj(heap),
             Strategy::Unset => unreachable!("Shouldn't be able to try choices before getting them"),
@@ -380,7 +394,6 @@ impl Env {
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
         config: Config,
-        _debug: bool,
     ) -> Option<Vec<Env>> {
         let Strategy::Native {
             function,
@@ -451,8 +464,6 @@ impl Env {
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
         allow_new_clause: bool,
-        _predicate_table: &PredicateTable,
-        _config: Config,
         debug: bool,
     ) -> Option<Vec<Env>> {
         let mut choices_tried = 0;

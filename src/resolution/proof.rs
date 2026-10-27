@@ -18,14 +18,14 @@ use crate::{
 /// Maintains a goal stack and iteratively resolves goals against the predicate
 /// table and the current hypothesis. Call [`Proof::prove`] repeatedly to
 /// enumerate solutions via backtracking.
-pub struct Proof {
+pub struct Proof<'a> {
     stack: Vec<Env>,
     pointer: usize,
     pub hypothesis: Hypothesis,
-    h_clauses: usize,
+    test_clauses: Option<&'a [Clause]>,
 }
 
-impl Proof {
+impl<'a> Proof<'a> {
     pub fn new(heap: &QueryHeap, goals: &[usize]) -> Self {
         let hypothesis = Hypothesis::new();
         let stack = goals
@@ -36,29 +36,14 @@ impl Proof {
             stack,
             pointer: 0,
             hypothesis,
-            h_clauses: 0,
+            test_clauses: None,
         }
     }
 
     /// Create a new proof with an existing hypothesis (for negation-as-failure checks)
-    pub fn with_hypothesis(
-        heap: &QueryHeap,
-        goals: &[usize],
-        clauses: &[Clause],
-        constraints: Option<&[SmallVec<[usize; 5]>]>,
-    ) -> Self {
-        let mut hypothesis = Hypothesis::new();
-        if let Some(constraints) = constraints {
-            for (clause, constraints) in clauses.iter().zip(constraints) {
-                hypothesis.push_clause(clause.clone(), constraints.clone(), (0, ArgRegs::new_16()));
-            }
-        } else {
-            for clause in clauses {
-                hypothesis.push_clause(clause.clone(), SmallVec::new(), (0, ArgRegs::new_16()));
-            }
-        }
-
-        let h_clauses = clauses.len();
+    pub fn with_hypothesis(heap: &QueryHeap, goals: &[usize], hypothesis: &Hypothesis) -> Self {
+        let hypothesis = hypothesis.clone();
+        let h_clauses = hypothesis.len();
         let stack = goals
             .iter()
             .map(|goal| Env::new(*goal, 0, heap.heap_point()))
@@ -67,8 +52,13 @@ impl Proof {
             stack,
             pointer: 0,
             hypothesis,
-            h_clauses,
+            test_clauses: None,
         }
+    }
+
+    /// Add clauses to be included in choices
+    pub fn add_test_clauses(&mut self, clauses: &'a [Clause]) {
+        self.test_clauses = Some(clauses);
     }
 
     pub fn prove(
@@ -84,7 +74,7 @@ impl Proof {
                     "[RESTART] pointer={} stack_len={} h_clauses={}",
                     self.pointer,
                     self.stack.len(),
-                    self.h_clauses
+                    self.hypothesis.len()
                 );
                 eprintln!("[RESTART_HYPOTHESIS]");
                 for (i, c) in self.hypothesis.iter().enumerate() {
@@ -93,12 +83,7 @@ impl Proof {
             }
 
             self.pointer -= 1;
-            self.stack[self.pointer].undo_try(
-                &mut self.hypothesis,
-                heap,
-                &mut self.h_clauses,
-                config.debug,
-            );
+            self.stack[self.pointer].undo_try(&mut self.hypothesis, heap, config.debug);
         }
 
         while self.pointer < self.stack.len() {
@@ -115,6 +100,7 @@ impl Proof {
                     heap,
                     &mut self.hypothesis,
                     &predicate_table,
+                    self.test_clauses,
                     config.protect_h_preds,
                 );
                 if config.debug {
@@ -128,15 +114,10 @@ impl Proof {
             match self.stack[self.pointer].try_choices(
                 heap,
                 &mut self.hypothesis,
-                self.h_clauses < config.max_clause,
                 predicate_table,
                 config,
-                config.debug,
             ) {
                 Some(new_goals) => {
-                    if self.stack[self.pointer].new_clause() {
-                        self.h_clauses += 1;
-                    }
                     self.pointer += 1;
                     self.stack.splice(self.pointer..self.pointer, new_goals);
                 }
@@ -150,12 +131,8 @@ impl Proof {
                     // Reset this goal so it gets fresh choices on a future visit
                     self.stack[self.pointer].reset(heap);
                     self.pointer -= 1;
-                    let children = self.stack[self.pointer].undo_try(
-                        &mut self.hypothesis,
-                        heap,
-                        &mut self.h_clauses,
-                        config.debug,
-                    );
+                    let children =
+                        self.stack[self.pointer].undo_try(&mut self.hypothesis, heap, config.debug);
                     self.stack
                         .drain((self.pointer + 1)..(self.pointer + 1 + children));
                 }

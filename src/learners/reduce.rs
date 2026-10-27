@@ -116,7 +116,8 @@ pub(super) fn reduce<'a>(
                 Ok(g) => g,
                 Err(_) => return true, // skip unparseable examples
             };
-            let mut proof = Proof::with_hypothesis(&query_heap, &[goal], &hypothesis, None);
+            let mut proof = Proof::new(&query_heap, &[goal]);
+            proof.add_test_clauses(&hypothesis);
             proof.prove(&mut query_heap, predicate_table, config)
         });
 

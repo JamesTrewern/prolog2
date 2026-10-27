@@ -105,7 +105,8 @@ pub(super) fn count_coverage(
         let Ok(goal) = parse_example(example, &mut query_heap) else {
             panic!("Could not parse example {example}");
         };
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], clauses, None);
+        let mut proof = Proof::new(&query_heap, &[goal]);
+        proof.add_test_clauses(clauses);
         if proof.prove(&mut query_heap, predicate_table, config) {
             coverage.set(i);
         }

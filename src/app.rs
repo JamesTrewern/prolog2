@@ -763,7 +763,7 @@ fn continue_proof(auto: bool) -> bool {
 /// `next_solution` resumes the proof search from where it left off.
 pub struct QuerySession<'a> {
     heap: QueryHeap<'a>,
-    proof: Proof,
+    proof: Proof<'a>,
     vars: Vec<(Arc<str>, usize)>, // (variable_name, heap_address)
     predicate_table: &'a PredicateTable,
     config: Config,
