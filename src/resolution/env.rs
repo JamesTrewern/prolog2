@@ -598,10 +598,8 @@ impl Env {
                 hypothesis.push_clause(
                     new_clause,
                     SmallVec::from_vec(constraints),
-                    (
-                        meta_data.id,
-                        substitution.arg_regs.to_meta_sub(meta_data.meta_vars),
-                    ),
+                    &substitution.arg_regs,
+                    *meta_data,
                 );
                 if debug {
                     eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));

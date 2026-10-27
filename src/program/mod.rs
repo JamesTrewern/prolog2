@@ -7,4 +7,5 @@
 
 pub mod clause;
 pub mod hypothesis;
+pub mod meta_sub;
 pub mod predicate_table;

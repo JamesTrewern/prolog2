@@ -1,93 +1,60 @@
 use std::{
     cmp::Ordering::{self, *},
     collections::{HashMap, HashSet},
-    ops::{Deref, Range},
+    ops::{Deref, DerefMut, Range},
 };
 
 use smallvec::SmallVec;
 
 use crate::{
-    heap::{Heap, QueryHeap, SymbolDB, Tag::*, VarBind::Addr},
-    program::clause::Clause,
-    resolution::unify,
+    heap::{
+        ArgRegs, Heap, QueryHeap, SymbolDB,
+        Tag::*,
+        VarBind::{Addr, Var},
+        VarReg,
+    },
+    program::{clause::Clause, hypothesis::Hypothesis, meta_sub::MetaSub},
     utils::{DirGraph8, FindReturn},
 };
 
-/// Describe the structure of a clause by the size of it's literals in order
-#[derive(Debug, PartialOrd, PartialEq, Eq)]
-struct ClauseSignature(Box<[usize]>);
-
-impl ClauseSignature {
-    pub fn extract_clause_signature(clause: &Clause, heap: &impl Heap) -> Self {
-        Self(
-            clause
-                .iter()
-                .map(|literal_addr| {
-                    if let (Comp, len) = heap[*literal_addr] {
-                        len
-                    } else {
-                        panic!("Malformed clause, can't extract signature")
-                    }
-                })
-                .collect(),
-        )
-    }
-}
-
-impl Deref for ClauseSignature {
-    type Target = Box<[usize]>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Ord for ClauseSignature {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match self.len().cmp(&other.len()) {
-            Equal => {
-                for (len1, len2) in self.iter().zip(other.iter()) {
-                    match len1.cmp(len2) {
-                        Equal => continue,
-                        ordering => return ordering,
-                    }
-                }
-                Equal
-            }
-            ord => ord,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct PredDef {
-    pub clauses: SmallVec<[Clause; 4]>,
-    signatures: Vec<ClauseSignature>,
-    // symbol: usize, //Con id for invented symbol
+    pub meta_subs: SmallVec<[MetaSub; 4]>,
+    meta_clause_ranges: HashMap<usize, (usize, usize)>,
+}
+
+impl Deref for PredDef {
+    type Target = [MetaSub];
+    fn deref(&self) -> &Self::Target {
+        &self.meta_subs
+    }
+}
+impl DerefMut for PredDef {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.meta_subs
+    }
 }
 
 impl PredDef {
     /// Take clauses to form new predicate definition (orders clauses)
-    pub fn new(heap: &impl Heap, clauses: SmallVec<[Clause; 4]>) -> Self {
-        // TODO consider extra if memory allocation is slower than using cmp_clauses
-        // then getting clause defintions
-        // TODO? after safety guards to ensure no ref cells in literal arguments
+    pub fn new(heap: &impl Heap, mut meta_subs: SmallVec<[MetaSub; 4]>) -> Self {
+        meta_subs.sort_by_key(|meta_sub| meta_sub.meta_clause_id);
+        let mut meta_clause_ranges = HashMap::new();
+        let mut start = 0;
+        for i in 1..meta_subs.len() {
+            if meta_subs[i - 1].meta_clause_id != meta_subs[i].meta_clause_id {
+                meta_clause_ranges.insert(meta_subs[i - 1].meta_clause_id, (start, i));
+                start = i;
+            }
+        }
+        meta_clause_ranges.insert(
+            meta_subs.last().unwrap().meta_clause_id,
+            (start, meta_subs.len()),
+        );
 
-        // Create clause signatures
-        let mut clauses_signatures: Vec<(Clause, ClauseSignature)> = clauses
-            .into_iter()
-            .map(|clause| {
-                let cs = ClauseSignature::extract_clause_signature(&clause, heap);
-                (clause, cs)
-            })
-            .collect();
-        // Order clauses by signature
-        clauses_signatures.sort_by(|(_, a), (_, b)| a.cmp(b));
-        // Unzip
-        let (clauses, signatures) = clauses_signatures.into_iter().unzip();
         Self {
-            clauses,
-            signatures,
+            meta_subs,
+            meta_clause_ranges,
         }
     }
 
@@ -95,21 +62,29 @@ impl PredDef {
     /// to a newly coined constant predicate symbol
     pub fn make_const(&mut self, heap: &mut impl Heap, next_id: &mut usize) {
         // Extract var pred in clause heads
-        let mut var_pred_ids: HashMap<usize, usize> = HashMap::new(); // Map from var_id to new const id
+        let mut var_pred_ids: HashMap<usize, VarReg> = HashMap::new(); // Map from var_id to new const id
 
-        // Make const all head predicates in definition
-        for clause in &self.clauses {
-            let (Ref, var_id) = heap[clause.head() + 1] else {
-                panic!("Predicate definition is already constant")
-            };
-            match var_pred_ids.get(&var_id) {
-                Some(pred_symbol) => heap[clause.head() + 1] = (Con, *pred_symbol),
-                None => {
-                    let pred_symbol = SymbolDB::set_const(format!("pred_{next_id}"));
-                    *next_id += 1;
-                    var_pred_ids.insert(var_id, pred_symbol);
-                    heap[clause.head() + 1] = (Con, pred_symbol);
-                    heap.bind(var_id, Addr(clause.head() + 1));
+        //coin new const for all vars in metasubs
+        for meta_sub in self.iter_mut() {
+            for var_reg in &mut meta_sub.subs {
+                if let Var(var_id) = var_reg.get_bind().unwrap() {
+                    match heap.var_deref(var_id) {
+                        Var(var_id) => {
+                            match var_pred_ids.get(&var_id) {
+                                Some(new_reg_value) => *var_reg = *new_reg_value, //Var bound in previous meta_sub
+                                None => {
+                                    let pred_symbol =
+                                        SymbolDB::set_const(format!("pred_{next_id}"));
+                                    let addr = heap.heap_push((Con, pred_symbol));
+                                    var_pred_ids.insert(var_id, Addr(addr).into());
+                                    *next_id += 1;
+                                    heap.bind(var_id, Addr(addr));
+                                    *var_reg = Addr(addr).into()
+                                }
+                            }
+                        }
+                        value => *var_reg = value.into(),
+                    }
                 }
             }
         }
@@ -118,25 +93,51 @@ impl PredDef {
     /// Attempt to unify two clause definitions
     /// Self should be constant
     /// will update variable bindings on heap effecting other variable clause defintions waiting to unify
-    pub fn unify(&self, var_pred_def: &PredDef, heap: &mut QueryHeap) -> bool {
-        // TODO? consider if comparing signatures is needed as
-        // table uses signatures to create matching range already
-        // if *self.signatures != *var_pred_def.signatures {
-        //     return false;
-        // }
-        let mut bound_vars = Vec::new();
-        for (c1, c2) in self.clauses.iter().zip(var_pred_def.clauses.iter()) {
-            for (&l1, &l2) in c1.iter().zip(c2.iter()) {
-                match unify(heap, l1, l2, 15) {
-                    Some(subs) => {
-                        bound_vars.extend(subs.bound_vars);
-                    }
-                    None => {
-                        // Ensure unbinding on failure
-                        heap.unbind(&bound_vars);
-                        return false;
-                    }
+    pub fn unify(&self, other: &PredDef, heap: &mut QueryHeap) -> bool {
+        // TODO consider if different meta_rules might result in the same clause
+        if self.cmp(other) != Equal {
+            return false;
+        }
+        let mut stack: Vec<(usize, Vec<usize>)> = Vec::new(); // (last matched index, bindings)
+        let mut unified = vec![false; self.len()].into_boxed_slice();
+        let mut i = 0;
+        'outer: while i < other.len() {
+            let (s, e) = *self
+                .meta_clause_ranges
+                .get(&other[i].meta_clause_id)
+                .unwrap();
+
+            // Fresh visit to this position: start the search at the range's
+            // first index. A revisit (backtrack) undoes the previous match
+            // at this position and resumes the search just after it.
+            let start = if i == stack.len() {
+                stack.push((s, Vec::new()));
+                s
+            } else {
+                let (last_j, bindings) = &stack[i];
+                unified[*last_j] = false;
+                heap.unbind(bindings);
+                last_j + 1
+            };
+
+            //Attempt to find clause to unify with
+            for j in start..e {
+                if unified[j] {
+                    continue;
                 }
+                if let Some(binding) = self[j].unify(&other[i], heap) {
+                    unified[j] = true;
+                    stack[i] = (j, binding);
+                    i += 1;
+                    continue 'outer;
+                }
+            }
+
+            if i == 0 {
+                return false;
+            } else {
+                stack.pop();
+                i -= 1;
             }
         }
 
@@ -144,10 +145,10 @@ impl PredDef {
     }
 
     pub fn cmp(&self, other: &Self) -> Ordering {
-        match self.signatures.len().cmp(&other.signatures.len()) {
+        match self.meta_subs.len().cmp(&other.meta_subs.len()) {
             Equal => {
-                for (sig1, sig2) in self.signatures.iter().zip(other.signatures.iter()) {
-                    match sig1.cmp(sig2) {
+                for (msub1, msub2) in self.meta_subs.iter().zip(other.meta_subs.iter()) {
+                    match msub1.meta_clause_id.cmp(&msub2.meta_clause_id) {
                         Equal => continue,
                         ordering => return ordering,
                     }
@@ -158,25 +159,26 @@ impl PredDef {
         }
     }
 
-    pub fn extract_pred_defs_from_h(h: &mut Vec<Clause>, heap: &impl Heap) -> Vec<Self> {
-        let mut clause_sets: Vec<SmallVec<[Clause; 4]>> = Vec::with_capacity(h.len());
+    pub fn extract_pred_defs_from_h(h: &mut Hypothesis, heap: &impl Heap) -> Vec<Self> {
+        let mut clause_sets: Vec<SmallVec<[(Clause, MetaSub); 4]>> = Vec::with_capacity(h.len());
         let mut var_preds = Vec::with_capacity(h.len());
         let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(h.len());
 
         for idx in (0..h.len()).rev() {
             if let (Ref, var_id) = heap.get_deref_cell(h[idx].head() + 1) {
                 let clause = h.remove(idx);
+                let meta_sub = h.meta_subs.remove(idx);
                 match var_preds.iter().position(|var_pred| *var_pred == var_id) {
                     Some(def_index) => {
                         extract_body_var_preds(&mut dependencies[def_index], &clause, heap);
-                        clause_sets[def_index].push(clause);
+                        clause_sets[def_index].push((clause, meta_sub));
                     }
                     None => {
                         var_preds.push(var_id);
                         let mut body_var_preds = HashSet::new();
                         extract_body_var_preds(&mut body_var_preds, &clause, heap);
                         dependencies.push(body_var_preds);
-                        clause_sets.push(SmallVec::from_elem(clause, 1));
+                        clause_sets.push(SmallVec::from_elem((clause, meta_sub), 1));
                     }
                 }
             }
@@ -199,19 +201,24 @@ impl PredDef {
                 groups[..groups.size]
                     .into_iter()
                     .map(|group| {
-                        let mut clauses: SmallVec<[Clause; 4]> = SmallVec::new();
+                        let mut meta_subs: SmallVec<[MetaSub; 4]> = SmallVec::new();
                         for i in 0..graph.size {
                             if group & 1 << i != 0 {
-                                clauses.append(&mut clause_sets[i]);
+                                meta_subs.extend(clause_sets[i].drain(..).map(|(_, msub)| msub));
                             }
                         }
-                        PredDef::new(heap, clauses)
+                        PredDef::new(heap, meta_subs)
                     })
                     .collect()
             } else {
                 graph.order()[..graph.size]
                     .iter()
-                    .map(|i| PredDef::new(heap, clause_sets[*i].clone()))
+                    .map(|i| {
+                        PredDef::new(
+                            heap,
+                            clause_sets[*i].drain(..).map(|(_, msub)| msub).collect(),
+                        )
+                    })
                     .collect()
             }
         } else {
@@ -285,73 +292,17 @@ impl PredDefTable {
     pub fn _print_defs(&self, heap: &impl Heap) {
         for (i, pred_def) in self.pred_defs.iter().enumerate() {
             println!("====== Definition {i} ======");
-            for clause in &pred_def.clauses {
-                println!("{}", clause.to_string(heap))
+            for msub in &pred_def.meta_subs {
+                // todo!()
+                //println!("{}", clause.to_string(heap))
             }
             println!("===========================");
         }
     }
 
-    pub fn extract_pred_defs_from_h(&mut self, hypothesis: &mut Vec<Clause>, heap: &mut QueryHeap) {
-        let mut clause_sets: Vec<SmallVec<[Clause; 4]>> = Vec::with_capacity(hypothesis.len());
-        let mut var_preds = Vec::with_capacity(hypothesis.len());
-        let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(hypothesis.len());
-
-        for idx in (0..hypothesis.len()).rev() {
-            if let (Ref, var_id) = heap.get_deref_cell(hypothesis[idx].head() + 1) {
-                let clause = hypothesis.remove(idx);
-                match var_preds.iter().position(|var_pred| *var_pred == var_id) {
-                    Some(def_index) => {
-                        extract_body_var_preds(&mut dependencies[def_index], &clause, heap);
-                        clause_sets[def_index].push(clause);
-                    }
-                    None => {
-                        var_preds.push(var_id);
-                        let mut body_var_preds = HashSet::new();
-                        extract_body_var_preds(&mut body_var_preds, &clause, heap);
-                        dependencies.push(body_var_preds);
-                        clause_sets.push(SmallVec::from_elem(clause, 1));
-                    }
-                }
-            }
-        }
-
-        // Build dependency graph
-        // find SCCs
-        // merge SCCs into 1 pred def
-        // use new dependency graph to order pred defs
-        if clause_sets.len() <= 8 {
-            let mut graph: DirGraph8 = DirGraph8::new(clause_sets.len());
-            for (i, deps) in dependencies.into_iter().enumerate() {
-                for dep in deps {
-                    graph.add_edge(
-                        i,
-                        var_preds
-                            .iter()
-                            .position(|var_pred| *var_pred == dep)
-                            .unwrap(),
-                    );
-                }
-            }
-            if let Some(groups) = graph.ordered_cyclic_groups() {
-                for group in &groups[..groups.size] {
-                    let mut clauses: SmallVec<[Clause; 4]> = SmallVec::new();
-                    for i in 0..graph.size {
-                        if group & 1 << i != 0 {
-                            clauses.append(&mut clause_sets[i]);
-                        }
-                    }
-                    self.insert(PredDef::new(heap, clauses), heap);
-                }
-            } else {
-                let order = graph.order();
-                //TODO avoid cloning here
-                for &idx in &order[..graph.size] {
-                    self.insert(PredDef::new(heap, clause_sets[idx].clone()), heap);
-                }
-            }
-        } else {
-            todo!("Can't handle sub hypotheses greater than 8 clauses")
+    pub fn extract_pred_defs_from_h(&mut self, hypothesis: &mut Hypothesis, heap: &mut QueryHeap) {
+        for pred_def in PredDef::extract_pred_defs_from_h(hypothesis, heap) {
+            self.insert(pred_def, heap);
         }
     }
 }
@@ -396,7 +347,7 @@ mod tests {
         heap: &mut QueryHeap,
         meta: &Clause,
         bindings: &[(usize, VarBind)],
-    ) -> Clause {
+    ) -> (Clause, ArgRegs) {
         let mut subs = Substitution::new(15);
         for (arg_id, binding) in bindings {
             subs.set_arg(*arg_id, *binding);
@@ -407,7 +358,10 @@ mod tests {
             .map(|literal| build(heap, &mut subs, meta.meta_vars(), *literal))
             .collect();
 
-        Clause::new(new_clause_literals, None, meta.max_arg_id)
+        (
+            Clause::new(new_clause_literals, None, meta.max_arg_id),
+            subs.arg_regs,
+        )
     }
 
     fn build_hypothesis<const N: usize, const M: usize>(
@@ -436,10 +390,12 @@ mod tests {
                 .enumerate()
                 .map(|(i, bind)| (i + reg_offset, bind.clone()))
                 .collect();
+            let (clause, arg_regs) = instantiate_meta_rule(heap, meta_rule, &bindings);
             h.push_clause(
-                instantiate_meta_rule(heap, meta_rule, &bindings),
+                clause,
                 Constraints::default(),
-                (meta_idx, ArgRegs::new_16()),
+                &arg_regs,
+                meta_rule.meta_data.unwrap(),
             );
         }
 

@@ -11,7 +11,7 @@ pub enum VarBind {
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct VarReg(pub(super) usize);
+pub struct VarReg(pub usize);
 
 impl Default for VarReg {
     fn default() -> Self {

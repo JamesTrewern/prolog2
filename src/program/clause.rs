@@ -50,7 +50,7 @@ impl From<Vec<usize>> for BitFlag64 {
 
 static META_CLAUSE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct MetaData {
     pub meta_vars: BitFlag64,
     pub constrained_vars: BitFlag64,

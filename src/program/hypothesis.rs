@@ -5,9 +5,12 @@ use std::{
 
 use smallvec::SmallVec;
 
-use crate::heap::{ArgRegs, Heap, VarBind::*};
+use crate::{
+    heap::{ArgRegs, Heap, VarBind::*},
+    program::clause::{BitFlag64, MetaData},
+};
 
-use super::clause::Clause;
+use super::{clause::Clause, meta_sub::MetaSub};
 
 /// Constraint set for existentially quantified variables in a learned clause.
 pub type Constraints = SmallVec<[usize; 5]>;
@@ -20,8 +23,8 @@ static PRED_N: AtomicUsize = AtomicUsize::new(0);
 /// a new first-order clause is invented and added to the hypothesis.
 #[derive(Clone)]
 pub struct Hypothesis {
-    clauses: Vec<Clause>,
-    meta_subs: Vec<(usize, ArgRegs)>,
+    pub clauses: Vec<Clause>,
+    pub meta_subs: Vec<MetaSub>,
     pub constraints: Vec<Constraints>,
     /// Var ids of predicate variables that name an invented predicate.
     ///
@@ -127,11 +130,16 @@ impl Hypothesis {
         &mut self,
         clause: Clause,
         constraints: Constraints,
-        meta_sub: (usize, ArgRegs),
+        arg_regs: &ArgRegs,
+        meta_data: MetaData,
     ) {
         self.clauses.push(clause);
         self.constraints.push(constraints);
-        self.meta_subs.push(meta_sub);
+        self.meta_subs.push(MetaSub::from_arg_regs(
+            arg_regs,
+            meta_data.id,
+            meta_data.meta_vars,
+        ));
     }
 
     pub fn pop_clause(&mut self) -> Clause {
@@ -222,8 +230,24 @@ mod invented_pred_tests {
     fn protection_withholds_invented_headed_clauses_and_keeps_the_rest() {
         let (heap, var_headed, con_headed) = heap_with_two_heads(1);
         let mut h = Hypothesis::new();
-        h.push_clause(var_headed, Constraints::new(), (0, ArgRegs::new_16()));
-        h.push_clause(con_headed, Constraints::new(), (0, ArgRegs::new_16()));
+        let meta_data = MetaData {
+            meta_vars: BitFlag64::default(),
+            constrained_vars: BitFlag64::default(),
+            id: 0,
+        };
+
+        h.push_clause(
+            var_headed,
+            Constraints::new(),
+            &ArgRegs::new_16(),
+            meta_data,
+        );
+        h.push_clause(
+            con_headed,
+            Constraints::new(),
+            &ArgRegs::new_16(),
+            meta_data,
+        );
         h.add_invented_pred(&heap, 0);
 
         let mut protected = Vec::new();
@@ -255,9 +279,20 @@ mod invented_pred_tests {
         heap.var_regs[1] = Var(0).into();
         let aliased_head = Clause::new(vec![0], None, 0);
 
+        let meta_data = MetaData {
+            meta_vars: BitFlag64::default(),
+            constrained_vars: BitFlag64::default(),
+            id: 0,
+        };
+
         let mut h = Hypothesis::new();
         h.add_invented_pred(&heap, 0);
-        h.push_clause(aliased_head, Constraints::new(), (0, ArgRegs::new_16()));
+        h.push_clause(
+            aliased_head,
+            Constraints::new(),
+            &ArgRegs::new_16(),
+            meta_data,
+        );
 
         assert!(
             h.clause_head_is_invented(&heap, &h[0]),

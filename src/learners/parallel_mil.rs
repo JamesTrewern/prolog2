@@ -70,10 +70,11 @@ impl App {
         // TODO consider more effecient method for adding pdt clauses to program
         self.prog_heap.extend_from_slice(&cells);
         for pred_def in pdt.pred_defs {
-            for clause in pred_def.clauses {
-                let symbol_arity = self.prog_heap.symbol_arity(clause.head());
-                self.predicate_table
-                    .add_clause_to_predicate(clause, symbol_arity);
+            for meta_sub in pred_def.meta_subs {
+                todo!("Build clause from meta_sub");
+                // let symbol_arity = self.prog_heap.symbol_arity(clause.head());
+                // self.predicate_table
+                //     .add_clause_to_predicate(clause, symbol_arity);
             }
         }
 
@@ -185,10 +186,8 @@ fn generalise_collector(
             }
         }
         for pred_def in &mut pred_defs {
-            for clause in &mut pred_def.clauses {
-                for literal in clause.iter_mut() {
-                    *literal += acc_heap.heap_len()
-                }
+            for meta_sub in &mut pred_def.meta_subs {
+                meta_sub.shift_addrs(acc_heap.heap_len() as isize);
             }
         }
         acc_heap.cells.append(&mut cells);
@@ -249,7 +248,7 @@ fn generalise_thread(
         if tx
             .send(HypothesisMsg {
                 cells: cells.cells,
-                h: h.into_boxed_slice(),
+                h: h.clauses.into_boxed_slice(),
                 pred_defs,
             })
             .is_err()
@@ -260,7 +259,7 @@ fn generalise_thread(
 }
 
 /// Extract cells and remap literal addrs from hypothesis
-fn extract_hypothesis_local(proof: &Proof, heap: &QueryHeap) -> (QueryHeap<'static>, Vec<Clause>) {
+fn extract_hypothesis_local(proof: &Proof, heap: &QueryHeap) -> (QueryHeap<'static>, Hypothesis) {
     let mut local_cells = QueryHeap::new(&[], None);
     let mut clauses = Vec::with_capacity(proof.hypothesis.len());
     let mut ref_map = HashMap::new();
@@ -275,8 +274,8 @@ fn extract_hypothesis_local(proof: &Proof, heap: &QueryHeap) -> (QueryHeap<'stat
             .collect();
         clauses.push(Clause::new(new_literals, None, clause.max_arg_id));
     }
-
-    (local_cells, clauses)
+    todo!();
+    // (local_cells, clauses)
 }
 
 fn extract_literal(dst: &mut Vec<Cell>, src: &QueryHeap, addr: usize) -> usize {
