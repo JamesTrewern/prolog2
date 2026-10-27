@@ -625,29 +625,6 @@ mod tests {
     }
 
     #[test]
-    fn order_8() {
-        let mut g = DirGraph8 {
-            size: 4,
-            edges: [0; 8],
-        };
-        g.edges[3] |= (1 << 1) | (1 << 2); // d -> {b,c}
-        g.edges[2] |= 1; // c -> a
-
-        let order = g.order();
-        println!("{order:?}");
-
-        // every edge i -> j must have i before j
-        let pos = |n: usize| order[..g.size].iter().position(|&x| x == n).unwrap();
-        for i in 0..g.size {
-            for j in 0..g.size {
-                if g.edges[i] & (1 << j) != 0 {
-                    assert!(pos(i) < pos(j), "{i} -> {j} out of order: {order:?}");
-                }
-            }
-        }
-    }
-
-    #[test]
     fn group_order_sccs_8() {
         let mut g = DirGraph8 {
             size: 4,

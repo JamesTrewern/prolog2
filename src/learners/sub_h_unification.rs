@@ -61,22 +61,34 @@ pub(super) fn least_sub_h(
     let max_k = greedy.len();
     eprintln!("Found full coverage from greedy with {max_k} sub hypotheses");
 
-    let groups = find_coverage_groups(&h_profiles, max_k, pos_examples.len());
-
-    //TODO filter any groups entailing negatives
-
-    Some(
-        groups
+    let groups: Vec<Vec<Clause>>;
+    let groups: Vec<Vec<Clause>> = if max_k == 1 {
+        h_profiles
+            .into_iter()
+            .filter_map(|profile| {
+                if profile.n_covered == pos_examples.len() {
+                    Some(profile.h.to_vec())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        find_coverage_groups(&h_profiles, max_k, pos_examples.len())
             .into_iter()
             .map(|indexes| {
                 indexes
                     .into_iter()
                     .map(|i| h_profiles[*i].h.clone().to_vec())
-                    .collect::<Vec<Vec<Clause>>>()
-                    .concat()
+                    .flatten()
+                    .collect()
             })
-            .collect(),
-    )
+            .collect()
+    };
+
+    //TODO filter any groups entailing negatives
+
+    Some(groups)
 }
 
 fn find_uncovered(h_profiles: &Vec<HProfile>, n_pos_examples: usize) -> Option<Vec<usize>> {
