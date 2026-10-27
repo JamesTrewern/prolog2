@@ -24,21 +24,27 @@ P(X):- Q(X,Y), R(Y), {P,Q,R}.
 <!-- embed-start: config.json -->
 ```json
 {
-    "config" : {
+    "config": {
         "max_depth": 6,
         "max_clause": 3,
         "max_pred": 1,
-        "debug": false
+        "debug": true
     },
-    "body_predicates" : [
+    "body_predicates": [
         "zero/1",
         "prev/2"
     ],
-    "examples" : {
-        "pos" : ["even(4)"],
-        "neg" : ["even(3)"]
+    "examples": {
+        "pos": [
+            "even(4)"
+        ],
+        "neg": [
+            "even(3)"
+        ]
     },
-    "files" : ["examples/odd_even/odd_even.pl"]
+    "files": [
+        "examples/odd_even/odd_even.pl"
+    ]
 }
 ```
 <!-- embed-end: config.json -->

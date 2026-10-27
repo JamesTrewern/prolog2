@@ -26,7 +26,11 @@ pub fn hypothesis_exists(solutions: &[Solution], expected_h: &[&str]) {
         .any(|solution| matching_hypothesis(solution, expected_h))
     {
         panic!(
-            "Solutions did not contain expected hypothesis:\n{}",
+            "Solutions: \n {} \ndid not contain expected hypothesis:\n{}",
+            solutions
+                .iter()
+                .map(|sol| format!("{}\n------------------", sol.hypothesis))
+                .collect::<String>(),
             expected_h
                 .iter()
                 .map(|clause| [clause, "\n"].concat())

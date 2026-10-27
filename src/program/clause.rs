@@ -61,7 +61,7 @@ pub struct MetaData {
 /// about which variables are second-order (meta) and which are constrained.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Clause {
-    literals: SmallVec<[usize; 5]>,
+    pub literals: SmallVec<[usize; 5]>,
     pub max_arg_id: usize,
     pub meta_data: Option<MetaData>,
 }

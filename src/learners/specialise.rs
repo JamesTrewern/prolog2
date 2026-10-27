@@ -34,7 +34,7 @@ pub(super) fn specialise_h(
                 continue;
             }
         };
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], hypothesis);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], hypothesis, None);
         // If any negative example is provable, reject this hypothesis
         if proof.prove(&mut query_heap, predicate_table, config) {
             return false;
@@ -69,7 +69,7 @@ pub(super) fn specialise_h_threaded(
                 panic!("Failed to parse negative example '{}': {}", example, e);
             }
         };
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], hypothesis);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], hypothesis, None);
         // If any negative example is provable, reject this hypothesis
         proof.prove(&mut query_heap, predicate_table, config)
     })

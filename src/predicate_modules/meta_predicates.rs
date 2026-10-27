@@ -31,7 +31,12 @@ pub fn not(
     // and truncate the inner allocations away so nothing dangles when the outer
     // proof later truncates the heap.
     let heap_point = heap.heap_point();
-    let mut inner_proof = Proof::with_hypothesis(heap, &[inner_goal], &hypothesis);
+    let mut inner_proof = Proof::with_hypothesis(
+        heap,
+        &[inner_goal],
+        &hypothesis,
+        Some(&hypothesis.constraints),
+    );
 
     if config.debug {
         eprintln!(

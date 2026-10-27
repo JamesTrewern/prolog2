@@ -361,7 +361,7 @@ fn specialise_thread(
                 continue;
             }
         };
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], &hypothesis);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], &hypothesis, None);
         // If any negative example is provable, reject this hypothesis
         if proof.prove(&mut query_heap, predicate_table, config) {
             return false;

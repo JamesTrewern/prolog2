@@ -202,11 +202,19 @@ impl DerefMut for PredicateTable {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
+    use smallvec::SmallVec;
+
     use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
     use crate::{
         heap::{QueryHeap, SymbolDB},
         predicate_modules::PredReturn,
-        program::{hypothesis::Hypothesis, predicate_table::FindReturn},
+        program::{
+            clause::{BitFlag64, MetaData},
+            hypothesis::Hypothesis,
+            predicate_table::FindReturn,
+        },
         Config,
     };
 
@@ -347,11 +355,13 @@ mod tests {
         let (mut pred_table, p, _q, pred_func) = setup();
         let r = SymbolDB::set_const("r");
 
+        let dummy_meta = Clause::new(vec![], Some((vec![], vec![])), 0);
+
         pred_table
-            .add_clause_to_predicate(Clause::new(vec![], Some((vec![], vec![])), 0), (p, 2))
+            .add_clause_to_predicate(dummy_meta.clone(), (p, 2))
             .unwrap();
         pred_table
-            .add_clause_to_predicate(Clause::new(vec![], Some((vec![], vec![])), 0), (r, 2))
+            .add_clause_to_predicate(dummy_meta.clone(), (r, 2))
             .unwrap();
         assert_eq!(
             pred_table.add_clause_to_predicate(
@@ -366,16 +376,12 @@ mod tests {
             Some(&Predicate::Clauses(Box::new([
                 Clause::new(vec![15, 19], None, 0),
                 Clause::new(vec![23, 27], None, 0),
-                Clause::new(vec![], Some((vec![], vec![])), 0)
+                dummy_meta.clone()
             ])))
         );
         assert_eq!(
             pred_table.get_predicate((r, 2)),
-            Some(&Predicate::Clauses(Box::new([Clause::new(
-                vec![],
-                Some((vec![], vec![])),
-                0
-            )])))
+            Some(&Predicate::Clauses(Box::new([dummy_meta])))
         );
     }
 
