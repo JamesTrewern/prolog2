@@ -69,6 +69,11 @@ impl App {
 
         // TODO consider more effecient method for adding pdt clauses to program
         self.prog_heap.extend_from_slice(&cells);
+        // Capture before the loop below consumes `pdt.pred_defs`. These are
+        // the constants that mark a body literal as calling an invented
+        // predicate rather than a background one.
+        let pred_symbols = pdt.pred_symbols().clone();
+
         for pred_def in pdt.pred_defs {
             for meta_sub in pred_def.meta_subs {
                 let clause = meta_sub
@@ -116,6 +121,7 @@ impl App {
             &self.prog_heap,
             &self.predicate_table,
             self.config,
+            &pred_symbols,
         ) else {
             println!("No Valid Hypothesis Found");
             return None;
@@ -143,7 +149,12 @@ impl App {
                 );
             }
 
-            collect_used_pred(&mut top_program, &self.prog_heap, &self.predicate_table);
+            collect_used_pred(
+                &mut top_program,
+                &self.prog_heap,
+                &self.predicate_table,
+                &pred_symbols,
+            );
             buffer.push(top_prog_to_string(top_program, &self.prog_heap));
         }
         Some(buffer)

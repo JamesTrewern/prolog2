@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{specialise::specialise_h_threaded, utils::count_coverage};
@@ -30,11 +32,21 @@ pub(super) fn least_sub_h(
     heap: &[Cell],
     predicate_table: &PredicateTable,
     config: Config,
+    pred_symbols: &HashSet<usize>,
 ) -> Option<Vec<SubHGroup>> {
     // Count coverage
     let mut h_profiles: Vec<HProfile> = hypotheses
         .into_par_iter()
-        .map(|h| HProfile::new(h, pos_examples, heap, predicate_table, config.max_depth))
+        .map(|h| {
+            HProfile::new(
+                h,
+                pos_examples,
+                heap,
+                predicate_table,
+                config.max_depth,
+                pred_symbols,
+            )
+        })
         .collect();
 
     //Ensure all positives covered by at least 1 hypothesis
@@ -297,10 +309,11 @@ impl HProfile {
         heap: &[Cell],
         predicate_table: &PredicateTable,
         max_depth: usize,
+        pred_symbols: &HashSet<usize>,
     ) -> Self {
         let (coverage, n_covered) =
             count_coverage(pos_examples, &h, heap, predicate_table, max_depth);
-        let n_clauses = count_pred_clauses(&h, heap, predicate_table) + h.len();
+        let n_clauses = count_pred_clauses(&h, heap, predicate_table, pred_symbols) + h.len();
         Self {
             h,
             coverage,

@@ -261,6 +261,15 @@ impl PredDef {
 pub struct PredDefTable {
     pub pred_defs: Vec<PredDef>,
     pub next_id: usize,
+    /// Symbol ids of the constants coined to name the predicates defined
+    /// here, recorded as each definition is inserted.
+    ///
+    /// These are what distinguishes an invented predicate from a background
+    /// one. Recognising them by symbol id -- rather than by comparing against
+    /// the id of `pred_0`, which assumes every background predicate was
+    /// interned before the first invented one -- keeps the answer correct
+    /// whatever order the symbol table happened to be filled in.
+    pred_symbols: HashSet<usize>,
 }
 
 impl PredDefTable {
@@ -284,9 +293,28 @@ impl PredDefTable {
         }
     }
 
+    /// The constants naming the predicates this table defines.
+    pub fn pred_symbols(&self) -> &HashSet<usize> {
+        &self.pred_symbols
+    }
+
     fn add_def(&mut self, mut pred_def: PredDef, insert_pos: usize, heap: &mut QueryHeap) {
         pred_def.make_const(heap, &mut self.next_id);
         self.next_id += 1;
+
+        // Read the head constants back rather than having `make_const` report
+        // them: a definition whose head was already coined -- by an earlier
+        // clause of the same mutually recursive group, or by unification
+        // against the table -- mints nothing, and its constant still names an
+        // invented predicate.
+        for meta_sub in &pred_def.meta_subs {
+            if let Some(Addr(addr)) = meta_sub.subs.first().and_then(|sub| sub.get_bind()) {
+                if let (Con, symbol) = heap[addr] {
+                    self.pred_symbols.insert(symbol);
+                }
+            }
+        }
+
         self.pred_defs.insert(insert_pos, pred_def);
     }
 

@@ -1,11 +1,11 @@
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Write},
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Index},
 };
 
 use crate::{
-    heap::{Cell, Heap, QueryHeap, SymbolDB},
+    heap::{Cell, Heap, QueryHeap, Tag::Con},
     parser::{build_clause, tokenise, TokenStream},
     program::{
         clause::Clause,
@@ -130,19 +130,49 @@ pub(super) fn union_sub_hypotheses(
     top_program
 }
 
+/// The `(symbol, arity)` of a body literal naming an invented predicate, or
+/// `None` when it names a background one.
+///
+/// Membership of `pred_symbols` is the test. The previous one -- symbol id
+/// greater than that of `pred_0` -- assumed every background predicate was
+/// interned before the first invented one. `SymbolDB` is process-global, so
+/// anything that interned `pred_0` earlier (another example in the same run,
+/// another test in the same binary) pushed the background predicates above
+/// the threshold and swept the whole fact base into the output.
+fn invented_body_pred<H>(
+    heap: &H,
+    literal: usize,
+    pred_symbols: &HashSet<usize>,
+) -> Option<(usize, usize)>
+where
+    H: Index<usize, Output = Cell> + ?Sized,
+{
+    // Only a constant can name a predicate here; an `Arg` or `Ref` cell's
+    // value is an argument id or variable id, which would collide with
+    // symbol ids by coincidence.
+    let (Con, symbol) = heap[literal + 1] else {
+        return None;
+    };
+    if !pred_symbols.contains(&symbol) {
+        return None;
+    }
+    // The `Comp` cell counts the functor as well as the arguments.
+    Some((symbol, heap[literal].1 - 1))
+}
+
 pub(super) fn collect_used_pred(
     hypothesis: &mut Vec<Clause>,
     heap: &impl Heap,
     predicate_table: &PredicateTable,
+    pred_symbols: &HashSet<usize>,
 ) {
-    let min_pred_con_id = SymbolDB::set_const("pred_0");
     let mut pred_set = HashMap::new();
     loop {
         let start_len = pred_set.len();
         for clause in hypothesis.iter() {
             for literal in clause.body() {
-                if heap[literal + 1].1 > min_pred_con_id {
-                    pred_set.insert(heap[literal + 1].1, (heap[*literal].1 - 1, false));
+                if let Some((symbol, arity)) = invented_body_pred(heap, *literal, pred_symbols) {
+                    pred_set.insert(symbol, (arity, false));
                 }
             }
         }
@@ -168,16 +198,16 @@ pub(super) fn count_pred_clauses(
     h: &Box<[Clause]>,
     heap: &[Cell],
     predicate_table: &PredicateTable,
+    pred_symbols: &HashSet<usize>,
 ) -> usize {
     let mut count = 0;
-    let min_pred_con_id = SymbolDB::set_const("pred_0");
     let mut pred_set = HashSet::new();
     let mut pred_list = Vec::new();
     for clause in h.iter() {
         for literal in clause.body() {
-            if heap[literal + 1].1 > min_pred_con_id {
-                if pred_set.insert((heap[literal + 1].1, heap[*literal].1 - 1)) {
-                    pred_list.push((heap[literal + 1].1, heap[*literal].1 - 1));
+            if let Some(symbol_arity) = invented_body_pred(heap, *literal, pred_symbols) {
+                if pred_set.insert(symbol_arity) {
+                    pred_list.push(symbol_arity);
                 }
             }
         }
@@ -190,9 +220,9 @@ pub(super) fn count_pred_clauses(
         count += clauses.len();
         for clause in clauses.iter() {
             for literal in clause.body() {
-                if heap[literal + 1].1 > min_pred_con_id {
-                    if pred_set.insert((heap[literal + 1].1, heap[*literal].1 - 1)) {
-                        pred_list.push((heap[literal + 1].1, heap[*literal].1 - 1));
+                if let Some(symbol_arity) = invented_body_pred(heap, *literal, pred_symbols) {
+                    if pred_set.insert(symbol_arity) {
+                        pred_list.push(symbol_arity);
                     }
                 }
             }
