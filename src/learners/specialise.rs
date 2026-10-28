@@ -1,4 +1,3 @@
-use super::utils::parse_example;
 use crate::{
     heap::{Cell, QueryHeap},
     program::{clause::Clause, predicate_table::PredicateTable},
@@ -9,8 +8,11 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 /// Test one hypothesis against all negative examples.
 /// Returns `true` if the hypothesis should be retained (no negative is provable).
+///
+/// `neg_goals` are addresses of goals already compiled onto `heap` by
+/// [`compile_examples`](super::utils::compile_examples).
 pub(super) fn specialise_h(
-    neg_examples: &[String],
+    neg_goals: &[usize],
     hypothesis: &[Clause],
     heap: &[Cell],
     predicate_table: &PredicateTable,
@@ -24,15 +26,8 @@ pub(super) fn specialise_h(
         protect_h_preds: config.protect_h_preds,
     };
 
-    for example in neg_examples {
+    for &goal in neg_goals {
         let mut query_heap = QueryHeap::new(heap, None);
-        let goal = match parse_example(example, &mut query_heap) {
-            Ok(g) => g,
-            Err(e) => {
-                eprintln!("Failed to parse negative example '{}': {}", example, e);
-                continue;
-            }
-        };
         let mut proof = Proof::new(&query_heap, &[goal]);
         proof.add_test_clauses(hypothesis);
         // If any negative example is provable, reject this hypothesis
@@ -45,8 +40,13 @@ pub(super) fn specialise_h(
 
 /// Test one hypothesis against all negative examples.
 /// Returns `true` if the hypothesis should be retained (no negative is provable).
+/// As [`specialise_h`], testing the negatives in parallel.
+///
+/// `par_iter().any()` stops the whole search as soon as one negative is
+/// proved, so the remaining negatives are abandoned rather than run to
+/// completion.
 pub(super) fn specialise_h_threaded(
-    neg_examples: &[String],
+    neg_goals: &[usize],
     hypothesis: &[Clause],
     heap: &[Cell],
     predicate_table: &PredicateTable,
@@ -60,14 +60,8 @@ pub(super) fn specialise_h_threaded(
         protect_h_preds: config.protect_h_preds,
     };
 
-    !neg_examples.into_par_iter().any(|example| {
+    !neg_goals.into_par_iter().any(|&goal| {
         let mut query_heap = QueryHeap::new(heap, None);
-        let goal = match parse_example(example, &mut query_heap) {
-            Ok(g) => g,
-            Err(e) => {
-                panic!("Failed to parse negative example '{}': {}", example, e);
-            }
-        };
         let mut proof = Proof::new(&query_heap, &[goal]);
         proof.add_test_clauses(hypothesis);
         // If any negative example is provable, reject this hypothesis

@@ -16,10 +16,7 @@ use crate::{
         VarBind::{Addr, Var},
         VarReg,
     },
-    learners::{
-        predicate_unification::{PredDef, PredDefTable, MAX_PRED_DEFS},
-        utils::parse_example,
-    },
+    learners::predicate_unification::{PredDef, PredDefTable, MAX_PRED_DEFS},
     program::{clause::Clause, meta_sub::MetaSub, predicate_table::PredicateTable},
     resolution::Proof,
     Config,
@@ -28,7 +25,9 @@ use crate::{
 use super::{
     specialise::specialise_h,
     sub_h_unification::least_sub_h,
-    utils::{collect_used_pred, reduce as reduce_hypothesis, union_sub_hypotheses},
+    utils::{
+        collect_used_pred, compile_examples, reduce as reduce_hypothesis, union_sub_hypotheses,
+    },
 };
 
 use lazy_static::lazy_static;
@@ -65,8 +64,14 @@ impl App {
         );
         examples.normalise_for_top_prog();
 
+        // Built once onto the program heap, then proved over and over by
+        // every stage below. Appending leaves earlier addresses valid, so the
+        // learned clauses added later do not disturb these.
+        let pos_goals = compile_examples(&examples.pos, &mut self.prog_heap);
+        let neg_goals = compile_examples(&examples.neg, &mut self.prog_heap);
+
         let (cells, mut sub_hypotheses, pdt) = generalise(
-            &examples.pos,
+            &pos_goals,
             &self.predicate_table,
             &self.prog_heap,
             self.config,
@@ -104,7 +109,7 @@ impl App {
 
         // Step 2: Specialise
         let retained = specialise(
-            &examples.neg,
+            &neg_goals,
             &sub_hypotheses,
             &self.prog_heap,
             &self.predicate_table,
@@ -126,8 +131,8 @@ impl App {
 
         // Build final top program from surviving hypotheses
         let Some(groups) = least_sub_h(
-            &examples.pos,
-            &examples.neg,
+            &pos_goals,
+            &neg_goals,
             sub_hypotheses,
             &self.prog_heap,
             &self.predicate_table,
@@ -151,7 +156,7 @@ impl App {
             // them as redundant.
             if reduce {
                 top_program = reduce_hypothesis(
-                    &examples.pos,
+                    &pos_goals,
                     top_program,
                     &self.prog_heap,
                     &self.predicate_table,
@@ -178,7 +183,7 @@ impl App {
 type ThreadResult = (Vec<Box<[Clause]>>, Vec<PredDef>, (Vec<Cell>, Vec<VarReg>));
 
 fn generalise(
-    pos_examples: &[String],
+    pos_goals: &[usize],
     predicate_table: &PredicateTable,
     heap: &[Cell],
     config: Config,
@@ -189,7 +194,7 @@ fn generalise(
         .unwrap();
 
     let (tx, rx) = mpsc::channel();
-    let total = pos_examples.len();
+    let total = pos_goals.len();
     let completed = Arc::new(AtomicUsize::new(0));
     // The merge loop reports on the producers as well as itself, so it needs
     // its own handle on the counter: one writer to the status line, since
@@ -201,11 +206,11 @@ fn generalise(
     let result = thread::scope(|scope| {
         scope.spawn(move || {
             pool.scope(|s| {
-                for example in pos_examples {
+                for &goal in pos_goals {
                     let tx = tx.clone();
                     let completed = Arc::clone(&completed);
                     s.spawn(move |_| {
-                        let result = generalise_thread(example, predicate_table, heap, config);
+                        let result = generalise_thread(goal, predicate_table, heap, config);
                         // Counted before the send so the status line can never
                         // show more results merged than generalised.
                         completed.fetch_add(1, Ordering::Relaxed);
@@ -342,7 +347,7 @@ fn dedup_key(clauses: &[Clause], heap: &impl Heap) -> String {
 /// heap that both rely on. See [`extract_hypothesis`] for how a single
 /// proof's hypothesis is folded into this thread-local heap.
 fn generalise_thread(
-    example: &str,
+    goal: usize,
     predicate_table: &PredicateTable,
     prog_heap: &[Cell],
     config: Config,
@@ -353,13 +358,6 @@ fn generalise_thread(
     let mut pred_defs = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    let goal = match parse_example(example, &mut query_heap) {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("Failed to parse example '{}': {}", example, e);
-            return (clause_sets, pred_defs, (dst.cells, dst.var_regs));
-        }
-    };
     let mut proof = Proof::new(&query_heap, &[goal]);
 
     while proof.prove(&mut query_heap, predicate_table, config) {
@@ -470,7 +468,7 @@ fn clone_var_reg(
 }
 
 fn specialise(
-    neg_examples: &[String],
+    neg_goals: &[usize],
     hypotheses: &[Box<[Clause]>],
     heap: &[Cell],
     predicate_table: &PredicateTable,
@@ -500,7 +498,7 @@ fn specialise(
             let tx = tx.clone();
             let completed = completed.clone();
             s.spawn(move |_| {
-                let keep = specialise_h(neg_examples, hypothesis, heap, predicate_table, config);
+                let keep = specialise_h(neg_goals, hypothesis, heap, predicate_table, config);
                 let _ = tx.send((idx, keep));
                 let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                 eprint!("\rSpecialise: {done}/{total} hypotheses tested");

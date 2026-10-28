@@ -4,7 +4,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{specialise::specialise_h_threaded, utils::count_coverage};
 use crate::{
-    heap::Cell,
+    heap::{Cell, Heap, QueryHeap},
     learners::utils::{count_pred_clauses, Coverage},
     program::{clause::Clause, predicate_table::PredicateTable},
     Config,
@@ -26,8 +26,8 @@ pub(super) type SubHGroup = Vec<Vec<Clause>>;
 /// and no negatives
 /// with the fewest possible sub h
 pub(super) fn least_sub_h(
-    pos_examples: &[String],
-    neg_examples: &[String],
+    pos_goals: &[usize],
+    neg_goals: &[usize],
     hypotheses: Vec<Box<[Clause]>>,
     heap: &[Cell],
     predicate_table: &PredicateTable,
@@ -40,7 +40,7 @@ pub(super) fn least_sub_h(
         .map(|h| {
             HProfile::new(
                 h,
-                pos_examples,
+                pos_goals,
                 heap,
                 predicate_table,
                 config.max_depth,
@@ -50,17 +50,17 @@ pub(super) fn least_sub_h(
         .collect();
 
     //Ensure all positives covered by at least 1 hypothesis
-    if let Some(uncovered) = find_uncovered(&h_profiles, pos_examples.len()) {
+    if let Some(uncovered) = find_uncovered(&h_profiles, pos_goals.len()) {
         println!("Some positve examples uncovered:");
+        let heap = QueryHeap::new(heap, None);
         for i in uncovered {
-            println!("\t{}", pos_examples[i])
+            println!("\t{}", heap.term_string(pos_goals[i]))
         }
         return None;
     }
 
     // Sort by coverage count and clause count
-    h_profiles
-        .sort_by_key(|h_profile| (pos_examples.len() - h_profile.n_covered, h_profile.h.len()));
+    h_profiles.sort_by_key(|h_profile| (pos_goals.len() - h_profile.n_covered, h_profile.h.len()));
     // Filter any profiles whose coverage is a subset of another profile
     filter_coverage_sub_sets(&mut h_profiles);
 
@@ -75,7 +75,7 @@ pub(super) fn least_sub_h(
         h_profiles
             .into_iter()
             .filter_map(|profile| {
-                if profile.n_covered == pos_examples.len() {
+                if profile.n_covered == pos_goals.len() {
                     Some(vec![profile.h.to_vec()])
                 } else {
                     None
@@ -86,8 +86,8 @@ pub(super) fn least_sub_h(
         find_coverage_groups(
             &h_profiles,
             max_k,
-            pos_examples.len(),
-            neg_examples,
+            pos_goals.len(),
+            neg_goals,
             heap,
             predicate_table,
             config,
@@ -170,7 +170,7 @@ fn find_coverage_groups(
     h_profiles: &[HProfile],
     max_k: usize,
     n_pos_examples: usize,
-    neg_examples: &[String],
+    neg_goals: &[usize],
     heap: &[Cell],
     predicate_table: &PredicateTable,
     config: Config,
@@ -225,7 +225,7 @@ fn find_coverage_groups(
             if group_entails_negative(
                 h_profiles,
                 &group[..=depth],
-                neg_examples,
+                neg_goals,
                 heap,
                 predicate_table,
                 config,
@@ -262,7 +262,7 @@ fn find_coverage_groups(
 fn group_entails_negative(
     h_profiles: &[HProfile],
     group: &[usize],
-    neg_examples: &[String],
+    neg_goals: &[usize],
     heap: &[Cell],
     predicate_table: &PredicateTable,
     config: Config,
@@ -271,7 +271,7 @@ fn group_entails_negative(
         .iter()
         .flat_map(|&i| h_profiles[i].h.iter().cloned())
         .collect();
-    !specialise_h_threaded(neg_examples, &combined, heap, predicate_table, config)
+    !specialise_h_threaded(neg_goals, &combined, heap, predicate_table, config)
 }
 
 /// Search coverage profiles for next valid index, None if no valid
@@ -305,14 +305,13 @@ struct HProfile {
 impl HProfile {
     fn new(
         h: Box<[Clause]>,
-        pos_examples: &[String],
+        pos_goals: &[usize],
         heap: &[Cell],
         predicate_table: &PredicateTable,
         max_depth: usize,
         pred_symbols: &HashSet<usize>,
     ) -> Self {
-        let (coverage, n_covered) =
-            count_coverage(pos_examples, &h, heap, predicate_table, max_depth);
+        let (coverage, n_covered) = count_coverage(pos_goals, &h, heap, predicate_table, max_depth);
         let n_clauses = count_pred_clauses(&h, heap, predicate_table, pred_symbols) + h.len();
         Self {
             h,
@@ -328,7 +327,7 @@ mod coverage_group_tests {
     use super::{find_coverage_groups, HProfile};
     use crate::{
         heap::Cell,
-        learners::utils::Coverage,
+        learners::utils::{compile_examples, Coverage},
         parser::_build_clause,
         program::{clause::Clause, predicate_table::PredicateTable},
         Config,
@@ -372,6 +371,7 @@ mod coverage_group_tests {
         let rule = _build_clause(&mut prog_heap, "p(X):-r(X).");
         let bad_fact = _build_clause(&mut prog_heap, "r(c).");
         let good_fact = _build_clause(&mut prog_heap, "r(d).");
+        let neg_goals = compile_examples(&["p(c).".to_string()], &mut prog_heap);
 
         // Two positives: profile 0 covers the first, profiles 1 and 2 the
         // second, so either pairing is a complete cover.
@@ -386,7 +386,7 @@ mod coverage_group_tests {
             &h_profiles,
             2,
             2,
-            &["p(c).".to_string()],
+            &neg_goals,
             &prog_heap,
             &predicate_table,
             config(),

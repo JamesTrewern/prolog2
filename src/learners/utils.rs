@@ -70,18 +70,52 @@ impl Coverage {
     }
 }
 
-/// Parse a single example string into a goal on the given query heap.
-pub(super) fn parse_example(example: &str, query_heap: &mut QueryHeap) -> Result<usize, String> {
-    let literals = TokenStream::new(tokenise(example).map_err(|e| e.to_string())?)
-        .parse_goals()
-        .map_err(|e| format!("Example '{example}' incorrectly formatted: {e}"))?;
-    let heap_id = query_heap.id;
-    let clause = build_clause(literals, None, query_heap, Some(heap_id));
-    Ok(clause[0])
+/// Compile every example onto the program heap once, returning each one's
+/// goal address.
+///
+/// Learning proves the examples over and over -- every negative against every
+/// hypothesis during specialisation, every positive again for coverage and
+/// again for reduction -- and each proof used to re-tokenise and rebuild the
+/// goal on its own query heap. The terms are identical every time, so they
+/// are built once here instead and the proofs are handed addresses.
+///
+/// This works because a ground goal needs nothing per-proof. A `Ref` cell
+/// holds a variable id rather than a heap address, so the only per-proof
+/// state a term needs is its variable registers, and a ground goal has none.
+/// An example containing a variable would need a register per proof and so
+/// cannot be shared this way.
+pub(super) fn compile_examples(examples: &[String], heap: &mut Vec<Cell>) -> Vec<usize> {
+    examples
+        .iter()
+        .map(|example| {
+            let literals = match TokenStream::new(
+                tokenise(example).unwrap_or_else(|e| panic!("Example '{example}': {e}")),
+            )
+            .parse_goals()
+            {
+                Ok(literals) => literals,
+                Err(e) => panic!("Example '{example}' incorrectly formatted: {e}"),
+            };
+
+            let mut vars = Vec::new();
+            for literal in &literals {
+                literal.extract_vars(&mut vars);
+            }
+            if !vars.is_empty() {
+                todo!(
+                    "example '{example}' contains the variable(s) {vars:?}; only ground \
+                     examples can be compiled onto the shared program heap, because a \
+                     variable needs a register per proof"
+                );
+            }
+
+            build_clause(literals, None, heap, None)[0]
+        })
+        .collect()
 }
 /// Count how many positive examples a set of clauses can prove.
 pub(super) fn count_coverage(
-    pos_examples: &[String],
+    pos_goals: &[usize],
     clauses: &[Clause],
     heap: &[Cell],
     predicate_table: &PredicateTable,
@@ -94,20 +128,17 @@ pub(super) fn count_coverage(
         protect_h_preds: false,
     };
 
-    let mut coverage = Coverage::from_len(pos_examples.len());
+    let mut coverage = Coverage::from_len(pos_goals.len());
 
-    for (i, example) in pos_examples.into_iter().enumerate() {
+    for (i, &goal) in pos_goals.iter().enumerate() {
         let mut query_heap = QueryHeap::new(heap, None);
-        let Ok(goal) = parse_example(example, &mut query_heap) else {
-            panic!("Could not parse example {example}");
-        };
         let mut proof = Proof::new(&query_heap, &[goal]);
         proof.add_test_clauses(clauses);
         if proof.prove(&mut query_heap, predicate_table, config) {
             coverage.set(i);
         }
     }
-    let count = coverage.count(pos_examples.len());
+    let count = coverage.count(pos_goals.len());
     (coverage, count)
 }
 
@@ -235,7 +266,7 @@ pub(super) fn count_pred_clauses(
 /// Sequentially tries removing each clause; if all positives are still provable
 /// without it, the clause is redundant and permanently removed.
 pub(super) fn reduce(
-    pos_examples: &[String],
+    pos_goals: &[usize],
     mut hypothesis: Vec<Clause>,
     heap: &[Cell],
     predicate_table: &PredicateTable,
@@ -270,12 +301,8 @@ pub(super) fn reduce(
         let c = hypothesis.remove(i);
 
         // Check if all positive examples are still provable without clause i
-        let redundant = pos_examples.iter().all(|example| {
+        let redundant = pos_goals.iter().all(|&goal| {
             let mut query_heap = QueryHeap::new(heap, None);
-            let goal = match parse_example(example, &mut query_heap) {
-                Ok(g) => g,
-                Err(_) => return true, // skip unparseable examples
-            };
             let mut proof = Proof::new(&query_heap, &[goal]);
             proof.add_test_clauses(&hypothesis);
             proof.prove(&mut query_heap, predicate_table, config)
