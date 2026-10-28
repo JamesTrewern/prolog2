@@ -260,7 +260,6 @@ wheels(car_94,2).
     "config": {
         "max_depth": 5,
         "max_clause": 2,
-        "max_pred": 1,
         "debug": false
     },
 

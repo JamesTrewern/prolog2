@@ -20,9 +20,12 @@ pub struct Config {
     /// Maximum proof search depth.
     pub max_depth: usize,
     /// Maximum number of learned clauses per hypothesis.
+    ///
+    /// This bounds predicate invention too, rather than a separate setting:
+    /// every invented predicate needs at least one clause of its own on top
+    /// of the clause that uses it, so a hypothesis can hold at most
+    /// `max_clause - 1` of them.
     pub max_clause: usize,
-    /// Maximum number of invented predicates.
-    pub max_pred: usize,
     /// Enable debug trace output.
     #[serde(default)]
     pub debug: bool,
@@ -72,7 +75,6 @@ impl Default for Config {
         Self {
             max_depth: 100,
             max_clause: 4,
-            max_pred: 2,
             debug: false,
             protect_h_preds: protect_h_preds_default(),
         }

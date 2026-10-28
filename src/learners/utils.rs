@@ -90,7 +90,6 @@ pub(super) fn count_coverage(
     let config = Config {
         max_depth,
         max_clause: 0,
-        max_pred: 0,
         debug: false,
         protect_h_preds: false,
     };
@@ -216,7 +215,6 @@ pub(super) fn reduce(
     let config = Config {
         max_depth: config.max_depth,
         max_clause: 0,
-        max_pred: 0,
         debug: false,
         protect_h_preds: config.protect_h_preds,
     };

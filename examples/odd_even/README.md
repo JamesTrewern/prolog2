@@ -27,7 +27,6 @@ P(X):- Q(X,Y), R(Y), {P,Q,R}.
     "config": {
         "max_depth": 6,
         "max_clause": 3,
-        "max_pred": 1,
         "debug": true
     },
     "body_predicates": [

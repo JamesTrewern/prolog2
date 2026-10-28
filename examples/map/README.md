@@ -22,7 +22,6 @@ double(X,Y):-
     "config" : {
         "max_depth": 5,
         "max_clause": 0,
-        "max_pred": 0,
         "debug": false
     },
     "body_predicates" : [
@@ -71,7 +70,6 @@ add(X,Y,Z):- Z is X + Y.
     "config" : {
         "max_depth": 5,
         "max_clause": 3,
-        "max_pred": 1,
         "debug": false
     },
     "body_predicates" : [

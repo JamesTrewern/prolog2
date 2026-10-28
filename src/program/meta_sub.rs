@@ -109,6 +109,15 @@ impl MetaSub {
             } else {
                 Addr(msub2.value())
             };
+            // Two different registers can still resolve to the same thing --
+            // typically because an earlier position in this very loop aliased
+            // one to the other. Binding then would make a variable point at
+            // itself, and `var_deref` follows variable links until it reaches
+            // something that is not one, so the next dereference would spin
+            // forever.
+            if b1 == b2 {
+                continue;
+            }
             match (b1, b2) {
                 (Var(var_id), other) | (other, Var(var_id)) => {
                     binding.push(var_id);
@@ -422,6 +431,54 @@ mod tests {
             // Shared var was already equal on both sides, so it's left untouched
             assert_eq!(heap.var_deref(shared), Var(shared));
         }
+    }
+
+    /// Two positions naming the same variable on each side.
+    ///
+    /// Position 0 aliases the two variables together, so at position 1 both
+    /// registers resolve to the same variable. Binding it to itself would
+    /// make `var_deref` -- which follows variable links until it reaches
+    /// something that is not one -- loop forever on the next dereference, so
+    /// this test hangs rather than fails if the guard is removed.
+    #[test]
+    fn repeated_variable_pair_does_not_self_bind() {
+        let prog_heap: Vec<Cell> = vec![];
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let var_a = heap.new_var(VarReg::UNBOUND);
+        let var_b = heap.new_var(VarReg::UNBOUND);
+
+        let lhs = fresh_meta_sub(0, vec![VarReg::from_var(var_a), VarReg::from_var(var_a)]);
+        let rhs = fresh_meta_sub(0, vec![VarReg::from_var(var_b), VarReg::from_var(var_b)]);
+
+        let binding = lhs
+            .unify(&rhs, &mut heap)
+            .expect("a variable repeated on both sides should unify with itself");
+
+        assert_eq!(binding, vec![var_a], "only the first position binds");
+        assert_eq!(heap.var_deref(var_a), Var(var_b));
+        assert_eq!(heap.var_deref(var_b), Var(var_b));
+    }
+
+    /// The same shape, but the repeated variable meets an address the second
+    /// time: the alias from position 0 must be followed to the live variable.
+    #[test]
+    fn repeated_variable_against_addr_follows_the_alias() {
+        let prog_heap: Vec<Cell> = vec![];
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let addr_p = make_addr(&mut heap, "p");
+        let var_a = heap.new_var(VarReg::UNBOUND);
+        let var_b = heap.new_var(VarReg::UNBOUND);
+
+        let lhs = fresh_meta_sub(0, vec![VarReg::from_var(var_a), VarReg::from_var(var_a)]);
+        let rhs = fresh_meta_sub(0, vec![VarReg::from_var(var_b), VarReg::from_addr(addr_p)]);
+
+        let binding = lhs
+            .unify(&rhs, &mut heap)
+            .expect("the aliased variable should take the address");
+
+        assert_eq!(binding, vec![var_a, var_b]);
+        assert_eq!(heap.var_deref(var_a), Addr(addr_p));
+        assert_eq!(heap.var_deref(var_b), Addr(addr_p));
     }
 
     #[test]

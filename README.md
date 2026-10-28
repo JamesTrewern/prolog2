@@ -62,8 +62,7 @@ Configured in a JSON file (default: `setup.json`):
 {
     "config" : {
         "max_depth": 20,
-        "max_clause": 4,
-        "max_pred": 2
+        "max_clause": 4
     },
 
     "body_predicates" : ["dad/2","mum/2"],
@@ -80,8 +79,7 @@ Configured in a JSON file (default: `setup.json`):
 ```
 `config` is used by the solver, to limit the possible search size.<br>
 `max_depth`: how many sub_goals deep the solver is allowed to go.<br>
-`max_clause`: number of clauses that can be added to hypothesis.<br>
-`max_pred`: number of invented predicates within the hypothesis.<br>
+`max_clause`: number of clauses that can be added to hypothesis. This also bounds predicate invention, which has no setting of its own: an invented predicate needs a clause defining it on top of the clause that calls it, so a hypothesis can hold at most `max_clause - 1` invented predicates.<br>
 
 `examples`, `auto`, `top_prog`, and `reduce` are all optional fields.
 
@@ -107,8 +105,7 @@ The reduction step is turned off by default (useful for profiling or inspecting 
 {
     "config" : {
         "max_depth": 5,
-        "max_clause": 2,
-        "max_pred": 1
+        "max_clause": 2
     },
     "body_predicates" : [
         "short/1",
@@ -178,7 +175,6 @@ We must then define our learning parameters in a config file
     "config" : {
         "max_depth": 10,
         "max_clause": 4,
-        "max_pred": 1,
         "debug": false
     },
     "body_predicates" : [
@@ -235,7 +231,6 @@ double(X,Y):-
     "config" : {
         "max_depth": 10,
         "max_clause": 0,
-        "max_pred": 0,
         "debug": false
     },
     "body_predicates" : ["double/2"],

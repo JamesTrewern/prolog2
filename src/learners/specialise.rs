@@ -20,7 +20,6 @@ pub(super) fn specialise_h(
     let config = Config {
         max_depth: config.max_depth,
         max_clause: 0,
-        max_pred: 0,
         debug: false,
         protect_h_preds: config.protect_h_preds,
     };
@@ -57,7 +56,6 @@ pub(super) fn specialise_h_threaded(
     let config = Config {
         max_depth: config.max_depth,
         max_clause: 0,
-        max_pred: 0,
         debug: false,
         protect_h_preds: config.protect_h_preds,
     };

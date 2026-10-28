@@ -11,7 +11,6 @@ use crate::{
         Heap, QueryHeap, SymbolDB,
         Tag::*,
         VarBind::{Addr, Var},
-        VarReg,
     },
     program::{clause::Clause, meta_sub::MetaSub},
     utils::{DirGraph8, FindReturn},
@@ -58,33 +57,62 @@ impl PredDef {
         }
     }
 
-    /// Update variable predicates in predicate defintion
-    /// to a newly coined constant predicate symbol
+    /// Ground every substitution in this definition, coining a fresh constant
+    /// for the predicate it defines.
+    ///
+    /// Only the first substitution of each `MetaSub` can need a new constant.
+    /// That position is the functor of the clause head -- the predicate this
+    /// definition defines -- and it is the only variable the definition itself
+    /// introduces. Every other position is a body predicate, and a definition
+    /// is only inserted once the definitions it depends on are already in the
+    /// table (see [`Self::extract_pred_defs_from_h`], which orders them), so
+    /// by now those are bound to the constants coined for *their* heads.
+    ///
+    /// Body positions are still rewritten from `Var` to the address they
+    /// dereference to. Leaving them as variable registers would strand them:
+    /// the merge loop resets its variable window after each worker result, so
+    /// a stored `Var` would later read back unbound and unify with anything.
+    ///
+    /// An unbound body position means a definition reached the table before
+    /// the one it depends on, which the debug assertion below reports rather
+    /// than papering over by coining a constant for a predicate that already
+    /// has one.
     pub fn make_const(&mut self, heap: &mut impl Heap, next_id: &mut usize) {
-        // Extract var pred in clause heads
-        let mut var_pred_ids: HashMap<usize, VarReg> = HashMap::new(); // Map from var_id to new const id
-
-        //coin new const for all vars in metasubs
+        // Heads first, across every clause. A mutually recursive group is
+        // collected into a single definition, so one clause's body predicate
+        // may be the head of a *later* clause in this same definition; coining
+        // clause by clause would meet that body before its head.
         for meta_sub in self.iter_mut() {
-            for var_reg in &mut meta_sub.subs {
-                if let Var(var_id) = var_reg.get_bind().unwrap() {
-                    match heap.var_deref(var_id) {
-                        Var(var_id) => {
-                            match var_pred_ids.get(&var_id) {
-                                Some(new_reg_value) => *var_reg = *new_reg_value, //Var bound in previous meta_sub
-                                None => {
-                                    let pred_symbol =
-                                        SymbolDB::set_const(format!("pred_{next_id}"));
-                                    let addr = heap.heap_push((Con, pred_symbol));
-                                    var_pred_ids.insert(var_id, Addr(addr).into());
-                                    *next_id += 1;
-                                    heap.bind(var_id, Addr(addr));
-                                    *var_reg = Addr(addr).into()
-                                }
-                            }
-                        }
-                        value => *var_reg = value.into(),
+            let Some(head) = meta_sub.subs.first_mut() else {
+                continue;
+            };
+            if let Some(Var(var_id)) = head.get_bind() {
+                match heap.var_deref(var_id) {
+                    // Already coined -- by an earlier clause of this same
+                    // definition, or by unification against the table.
+                    bound @ Addr(_) => *head = bound.into(),
+                    Var(var_id) => {
+                        let pred_symbol = SymbolDB::set_const(format!("pred_{next_id}"));
+                        let addr = heap.heap_push((Con, pred_symbol));
+                        *next_id += 1;
+                        heap.bind(var_id, Addr(addr));
+                        *head = Addr(addr).into();
                     }
+                }
+            }
+        }
+
+        for meta_sub in self.iter_mut() {
+            for var_reg in meta_sub.subs.iter_mut().skip(1) {
+                if let Some(Var(var_id)) = var_reg.get_bind() {
+                    let bound = heap.var_deref(var_id);
+                    debug_assert!(
+                        matches!(bound, Addr(_)),
+                        "body predicate variable {var_id} is still unbound while grounding the \
+                         definition that uses it: it is neither defined by this definition nor \
+                         already in the table, so the two were inserted in the wrong order"
+                    );
+                    *var_reg = bound.into();
                 }
             }
         }
@@ -347,7 +375,7 @@ mod tests {
             VarBind::{self, *},
             VarReg,
         },
-        learners::predicate_unification::PredDefTable,
+        learners::predicate_unification::{PredDef, PredDefTable},
         parser::_build_clause,
         program::{
             clause::Clause,
@@ -432,6 +460,283 @@ mod tests {
             println!("{}", c.to_string(heap))
         }
         println!("=====================");
+    }
+
+    /// No two entries in the table may unify with each other.
+    ///
+    /// Every entry has been through `make_const`, so all of its substitutions
+    /// are addresses and `unify` degenerates to a structural comparison that
+    /// binds nothing -- making this safe to run pairwise over a finished
+    /// table. A pair that does unify is a definition that should have been
+    /// merged into an existing entry when it was inserted, and each one that
+    /// escapes mints another `pred_N` and fragments every hypothesis
+    /// mentioning it.
+    fn assert_table_has_no_duplicates(pdt: &PredDefTable, heap: &mut QueryHeap) {
+        for i in 0..pdt.pred_defs.len() {
+            for j in (i + 1)..pdt.pred_defs.len() {
+                assert!(
+                    !pdt.pred_defs[i].unify(&pdt.pred_defs[j], heap),
+                    "table entries {i} and {j} unify, so one of them is a duplicate"
+                );
+            }
+        }
+    }
+
+    /// Two hypotheses inventing the same predicate under different variables
+    /// must collapse to a single table entry.
+    #[test]
+    fn identical_definitions_collapse_to_one_entry() {
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+
+        let mut h1 = build_hypothesis(
+            meta_rules,
+            [(0, &[Addr(p), Var(0)]), (1, &[Var(0), Addr(q), Addr(r)])],
+            &mut heap,
+        );
+        let mut h2 = build_hypothesis(
+            meta_rules,
+            [(0, &[Addr(p), Var(1)]), (1, &[Var(1), Addr(q), Addr(r)])],
+            &mut heap,
+        );
+
+        let mut pdt = PredDefTable::default();
+        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+
+        assert_eq!(
+            pdt.pred_defs.len(),
+            1,
+            "both hypotheses invent the same predicate"
+        );
+        assert_eq!(heap.var_deref(0), heap.var_deref(1));
+        assert_table_has_no_duplicates(&pdt, &mut heap);
+    }
+
+    /// Definitions that genuinely differ must stay separate, and each must
+    /// get its own coined constant.
+    #[test]
+    fn differing_definitions_stay_separate() {
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r, s] = get_const_ids(["p", "q", "r", "s"]);
+        let [p, q, r, s] = [p, q, r, s].map(|con_id| heap.heap_push((Con, con_id)));
+
+        // Var_0 is q-then-r, Var_1 is q-then-s: different definitions.
+        let mut h1 = build_hypothesis(
+            meta_rules,
+            [(0, &[Addr(p), Var(0)]), (1, &[Var(0), Addr(q), Addr(r)])],
+            &mut heap,
+        );
+        let mut h2 = build_hypothesis(
+            meta_rules,
+            [(0, &[Addr(p), Var(1)]), (1, &[Var(1), Addr(q), Addr(s)])],
+            &mut heap,
+        );
+
+        let mut pdt = PredDefTable::default();
+        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+
+        assert_eq!(pdt.pred_defs.len(), 2);
+        assert_ne!(heap.var_deref(0), heap.var_deref(1));
+        assert_table_has_no_duplicates(&pdt, &mut heap);
+    }
+
+    /// A two-clause definition must merge regardless of the order its clauses
+    /// happen to be found in -- `PredDef::unify` searches for a pairing
+    /// rather than comparing position by position.
+    #[test]
+    fn clause_order_within_a_definition_does_not_matter() {
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+
+        let mut h1 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)]),
+                (1, &[Var(0), Addr(q), Addr(r)]),
+                (1, &[Var(0), Addr(r), Addr(q)]),
+            ],
+            &mut heap,
+        );
+        // Same two clauses, discovered the other way round.
+        let mut h2 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(1)]),
+                (1, &[Var(1), Addr(r), Addr(q)]),
+                (1, &[Var(1), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+
+        let mut pdt = PredDefTable::default();
+        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+
+        assert_eq!(
+            pdt.pred_defs.len(),
+            1,
+            "the same two clauses in the other order are the same definition"
+        );
+        assert_table_has_no_duplicates(&pdt, &mut heap);
+    }
+
+    /// The head predicate variable each definition defines, in the order the
+    /// definitions were returned.
+    fn definition_heads(defs: &[PredDef]) -> Vec<usize> {
+        defs.iter()
+            .map(|def| match def.meta_subs[0].subs[0].get_bind() {
+                Some(Var(var_id)) => var_id,
+                other => panic!("expected an unbound head predicate variable, got {other:?}"),
+            })
+            .collect()
+    }
+
+    /// A definition whose body names another invented predicate must be
+    /// inserted into the table *after* that predicate's own definition.
+    ///
+    /// Until the dependency is inserted its head variable is unbound, and an
+    /// unbound variable unifies with anything -- so a dependent inserted first
+    /// can match the wrong definition in the table and bind the shared
+    /// variable to the wrong coined constant.
+    ///
+    /// Hypothesis
+    ///     p(X,Y):- Var_0(X,Y).      (constant head, not a definition)
+    ///     Var_0(X,Y):- Var_1(X,Y).  (depends on Var_1)
+    ///     Var_1(X,Y):- q(X), r(Y).
+    #[test]
+    fn dependencies_are_defined_before_their_dependents() {
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+
+        let mut h = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)]),
+                (0, &[Var(0), Var(1)]),
+                (1, &[Var(1), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+
+        let defs = PredDef::extract_pred_defs_from_h(&mut h.clauses, &mut h.meta_subs, &heap);
+
+        assert_eq!(
+            definition_heads(&defs),
+            vec![1, 0],
+            "Var_1 is named in Var_0's body, so Var_1 must be defined first"
+        );
+    }
+
+    /// The same requirement when the dependency is recursive.
+    ///
+    /// Self-recursion puts a cycle in the dependency graph, which sends
+    /// `extract_pred_defs_from_h` down `ordered_cyclic_groups` instead of
+    /// `order`. The two used to sort in opposite directions, so adding a
+    /// single recursive clause silently reversed the insertion order.
+    ///
+    /// Hypothesis
+    ///     p(X,Y):- Var_0(X,Y).
+    ///     Var_0(X,Y):- Var_1(X,Y).
+    ///     Var_1(X,Y):- Var_1(X,Y).
+    #[test]
+    fn a_recursive_dependency_is_still_defined_first() {
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta_rules = [(&meta0, 2)];
+
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p] = get_const_ids(["p"]);
+        let [p] = [p].map(|con_id| heap.heap_push((Con, con_id)));
+
+        let mut h = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)]),
+                (0, &[Var(0), Var(1)]),
+                (0, &[Var(1), Var(1)]),
+            ],
+            &mut heap,
+        );
+
+        let defs = PredDef::extract_pred_defs_from_h(&mut h.clauses, &mut h.meta_subs, &heap);
+
+        assert_eq!(
+            definition_heads(&defs),
+            vec![1, 0],
+            "the recursive predicate must be defined before the one using it"
+        );
+    }
+
+    /// Inserting in that order is what grounds the shared variable: by the
+    /// time the dependent is inserted, the body predicate it names already
+    /// derefs to the constant coined for the dependency's head.
+    #[test]
+    fn inserting_in_order_grounds_the_shared_variable() {
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+
+        let mut h = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)]),
+                (0, &[Var(0), Var(1)]),
+                (1, &[Var(1), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+
+        let mut pdt = PredDefTable::default();
+        pdt.extract_pred_defs_from_h(&mut h.clauses, &mut h.meta_subs, &mut heap);
+
+        // Both variables are now ground, and to *different* predicates: Var_0
+        // is the caller, Var_1 the callee.
+        let (Addr(var0), Addr(var1)) = (heap.var_deref(0), heap.var_deref(1)) else {
+            panic!("every invented predicate should be bound to a coined constant");
+        };
+        assert_ne!(heap[var0], heap[var1]);
+
+        // The body position of Var_0's definition names exactly the constant
+        // coined for Var_1's head.
+        let var_0_def = pdt
+            .pred_defs
+            .iter()
+            .find(|def| matches!(def.meta_subs[0].subs[0].get_bind(), Some(Addr(a)) if heap[a] == heap[var0]))
+            .expect("Var_0 should have a definition in the table");
+        let Some(Addr(body)) = var_0_def.meta_subs[0].subs[1].get_bind() else {
+            panic!("the body predicate should be ground");
+        };
+        assert_eq!(heap[body], heap[var1]);
     }
 
     /// Hypothesis 1

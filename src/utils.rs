@@ -192,9 +192,14 @@ impl DirGraph8 {
             //one bit set per group
             row.1 &= reps;
             //count edges to groups
-            row.1 = row.1.count_zeros() as u8
+            row.1 = row.1.count_ones() as u8
         }
 
+        // Fewest dependencies first, matching [`Self::order`]. Callers rely on
+        // a node appearing after everything it points at: the predicate
+        // definition table inserts definitions in this order so that a body
+        // predicate variable is already bound to a coined constant by the time
+        // the definition referring to it is inserted.
         groups_r[..size].sort_unstable_by_key(|&(_, c)| c);
         let groups: [u8; 8] = groups_r.map(|(g, _)| g);
         Some(Self {
@@ -574,7 +579,8 @@ mod tests {
         };
         assert_eq!(groups.size, 2);
 
-        assert_eq!(groups[..groups.size], [0b0011, 0b1100]);
+        // {c,d} depends on nothing, {a,b} depends on it, so {c,d} comes first.
+        assert_eq!(groups[..groups.size], [0b1100, 0b0011]);
 
         let mut g = DirGraph8 {
             size: 5,
@@ -593,6 +599,7 @@ mod tests {
         };
         assert_eq!(groups.size, 3);
 
-        assert_eq!(groups[..groups.size], [0b10000, 0b1100, 0b0011]);
+        // e depends on {c,d}, which depends on {a,b}: dependencies first.
+        assert_eq!(groups[..groups.size], [0b0011, 0b1100, 0b10000]);
     }
 }

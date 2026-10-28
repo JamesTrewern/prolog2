@@ -325,7 +325,6 @@ mod coverage_group_tests {
         Config {
             max_depth: 10,
             max_clause: 0,
-            max_pred: 0,
             debug: false,
             protect_h_preds: false,
         }

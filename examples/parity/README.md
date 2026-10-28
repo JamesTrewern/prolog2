@@ -38,7 +38,6 @@ q(odd).
     "config" : {
         "max_depth": 10,
         "max_clause": 4,
-        "max_pred": 0,
         "debug": false
     },
     "body_predicates" : [

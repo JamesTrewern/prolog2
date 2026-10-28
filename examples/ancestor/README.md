@@ -34,7 +34,6 @@ P(X,Y):-Q(X,Z),P(Z,Y), {P,Q}. % Tail Recursion
     "config": {
         "max_depth": 10,
         "max_clause": 4,
-        "max_pred": 1,
         "debug": false
     },
     "body_predicates": [

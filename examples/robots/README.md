@@ -216,7 +216,6 @@ move_up([4/3,G,4 - 4],[4/4,G,4 - 4]).
     "config": {
         "max_depth": 20,
         "max_clause": 1,
-        "max_pred": 0,
         "debug": false
     },
     "body_predicates": [
