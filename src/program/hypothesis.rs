@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 
 use crate::{
     heap::{ArgRegs, Heap, VarBind::*},
-    program::clause::{BitFlag64, MetaData},
+    program::clause::MetaData,
 };
 
 use super::{clause::Clause, meta_sub::MetaSub};
@@ -184,7 +184,10 @@ impl DerefMut for Hypothesis {
 #[cfg(test)]
 mod invented_pred_tests {
     use super::*;
-    use crate::heap::{QueryHeap, SymbolDB, Tag::*, VarBind::Var, VarReg};
+    use crate::{
+        heap::{QueryHeap, SymbolDB, Tag::*, VarBind::Var, VarReg},
+        program::clause::BitFlag64,
+    };
 
     /// A heap holding two unary clause heads:
     ///

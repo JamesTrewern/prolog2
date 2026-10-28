@@ -239,19 +239,13 @@ impl DerefMut for PredicateTable {
 
 #[cfg(test)]
 mod tests {
-    use std::{assert_matches, collections::HashMap};
-
-    use smallvec::SmallVec;
+    use std::collections::HashMap;
 
     use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
     use crate::{
         heap::{QueryHeap, SymbolDB},
         predicate_modules::PredReturn,
-        program::{
-            clause::{BitFlag64, MetaData},
-            hypothesis::Hypothesis,
-            predicate_table::FindReturn,
-        },
+        program::{hypothesis::Hypothesis, predicate_table::FindReturn},
         Config,
     };
 

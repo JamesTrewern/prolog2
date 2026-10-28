@@ -1,11 +1,10 @@
 use super::utils::{count_coverage, parse_example, union_sub_hypotheses};
 use crate::{
     heap::{Cell, QueryHeap},
-    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{clause::Clause, predicate_table::PredicateTable},
     resolution::Proof,
     Config,
 };
-use smallvec::SmallVec;
 use std::io::{self, Write};
 
 pub(super) fn reduce_hypotheses(

@@ -28,7 +28,6 @@ use crate::{
 use super::{sub_h_unification::least_sub_h, utils::collect_used_pred};
 
 use lazy_static::lazy_static;
-use rayon::prelude::*;
 
 lazy_static! {
     static ref CPU_COUNT: usize = num_cpus::get();
@@ -51,7 +50,7 @@ impl App {
         );
         examples.normalise_for_top_prog();
 
-        let (cells, mut sub_hypotheses, mut pdt) = generalise(
+        let (cells, mut sub_hypotheses, pdt) = generalise(
             &examples.pos,
             &self.predicate_table,
             &self.prog_heap,
@@ -106,7 +105,7 @@ impl App {
             .collect();
 
         // Build final top program from surviving hypotheses
-        let Some(mut top_programs) = least_sub_h(
+        let Some(top_programs) = least_sub_h(
             &examples.pos,
             &examples.neg,
             sub_hypotheses,
@@ -755,7 +754,7 @@ mod merge_tests {
             meta_clause_id: 0,
             subs: vec![VarReg::from_var(pred_var)],
         };
-        let pred_def = PredDef::new(&heap, smallvec![meta_sub]);
+        let pred_def = PredDef::new(smallvec![meta_sub]);
 
         let (cells, hypotheses, pdt) =
             merge_thread_results(vec![(Vec::new(), vec![pred_def], parts(heap))], &[]);
@@ -790,7 +789,7 @@ mod merge_tests {
                 meta_clause_id,
                 subs: vec![VarReg::from_var(pred_var)],
             };
-            let pred_def = PredDef::new(&heap, smallvec![meta_sub]);
+            let pred_def = PredDef::new(smallvec![meta_sub]);
             (Vec::new(), vec![pred_def], parts(heap))
         };
 

@@ -8,7 +8,7 @@ use smallvec::SmallVec;
 
 use crate::{
     heap::{
-        ArgRegs, Heap, QueryHeap, SymbolDB,
+        Heap, QueryHeap, SymbolDB,
         Tag::*,
         VarBind::{Addr, Var},
         VarReg,
@@ -37,7 +37,7 @@ impl DerefMut for PredDef {
 
 impl PredDef {
     /// Take clauses to form new predicate definition (orders clauses)
-    pub fn new(heap: &impl Heap, mut meta_subs: SmallVec<[MetaSub; 4]>) -> Self {
+    pub fn new(mut meta_subs: SmallVec<[MetaSub; 4]>) -> Self {
         meta_subs.sort_by_key(|meta_sub| meta_sub.meta_clause_id);
         let mut meta_clause_ranges = HashMap::new();
         let mut start = 0;
@@ -212,17 +212,14 @@ impl PredDef {
                                 meta_subs.extend(clause_sets[i].drain(..).map(|(_, msub)| msub));
                             }
                         }
-                        PredDef::new(heap, meta_subs)
+                        PredDef::new(meta_subs)
                     })
                     .collect()
             } else {
                 graph.order()[..graph.size]
                     .iter()
                     .map(|i| {
-                        PredDef::new(
-                            heap,
-                            clause_sets[*i].drain(..).map(|(_, msub)| msub).collect(),
-                        )
+                        PredDef::new(clause_sets[*i].drain(..).map(|(_, msub)| msub).collect())
                     })
                     .collect()
             }
@@ -305,6 +302,7 @@ impl PredDefTable {
         }
     }
 
+    #[cfg(test)]
     pub fn extract_pred_defs_from_h(
         &mut self,
         clauses: &mut Vec<Clause>,

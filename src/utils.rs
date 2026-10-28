@@ -94,6 +94,7 @@ impl DirGraph8 {
     /// One bitmask per group of nodes bound together by cycles.
     /// Returns grouping as slice with size 8 and length
     /// If no SCC groups return none
+    #[cfg(test)]
     pub fn cyclic_groups(&self) -> Option<(Self, Self)> {
         let r = self.closure();
         //No Groups
@@ -397,77 +398,10 @@ fn from_halves(a: u128, b: u128) -> [u16; 16] {
     })
 }
 
-#[derive(Debug)]
-pub struct SubSetIterator {
-    set_size: usize,
-    sub_set_size: usize,
-    stack: Vec<usize>,
-    depth: usize,
-}
-
-impl SubSetIterator {
-    pub fn new(set_size: usize, sub_set_size: usize) -> Self {
-        let mut stack = Vec::with_capacity(sub_set_size);
-        stack.push(0);
-        Self {
-            set_size,
-            sub_set_size,
-            stack,
-            depth: 1,
-        }
-    }
-
-    pub fn next(&mut self) -> Option<&[usize]> {
-        loop {
-            if self.depth == self.stack.len() {
-                self.stack.push(self.stack[self.depth - 1] + 1);
-            } else {
-                self.stack[self.depth] += 1;
-            }
-            //value at this depth does not allow for full sub set to be constructed
-            if self.stack[self.depth] == self.set_size - (self.sub_set_size - self.stack.len()) {
-                if self.depth == 0 {
-                    return None;
-                }
-                self.stack.pop();
-                self.depth -= 1;
-                continue;
-            }
-            if self.sub_set_size == self.stack.len() {
-                return Some(&self.stack);
-            } else {
-                self.depth += 1;
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::utils::{DirGraph8, SubSetIterator};
-
     use super::DirGraph16;
-
-    #[test]
-    fn sub_sets() {
-        let mut ssi = SubSetIterator::new(4, 3);
-
-        let mut i = 0;
-        while let Some(ss) = ssi.next() {
-            println!("{ss:?}");
-            i += 1;
-            if i > 10 {
-                break;
-            }
-        }
-
-        let mut ssi = SubSetIterator::new(4, 3);
-
-        assert_eq!(ssi.next().unwrap(), &[0, 1, 2]);
-        assert_eq!(ssi.next().unwrap(), &[0, 1, 3]);
-        assert_eq!(ssi.next().unwrap(), &[0, 2, 3]);
-        assert_eq!(ssi.next().unwrap(), &[1, 2, 3]);
-    }
+    use crate::utils::DirGraph8;
 
     #[test]
     fn cycle_groups_graph16() {

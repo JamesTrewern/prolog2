@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     heap::{
         ArgRegs, Heap, QueryHeap,
@@ -40,10 +38,6 @@ impl MetaSub {
                 sub.0 = ((sub.0 as isize) + step).try_into().unwrap();
             }
         }
-    }
-
-    pub fn map_vars(&mut self, var_map: HashMap<usize, usize>) {
-        todo!()
     }
 
     /// Build the first-order clause this substitution stands for.
@@ -282,12 +276,11 @@ mod build_clause_tests {
         // An id the table never saw resolves to nothing rather than to some
         // other predicate's clause.
         assert!(predicate_table.get_meta_clause(meta_id + 10_000).is_none());
-        assert!(meta_sub_of(
-            &Clause::new(vec![], Some((vec![], vec![])), 0),
-            &[]
-        )
-        .build_clause(&mut prog_heap, &predicate_table)
-        .is_none());
+        assert!(
+            meta_sub_of(&Clause::new(vec![], Some((vec![], vec![])), 0), &[])
+                .build_clause(&mut prog_heap, &predicate_table)
+                .is_none()
+        );
     }
 
     #[test]
@@ -517,14 +510,8 @@ mod tests {
 
             // position 0 binds var_y to addr_p, position 1 then fails on mismatched
             // addrs, so the position-0 binding should be unwound before returning None.
-            let lhs = fresh_meta_sub(
-                0,
-                vec![VarReg::from_var(var_x), VarReg::from_var(var_x)],
-            );
-            let rhs = fresh_meta_sub(
-                0,
-                vec![VarReg::from_var(var_y), VarReg::from_addr(addr_q)],
-            );
+            let lhs = fresh_meta_sub(0, vec![VarReg::from_var(var_x), VarReg::from_var(var_x)]);
+            let rhs = fresh_meta_sub(0, vec![VarReg::from_var(var_y), VarReg::from_addr(addr_q)]);
 
             assert!(lhs.unify(&rhs, &mut heap).is_none());
             assert_eq!(heap.var_deref(var_y), Var(var_y)); // binding was undone

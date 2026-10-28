@@ -1,17 +1,13 @@
 use std::{
     collections::{HashMap, HashSet},
-    ops::{self, Deref, DerefMut},
+    ops::{Deref, DerefMut},
 };
-
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use smallvec::SmallVec;
 
 use crate::{
     heap::{Cell, Heap, QueryHeap, SymbolDB},
     parser::{build_clause, tokenise, TokenStream},
     program::{
         clause::Clause,
-        hypothesis::Hypothesis,
         predicate_table::{Predicate, PredicateTable},
     },
     resolution::Proof,
@@ -68,7 +64,7 @@ impl Coverage {
         self.0 == u128::MAX
     }
 
-    pub fn none(&self) -> bool {
+    pub fn _none(&self) -> bool {
         self.0 == 0
     }
 }
@@ -203,6 +199,7 @@ pub(super) fn count_pred_clauses(
     count
 }
 
+#[cfg(test)]
 mod tests {
     use crate::learners::utils::Coverage;
 

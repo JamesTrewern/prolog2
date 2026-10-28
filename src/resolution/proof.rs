@@ -1,15 +1,9 @@
 //! Proof search via SLD resolution with backtracking and predicate invention.
 
-use smallvec::SmallVec;
-
 use super::env::Env;
 use crate::{
-    heap::{ArgRegs, Heap, QueryHeap},
-    program::{
-        clause::Clause,
-        hypothesis::{Constraints, Hypothesis},
-        predicate_table::PredicateTable,
-    },
+    heap::{Heap, QueryHeap},
+    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
 };
 
@@ -43,7 +37,6 @@ impl<'a> Proof<'a> {
     /// Create a new proof with an existing hypothesis (for negation-as-failure checks)
     pub fn with_hypothesis(heap: &QueryHeap, goals: &[usize], hypothesis: &Hypothesis) -> Self {
         let hypothesis = hypothesis.clone();
-        let h_clauses = hypothesis.len();
         let stack = goals
             .iter()
             .map(|goal| Env::new(*goal, 0, heap.heap_point()))

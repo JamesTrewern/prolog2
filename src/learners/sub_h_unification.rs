@@ -1,18 +1,10 @@
-use std::collections::HashMap;
-
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::utils::count_coverage;
 use crate::{
-    heap::{Cell, Heap, QueryHeap},
-    learners::{
-        specialise::specialise_h_threaded,
-        utils::{collect_used_pred, count_pred_clauses, Coverage},
-    },
-    parser::{build_clause, tokenise, TokenStream},
+    heap::Cell,
+    learners::utils::{count_pred_clauses, Coverage},
     program::{clause::Clause, predicate_table::PredicateTable},
-    utils::SubSetIterator,
-    Config,
 };
 
 const MAX_VALID_SUB_SETS: usize = 5;
@@ -29,13 +21,6 @@ pub(super) fn least_sub_h(
     predicate_table: &PredicateTable,
     max_depth: usize,
 ) -> Option<Vec<Vec<Clause>>> {
-    let config = Config {
-        max_depth,
-        max_clause: 0,
-        max_pred: 0,
-        debug: false,
-        protect_h_preds: false,
-    };
     // Count coverage
     let mut h_profiles: Vec<HProfile> = hypotheses
         .into_par_iter()
@@ -57,11 +42,10 @@ pub(super) fn least_sub_h(
     // Filter any profiles whose coverage is a subset of another profile
     filter_coverage_sub_sets(&mut h_profiles);
 
-    let greedy = greedy_find_coverage_group(&h_profiles, pos_examples.len());
+    let greedy = greedy_find_coverage_group(&h_profiles);
     let max_k = greedy.len();
     eprintln!("Found full coverage from greedy with {max_k} sub hypotheses");
 
-    let groups: Vec<Vec<Clause>>;
     let groups: Vec<Vec<Clause>> = if max_k == 1 {
         h_profiles
             .into_iter()
@@ -78,7 +62,7 @@ pub(super) fn least_sub_h(
             .into_iter()
             .map(|indexes| {
                 indexes
-                    .into_iter()
+                    .iter()
                     .map(|i| h_profiles[*i].h.clone().to_vec())
                     .flatten()
                     .collect()
@@ -128,7 +112,7 @@ fn filter_coverage_sub_sets(h_profiles: &mut Vec<HProfile>) {
     );
 }
 
-fn greedy_find_coverage_group(h_profiles: &[HProfile], n_pos_examples: usize) -> Vec<usize> {
+fn greedy_find_coverage_group(h_profiles: &[HProfile]) -> Vec<usize> {
     let mut res = vec![0];
     let mut covered = h_profiles[0].coverage;
     while !covered.all() {
@@ -270,17 +254,5 @@ impl HProfile {
             n_covered,
             n_clauses,
         }
-    }
-}
-
-mod tests {
-    use std::cmp::{Ordering, Reverse};
-
-    #[test]
-    fn tuple_order() {
-        let mut a = vec![(1, 2), (2, 1), (2, 2), (3, 1)];
-        let n = 4;
-        a.sort_by_key(|e| (4 - e.0, e.1));
-        println!("{a:?}");
     }
 }
