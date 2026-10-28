@@ -169,6 +169,10 @@ fn generalise(
     let (tx, rx) = mpsc::channel();
     let total = pos_examples.len();
     let completed = Arc::new(AtomicUsize::new(0));
+    // The merge loop reports on the producers as well as itself, so it needs
+    // its own handle on the counter: one writer to the status line, since
+    // both sides would otherwise be overwriting the same `\r`-terminated row.
+    let generalised = Arc::clone(&completed);
 
     // Producer threads run in the background on a scoped thread while the
     // calling thread merges each result as it arrives over `rx`.
@@ -180,10 +184,10 @@ fn generalise(
                     let completed = Arc::clone(&completed);
                     s.spawn(move |_| {
                         let result = generalise_thread(example, predicate_table, heap, config);
+                        // Counted before the send so the status line can never
+                        // show more results merged than generalised.
+                        completed.fetch_add(1, Ordering::Relaxed);
                         let _ = tx.send(result);
-                        let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
-                        eprint!("\rGeneralise: {done}/{total} examples");
-                        let _ = io::stderr().flush();
                     });
                 }
             });
@@ -191,7 +195,7 @@ fn generalise(
             // sent and dropped, closing the channel for `merge_thread_results`.
         });
 
-        merge_thread_results(rx, heap)
+        merge_thread_results(rx, heap, total, &generalised)
     });
     eprintln!();
 
@@ -226,13 +230,17 @@ fn generalise(
 fn merge_thread_results(
     thread_results: impl IntoIterator<Item = ThreadResult>,
     heap: &[Cell],
+    total: usize,
+    generalised: &AtomicUsize,
 ) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
     let mut acc_heap = QueryHeap::new(heap, None);
     let mut pdt = PredDefTable::default();
     let mut hypotheses = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    for (clause_sets, pred_defs, (cells, var_regs)) in thread_results {
+    for (merged, (clause_sets, pred_defs, (cells, var_regs))) in
+        thread_results.into_iter().enumerate()
+    {
         let offset = acc_heap.heap_len();
         if var_regs.len() > acc_heap.var_regs.len() {
             acc_heap.var_regs.resize(var_regs.len(), VarReg::UNBOUND);
@@ -271,6 +279,17 @@ fn merge_thread_results(
                 hypotheses.push(clauses.into_boxed_slice());
             }
         }
+
+        // Merging runs on this thread while the producers are still going, so
+        // report both: generalisation reaching `total` is not the end of the
+        // work, and folding one result in can take longer than finding it.
+        eprint!(
+            "\rGeneralise: {}/{total} examples, merged: {}/{total}, {} predicate definitions  ",
+            generalised.load(Ordering::Relaxed),
+            merged + 1,
+            pdt.pred_defs.len()
+        );
+        let _ = io::stderr().flush();
     }
 
     (acc_heap.cells, hypotheses, pdt)
@@ -711,6 +730,17 @@ mod merge_tests {
         SymbolDB,
         Tag::{Comp, Con},
     };
+
+    /// [`merge_thread_results`] with the progress-reporting arguments filled
+    /// in: these tests supply every message up front, so "generalised" is
+    /// simply the message count.
+    fn merge(
+        results: Vec<ThreadResult>,
+        heap: &[Cell],
+    ) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
+        let total = results.len();
+        merge_thread_results(results, heap, total, &AtomicUsize::new(total))
+    }
     use smallvec::smallvec;
 
     /// A fresh, 0-indexed thread-local heap to build a test's clauses and
@@ -742,8 +772,7 @@ mod merge_tests {
         };
         let pred_def = PredDef::new(smallvec![meta_sub]);
 
-        let (cells, hypotheses, pdt) =
-            merge_thread_results(vec![(Vec::new(), vec![pred_def], parts(heap))], &[]);
+        let (cells, hypotheses, pdt) = merge(vec![(Vec::new(), vec![pred_def], parts(heap))], &[]);
 
         assert!(hypotheses.is_empty());
         for (i, cell) in cells.iter().enumerate() {
@@ -779,8 +808,7 @@ mod merge_tests {
             (Vec::new(), vec![pred_def], parts(heap))
         };
 
-        let (cells, hypotheses, pdt) =
-            merge_thread_results(vec![make_message(0), make_message(1)], &[]);
+        let (cells, hypotheses, pdt) = merge(vec![make_message(0), make_message(1)], &[]);
 
         assert!(hypotheses.is_empty());
         assert_eq!(
@@ -817,8 +845,7 @@ mod merge_tests {
             (clauses, Vec::new(), parts(heap))
         };
 
-        let (cells, hypotheses, _) =
-            merge_thread_results(vec![message(sym_p), message(sym_q)], &[]);
+        let (cells, hypotheses, _) = merge(vec![message(sym_p), message(sym_q)], &[]);
 
         assert_eq!(
             cells,
@@ -845,7 +872,7 @@ mod merge_tests {
             (clauses, Vec::new(), parts(heap))
         };
 
-        let (cells, hypotheses, _) = merge_thread_results(vec![message(), message()], &[]);
+        let (cells, hypotheses, _) = merge(vec![message(), message()], &[]);
 
         assert_eq!(
             hypotheses.len(),
@@ -866,6 +893,6 @@ mod merge_tests {
         let stray_var = heap.new_var(VarReg::UNBOUND);
         heap.heap_push((Ref, stray_var));
 
-        let _ = merge_thread_results(vec![(Vec::new(), Vec::new(), parts(heap))], &[]);
+        let _ = merge(vec![(Vec::new(), Vec::new(), parts(heap))], &[]);
     }
 }
