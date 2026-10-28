@@ -1,5 +1,6 @@
 use std::{
     cmp::Ordering,
+    collections::HashMap,
     ops::{Deref, DerefMut},
 };
 
@@ -35,6 +36,15 @@ pub struct PredicateEntry {
 pub struct PredicateTable {
     predicates: Vec<PredicateEntry>,
     body_list: Vec<usize>,
+    /// Reverse index from [`MetaData::id`](super::clause::MetaData::id) to the
+    /// meta clause's location, as a `(symbol_arity, clause index)` pair.
+    ///
+    /// Keyed on `symbol_arity` rather than an index into `predicates` because
+    /// `predicates` is kept sorted: inserting a new predicate shifts the entry
+    /// indices after it, while the clause index within a predicate is stable --
+    /// the only mutation a clause set ever undergoes is the append in
+    /// [`Self::add_clause_to_predicate`].
+    meta_clause_index: HashMap<usize, (SymbolArity, usize)>,
 }
 
 impl PredicateTable {
@@ -42,6 +52,7 @@ impl PredicateTable {
         PredicateTable {
             predicates: vec![],
             body_list: vec![],
+            meta_clause_index: HashMap::new(),
         }
     }
 
@@ -94,12 +105,16 @@ impl PredicateTable {
         &mut self,
         clause: Clause,
         symbol_arity: SymbolArity,
-    ) -> Result<(), &str> {
-        match self.find_predicate(symbol_arity) {
+    ) -> Result<(), &'static str> {
+        // Read the id before the clause is moved into the table.
+        let meta_clause_id = clause.meta_data.as_ref().map(|meta_data| meta_data.id);
+        let clause_idx = match self.find_predicate(symbol_arity) {
             FindReturn::Index(idx) => match &mut self.get_mut(idx).unwrap().predicate {
                 Predicate::Function(_) => return Err("Cannot add clause to function predicate"),
                 Predicate::Clauses(clauses) => {
+                    let clause_idx = clauses.len();
                     *clauses = [&**clauses, &[clause]].concat().into_boxed_slice();
+                    clause_idx
                 }
             },
             FindReturn::InsertPos(insert_idx) => {
@@ -110,9 +125,27 @@ impl PredicateTable {
                         predicate: Predicate::Clauses(Box::new([clause])),
                     },
                 );
+                0
             }
         };
+        if let Some(meta_clause_id) = meta_clause_id {
+            self.meta_clause_index
+                .insert(meta_clause_id, (symbol_arity, clause_idx));
+        }
         Ok(())
+    }
+
+    /// Look up a meta clause by its [`MetaData::id`](super::clause::MetaData::id).
+    ///
+    /// Used to recover the template a
+    /// [`MetaSub`](super::meta_sub::MetaSub) was recorded against, since a
+    /// `MetaSub` stores only the id and the substitution, not the clause.
+    pub fn get_meta_clause(&self, meta_clause_id: usize) -> Option<&Clause> {
+        let (symbol_arity, clause_idx) = *self.meta_clause_index.get(&meta_clause_id)?;
+        match self.get_predicate(symbol_arity)? {
+            Predicate::Clauses(clauses) => clauses.get(clause_idx),
+            Predicate::Function(_) => None,
+        }
     }
 
     //Get predicate by SymbolArity key
@@ -138,6 +171,10 @@ impl PredicateTable {
         if let FindReturn::Index(predicate_idx) = self.find_predicate(symbol_arity) {
             if let Predicate::Clauses(_clauses) = self.remove(predicate_idx).predicate {
                 self.body_list.retain(|i| *i != predicate_idx);
+                // The clauses are gone, so any meta clause ids pointing at them
+                // would resolve to whatever predicate later takes this key.
+                self.meta_clause_index
+                    .retain(|_, (indexed_symbol_arity, _)| *indexed_symbol_arity != symbol_arity);
             }
             for i in &mut self.body_list {
                 if *i > predicate_idx {
@@ -202,7 +239,7 @@ impl DerefMut for PredicateTable {
 
 #[cfg(test)]
 mod tests {
-    use std::assert_matches;
+    use std::{assert_matches, collections::HashMap};
 
     use smallvec::SmallVec;
 
@@ -274,6 +311,7 @@ mod tests {
             PredicateTable {
                 predicates,
                 body_list: vec![p_idx],
+                meta_clause_index: HashMap::new(),
             },
             p,
             q,
@@ -313,6 +351,7 @@ mod tests {
         let pred_table = PredicateTable {
             predicates: vec![],
             body_list: vec![],
+            meta_clause_index: HashMap::new(),
         };
 
         assert_eq!(pred_table.find_predicate((50, 2)), FindReturn::InsertPos(0));

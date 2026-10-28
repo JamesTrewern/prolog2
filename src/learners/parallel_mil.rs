@@ -68,10 +68,13 @@ impl App {
         self.prog_heap.extend_from_slice(&cells);
         for pred_def in pdt.pred_defs {
             for meta_sub in pred_def.meta_subs {
-                todo!("Build clause from meta_sub");
-                // let symbol_arity = self.prog_heap.symbol_arity(clause.head());
-                // self.predicate_table
-                //     .add_clause_to_predicate(clause, symbol_arity);
+                let clause = meta_sub
+                    .build_clause(&mut self.prog_heap, &self.predicate_table)
+                    .expect("every MetaSub's meta clause id comes from the predicate table");
+                let symbol_arity = self.prog_heap.symbol_arity(clause.head());
+                self.predicate_table
+                    .add_clause_to_predicate(clause, symbol_arity)
+                    .unwrap();
             }
         }
 

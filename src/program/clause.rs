@@ -32,6 +32,17 @@ impl BitFlag64 {
     pub fn is_none(&self) -> bool {
         self.0 == 0
     }
+
+    /// Iterate the set bit indices in ascending order.
+    ///
+    /// The inverse of the filter in
+    /// [`MetaSub::from_arg_regs`](crate::program::meta_sub::MetaSub::from_arg_regs),
+    /// which compacts the argument registers by discarding every position
+    /// whose bit is clear. Zipping this iterator with the compacted vector
+    /// recovers the original argument ids.
+    pub fn iter(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..MAX_ARG).filter(move |&idx| self.get(idx))
+    }
 }
 
 impl From<Vec<usize>> for BitFlag64 {
