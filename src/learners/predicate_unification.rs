@@ -13,7 +13,7 @@ use crate::{
         VarBind::{Addr, Var},
         VarReg,
     },
-    program::{clause::Clause, hypothesis::Hypothesis, meta_sub::MetaSub},
+    program::{clause::Clause, meta_sub::MetaSub},
     utils::{DirGraph8, FindReturn},
 };
 
@@ -159,15 +159,20 @@ impl PredDef {
         }
     }
 
-    pub fn extract_pred_defs_from_h(h: &mut Hypothesis, heap: &impl Heap) -> Vec<Self> {
-        let mut clause_sets: Vec<SmallVec<[(Clause, MetaSub); 4]>> = Vec::with_capacity(h.len());
-        let mut var_preds = Vec::with_capacity(h.len());
-        let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(h.len());
+    pub fn extract_pred_defs_from_h(
+        clauses: &mut Vec<Clause>,
+        meta_subs: &mut Vec<MetaSub>,
+        heap: &impl Heap,
+    ) -> Vec<Self> {
+        let mut clause_sets: Vec<SmallVec<[(Clause, MetaSub); 4]>> =
+            Vec::with_capacity(clauses.len());
+        let mut var_preds = Vec::with_capacity(clauses.len());
+        let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(clauses.len());
 
-        for idx in (0..h.len()).rev() {
-            if let (Ref, var_id) = heap.get_deref_cell(h[idx].head() + 1) {
-                let clause = h.remove(idx);
-                let meta_sub = h.meta_subs.remove(idx);
+        for idx in (0..clauses.len()).rev() {
+            if let (Ref, var_id) = heap.get_deref_cell(clauses[idx].head() + 1) {
+                let clause = clauses.remove(idx);
+                let meta_sub = meta_subs.remove(idx);
                 match var_preds.iter().position(|var_pred| *var_pred == var_id) {
                     Some(def_index) => {
                         extract_body_var_preds(&mut dependencies[def_index], &clause, heap);
@@ -300,8 +305,13 @@ impl PredDefTable {
         }
     }
 
-    pub fn extract_pred_defs_from_h(&mut self, hypothesis: &mut Hypothesis, heap: &mut QueryHeap) {
-        for pred_def in PredDef::extract_pred_defs_from_h(hypothesis, heap) {
+    pub fn extract_pred_defs_from_h(
+        &mut self,
+        clauses: &mut Vec<Clause>,
+        meta_subs: &mut Vec<MetaSub>,
+        heap: &mut QueryHeap,
+    ) {
+        for pred_def in PredDef::extract_pred_defs_from_h(clauses, meta_subs, heap) {
             self.insert(pred_def, heap);
         }
     }
@@ -445,8 +455,8 @@ mod tests {
         let mut pdt = PredDefTable::default();
 
         //Seperate out pred defs
-        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
 
         pdt._print_defs(&heap);
 
@@ -496,8 +506,8 @@ mod tests {
 
         let mut pdt = PredDefTable::default();
 
-        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
 
         pdt._print_defs(&heap);
 
@@ -546,8 +556,8 @@ mod tests {
         );
 
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
         pdt._print_defs(&heap);
 
         assert_eq!(heap.var_deref(0), heap.var_deref(2));
@@ -597,8 +607,8 @@ mod tests {
 
         // Build Pred Def table
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
         pdt._print_defs(&heap);
 
         print_hypothesis(&h1, 1, &heap);
@@ -648,8 +658,8 @@ mod tests {
 
         // Build Pred Def table
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
         pdt._print_defs(&heap);
 
         print_hypothesis(&h1, 1, &heap);
@@ -715,8 +725,8 @@ mod tests {
 
         // Build Pred Def table
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
         pdt._print_defs(&heap);
 
         print_hypothesis(&h1, 1, &heap);

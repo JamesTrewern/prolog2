@@ -127,6 +127,15 @@ impl Clause {
             .map(|meta_data| meta_data.constrained_vars)
     }
 
+    /// Shift every literal's heap address by `offset`. Used when appending a
+    /// clause -- and the heap region it was extracted into -- onto a larger,
+    /// already-populated heap.
+    pub fn shift_literals(&mut self, offset: usize) {
+        for literal in self.literals.iter_mut() {
+            *literal += offset;
+        }
+    }
+
     pub fn to_string(&self, heap: &impl Heap) -> String {
         if self.len() == 1 {
             return heap.term_string(self.head()) + ".";
