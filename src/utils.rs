@@ -223,7 +223,7 @@ impl DirGraph8 {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DirGraph16 {
-    size: usize,
+    pub size: usize,
     edges: [u16; 16],
 }
 impl Deref for DirGraph16 {
@@ -252,6 +252,7 @@ impl DirGraph16 {
         (a, b)
     };
 
+    #[cfg(test)]
     fn from_edges<const N: usize>(edge_rows: [u16; N]) -> Self {
         if N > 16 {
             panic!("Can't have more than 16 nodes")
@@ -290,6 +291,7 @@ impl DirGraph16 {
     /// One bitmask per group of nodes bound together by cycles.
     /// Returns the groups and the edges between groups, each sized to the number of groups.
     /// If no SCC groups return none
+    #[cfg(test)]
     pub fn cyclic_groups(&self) -> Option<(Self, Self)> {
         let r = self.closure();
         let (ra, rb) = to_halves(r);
@@ -348,6 +350,65 @@ impl DirGraph16 {
                 edges: new_edges,
             },
         ))
+    }
+
+    /// As [`DirGraph8::ordered_cyclic_groups`], for up to 16 nodes.
+    pub fn ordered_cyclic_groups(&self) -> Option<Self> {
+        let r = self.closure();
+        let (ra, rb) = to_halves(r);
+        let (ia, ib) = Self::IDENTITY;
+        //No Groups
+        if (ra & ia) | (rb & ib) == 0 {
+            return None;
+        }
+
+        let (ta, tb) = to_halves(transpose16(r));
+        let grouped = from_halves(ra & ta | ia, rb & tb | ib);
+        // Without the diagonal, so a node's own group is not counted as one
+        // of its dependencies.
+        let r = from_halves(ra & !ia, rb & !ib);
+
+        let mut assigned: u16 = 0;
+        let mut groups_r = [(0u16, 0u16); 16];
+        let mut size = 0;
+        let mut reps: u16 = 0;
+
+        for i in 0..self.size {
+            let bit = 1u16 << i;
+            if assigned & bit != 0 {
+                continue;
+            }
+            assigned |= grouped[i];
+            groups_r[size] = (grouped[i], r[i]);
+            size += 1;
+            reps |= bit;
+            if assigned == u16::MAX {
+                break;
+            }
+        }
+
+        for row in groups_r.iter_mut() {
+            //one bit set per group
+            row.1 &= reps;
+            //count edges to groups
+            row.1 = row.1.count_ones() as u16
+        }
+
+        // Fewest dependencies first, matching [`Self::order`].
+        groups_r[..size].sort_unstable_by_key(|&(_, c)| c);
+        let groups: [u16; 16] = groups_r.map(|(g, _)| g);
+        Some(Self {
+            edges: groups,
+            size,
+        })
+    }
+
+    /// As [`DirGraph8::order`], for up to 16 nodes.
+    pub fn order(&self) -> [usize; 16] {
+        let r = self.closure();
+        let mut order: [usize; 16] = std::array::from_fn(|i| i);
+        order[..self.size].sort_by_key(|&i| r[i].count_ones());
+        order
     }
 }
 
@@ -561,6 +622,78 @@ mod tests {
 
         assert_eq!(groups, ex_groups); // {b, c, d}
         assert_eq!(new_edges, exp_new_edges);
+    }
+
+    /// The 16-node ordering must agree with the 8-node one: dependencies
+    /// before dependents, with each cycle collapsed into a single group.
+    #[test]
+    fn group_order_sccs_16_matches_graph8() {
+        let mut g8 = DirGraph8 {
+            size: 5,
+            edges: [0; 8],
+        };
+        g8.edges[0] |= 1 << 1; // a -> b
+        g8.edges[1] |= 1; // b -> a
+        g8.edges[2] |= (1 << 3) | (1 << 1); // c -> d,b
+        g8.edges[3] |= 1 << 2; // d -> c
+        g8.edges[4] |= 1 << 3; // e -> c
+
+        let mut g16 = DirGraph16::new(5);
+        for (from, row) in g8.edges[..5].iter().enumerate() {
+            for to in 0..5 {
+                if row & 1 << to != 0 {
+                    g16.add_edge(from, to);
+                }
+            }
+        }
+
+        let g8_groups = g8.ordered_cyclic_groups().expect("graph has cycles");
+        let g16_groups = g16.ordered_cyclic_groups().expect("graph has cycles");
+
+        assert_eq!(g16_groups.size, g8_groups.size);
+        let widened: Vec<u16> = g8_groups[..g8_groups.size]
+            .iter()
+            .map(|&g| g as u16)
+            .collect();
+        assert_eq!(g16_groups[..g16_groups.size], widened[..]);
+        assert_eq!(g16_groups[..g16_groups.size], [0b0011, 0b1100, 0b10000]);
+    }
+
+    /// A chain wider than 8 nodes, which only the 16-node graph can hold.
+    /// Node i depends on node i+1, so the order is the chain reversed.
+    #[test]
+    fn group_order_sccs_16_beyond_eight_nodes() {
+        let mut g = DirGraph16::new(12);
+        for i in 0..11 {
+            g.add_edge(i, i + 1);
+        }
+        // Make the far end recursive so the cyclic path is the one taken.
+        g.add_edge(11, 11);
+
+        let groups = g.ordered_cyclic_groups().expect("the self edge is a cycle");
+        assert_eq!(groups.size, 12);
+
+        let order: Vec<u32> = groups[..groups.size]
+            .iter()
+            .map(|g| g.trailing_zeros())
+            .collect();
+        assert_eq!(order, (0..12).rev().collect::<Vec<u32>>());
+    }
+
+    /// With no cycles the 16-node graph falls back to `order`, which must
+    /// also put dependencies first.
+    #[test]
+    fn order_16_is_dependencies_first() {
+        let mut g = DirGraph16::new(10);
+        for i in 0..9 {
+            g.add_edge(i, i + 1);
+        }
+
+        assert!(
+            g.ordered_cyclic_groups().is_none(),
+            "an acyclic graph has no groups"
+        );
+        assert_eq!(g.order()[..10], [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
     }
 
     #[test]

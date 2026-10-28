@@ -13,8 +13,16 @@ use crate::{
         VarBind::{Addr, Var},
     },
     program::{clause::Clause, meta_sub::MetaSub},
-    utils::{DirGraph8, FindReturn},
+    utils::{DirGraph16, DirGraph8, FindReturn},
 };
+
+/// Most invented predicates one sub hypothesis can define.
+///
+/// Set by the widest dependency graph available
+/// ([`DirGraph16`](crate::utils::DirGraph16)). A hypothesis cannot invent
+/// more predicates than it has clauses, so bounding `max_clause` by this
+/// bounds the number of clause sets too.
+pub const MAX_PRED_DEFS: usize = 16;
 
 #[derive(Debug)]
 pub struct PredDef {
@@ -217,43 +225,70 @@ impl PredDef {
             }
         }
 
-        if clause_sets.len() <= 8 {
-            let mut graph: DirGraph8 = DirGraph8::new(clause_sets.len());
-            for (i, deps) in dependencies.into_iter().enumerate() {
-                for dep in deps {
-                    graph.add_edge(
-                        i,
-                        var_preds
-                            .iter()
-                            .position(|var_pred| *var_pred == dep)
-                            .unwrap(),
-                    );
+        // Each clause set is one invented predicate, so there are never more
+        // of them than there are clauses in the hypothesis, and `run_top_prog`
+        // refuses a `max_clause` above `MAX_PRED_DEFS`.
+        let node_of = |dep: usize| {
+            var_preds
+                .iter()
+                .position(|var_pred| *var_pred == dep)
+                .expect("every body predicate variable also heads a clause set")
+        };
+
+        let groups: Vec<u64> = match clause_sets.len() {
+            n if n <= 8 => {
+                let mut graph = DirGraph8::new(n);
+                for (i, deps) in dependencies.iter().enumerate() {
+                    for &dep in deps {
+                        graph.add_edge(i, node_of(dep));
+                    }
+                }
+                match graph.ordered_cyclic_groups() {
+                    Some(groups) => groups[..groups.size].iter().map(|&g| g as u64).collect(),
+                    None => graph.order()[..graph.size]
+                        .iter()
+                        .map(|&i| 1 << i)
+                        .collect(),
                 }
             }
-            if let Some(groups) = graph.ordered_cyclic_groups() {
-                groups[..groups.size]
-                    .into_iter()
-                    .map(|group| {
-                        let mut meta_subs: SmallVec<[MetaSub; 4]> = SmallVec::new();
-                        for i in 0..graph.size {
-                            if group & 1 << i != 0 {
-                                meta_subs.extend(clause_sets[i].drain(..).map(|(_, msub)| msub));
-                            }
-                        }
-                        PredDef::new(meta_subs)
-                    })
-                    .collect()
-            } else {
-                graph.order()[..graph.size]
-                    .iter()
-                    .map(|i| {
-                        PredDef::new(clause_sets[*i].drain(..).map(|(_, msub)| msub).collect())
-                    })
-                    .collect()
+            n if n <= MAX_PRED_DEFS => {
+                let mut graph = DirGraph16::new(n);
+                for (i, deps) in dependencies.iter().enumerate() {
+                    for &dep in deps {
+                        graph.add_edge(i, node_of(dep));
+                    }
+                }
+                match graph.ordered_cyclic_groups() {
+                    Some(groups) => groups[..groups.size].iter().map(|&g| g as u64).collect(),
+                    None => graph.order()[..graph.size]
+                        .iter()
+                        .map(|&i| 1 << i)
+                        .collect(),
+                }
             }
-        } else {
-            todo!("Can't handle sub hypotheses greater than 8 clauses")
-        }
+            n => unreachable!(
+                "{n} invented predicates in one sub hypothesis exceeds the {MAX_PRED_DEFS} \
+                 the dependency graph can hold; a hypothesis cannot have more invented \
+                 predicates than clauses, and max_clause is checked against this limit \
+                 before the search starts"
+            ),
+        };
+
+        // A group is a set of mutually dependent predicates, which have to be
+        // defined together; the acyclic path above hands back one singleton
+        // per predicate so both cases assemble the same way.
+        groups
+            .into_iter()
+            .map(|group| {
+                let mut meta_subs: SmallVec<[MetaSub; 4]> = SmallVec::new();
+                for (i, clause_set) in clause_sets.iter_mut().enumerate() {
+                    if group & 1 << i != 0 {
+                        meta_subs.extend(clause_set.drain(..).map(|(_, msub)| msub));
+                    }
+                }
+                PredDef::new(meta_subs)
+            })
+            .collect()
     }
 }
 
@@ -718,6 +753,98 @@ mod tests {
             vec![1, 0],
             "the recursive predicate must be defined before the one using it"
         );
+    }
+
+    /// A hypothesis inventing more than eight predicates, which no longer
+    /// falls to `todo!` but switches to the 16-node dependency graph.
+    ///
+    /// A chain of nine definitions, each calling the next:
+    ///     p(X,Y):- Var_0(X,Y).      (constant head, not a definition)
+    ///     Var_0(X,Y):- Var_1(X,Y).
+    ///     ...
+    ///     Var_7(X,Y):- Var_8(X,Y).
+    ///     Var_8(X,Y):- q(X), r(Y).
+    /// so the order must be the chain reversed, deepest dependency first.
+    #[test]
+    fn more_than_eight_invented_predicates_are_ordered() {
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+
+        let mut h = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)] as &[VarBind]),
+                (0, &[Var(0), Var(1)]),
+                (0, &[Var(1), Var(2)]),
+                (0, &[Var(2), Var(3)]),
+                (0, &[Var(3), Var(4)]),
+                (0, &[Var(4), Var(5)]),
+                (0, &[Var(5), Var(6)]),
+                (0, &[Var(6), Var(7)]),
+                (0, &[Var(7), Var(8)]),
+                (1, &[Var(8), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+
+        let defs = PredDef::extract_pred_defs_from_h(&mut h.clauses, &mut h.meta_subs, &heap);
+
+        assert_eq!(defs.len(), 9, "nine invented predicates, nine definitions");
+        assert_eq!(
+            definition_heads(&defs),
+            vec![8, 7, 6, 5, 4, 3, 2, 1, 0],
+            "each definition must come after the one it calls"
+        );
+    }
+
+    /// The same, inserted, to confirm the wider graph still grounds every
+    /// shared variable in the right order.
+    #[test]
+    fn more_than_eight_invented_predicates_all_ground() {
+        let mut prog_heap: Vec<Cell> = vec![];
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+
+        let mut h = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), Var(0)] as &[VarBind]),
+                (0, &[Var(0), Var(1)]),
+                (0, &[Var(1), Var(2)]),
+                (0, &[Var(2), Var(3)]),
+                (0, &[Var(3), Var(4)]),
+                (0, &[Var(4), Var(5)]),
+                (0, &[Var(5), Var(6)]),
+                (0, &[Var(6), Var(7)]),
+                (0, &[Var(7), Var(8)]),
+                (1, &[Var(8), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+
+        let mut pdt = PredDefTable::default();
+        pdt.extract_pred_defs_from_h(&mut h.clauses, &mut h.meta_subs, &mut heap);
+
+        assert_eq!(pdt.pred_defs.len(), 9);
+        assert_eq!(pdt.pred_symbols().len(), 9, "one constant per definition");
+        for var_id in 0..9 {
+            assert!(
+                matches!(heap.var_deref(var_id), Addr(_)),
+                "Var_{var_id} should be bound to a coined constant"
+            );
+        }
+        assert_table_has_no_duplicates(&pdt, &mut heap);
     }
 
     /// Inserting in that order is what grounds the shared variable: by the

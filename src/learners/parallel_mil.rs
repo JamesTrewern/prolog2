@@ -17,7 +17,7 @@ use crate::{
         VarReg,
     },
     learners::{
-        predicate_unification::{PredDef, PredDefTable},
+        predicate_unification::{PredDef, PredDefTable, MAX_PRED_DEFS},
         utils::parse_example,
     },
     program::{clause::Clause, meta_sub::MetaSub, predicate_table::PredicateTable},
@@ -46,6 +46,17 @@ impl App {
             TopProg::True(reduce) => reduce,
             _ => false,
         };
+        // Checked once, here, rather than left to fail deep in the search: a
+        // hypothesis can invent at most one predicate per clause, and the
+        // dependency graph that orders their definitions holds
+        // `MAX_PRED_DEFS` nodes.
+        assert!(
+            self.config.max_clause <= MAX_PRED_DEFS,
+            "max_clause is {}, but top program construction supports at most {MAX_PRED_DEFS}: \
+             a sub hypothesis of that size could invent more predicates than the dependency \
+             graph used to order their definitions can hold",
+            self.config.max_clause,
+        );
         println!("=== Top Program Construction ===");
         println!(
             "Positive examples: {}, Negative examples: {}",
