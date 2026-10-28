@@ -266,10 +266,14 @@ fn dedup_key(clauses: &[Clause], heap: &impl Heap) -> String {
 /// hypothesis found (across backtracking) into a single heap local to this
 /// thread.
 ///
-/// Returns the clause sets (with predicate definitions extracted out), the
-/// predicate definitions themselves ordered by dependency, and the heap that
-/// both rely on. See [`extract_hypothesis`] for how a single proof's
-/// hypothesis is folded into this thread-local heap.
+/// Duplicate hypotheses (backtracking solutions that print identically via
+/// [`dedup_key`]) are dropped here so the channel and collector never see
+/// them.
+///
+/// Returns the deduplicated clause sets (with predicate definitions extracted
+/// out), the predicate definitions themselves ordered by dependency, and the
+/// heap that both rely on. See [`extract_hypothesis`] for how a single
+/// proof's hypothesis is folded into this thread-local heap.
 fn generalise_thread(
     example: &str,
     predicate_table: &PredicateTable,
@@ -280,6 +284,7 @@ fn generalise_thread(
     let mut dst = QueryHeap::new(&[], None);
     let mut clause_sets = Vec::new();
     let mut pred_defs = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
 
     let goal = match parse_example(example, &mut query_heap) {
         Ok(g) => g,
@@ -292,8 +297,10 @@ fn generalise_thread(
 
     while proof.prove(&mut query_heap, predicate_table, config) {
         let (clauses, defs) = extract_hypothesis(&proof, &query_heap, &mut dst);
-        clause_sets.push(clauses);
-        pred_defs.extend(defs);
+        if seen.insert(dedup_key(&clauses, &dst)) {
+            clause_sets.push(clauses);
+            pred_defs.extend(defs);
+        }
     }
 
     (clause_sets, pred_defs, (dst.cells, dst.var_regs))
@@ -521,7 +528,10 @@ mod extraction_tests {
         let first = clone_var_reg(&mut dst, &proof_heap, VarReg::from_var(v), &mut ref_map);
         let second = clone_var_reg(&mut dst, &proof_heap, VarReg::from_var(v), &mut ref_map);
 
-        assert!(first.var(), "an unbound variable should clone to another variable");
+        assert!(
+            first.var(),
+            "an unbound variable should clone to another variable"
+        );
         assert_eq!(
             first, second,
             "repeated occurrences of the same source variable must map to the same destination variable"
@@ -537,7 +547,12 @@ mod extraction_tests {
         let mut dst = QueryHeap::new(&[], None);
         let mut ref_map = HashMap::new();
 
-        let cloned = clone_var_reg(&mut dst, &proof_heap, VarReg::from_addr(addr_q), &mut ref_map);
+        let cloned = clone_var_reg(
+            &mut dst,
+            &proof_heap,
+            VarReg::from_addr(addr_q),
+            &mut ref_map,
+        );
 
         assert!(cloned.addr());
         assert_eq!(dst[cloned.value()], (Con, sym));
@@ -683,7 +698,8 @@ mod extraction_tests {
 
         let mut dst = QueryHeap::new(&[], None);
 
-        let proof1 = proof_with_hypothesis(&proof_heap, vec![clause.clone()], vec![meta_sub.clone()]);
+        let proof1 =
+            proof_with_hypothesis(&proof_heap, vec![clause.clone()], vec![meta_sub.clone()]);
         let (_, pred_defs1) = extract_hypothesis(&proof1, &proof_heap, &mut dst);
 
         let proof2 = proof_with_hypothesis(&proof_heap, vec![clause], vec![meta_sub]);
@@ -703,7 +719,10 @@ mod extraction_tests {
 #[cfg(test)]
 mod merge_tests {
     use super::*;
-    use crate::heap::{SymbolDB, Tag::{Comp, Con}};
+    use crate::heap::{
+        SymbolDB,
+        Tag::{Comp, Con},
+    };
     use smallvec::smallvec;
 
     /// A fresh, 0-indexed thread-local heap to build a test's clauses and
@@ -776,19 +795,21 @@ mod merge_tests {
             merge_thread_results(vec![make_message(0), make_message(1)], &[]);
 
         assert!(hypotheses.is_empty());
-        assert_eq!(pdt.pred_defs.len(), 2, "distinct meta_clause_ids should not unify together");
+        assert_eq!(
+            pdt.pred_defs.len(),
+            2,
+            "distinct meta_clause_ids should not unify together"
+        );
         for (i, cell) in cells.iter().enumerate() {
             assert_ne!(cell.0, Ref, "cell {i} ({cell:?}) should have been grounded");
         }
 
         // Each message coined its own fresh constant; they must not alias.
-        let (first_const_addr, _) = pdt.pred_defs[0].meta_subs[0]
-            .subs[0]
+        let (first_const_addr, _) = pdt.pred_defs[0].meta_subs[0].subs[0]
             .get_bind()
             .and_then(|b| if let Addr(a) = b { Some((a, ())) } else { None })
             .expect("first pred_def's binding should be a resolved address");
-        let (second_const_addr, _) = pdt.pred_defs[1].meta_subs[0]
-            .subs[0]
+        let (second_const_addr, _) = pdt.pred_defs[1].meta_subs[0].subs[0]
             .get_bind()
             .and_then(|b| if let Addr(a) = b { Some((a, ())) } else { None })
             .expect("second pred_def's binding should be a resolved address");
@@ -811,7 +832,10 @@ mod merge_tests {
         let (cells, hypotheses, _) =
             merge_thread_results(vec![message(sym_p), message(sym_q)], &[]);
 
-        assert_eq!(cells, vec![(Comp, 1), (Con, sym_p), (Comp, 1), (Con, sym_q)]);
+        assert_eq!(
+            cells,
+            vec![(Comp, 1), (Con, sym_p), (Comp, 1), (Con, sym_q)]
+        );
         assert_eq!(hypotheses.len(), 2);
         assert_eq!(hypotheses[0][0].head(), 0, "first message is not shifted");
         assert_eq!(
