@@ -26,34 +26,58 @@ pub struct QueryHeap<'a> {
     pub(crate) id: usize,
     pub(crate) cells: Vec<Cell>,
     prog_cells: &'a [Cell],
-    // TODO: handle branching query heap multi-threading
-    root: Option<*const QueryHeap<'a>>,
+    /// The cells of the heap this one was branched from, read-only.
+    ///
+    /// Addresses run `[prog_cells][root][cells]`, and `IndexMut` refuses
+    /// anything below the end of `root`, so a branch can read everything its
+    /// parent had allocated while writing only its own cells.
+    ///
+    /// Held as a plain slice rather than a pointer back to the parent heap:
+    /// that is what makes a `QueryHeap` `Send`, so branches can be handed to
+    /// different threads. The cost is that branches do not nest -- a branch
+    /// of a branch would have two ancestors' cells to stitch together, and
+    /// [`Self::branch`] rejects it.
+    root: Option<&'a [Cell]>,
     pub(crate) var_regs: Vec<VarReg>, //Reference binding registers
 }
 
 impl<'a> QueryHeap<'a> {
-    pub fn new(prog_cells: &'a [Cell], root: Option<*const QueryHeap<'a>>) -> QueryHeap<'a> {
+    pub fn new(prog_cells: &'a [Cell], root: Option<&'a [Cell]>) -> QueryHeap<'a> {
         let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
-        let var_regs = if let Some(root) = root {
-            unsafe { (&*root).var_regs.clone() }
-        } else {
-            Vec::new()
-        };
         QueryHeap {
             id,
             cells: Vec::new(),
             prog_cells,
             root,
-            var_regs,
+            var_regs: Vec::new(),
         }
     }
 
-    pub fn branch(&self, count: usize) -> Vec<QueryHeap<'a>> {
-        let mut branch_heap = Vec::with_capacity(count);
-        for _ in 0..count {
-            branch_heap.push(QueryHeap::new(self.prog_cells, Some(self)));
-        }
-        branch_heap
+    /// `count` heaps that read this one's cells but write their own.
+    ///
+    /// Each gets a copy of the variable registers, so a branch can bind a
+    /// variable this heap owns without the others, or this heap, seeing it.
+    /// That is what makes the branches independent enough to run on separate
+    /// threads, and it means nothing has to be undone afterwards: a branch is
+    /// simply dropped.
+    ///
+    /// Borrows `self` for as long as the branches live, so the parent cannot
+    /// allocate while they exist -- which is exactly the invariant their
+    /// addresses depend on.
+    pub fn branch<'b>(&'b self, count: usize) -> Vec<QueryHeap<'b>> {
+        assert!(
+            self.root.is_none(),
+            "branches do not nest: this heap is already a branch"
+        );
+        (0..count)
+            .map(|_| QueryHeap {
+                id: HEAP_ID_COUNTER.fetch_add(1, Acquire),
+                cells: Vec::new(),
+                prog_cells: self.prog_cells,
+                root: Some(&self.cells),
+                var_regs: self.var_regs.clone(),
+            })
+            .collect()
     }
 
     /// Duplicate term from self, tracking variable identity
@@ -140,10 +164,7 @@ impl Heap for QueryHeap<'_> {
     }
 
     fn heap_len(&self) -> usize {
-        match self.root {
-            Some(root) => unsafe { &*root }.heap_len() + self.cells.len(),
-            None => self.prog_cells.len() + self.cells.len(),
-        }
+        self.prog_cells.len() + self.root.map_or(0, <[Cell]>::len) + self.cells.len()
     }
 
     fn get_id(&self, addr: usize) -> usize {
@@ -217,20 +238,14 @@ impl Index<usize> for QueryHeap<'_> {
 
     fn index(&self, index: usize) -> &Self::Output {
         if index < self.prog_cells.len() {
-            &self.prog_cells[index]
-        } else {
-            if let Some(root) = self.root {
-                let root = unsafe { &*root };
-                if index < root.heap_len() {
-                    // Index is in root's query cells
-                    &root[index]
-                } else {
-                    // Index is in our own cells
-                    &self.cells[index - root.heap_len()]
-                }
-            } else {
-                &self.cells[index - self.prog_cells.len()]
-            }
+            return &self.prog_cells[index];
+        }
+        let offset = index - self.prog_cells.len();
+        match self.root {
+            // Parent's cells, then our own after them
+            Some(root) if offset < root.len() => &root[offset],
+            Some(root) => &self.cells[offset - root.len()],
+            None => &self.cells[offset],
         }
     }
 }
@@ -241,23 +256,13 @@ impl IndexMut<usize> for QueryHeap<'_> {
             unreachable!(
                 "IndexMut: attempted mutable access to program heap cell at index {index}"
             );
-        } else {
-            if let Some(root) = self.root {
-                let root = unsafe { &*root };
-                let root_heap_len = root.heap_len(); // prog_cells.len() + root.cells.len()
-                if index < root_heap_len {
-                    // Index is in root's query cells - deny mutable access
-                    unreachable!(
-                        "IndexMut: attempted mutable access to parent heap cell at index {index}"
-                    );
-                } else {
-                    // Index is in our own cells
-                    &mut self.cells[index - root_heap_len]
-                }
-            } else {
-                &mut self.cells[index - self.prog_cells.len()]
-            }
         }
+        let offset = index - self.prog_cells.len();
+        let root_len = self.root.map_or(0, <[Cell]>::len);
+        if offset < root_len {
+            unreachable!("IndexMut: attempted mutable access to parent heap cell at index {index}");
+        }
+        &mut self.cells[offset - root_len]
     }
 }
 

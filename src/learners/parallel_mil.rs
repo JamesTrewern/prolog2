@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    specialise::specialise_h,
+    specialise::hypothesis_entails_negative,
     sub_h_unification::least_sub_h,
     utils::{
         collect_used_pred, compile_examples, reduce as reduce_hypothesis, union_sub_hypotheses,
@@ -70,8 +70,9 @@ impl App {
         let pos_goals = compile_examples(&examples.pos, &mut self.prog_heap);
         let neg_goals = compile_examples(&examples.neg, &mut self.prog_heap);
 
-        let (cells, mut sub_hypotheses, pdt) = generalise(
+        let (cells, sub_hypotheses, pdt) = build_sub_hypotheses(
             &pos_goals,
+            &neg_goals,
             &self.predicate_table,
             &self.prog_heap,
             self.config,
@@ -103,31 +104,10 @@ impl App {
         }
 
         println!(
-            "\n=== Generalisation Results ===\n{} unique hypotheses",
+            "\n=== Sub Hypotheses ===\n{} found, each already consistent with all {} negatives",
             sub_hypotheses.len(),
+            neg_goals.len(),
         );
-
-        // Step 2: Specialise
-        let retained = specialise(
-            &neg_goals,
-            &sub_hypotheses,
-            &self.prog_heap,
-            &self.predicate_table,
-            self.config,
-        );
-
-        let surviving_count = retained.iter().filter(|&&b| b).count();
-        let rejected_count = sub_hypotheses.len() - surviving_count;
-        println!(
-            "\n=== Specialisation Results ===\n{} hypotheses survived, {} rejected",
-            surviving_count, rejected_count
-        );
-
-        sub_hypotheses = sub_hypotheses
-            .into_iter()
-            .zip(retained.iter())
-            .filter_map(|(h, &alive)| if alive { Some(h) } else { None })
-            .collect();
 
         // Build final top program from surviving hypotheses
         let Some(groups) = least_sub_h(
@@ -177,13 +157,21 @@ impl App {
     }
 }
 
-/// One worker thread's output from [`generalise_thread`]: the clause sets it
-/// found, the predicate definitions extracted out of them, and the
-/// `(cells, var_regs)` of the thread-local heap they both reference.
+/// One worker thread's output from [`sub_hypotheses_for_example`]: the sub
+/// hypotheses it kept, the predicate definitions extracted out of them, and
+/// the `(cells, var_regs)` of the thread-local heap they both reference.
 type ThreadResult = (Vec<Box<[Clause]>>, Vec<PredDef>, (Vec<Cell>, Vec<VarReg>));
 
-fn generalise(
+/// Search every positive example in parallel, keeping only the sub
+/// hypotheses that contradict none of the negatives.
+///
+/// One worker per positive example, each generalising and specialising as it
+/// goes (see [`sub_hypotheses_for_example`]). Results are folded into the
+/// shared predicate definition table by [`merge_thread_results`] as they
+/// arrive, so merging overlaps with searching.
+fn build_sub_hypotheses(
     pos_goals: &[usize],
+    neg_goals: &[usize],
     predicate_table: &PredicateTable,
     heap: &[Cell],
     config: Config,
@@ -199,7 +187,7 @@ fn generalise(
     // The merge loop reports on the producers as well as itself, so it needs
     // its own handle on the counter: one writer to the status line, since
     // both sides would otherwise be overwriting the same `\r`-terminated row.
-    let generalised = Arc::clone(&completed);
+    let searched = Arc::clone(&completed);
 
     // Producer threads run in the background on a scoped thread while the
     // calling thread merges each result as it arrives over `rx`.
@@ -210,9 +198,15 @@ fn generalise(
                     let tx = tx.clone();
                     let completed = Arc::clone(&completed);
                     s.spawn(move |_| {
-                        let result = generalise_thread(goal, predicate_table, heap, config);
+                        let result = sub_hypotheses_for_example(
+                            goal,
+                            neg_goals,
+                            predicate_table,
+                            heap,
+                            config,
+                        );
                         // Counted before the send so the status line can never
-                        // show more results merged than generalised.
+                        // show more results merged than searched.
                         completed.fetch_add(1, Ordering::Relaxed);
                         let _ = tx.send(result);
                     });
@@ -222,7 +216,7 @@ fn generalise(
             // sent and dropped, closing the channel for `merge_thread_results`.
         });
 
-        merge_thread_results(rx, heap, total, &generalised)
+        merge_thread_results(rx, heap, total, &searched)
     });
     eprintln!();
 
@@ -258,7 +252,7 @@ fn merge_thread_results(
     thread_results: impl IntoIterator<Item = ThreadResult>,
     heap: &[Cell],
     total: usize,
-    generalised: &AtomicUsize,
+    searched: &AtomicUsize,
 ) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
     let mut acc_heap = QueryHeap::new(heap, None);
     let mut pdt = PredDefTable::default();
@@ -308,11 +302,12 @@ fn merge_thread_results(
         }
 
         // Merging runs on this thread while the producers are still going, so
-        // report both: generalisation reaching `total` is not the end of the
+        // report both: the search reaching `total` is not the end of the
         // work, and folding one result in can take longer than finding it.
         eprint!(
-            "\rGeneralise: {}/{total} examples, merged: {}/{total}, {} predicate definitions  ",
-            generalised.load(Ordering::Relaxed),
+            "\rSub hypotheses: {}/{total} examples searched, {}/{total} merged, \
+             {} predicate definitions  ",
+            searched.load(Ordering::Relaxed),
             merged + 1,
             pdt.pred_defs.len()
         );
@@ -334,20 +329,27 @@ fn dedup_key(clauses: &[Clause], heap: &impl Heap) -> String {
     literals.concat()
 }
 
-/// Search for hypotheses explaining one positive example, accumulating every
-/// hypothesis found (across backtracking) into a single heap local to this
+/// Every sub hypothesis explaining one positive example and contradicting
+/// none of the negatives, accumulated into a single heap local to this
 /// thread.
 ///
-/// Duplicate hypotheses (backtracking solutions that print identically via
-/// [`dedup_key`]) are dropped here so the channel and collector never see
-/// them.
+/// Generalisation and specialisation happen together here rather than as
+/// consecutive passes: the search enumerates candidates by backtracking, and
+/// each is checked against the negatives as it appears, so a candidate that
+/// entails one is dropped before its clauses or its invented predicates are
+/// extracted at all.
+///
+/// Duplicate candidates (backtracking solutions that print identically via
+/// [`dedup_key`]) are dropped here too, so the channel and collector never
+/// see them.
 ///
 /// Returns the deduplicated clause sets (with predicate definitions extracted
 /// out), the predicate definitions themselves ordered by dependency, and the
 /// heap that both rely on. See [`extract_hypothesis`] for how a single
 /// proof's hypothesis is folded into this thread-local heap.
-fn generalise_thread(
+fn sub_hypotheses_for_example(
     goal: usize,
+    neg_goals: &[usize],
     predicate_table: &PredicateTable,
     prog_heap: &[Cell],
     config: Config,
@@ -361,6 +363,20 @@ fn generalise_thread(
     let mut proof = Proof::new(&query_heap, &[goal]);
 
     while proof.prove(&mut query_heap, predicate_table, config) {
+        // Specialise here rather than in a pass of its own: a hypothesis
+        // proving a negative would be discarded later anyway, and rejecting
+        // it now keeps its invented predicates out of the definition table,
+        // which is where the cost of keeping them shows up.
+        if hypothesis_entails_negative(
+            neg_goals,
+            &proof.hypothesis,
+            &query_heap,
+            predicate_table,
+            config,
+        ) {
+            continue;
+        }
+
         let (clauses, defs) = extract_hypothesis(&proof, &query_heap, &mut dst);
         if seen.insert(dedup_key(&clauses, &dst)) {
             clause_sets.push(clauses);
@@ -375,7 +391,7 @@ fn generalise_thread(
 /// the predicate definitions it invents and the ordinary clauses left over.
 ///
 /// `dst` is expected to persist across every hypothesis a worker thread finds
-/// (see [`generalise_thread`]), so that one thread's clauses and predicate
+/// (see [`sub_hypotheses_for_example`]), so that one thread's clauses and predicate
 /// definitions end up sharing a single heap. Each call still builds its own
 /// fresh `ref_map`: two solutions of the same proof must not be treated as
 /// sharing variable identity just because backtracking reused the same
@@ -465,51 +481,6 @@ fn clone_var_reg(
             VarReg::from_var(new_var_id)
         }
     }
-}
-
-fn specialise(
-    neg_goals: &[usize],
-    hypotheses: &[Box<[Clause]>],
-    heap: &[Cell],
-    predicate_table: &PredicateTable,
-    config: Config,
-) -> Vec<bool> {
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(*CPU_COUNT - 1)
-        .build()
-        .unwrap();
-
-    let (tx, rx) = mpsc::channel::<(usize, bool)>();
-    let total = hypotheses.len();
-    let completed = Arc::new(AtomicUsize::new(0));
-
-    // Collector: build the retain mask as results arrive
-    let collector = thread::spawn(move || {
-        let mut retained = vec![true; total];
-        for (idx, keep) in rx {
-            retained[idx] = keep;
-        }
-        retained
-    });
-
-    // One worker per hypothesis
-    pool.scope(|s| {
-        for (idx, hypothesis) in hypotheses.iter().enumerate() {
-            let tx = tx.clone();
-            let completed = completed.clone();
-            s.spawn(move |_| {
-                let keep = specialise_h(neg_goals, hypothesis, heap, predicate_table, config);
-                let _ = tx.send((idx, keep));
-                let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
-                eprint!("\rSpecialise: {done}/{total} hypotheses tested");
-                let _ = io::stderr().flush();
-            });
-        }
-    });
-    drop(tx);
-    eprintln!(" ...done");
-
-    collector.join().unwrap()
 }
 
 fn top_prog_to_string(top_program: Vec<Clause>, heap: &impl Heap) -> String {
@@ -752,8 +723,8 @@ mod merge_tests {
     };
 
     /// [`merge_thread_results`] with the progress-reporting arguments filled
-    /// in: these tests supply every message up front, so "generalised" is
-    /// simply the message count.
+    /// in: these tests supply every message up front, so the number of
+    /// examples searched is simply the message count.
     fn merge(
         results: Vec<ThreadResult>,
         heap: &[Cell],
@@ -770,7 +741,7 @@ mod merge_tests {
     }
 
     /// Deconstruct a thread-local heap into the `(cells, var_regs)` pair
-    /// `generalise_thread` actually returns.
+    /// `sub_hypotheses_for_example` actually returns.
     fn parts(heap: QueryHeap<'static>) -> (Vec<Cell>, Vec<VarReg>) {
         (heap.cells, heap.var_regs)
     }

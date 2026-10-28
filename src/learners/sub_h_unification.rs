@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use super::{specialise::specialise_h_threaded, utils::count_coverage};
+use super::{specialise::clauses_entail_negative, utils::count_coverage};
 use crate::{
     heap::{Cell, Heap, QueryHeap},
     learners::utils::{count_pred_clauses, Coverage},
@@ -271,7 +271,7 @@ fn group_entails_negative(
         .iter()
         .flat_map(|&i| h_profiles[i].h.iter().cloned())
         .collect();
-    !specialise_h_threaded(neg_goals, &combined, heap, predicate_table, config)
+    clauses_entail_negative(neg_goals, &combined, heap, predicate_table, config)
 }
 
 /// Search coverage profiles for next valid index, None if no valid
