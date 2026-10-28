@@ -71,13 +71,13 @@ pub fn univ(
                 None => false.into(),
             }
         }
-        (Comp, Ref) => {
+        (Comp, Var) => {
             let comp_arg_addrs = heap.str_args(comp_addr);
             let new_list_addr = build_list_from_addrs(heap, &comp_arg_addrs);
             heap.bind(lis_value, Addr(new_list_addr));
             [lis_value].into()
         }
-        (Ref, Lis) => {
+        (Var, Lis) => {
             let Some(addrs) = read_list_addrs(heap, lis_addr) else {
                 return false.into();
             };
@@ -101,7 +101,7 @@ pub fn is_var(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    (resolve_to_cell(heap, goal_arg(heap, goal, 0)).0 == Ref).into()
+    (resolve_to_cell(heap, goal_arg(heap, goal, 0)).0 == Var).into()
 }
 
 pub fn non_var(
@@ -112,7 +112,7 @@ pub fn non_var(
     _: Config,
 ) -> PredReturn {
     // goal_arg already derefs, so a Ref cell at this point is always unbound.
-    (heap[goal_arg(heap, goal, 0)].0 != Ref).into()
+    (heap[goal_arg(heap, goal, 0)].0 != Var).into()
 }
 
 /// `is_const/1`: succeeds if the argument is a constant (atom).
@@ -135,7 +135,7 @@ pub fn valid_functor(
     _: Config,
 ) -> PredReturn {
     let tag = heap[goal_arg(heap, goal, 0)].0;
-    (tag == Con || tag == Ref).into()
+    (tag == Con || tag == Var).into()
 }
 
 /// `is_int/1`: succeeds if the argument is an integer.

@@ -61,7 +61,7 @@ impl Hypothesis {
     pub fn is_invented_pred(&self, heap: &impl Heap, var_id: usize) -> bool {
         self.invented_preds
             .iter()
-            .any(|&v| matches!(heap.var_deref(v), Var(rep) if rep == var_id))
+            .any(|&v| matches!(heap.var_deref(v), VarId(rep) if rep == var_id))
     }
 
     /// Record `var_id` as an invented predicate.
@@ -185,7 +185,7 @@ impl DerefMut for Hypothesis {
 mod invented_pred_tests {
     use super::*;
     use crate::{
-        heap::{QueryHeap, SymbolDB, Tag::*, VarBind::Var, VarReg},
+        heap::{QueryHeap, SymbolDB, Tag::*, VarBind::VarId, VarReg},
         program::clause::BitFlag64,
     };
 
@@ -200,7 +200,7 @@ mod invented_pred_tests {
         let a = SymbolDB::set_const("a");
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
-        heap.cells = vec![(Comp, 2), (Ref, 0), (Con, a), (Comp, 2), (Con, p), (Con, a)];
+        heap.cells = vec![(Comp, 2), (Var, 0), (Con, a), (Comp, 2), (Con, p), (Con, a)];
         heap.var_regs = vec![VarReg::UNBOUND; var_count];
         (
             heap,
@@ -278,8 +278,8 @@ mod invented_pred_tests {
         // comparing raw ids would let it slip through the filter.
         let (mut heap, _, _) = heap_with_two_heads(2);
         // The clause head at address 0 now reads Ref_1, which derefs to var 0.
-        heap.cells[1] = (Ref, 1);
-        heap.var_regs[1] = Var(0).into();
+        heap.cells[1] = (Var, 1);
+        heap.var_regs[1] = VarId(0).into();
         let aliased_head = Clause::new(vec![0], None, 0);
 
         let meta_data = MetaData {
@@ -309,7 +309,7 @@ mod invented_pred_tests {
     #[test]
     fn re_registering_an_aliased_variable_is_a_no_op() {
         let (mut heap, _, _) = heap_with_two_heads(2);
-        heap.var_regs[1] = Var(0).into();
+        heap.var_regs[1] = VarId(0).into();
 
         let mut h = Hypothesis::new();
         assert!(h.add_invented_pred(&heap, 0));

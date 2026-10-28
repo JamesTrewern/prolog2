@@ -7,9 +7,9 @@ use crate::{
 /// Handle possible dereferencing of ref cells return the Cell value
 /// If addr is not a ref cell simply return `heap[addr]`
 pub fn resolve_to_cell(heap: &QueryHeap, addr: usize) -> Cell {
-    if let (Ref, var_id) = heap[addr] {
+    if let (Var, var_id) = heap[addr] {
         match heap.var_deref(var_id) {
-            crate::heap::VarBind::Var(var_id) => (Ref, var_id),
+            crate::heap::VarBind::VarId(var_id) => (Var, var_id),
             crate::heap::VarBind::Addr(addr) => heap[addr],
         }
     } else {
@@ -22,9 +22,9 @@ pub fn resolve_to_cell(heap: &QueryHeap, addr: usize) -> Cell {
 /// but may not point to ref cell with same variable ID.
 /// If addr is not a ref cell simply return `(heap[addr],addr)`
 pub fn resolve_to_cell_and_addr(heap: &QueryHeap, addr: usize) -> (Cell, usize) {
-    if let (Ref, var_id) = heap[addr] {
+    if let (Var, var_id) = heap[addr] {
         match heap.var_deref(var_id) {
-            crate::heap::VarBind::Var(var_id) => ((Ref, var_id), addr),
+            crate::heap::VarBind::VarId(var_id) => ((Var, var_id), addr),
             crate::heap::VarBind::Addr(addr) => (heap[addr], addr),
         }
     } else {
@@ -43,7 +43,7 @@ pub fn goal_arg(heap: &QueryHeap, goal: usize, n: usize) -> usize {
 
 /// True if `addr` holds an unbound variable (self-referential `Ref`).
 pub fn is_var(heap: &QueryHeap, addr: usize) -> bool {
-    matches!(heap[addr], (Ref, r) if r == addr)
+    matches!(heap[addr], (Var, r) if r == addr)
 }
 
 // ---------------------------------------------------------------------------

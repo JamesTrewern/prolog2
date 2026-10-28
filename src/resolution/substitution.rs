@@ -75,7 +75,7 @@ impl Substitution {
     /// When binding a var in heap, check if any args are bound to var
     /// and update arg binding if they are
     pub fn update_arg_regs(&mut self, var_id: usize, binding: VarBind) {
-        let find: VarReg = Var(var_id).into();
+        let find: VarReg = VarId(var_id).into();
         let replace: VarReg = binding.into();
         self.arg_regs.find_replace(find, replace);
     }

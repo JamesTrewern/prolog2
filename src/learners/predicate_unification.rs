@@ -10,7 +10,7 @@ use crate::{
     heap::{
         Heap, QueryHeap, SymbolDB,
         Tag::*,
-        VarBind::{Addr, Var},
+        VarBind::{Addr, VarId},
     },
     program::{clause::Clause, meta_sub::MetaSub},
     utils::{DirGraph16, DirGraph8, FindReturn},
@@ -94,12 +94,12 @@ impl PredDef {
             let Some(head) = meta_sub.subs.first_mut() else {
                 continue;
             };
-            if let Some(Var(var_id)) = head.get_bind() {
+            if let Some(VarId(var_id)) = head.get_bind() {
                 match heap.var_deref(var_id) {
                     // Already coined -- by an earlier clause of this same
                     // definition, or by unification against the table.
                     bound @ Addr(_) => *head = bound.into(),
-                    Var(var_id) => {
+                    VarId(var_id) => {
                         let pred_symbol = SymbolDB::set_const(format!("pred_{next_id}"));
                         let addr = heap.heap_push((Con, pred_symbol));
                         *next_id += 1;
@@ -112,7 +112,7 @@ impl PredDef {
 
         for meta_sub in self.iter_mut() {
             for var_reg in meta_sub.subs.iter_mut().skip(1) {
-                if let Some(Var(var_id)) = var_reg.get_bind() {
+                if let Some(VarId(var_id)) = var_reg.get_bind() {
                     let bound = heap.var_deref(var_id);
                     debug_assert!(
                         matches!(bound, Addr(_)),
@@ -206,7 +206,7 @@ impl PredDef {
         let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(clauses.len());
 
         for idx in (0..clauses.len()).rev() {
-            if let (Ref, var_id) = heap.get_deref_cell(clauses[idx].head() + 1) {
+            if let (Var, var_id) = heap.get_deref_cell(clauses[idx].head() + 1) {
                 let clause = clauses.remove(idx);
                 let meta_sub = meta_subs.remove(idx);
                 match var_preds.iter().position(|var_pred| *var_pred == var_id) {
@@ -398,7 +398,7 @@ impl PredDefTable {
                     .iter()
                     .map(|sub| match sub.get_bind() {
                         Some(Addr(addr)) => heap.term_string(addr),
-                        Some(Var(var_id)) => format!("Var_{var_id}"),
+                        Some(VarId(var_id)) => format!("Var_{var_id}"),
                         None => "UNBOUND".to_string(),
                     })
                     .collect();
@@ -423,7 +423,7 @@ impl PredDefTable {
 
 fn extract_body_var_preds(pred_set: &mut HashSet<usize>, clause: &Clause, heap: &impl Heap) {
     for literal in clause.body() {
-        if let (Ref, var_id) = heap.get_deref_cell(literal + 1) {
+        if let (Var, var_id) = heap.get_deref_cell(literal + 1) {
             pred_set.insert(var_id);
         }
     }
@@ -488,7 +488,7 @@ mod tests {
         let mut max_var_id = 0;
         for (_, binds) in &meta_binds {
             for bind in *binds {
-                if let Var(var_id) = bind {
+                if let VarId(var_id) = bind {
                     max_var_id = max_var_id.max(*var_id);
                 }
             }
@@ -560,12 +560,12 @@ mod tests {
 
         let mut h1 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), Var(0)]), (1, &[Var(0), Addr(q), Addr(r)])],
+            [(0, &[Addr(p), VarId(0)]), (1, &[VarId(0), Addr(q), Addr(r)])],
             &mut heap,
         );
         let mut h2 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), Var(1)]), (1, &[Var(1), Addr(q), Addr(r)])],
+            [(0, &[Addr(p), VarId(1)]), (1, &[VarId(1), Addr(q), Addr(r)])],
             &mut heap,
         );
 
@@ -598,12 +598,12 @@ mod tests {
         // Var_0 is q-then-r, Var_1 is q-then-s: different definitions.
         let mut h1 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), Var(0)]), (1, &[Var(0), Addr(q), Addr(r)])],
+            [(0, &[Addr(p), VarId(0)]), (1, &[VarId(0), Addr(q), Addr(r)])],
             &mut heap,
         );
         let mut h2 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), Var(1)]), (1, &[Var(1), Addr(q), Addr(s)])],
+            [(0, &[Addr(p), VarId(1)]), (1, &[VarId(1), Addr(q), Addr(s)])],
             &mut heap,
         );
 
@@ -633,9 +633,9 @@ mod tests {
         let mut h1 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)]),
-                (1, &[Var(0), Addr(q), Addr(r)]),
-                (1, &[Var(0), Addr(r), Addr(q)]),
+                (0, &[Addr(p), VarId(0)]),
+                (1, &[VarId(0), Addr(q), Addr(r)]),
+                (1, &[VarId(0), Addr(r), Addr(q)]),
             ],
             &mut heap,
         );
@@ -643,9 +643,9 @@ mod tests {
         let mut h2 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(1)]),
-                (1, &[Var(1), Addr(r), Addr(q)]),
-                (1, &[Var(1), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(1)]),
+                (1, &[VarId(1), Addr(r), Addr(q)]),
+                (1, &[VarId(1), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );
@@ -667,7 +667,7 @@ mod tests {
     fn definition_heads(defs: &[PredDef]) -> Vec<usize> {
         defs.iter()
             .map(|def| match def.meta_subs[0].subs[0].get_bind() {
-                Some(Var(var_id)) => var_id,
+                Some(VarId(var_id)) => var_id,
                 other => panic!("expected an unbound head predicate variable, got {other:?}"),
             })
             .collect()
@@ -699,9 +699,9 @@ mod tests {
         let mut h = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)]),
-                (0, &[Var(0), Var(1)]),
-                (1, &[Var(1), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(0)]),
+                (0, &[VarId(0), VarId(1)]),
+                (1, &[VarId(1), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );
@@ -739,9 +739,9 @@ mod tests {
         let mut h = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)]),
-                (0, &[Var(0), Var(1)]),
-                (0, &[Var(1), Var(1)]),
+                (0, &[Addr(p), VarId(0)]),
+                (0, &[VarId(0), VarId(1)]),
+                (0, &[VarId(1), VarId(1)]),
             ],
             &mut heap,
         );
@@ -779,16 +779,16 @@ mod tests {
         let mut h = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)] as &[VarBind]),
-                (0, &[Var(0), Var(1)]),
-                (0, &[Var(1), Var(2)]),
-                (0, &[Var(2), Var(3)]),
-                (0, &[Var(3), Var(4)]),
-                (0, &[Var(4), Var(5)]),
-                (0, &[Var(5), Var(6)]),
-                (0, &[Var(6), Var(7)]),
-                (0, &[Var(7), Var(8)]),
-                (1, &[Var(8), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(0)] as &[VarBind]),
+                (0, &[VarId(0), VarId(1)]),
+                (0, &[VarId(1), VarId(2)]),
+                (0, &[VarId(2), VarId(3)]),
+                (0, &[VarId(3), VarId(4)]),
+                (0, &[VarId(4), VarId(5)]),
+                (0, &[VarId(5), VarId(6)]),
+                (0, &[VarId(6), VarId(7)]),
+                (0, &[VarId(7), VarId(8)]),
+                (1, &[VarId(8), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );
@@ -819,16 +819,16 @@ mod tests {
         let mut h = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)] as &[VarBind]),
-                (0, &[Var(0), Var(1)]),
-                (0, &[Var(1), Var(2)]),
-                (0, &[Var(2), Var(3)]),
-                (0, &[Var(3), Var(4)]),
-                (0, &[Var(4), Var(5)]),
-                (0, &[Var(5), Var(6)]),
-                (0, &[Var(6), Var(7)]),
-                (0, &[Var(7), Var(8)]),
-                (1, &[Var(8), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(0)] as &[VarBind]),
+                (0, &[VarId(0), VarId(1)]),
+                (0, &[VarId(1), VarId(2)]),
+                (0, &[VarId(2), VarId(3)]),
+                (0, &[VarId(3), VarId(4)]),
+                (0, &[VarId(4), VarId(5)]),
+                (0, &[VarId(5), VarId(6)]),
+                (0, &[VarId(6), VarId(7)]),
+                (0, &[VarId(7), VarId(8)]),
+                (1, &[VarId(8), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );
@@ -864,9 +864,9 @@ mod tests {
         let mut h = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)]),
-                (0, &[Var(0), Var(1)]),
-                (1, &[Var(1), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(0)]),
+                (0, &[VarId(0), VarId(1)]),
+                (1, &[VarId(1), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );
@@ -915,13 +915,13 @@ mod tests {
 
         let mut h1 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), Var(0)]), (1, &[Var(0), Addr(q), Addr(r)])],
+            [(0, &[Addr(p), VarId(0)]), (1, &[VarId(0), Addr(q), Addr(r)])],
             &mut heap,
         );
 
         let mut h2 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), Var(1)]), (1, &[Var(1), Addr(q), Addr(r)])],
+            [(0, &[Addr(p), VarId(1)]), (1, &[VarId(1), Addr(q), Addr(r)])],
             &mut heap,
         );
 
@@ -960,9 +960,9 @@ mod tests {
         let mut h1 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)]),
-                (1, &[Var(0), Addr(q), Addr(r)]),
-                (1, &[Var(0), Addr(r), Addr(q)]),
+                (0, &[Addr(p), VarId(0)]),
+                (1, &[VarId(0), Addr(q), Addr(r)]),
+                (1, &[VarId(0), Addr(r), Addr(q)]),
             ],
             &mut heap,
         );
@@ -970,9 +970,9 @@ mod tests {
         let mut h2 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(1)]),
-                (1, &[Var(1), Addr(q), Addr(r)]),
-                (1, &[Var(1), Addr(r), Addr(q)]),
+                (0, &[Addr(p), VarId(1)]),
+                (1, &[VarId(1), Addr(q), Addr(r)]),
+                (1, &[VarId(1), Addr(r), Addr(q)]),
             ],
             &mut heap,
         );
@@ -1011,9 +1011,9 @@ mod tests {
         let mut h1 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)]),
-                (0, &[Var(0), Var(1)]),
-                (1, &[Var(1), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(0)]),
+                (0, &[VarId(0), VarId(1)]),
+                (1, &[VarId(1), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );
@@ -1021,9 +1021,9 @@ mod tests {
         let mut h2 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(2)]),
-                (0, &[Var(2), Var(3)]),
-                (1, &[Var(3), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(2)]),
+                (0, &[VarId(2), VarId(3)]),
+                (1, &[VarId(3), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );
@@ -1061,19 +1061,19 @@ mod tests {
         let mut h1 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)]),
-                (0, &[Var(0), Var(1)]),
-                (0, &[Var(0), Addr(p)]),
-                (1, &[Var(1), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(0)]),
+                (0, &[VarId(0), VarId(1)]),
+                (0, &[VarId(0), Addr(p)]),
+                (1, &[VarId(1), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );
         let mut h2 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(2)]),
-                (0, &[Var(2), Var(3)]),
-                (1, &[Var(3), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(2)]),
+                (0, &[VarId(2), VarId(3)]),
+                (1, &[VarId(3), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );
@@ -1113,18 +1113,18 @@ mod tests {
         let mut h1 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)]),
-                (0, &[Var(0), Var(1)]),
-                (0, &[Var(1), Var(0)]),
+                (0, &[Addr(p), VarId(0)]),
+                (0, &[VarId(0), VarId(1)]),
+                (0, &[VarId(1), VarId(0)]),
             ],
             &mut heap,
         );
         let mut h2 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(2)]),
-                (0, &[Var(2), Var(3)]),
-                (0, &[Var(3), Var(2)]),
+                (0, &[Addr(p), VarId(2)]),
+                (0, &[VarId(2), VarId(3)]),
+                (0, &[VarId(3), VarId(2)]),
             ],
             &mut heap,
         );
@@ -1176,22 +1176,22 @@ mod tests {
         let mut h1 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)]),
-                (0, &[Var(0), Var(1)]),
-                (0, &[Var(0), Var(2)]),
-                (0, &[Var(1), Var(0)]),
-                (1, &[Var(2), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(0)]),
+                (0, &[VarId(0), VarId(1)]),
+                (0, &[VarId(0), VarId(2)]),
+                (0, &[VarId(1), VarId(0)]),
+                (1, &[VarId(2), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );
         let mut h2 = build_hypothesis(
             meta_rules,
             [
-                (0, &[Addr(p), Var(0)]),
-                (0, &[Var(3), Var(4)]),
-                (0, &[Var(3), Var(5)]),
-                (0, &[Var(4), Var(3)]),
-                (1, &[Var(5), Addr(q), Addr(r)]),
+                (0, &[Addr(p), VarId(0)]),
+                (0, &[VarId(3), VarId(4)]),
+                (0, &[VarId(3), VarId(5)]),
+                (0, &[VarId(4), VarId(3)]),
+                (1, &[VarId(5), Addr(q), Addr(r)]),
             ],
             &mut heap,
         );

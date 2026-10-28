@@ -52,10 +52,10 @@ fn build_arg(
         Some(bit_flags) if !bit_flags.get(arg_id) => _ = heap.heap_push((Arg, arg_id)),
         _ => match substitution.get_arg(arg_id) {
             Some(Addr(bound_addr)) => _ = build(heap, substitution, meta_vars, bound_addr),
-            Some(Var(var_id)) => _ = heap.heap_push((Ref, var_id)),
+            Some(VarId(var_id)) => _ = heap.heap_push((Var, var_id)),
             None => {
                 let var_id = heap.set_var(None);
-                substitution.set_arg(arg_id, Var(var_id));
+                substitution.set_arg(arg_id, VarId(var_id));
             }
         },
     }
@@ -109,7 +109,7 @@ mod tests {
             "program fixture must begin with a poison cell"
         );
         assert!(
-            !cells.iter().any(|c| c.0 == Ref),
+            !cells.iter().any(|c| c.0 == Var),
             "program heap must not contain Ref cells; clause variables are Arg cells"
         );
         cells
@@ -149,7 +149,7 @@ mod tests {
 
         re_build_bound_arg_terms(&mut heap, &mut sub);
 
-        assert_eq!(heap[q..], [LIS, (Ref, 1), EMPTY_LIS]);
+        assert_eq!(heap[q..], [LIS, (Var, 1), EMPTY_LIS]);
         assert_eq!(
             heap.var_regs[0],
             Addr(q).into(),
@@ -164,7 +164,7 @@ mod tests {
         // cannot tell us *which* arg the fresh variable was filed under.
         assert_eq!(
             sub.get_arg(0),
-            Some(Var(1)),
+            Some(VarId(1)),
             "the fresh variable must be recorded against arg 0"
         );
     }
@@ -243,18 +243,18 @@ mod tests {
             [
                 (Comp, 4),
                 (Con, p),
-                (Ref, 1), // A0
+                (Var, 1), // A0
                 (Comp, 3),
                 (Con, g),
-                (Ref, 2), // A1 — must not collapse into A0
+                (Var, 2), // A1 — must not collapse into A0
                 (Con, a),
                 LIS,
-                (Ref, 1), // A0 again — must be the same variable
+                (Var, 1), // A0 again — must be the same variable
                 EMPTY_LIS,
             ]
         );
-        assert_eq!(sub.get_arg(0), Some(Var(1)));
-        assert_eq!(sub.get_arg(1), Some(Var(2)));
+        assert_eq!(sub.get_arg(0), Some(VarId(1)));
+        assert_eq!(sub.get_arg(1), Some(VarId(2)));
         assert!(
             !heap.contains_args(q),
             "no Arg cells may survive a rebuild"
@@ -297,12 +297,12 @@ mod tests {
             [
                 // rebuilt head subterm
                 LIS,
-                (Ref, 1),
+                (Var, 1),
                 EMPTY_LIS,
                 // body goal, reusing the same variable
                 (Comp, 2),
                 (Con, q_sym),
-                (Ref, 1),
+                (Var, 1),
             ]
         );
         assert_eq!(goal, q + 3);
@@ -374,7 +374,7 @@ mod tests {
 
         assert_eq!(
             heap[q..],
-            [LIS, (Ref, 2), EMPTY_LIS, LIS, (Ref, 2), EMPTY_LIS],
+            [LIS, (Var, 2), EMPTY_LIS, LIS, (Var, 2), EMPTY_LIS],
             "each flagged binding gets its own copy, sharing the same variable"
         );
         assert_eq!(heap.var_regs[0], Addr(q).into());
@@ -424,10 +424,10 @@ mod tests {
         assert_eq!(goal, q);
         assert_eq!(
             heap[q..],
-            [(Comp, 4), (Con, p), (Ref, 0), (Ref, 0), (Ref, 1)]
+            [(Comp, 4), (Con, p), (Var, 0), (Var, 0), (Var, 1)]
         );
-        assert_eq!(sub.get_arg(0), Some(Var(0)));
-        assert_eq!(sub.get_arg(1), Some(Var(1)));
+        assert_eq!(sub.get_arg(0), Some(VarId(0)));
+        assert_eq!(sub.get_arg(1), Some(VarId(1)));
         assert_eq!(heap.var_regs, [VarReg::UNBOUND, VarReg::UNBOUND]);
         assert!(!heap.contains_args(goal));
     }
@@ -450,11 +450,11 @@ mod tests {
         // Three query variables already exist; arg 0 is bound to the last.
         heap.var_regs = vec![VarReg::UNBOUND; 3];
         let mut sub = Substitution::default();
-        sub.set_arg(0, Var(2));
+        sub.set_arg(0, VarId(2));
 
         build(&mut heap, &mut sub, None, 1);
 
-        assert_eq!(heap[q..], [(Comp, 2), (Con, q_sym), (Ref, 2)]);
+        assert_eq!(heap[q..], [(Comp, 2), (Con, q_sym), (Var, 2)]);
         assert_eq!(
             heap.var_regs.len(),
             3,
@@ -522,9 +522,9 @@ mod tests {
 
         assert_eq!(
             heap[q..],
-            [(Comp, 2), (Con, q_sym), (Comp, 2), (Con, g), (Ref, 0)]
+            [(Comp, 2), (Con, q_sym), (Comp, 2), (Con, g), (Var, 0)]
         );
-        assert_eq!(sub.get_arg(1), Some(Var(0)));
+        assert_eq!(sub.get_arg(1), Some(VarId(0)));
         assert!(
             !heap.contains_args(goal),
             "recursion must resolve args at every depth"
@@ -561,10 +561,10 @@ mod tests {
             [
                 (Comp, 2),
                 (Con, q_sym),
-                (Ref, 0),
+                (Var, 0),
                 (Comp, 2),
                 (Con, r),
-                (Ref, 0),
+                (Var, 0),
             ]
         );
         assert_eq!(
@@ -608,14 +608,14 @@ mod tests {
                 (Comp, 4),
                 (Con, p),
                 (Set, 2),
-                (Ref, 0),
-                (Ref, 1),
+                (Var, 0),
+                (Var, 1),
                 (Tup, 2),
-                (Ref, 2),
-                (Ref, 3),
+                (Var, 2),
+                (Var, 3),
                 LIS,
-                (Ref, 4),
-                (Ref, 5),
+                (Var, 4),
+                (Var, 5),
             ]
         );
         assert!(!heap.contains_args(goal));
@@ -731,8 +731,8 @@ mod tests {
         let goal = build(&mut heap, &mut sub, None, 1);
 
         assert_eq!(goal, q, "build returns the heap length captured before it pushes");
-        assert_eq!(heap[q..], [(Ref, 0)]);
-        assert_eq!(sub.get_arg(0), Some(Var(0)));
+        assert_eq!(heap[q..], [(Var, 0)]);
+        assert_eq!(sub.get_arg(0), Some(VarId(0)));
     }
 
     //---------------------------------------------------------------------
@@ -812,7 +812,7 @@ mod tests {
         let mut sub = Substitution::default();
         sub.set_arg(0, Addr(5));
         sub.set_arg(1, Addr(6)); // deliberately bound, but not a meta var
-        sub.set_arg(2, Var(0));
+        sub.set_arg(2, VarId(0));
 
         build(&mut heap, &mut sub, Some(meta_vars), 1);
 
@@ -847,8 +847,8 @@ mod tests {
 
         build(&mut heap, &mut sub, Some(meta_vars), 1);
 
-        assert_eq!(heap[q..], [(Comp, 3), (Ref, 0), (Arg, 1), (Arg, 2)]);
-        assert_eq!(sub.get_arg(0), Some(Var(0)));
+        assert_eq!(heap[q..], [(Comp, 3), (Var, 0), (Arg, 1), (Arg, 2)]);
+        assert_eq!(sub.get_arg(0), Some(VarId(0)));
     }
 
     /// A meta var bound to a variable rather than an address emits that
@@ -869,11 +869,11 @@ mod tests {
         let mut meta_vars = BitFlag64::default();
         meta_vars.set(0);
         let mut sub = Substitution::default();
-        sub.set_arg(0, Var(1));
+        sub.set_arg(0, VarId(1));
 
         build(&mut heap, &mut sub, Some(meta_vars), 1);
 
-        assert_eq!(heap[q..], [(Comp, 3), (Ref, 1), (Arg, 1), (Arg, 2)]);
+        assert_eq!(heap[q..], [(Comp, 3), (Var, 1), (Arg, 1), (Arg, 2)]);
         assert_eq!(heap.var_regs.len(), 2, "no variable should be invented");
     }
 
@@ -925,8 +925,8 @@ mod tests {
                 // goal: q(_0, _1)
                 (Comp, 3),
                 (Con, q_sym),
-                (Ref, 0),
-                (Ref, 1),
+                (Var, 0),
+                (Var, 1),
                 // learned head: p(A1, A2)
                 (Comp, 3),
                 (Con, p),
@@ -1057,7 +1057,7 @@ mod tests {
             (Comp, 3), // 1: learned literal p(A0, R0)
             (Con, p),  // 2
             (Arg, 0),  // 3
-            (Ref, 0),  // 4
+            (Var, 0),  // 4
             (Con, a),  // 5: the value R0 acquired
         ]);
         heap.var_regs = vec![Addr(q + 4).into()];
@@ -1066,7 +1066,7 @@ mod tests {
         let built = build(&mut heap, &mut sub, None, q);
 
         assert_eq!(built, q + 5);
-        assert_eq!(heap[built..], [(Comp, 3), (Con, p), (Ref, 1), (Con, a)]);
+        assert_eq!(heap[built..], [(Comp, 3), (Con, p), (Var, 1), (Con, a)]);
         assert!(
             !heap.contains_args(built),
             "read back as a goal, the clause is fully resolved"
@@ -1086,14 +1086,14 @@ mod tests {
             (Comp, 3), // 1: p(A0, R0)
             (Con, p),  // 2
             (Arg, 0),  // 3
-            (Ref, 0),  // 4
+            (Var, 0),  // 4
         ]);
         heap.var_regs = vec![VarReg::UNBOUND];
         let mut sub = Substitution::default();
 
         let built = build(&mut heap, &mut sub, None, q);
 
-        assert_eq!(heap[built..], [(Comp, 3), (Con, p), (Ref, 1), (Ref, 0)]);
+        assert_eq!(heap[built..], [(Comp, 3), (Con, p), (Var, 1), (Var, 0)]);
     }
 
     /// A ref bound to another variable emits the representative it derefs to,
@@ -1110,15 +1110,15 @@ mod tests {
             (Comp, 3), // 1: p(A0, R0)
             (Con, p),  // 2
             (Arg, 0),  // 3
-            (Ref, 0),  // 4
+            (Var, 0),  // 4
         ]);
         // R0 -> R1, and R1 is unbound.
-        heap.var_regs = vec![Var(1).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(1).into(), VarReg::UNBOUND];
         let mut sub = Substitution::default();
 
         let built = build(&mut heap, &mut sub, None, q);
 
-        assert_eq!(heap[built..], [(Comp, 3), (Con, p), (Ref, 2), (Ref, 1)]);
+        assert_eq!(heap[built..], [(Comp, 3), (Con, p), (Var, 2), (Var, 1)]);
     }
 
     /// A ref bound into the *program* heap has its target copied into query
@@ -1143,14 +1143,14 @@ mod tests {
             (Comp, 3), // 2: p(A0, R0)
             (Con, p),  // 3
             (Arg, 0),  // 4
-            (Ref, 0),  // 5
+            (Var, 0),  // 5
         ]);
         heap.var_regs = vec![Addr(1).into()];
         let mut sub = Substitution::default();
 
         let built = build(&mut heap, &mut sub, None, q);
 
-        assert_eq!(heap[built..], [(Comp, 3), (Con, p), (Ref, 1), (Con, a)]);
+        assert_eq!(heap[built..], [(Comp, 3), (Con, p), (Var, 1), (Con, a)]);
     }
 
     /// The same bound ref appearing twice yields two independent copies of its
@@ -1171,8 +1171,8 @@ mod tests {
         heap.cells.extend([
             (Comp, 3), // 1: p(R0, R0)
             (Con, p),  // 2
-            (Ref, 0),  // 3
-            (Ref, 0),  // 4
+            (Var, 0),  // 3
+            (Var, 0),  // 4
             (Tup, 2),  // 5: the value R0 acquired
             (Con, a),  // 6
             (Con, b),  // 7
@@ -1216,7 +1216,7 @@ mod tests {
             (Comp, 3), // 1: p(A1, R0)
             (Con, p),  // 2
             (Arg, 1),  // 3
-            (Ref, 0),  // 4
+            (Var, 0),  // 4
             (Con, a),  // 5
         ]);
         heap.var_regs = vec![Addr(q + 4).into()];
@@ -1231,7 +1231,7 @@ mod tests {
                 // as a goal: the arg is resolved
                 (Comp, 3),
                 (Con, p),
-                (Ref, 1),
+                (Var, 1),
                 (Con, a),
                 // as a template: the arg is preserved, the ref is not
                 (Comp, 3),
@@ -1262,7 +1262,7 @@ mod tests {
         heap.cells.extend([
             (Comp, 2), // 1: p(R0)
             (Con, p),  // 2
-            (Ref, 0),  // 3
+            (Var, 0),  // 3
             (Con, a),  // 4
         ]);
         heap.var_regs = vec![VarReg::UNBOUND];
@@ -1272,7 +1272,7 @@ mod tests {
         heap.bind(0, Addr(q + 3));
         let after = build(&mut heap, &mut sub, None, q);
 
-        assert_eq!(heap[before..before + 3], [(Comp, 2), (Con, p), (Ref, 0)]);
+        assert_eq!(heap[before..before + 3], [(Comp, 2), (Con, p), (Var, 0)]);
         assert_eq!(heap[after..], [(Comp, 2), (Con, p), (Con, a)]);
         assert_ne!(
             heap[before..before + 3],
@@ -1314,21 +1314,21 @@ mod tests {
         let q = prog.len();
 
         // Goal p(X) in query space.
-        heap.cells.extend([(Comp, 2), (Con, p), (Ref, 0)]);
+        heap.cells.extend([(Comp, 2), (Con, p), (Var, 0)]);
         heap.var_regs = vec![VarReg::UNBOUND];
 
         let mut sub = unify(&mut heap, 1, q,31).expect("p(A0) must unify with p(X)");
 
         // `Arg` against `Ref` records a variable binding, not an address, so
         // nothing was bound in the heap and there is nothing to rebuild.
-        assert_eq!(sub.get_arg(0), Some(Var(0)));
+        assert_eq!(sub.get_arg(0), Some(VarId(0)));
         assert!(sub.is_empty(), "no heap variable was bound");
 
         re_build_bound_arg_terms(&mut heap, &mut sub);
         let goal = build(&mut heap, &mut sub, None, 4);
 
         assert_eq!(goal, q + 3);
-        assert_eq!(heap[goal..], [(Comp, 2), (Con, q_sym), (Ref, 0)]);
+        assert_eq!(heap[goal..], [(Comp, 2), (Con, q_sym), (Var, 0)]);
         assert!(!heap.contains_args(goal));
     }
 
@@ -1362,7 +1362,7 @@ mod tests {
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
-        heap.cells.extend([(Comp, 2), (Con, p), (Ref, 0)]);
+        heap.cells.extend([(Comp, 2), (Con, p), (Var, 0)]);
         heap.var_regs = vec![VarReg::UNBOUND];
 
         let mut sub = unify(&mut heap, 1, q,31).expect("p([A0]) must unify with p(X)");
@@ -1385,7 +1385,7 @@ mod tests {
             heap.var_regs[0].value() >= prog.len(),
             "after the rebuild X must point into query space"
         );
-        assert_eq!(sub.get_arg(0), Some(Var(1)), "A0 got a fresh query variable");
+        assert_eq!(sub.get_arg(0), Some(VarId(1)), "A0 got a fresh query variable");
 
         let g1 = build(&mut heap, &mut sub, None, 6);
         let g2 = build(&mut heap, &mut sub, None, 9);
@@ -1395,14 +1395,14 @@ mod tests {
             heap[rebuilt..],
             [
                 LIS,
-                (Ref, 1),
+                (Var, 1),
                 EMPTY_LIS, // X = [_1]
                 (Comp, 2),
                 (Con, q_sym),
-                (Ref, 1), // q(_1)
+                (Var, 1), // q(_1)
                 (Comp, 2),
                 (Con, r),
-                (Ref, 1), // r(_1)
+                (Var, 1), // r(_1)
             ]
         );
         assert!(
@@ -1434,7 +1434,7 @@ mod tests {
         let q = prog.len();
 
         heap.cells
-            .extend([(Comp, 3), (Con, p), (Ref, 0), (Ref, 1)]);
+            .extend([(Comp, 3), (Con, p), (Var, 0), (Var, 1)]);
         heap.var_regs = vec![VarReg::UNBOUND; 2];
 
         let mut sub = unify(&mut heap, 1, q,31).expect("p([A0], b) must unify with p(X, Z)");
@@ -1457,7 +1457,7 @@ mod tests {
 
         let rebuilt = q + 4; // the four-cell goal sits between q and here
         assert_eq!(heap.var_regs[0].get_bind(), Some(Addr(rebuilt)));
-        assert_eq!(heap[rebuilt..], [LIS, (Ref, 2), EMPTY_LIS]);
+        assert_eq!(heap[rebuilt..], [LIS, (Var, 2), EMPTY_LIS]);
         assert_eq!(
             heap.var_regs[1].get_bind(),
             Some(Addr(6)),

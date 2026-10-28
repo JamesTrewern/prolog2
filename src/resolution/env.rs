@@ -8,7 +8,7 @@ use smallvec::SmallVec;
 use crate::{
     heap::{
         ArgRegs, Heap, HeapPoint, QueryHeap, SymbolDB, Tag,
-        VarBind::{self, Addr, Var},
+        VarBind::{self, Addr, VarId},
     },
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
@@ -578,7 +578,7 @@ impl Env {
                 let mut constraints = Vec::with_capacity(16);
                 for i in 0..MAX_ARG {
                     if clause.constrained_var(i) {
-                        let Some(Var(var_id)) = substitution.get_arg(i) else {
+                        let Some(VarId(var_id)) = substitution.get_arg(i) else {
                             unreachable!("All constrained args should have a var id");
                         };
                         constraints.push(var_id);

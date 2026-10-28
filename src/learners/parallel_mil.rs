@@ -12,8 +12,8 @@ use crate::{
     app::{App, TopProg},
     heap::{
         Cell, Heap, QueryHeap,
-        Tag::Ref,
-        VarBind::{Addr, Var},
+        Tag::Var,
+        VarBind::{Addr, VarId},
         VarReg,
     },
     learners::predicate_unification::{PredDef, PredDefTable, MAX_PRED_DEFS},
@@ -78,7 +78,7 @@ impl App {
         );
 
         for (i, cell) in cells.iter().enumerate() {
-            if cell.0 == Ref {
+            if cell.0 == Var {
                 panic!("{cell:?}@{i}\n{:?}", &cells[i - 5..i + 5])
             }
         }
@@ -283,9 +283,9 @@ fn merge_thread_results(
         }
 
         for addr in offset..acc_heap.heap_len() {
-            if acc_heap[addr].0 == Ref {
+            if acc_heap[addr].0 == Var {
                 let resolved = acc_heap.get_deref_cell(addr);
-                if resolved.0 == Ref {
+                if resolved.0 == Var {
                     panic!("Not all variable predicates given constant terms");
                 }
                 acc_heap[addr] = resolved;
@@ -449,7 +449,7 @@ fn clone_var_reg(
         .get_bind()
         .expect("MetaSub subs are always populated from bound arg registers");
     let resolved = match binding {
-        Var(var_id) => proof_heap.var_deref(var_id),
+        VarId(var_id) => proof_heap.var_deref(var_id),
         bound @ Addr(_) => bound,
     };
     match resolved {
@@ -458,7 +458,7 @@ fn clone_var_reg(
             dst.clone_term_from_other(proof_heap, addr, ref_map);
             VarReg::from_addr(new_addr)
         }
-        Var(var_id) => {
+        VarId(var_id) => {
             let new_var_id = *ref_map
                 .entry(var_id)
                 .or_insert_with(|| dst.new_var(VarReg::UNBOUND));
@@ -670,8 +670,8 @@ mod extraction_tests {
         let arg_var = proof_heap.new_var(VarReg::UNBOUND);
         let head_addr = proof_heap.heap_len();
         proof_heap.heap_push((Comp, 2));
-        proof_heap.heap_push((Ref, pred_var));
-        proof_heap.heap_push((Ref, arg_var));
+        proof_heap.heap_push((Var, pred_var));
+        proof_heap.heap_push((Var, arg_var));
 
         let clause = Clause::new(vec![head_addr], None, 0);
         let meta_sub = MetaSub {
@@ -694,7 +694,7 @@ mod extraction_tests {
         let (comp_tag, comp_arity) = dst[0];
         assert_eq!((comp_tag, comp_arity), (Comp, 2));
         let (arg_tag, cloned_arg_var) = dst[2];
-        assert_eq!(arg_tag, Ref);
+        assert_eq!(arg_tag, Var);
 
         assert_eq!(
             pred_defs[0].meta_subs[0].subs[0],
@@ -716,7 +716,7 @@ mod extraction_tests {
         let pred_var = proof_heap.new_var(VarReg::UNBOUND);
         let head_addr = proof_heap.heap_len();
         proof_heap.heap_push((Comp, 1));
-        proof_heap.heap_push((Ref, pred_var));
+        proof_heap.heap_push((Var, pred_var));
         let clause = Clause::new(vec![head_addr], None, 0);
         let meta_sub = MetaSub {
             meta_clause_id: 0,
@@ -784,7 +784,7 @@ mod merge_tests {
         // thread's heap are left behind, orphaned.
         let pred_var = heap.new_var(VarReg::UNBOUND);
         heap.heap_push((Comp, 1));
-        heap.heap_push((Ref, pred_var));
+        heap.heap_push((Var, pred_var));
 
         let meta_sub = MetaSub {
             meta_clause_id: 0,
@@ -796,7 +796,7 @@ mod merge_tests {
 
         assert!(hypotheses.is_empty());
         for (i, cell) in cells.iter().enumerate() {
-            assert_ne!(cell.0, Ref, "cell {i} ({cell:?}) should have been grounded");
+            assert_ne!(cell.0, Var, "cell {i} ({cell:?}) should have been grounded");
         }
         assert_eq!(cells[0], (Comp, 1));
         // The orphaned `(Ref, pred_var)` cell (index 1) must have been
@@ -819,7 +819,7 @@ mod merge_tests {
             let mut heap = thread_heap();
             let pred_var = heap.new_var(VarReg::UNBOUND);
             heap.heap_push((Comp, 1));
-            heap.heap_push((Ref, pred_var));
+            heap.heap_push((Var, pred_var));
             let meta_sub = MetaSub {
                 meta_clause_id,
                 subs: vec![VarReg::from_var(pred_var)],
@@ -837,7 +837,7 @@ mod merge_tests {
             "distinct meta_clause_ids should not unify together"
         );
         for (i, cell) in cells.iter().enumerate() {
-            assert_ne!(cell.0, Ref, "cell {i} ({cell:?}) should have been grounded");
+            assert_ne!(cell.0, Var, "cell {i} ({cell:?}) should have been grounded");
         }
 
         // Each message coined its own fresh constant; they must not alias.
@@ -911,7 +911,7 @@ mod merge_tests {
         // trip the same guard `App::run_top_prog` relies on never firing.
         let mut heap = thread_heap();
         let stray_var = heap.new_var(VarReg::UNBOUND);
-        heap.heap_push((Ref, stray_var));
+        heap.heap_push((Var, stray_var));
 
         let _ = merge(vec![(Vec::new(), Vec::new(), parts(heap))], &[]);
     }

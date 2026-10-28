@@ -797,7 +797,7 @@ impl<'a> Iterator for QuerySession<'a> {
                     (
                         name.clone(),
                         match self.heap.var_deref(*var_id) {
-                            Var(var_id) => self.heap.var_string(var_id),
+                            VarId(var_id) => self.heap.var_string(var_id),
                             Addr(addr) => self.heap.term_string(addr),
                         },
                     )

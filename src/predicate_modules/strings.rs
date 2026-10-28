@@ -87,12 +87,12 @@ pub fn atom_string_pred(
     let (stri_cell, _) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1));
     match (con_cell, stri_cell) {
         ((Con, id), (Stri, idx)) => (SymbolDB::get_const(id) == SymbolDB::get_string(idx)).into(),
-        ((Con, id), (Ref, var_id)) => {
+        ((Con, id), (Var, var_id)) => {
             let result = push_string(heap, SymbolDB::get_const(id));
             heap.bind(var_id, Addr(result));
             [var_id].into()
         }
-        ((Ref, var_id), (Stri, idx)) => {
+        ((Var, var_id), (Stri, idx)) => {
             let result = push_const(heap, &SymbolDB::get_string(idx));
             heap.bind(var_id, Addr(result));
             [var_id].into()
@@ -117,7 +117,7 @@ pub fn atom_number_pred(
     let const_a = goal_arg(heap, goal, 0);
     let num_a = goal_arg(heap, goal, 1);
     match (heap[const_a], heap[num_a]) {
-        ((Con, id), (Ref, var_id)) => {
+        ((Con, id), (Var, var_id)) => {
             let text = SymbolDB::get_const(id);
             match parse_and_push_number(heap, &text) {
                 Some(result) => {
@@ -127,7 +127,7 @@ pub fn atom_number_pred(
                 None => PredReturn::False,
             }
         }
-        ((Ref, var_id), (Int, _) | (Flt, _)) => {
+        ((Var, var_id), (Int, _) | (Flt, _)) => {
             let text = number_to_string(heap, num_a).unwrap();
             let result = push_const(heap, &text);
             heap.bind(var_id, Addr(result));
@@ -163,13 +163,13 @@ pub fn number_string_pred(
     let num_a = goal_arg(heap, goal, 0);
     let str_a = goal_arg(heap, goal, 1);
     match (heap[num_a], heap[str_a]) {
-        ((Int, _) | (Flt, _), (Ref, var_id)) => {
+        ((Int, _) | (Flt, _), (Var, var_id)) => {
             let text = number_to_string(heap, num_a).unwrap();
             let result = push_string(heap, text.into());
             heap.bind(var_id, Addr(result));
             [var_id].into()
         }
-        ((Ref, var_id), (Stri, idx)) => {
+        ((Var, var_id), (Stri, idx)) => {
             let text = SymbolDB::get_string(idx);
             match parse_and_push_number(heap, &text) {
                 Some(result) => {
@@ -205,7 +205,7 @@ pub fn term_string_pred(
 ) -> PredReturn {
     let term_a = goal_arg(heap, goal, 0);
     let str_a = goal_arg(heap, goal, 1);
-    let (Ref, var_id) = heap[str_a] else {
+    let (Var, var_id) = heap[str_a] else {
         return false.into();
     };
     let text = heap.term_string(term_a);
@@ -244,7 +244,7 @@ pub fn char_code_pred(
     }
 
     match (heap[char_a], heap[code_a]) {
-        ((Con, _), (Ref, var_id)) => match single_char(heap, char_a) {
+        ((Con, _), (Var, var_id)) => match single_char(heap, char_a) {
             Some(c) => {
                 let int_addr = push_int(heap, c as isize);
                 heap.bind(var_id, Addr(int_addr));
@@ -252,7 +252,7 @@ pub fn char_code_pred(
             }
             None => PredReturn::False,
         },
-        ((Ref, var_id), (Int, v)) => match char::from_u32(v as u32) {
+        ((Var, var_id), (Int, v)) => match char::from_u32(v as u32) {
             Some(c) => {
                 let result = push_const(heap, &c.to_string());
                 heap.bind(var_id, Addr(result));
@@ -285,7 +285,7 @@ pub fn atom_length_pred(
     };
     let len = SymbolDB::get_const(id).chars().count();
     match heap[len_a] {
-        (Ref, var_id) => {
+        (Var, var_id) => {
             let result = push_int(heap, len as isize);
             heap.bind(var_id, Addr(result));
             [var_id].into()
@@ -310,7 +310,7 @@ pub fn string_length_pred(
     };
     let len = SymbolDB::get_string(idx).chars().count();
     match heap[len_a] {
-        (Ref, var_id) => {
+        (Var, var_id) => {
             let result = push_int(heap, len as isize);
             heap.bind(var_id, Addr(result));
             [var_id].into()
@@ -336,7 +336,7 @@ fn concat_impl(
 
     match (a_text, b_text, c_text) {
         (Some(at), Some(bt), None) => {
-            let (Ref, var_id) = resolve_to_cell(heap, c) else {
+            let (Var, var_id) = resolve_to_cell(heap, c) else {
                 return false.into();
             };
             let result = make_result(heap, &format!("{at}{bt}"));
@@ -345,7 +345,7 @@ fn concat_impl(
         }
         (Some(at), Some(bt), Some(ct)) => (format!("{at}{bt}").as_str() == ct.as_ref()).into(),
         (Some(at), None, Some(ct)) => {
-            let (Ref, var_id) = resolve_to_cell(heap, b) else {
+            let (Var, var_id) = resolve_to_cell(heap, b) else {
                 return false.into();
             };
             match ct.strip_prefix(at.as_ref()) {
@@ -358,7 +358,7 @@ fn concat_impl(
             }
         }
         (None, Some(bt), Some(ct)) => {
-            let (Ref, var_id) = resolve_to_cell(heap, a) else {
+            let (Var, var_id) = resolve_to_cell(heap, a) else {
                 return false.into();
             };
             match ct.strip_suffix(bt.as_ref()) {
@@ -406,7 +406,7 @@ fn upcase_impl(heap: &mut QueryHeap, goal: usize, string_mode: bool) -> PredRetu
     };
     let upper = text.to_uppercase();
     match heap[out_a] {
-        (Ref, var_id) => {
+        (Var, var_id) => {
             let result = if string_mode {
                 push_string(heap, upper.into())
             } else {
@@ -429,7 +429,7 @@ fn downcase_impl(heap: &mut QueryHeap, goal: usize, string_mode: bool) -> PredRe
     };
     let lower = text.to_lowercase();
     match heap[out_a] {
-        (Ref, var_id) => {
+        (Var, var_id) => {
             let result = if string_mode {
                 push_string(heap, lower.into())
             } else {
@@ -501,7 +501,7 @@ fn chars_impl(
         resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1));
 
     match (read_text(heap, text_a), list_tag) {
-        (Some(text), Ref) => {
+        (Some(text), Var) => {
             let var_id = list_value;
             let cells: Vec<Cell> = text
                 .chars()
@@ -512,7 +512,7 @@ fn chars_impl(
             [var_id].into()
         }
         (None, Lis) => {
-            let (Ref, var_id) = heap[text_a] else {
+            let (Var, var_id) = heap[text_a] else {
                 return false.into();
             };
             let Some(addrs) = read_list_addrs(heap, list_addr) else {
@@ -595,7 +595,7 @@ fn codes_impl(
         resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1));
 
     match (read_text(heap, text_a), list_tag) {
-        (Some(text), Ref) => {
+        (Some(text), Var) => {
             let var_id = list_value;
             let cells: Vec<Cell> = text.chars().map(|c| (Int, c as usize)).collect();
             let result = build_list_from_cells(heap, &cells);
@@ -603,7 +603,7 @@ fn codes_impl(
             [var_id].into()
         }
         (None, Lis) => {
-            let (Ref, var_id) = resolve_to_cell(heap, text_a) else {
+            let (Var, var_id) = resolve_to_cell(heap, text_a) else {
                 return false.into();
             };
             let Some(addrs) = read_list_addrs(heap, list_addr) else {

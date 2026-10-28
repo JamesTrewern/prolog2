@@ -408,7 +408,7 @@ pub fn is_pred(
     };
 
     let rhs = match resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1)) {
-        ((Ref, _), _) => return false.into(),
+        ((Var, _), _) => return false.into(),
         (_, addr) => match evaluate_term(addr, heap) {
             Some(number) => number,
             None => return false.into(),
@@ -418,7 +418,7 @@ pub fn is_pred(
     let (cell, lhs_addr) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
 
     match cell {
-        (Ref, var_id) => {
+        (Var, var_id) => {
             // LHS is unbound — bind it to the result
             let result_addr = heap.heap_push(rhs.to_cell());
             heap.bind(var_id, Addr(result_addr));

@@ -92,7 +92,7 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
         cell: &mut Cell,
     ) {
         match var_bind {
-            Var(var_id) => *cell = (Ref, var_id),
+            VarId(var_id) => *cell = (Var, var_id),
             Addr(jump_addr) => {
                 self.add_jump_frame(jump_addr);
                 (*addr, *cell) = (jump_addr, heap[jump_addr])
@@ -101,9 +101,9 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
     }
 
     fn handle_ref(&mut self, heap: &impl Heap, addr: &mut usize, cell: &mut Cell) {
-        if let (Ref, var_id) = cell {
+        if let (Var, var_id) = cell {
             match heap.var_deref(*var_id) {
-                Var(var_id) => cell.1 = var_id,
+                VarId(var_id) => cell.1 = var_id,
                 Addr(jump_addr) => {
                     self.add_jump_frame(jump_addr);
                     (*addr, *cell) = (jump_addr, heap[jump_addr])
@@ -145,13 +145,13 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
         let mut cell = heap[addr];
         match cell {
             (Arg, arg_id) if let Some(var_bind) = sub.get_arg(arg_id) => {
-                if let Var(var_id) = var_bind {
+                if let VarId(var_id) = var_bind {
                     self.handle_var_bind(heap.var_deref(var_id), heap, &mut addr, &mut cell);
                 } else {
                     self.handle_var_bind(var_bind, heap, &mut addr, &mut cell);
                 }
             }
-            (Ref, var_id) => {
+            (Var, var_id) => {
                 self.handle_var_bind(heap.var_deref(var_id), heap, &mut addr, &mut cell);
             }
             _ => (),
@@ -323,38 +323,38 @@ mod test {
         let mut heap = QueryHeap::new(&[], None);
 
         // Handle ref bound to ref
-        heap.cells = vec![(Comp, 2), (Ref, 0), (Ref, 1)];
-        heap.var_regs = vec![Var(1).into(), VarReg::UNBOUND];
+        heap.cells = vec![(Comp, 2), (Var, 0), (Var, 1)];
+        heap.var_regs = vec![VarId(1).into(), VarReg::UNBOUND];
         let mut walk = TermWalk {
             stack: JumpStack::from_vec(vec![(2, 1)]),
         };
         let mut addr = 1;
-        let mut cell = (Ref, 0);
+        let mut cell = (Var, 0);
         walk.handle_ref(&heap, &mut addr, &mut cell);
         assert_eq!(walk.as_slice(), &[(2, 1)]);
-        assert_eq!(cell, (Ref, 1));
+        assert_eq!(cell, (Var, 1));
 
         // Handle jump to con
-        heap.cells = vec![(Comp, 2), (Ref, 0), (Ref, 1), (Con, a)];
-        heap.var_regs = vec![Var(1).into(), Addr(3).into()];
+        heap.cells = vec![(Comp, 2), (Var, 0), (Var, 1), (Con, a)];
+        heap.var_regs = vec![VarId(1).into(), Addr(3).into()];
         let mut walk = TermWalk {
             stack: JumpStack::from_vec(vec![(2, 1)]),
         };
         let mut addr = 1;
-        let mut cell = (Ref, 0);
+        let mut cell = (Var, 0);
         walk.handle_ref(&heap, &mut addr, &mut cell);
         assert_eq!(walk.as_slice(), &[(2, 1), (4, 0)]);
         assert_eq!(cell, (Con, a));
         assert_eq!(addr, 3);
 
         // Handle jump to strucuture
-        heap.cells = vec![(Comp, 2), (Con, p), (Con, a), (Comp, 2), (Ref, 0), (Ref, 1)];
-        heap.var_regs = vec![Var(1).into(), Addr(0).into()];
+        heap.cells = vec![(Comp, 2), (Con, p), (Con, a), (Comp, 2), (Var, 0), (Var, 1)];
+        heap.var_regs = vec![VarId(1).into(), Addr(0).into()];
         let mut walk = TermWalk {
             stack: JumpStack::from_vec(vec![(5, 1)]),
         };
         let mut addr = 4;
-        let mut cell = (Ref, 0);
+        let mut cell = (Var, 0);
         walk.handle_ref(&heap, &mut addr, &mut cell);
         assert_eq!(walk.as_slice(), &[(5, 1), (1, 0)]);
         assert_eq!(cell, (Comp, 2));
@@ -367,17 +367,17 @@ mod test {
         let mut heap = QueryHeap::new(&[], None);
 
         // Handle ref bound to ref
-        heap.cells = vec![(Comp, 2), (Ref, 0), (Ref, 1)];
-        heap.var_regs = vec![Var(1).into(), VarReg::UNBOUND];
+        heap.cells = vec![(Comp, 2), (Var, 0), (Var, 1)];
+        heap.var_regs = vec![VarId(1).into(), VarReg::UNBOUND];
         let mut walk = TermWalk::new(0);
         assert_eq!(walk.next_cell(&heap), Some((Comp, 2)));
-        assert_eq!(walk.next_cell(&heap), Some((Ref, 1)));
-        assert_eq!(walk.next_cell(&heap), Some((Ref, 1)));
+        assert_eq!(walk.next_cell(&heap), Some((Var, 1)));
+        assert_eq!(walk.next_cell(&heap), Some((Var, 1)));
         assert_eq!(walk.next_cell(&heap), None);
 
         // Handle jump to con
-        heap.cells = vec![(Comp, 2), (Ref, 0), (Ref, 1), (Con, a)];
-        heap.var_regs = vec![Var(1).into(), Addr(3).into()];
+        heap.cells = vec![(Comp, 2), (Var, 0), (Var, 1), (Con, a)];
+        heap.var_regs = vec![VarId(1).into(), Addr(3).into()];
         let mut walk = TermWalk::new(0);
         assert_eq!(walk.next_cell(&heap), Some((Comp, 2)));
         assert_eq!(walk.next_cell(&heap), Some((Con, a)));
@@ -385,8 +385,8 @@ mod test {
         assert_eq!(walk.next_cell(&heap), None);
 
         // Handle jump to strucuture
-        heap.cells = vec![(Comp, 2), (Con, p), (Con, a), (Comp, 2), (Ref, 0), (Ref, 1)];
-        heap.var_regs = vec![Var(1).into(), Addr(0).into()];
+        heap.cells = vec![(Comp, 2), (Con, p), (Con, a), (Comp, 2), (Var, 0), (Var, 1)];
+        heap.var_regs = vec![VarId(1).into(), Addr(0).into()];
         let mut walk = TermWalk::new(3);
         assert_eq!(walk.next_cell(&heap), Some((Comp, 2)));
         assert_eq!(walk.next_cell(&heap), Some((Comp, 2)));
@@ -400,11 +400,11 @@ mod test {
         // Handle jump to strucuture
         heap.cells = vec![
             (Comp, 2),
-            (Ref, 0),
+            (Var, 0),
             (Con, a),
             (Comp, 2),
             (Con, p),
-            (Ref, 1),
+            (Var, 1),
             LIS,
             (Con, p),
             LIS,
@@ -432,17 +432,17 @@ mod test {
         let mut heap = QueryHeap::new(&[], None);
 
         // Handle ref bound to ref
-        heap.cells = vec![(Comp, 2), (Ref, 0), (Ref, 1)];
-        heap.var_regs = vec![Var(1).into(), VarReg::UNBOUND];
+        heap.cells = vec![(Comp, 2), (Var, 0), (Var, 1)];
+        heap.var_regs = vec![VarId(1).into(), VarReg::UNBOUND];
         let mut walk = TermWalk::new(0);
         assert_eq!(walk.next_cell_with_addr(&heap), Some((0, (Comp, 2))));
-        assert_eq!(walk.next_cell_with_addr(&heap), Some((1, (Ref, 1))));
-        assert_eq!(walk.next_cell_with_addr(&heap), Some((2, (Ref, 1))));
+        assert_eq!(walk.next_cell_with_addr(&heap), Some((1, (Var, 1))));
+        assert_eq!(walk.next_cell_with_addr(&heap), Some((2, (Var, 1))));
         assert_eq!(walk.next_cell_with_addr(&heap), None);
 
         // Handle jump to con
-        heap.cells = vec![(Comp, 2), (Ref, 0), (Ref, 1), (Con, a)];
-        heap.var_regs = vec![Var(1).into(), Addr(3).into()];
+        heap.cells = vec![(Comp, 2), (Var, 0), (Var, 1), (Con, a)];
+        heap.var_regs = vec![VarId(1).into(), Addr(3).into()];
         let mut walk = TermWalk::new(0);
         assert_eq!(walk.next_cell_with_addr(&heap), Some((0, (Comp, 2))));
         assert_eq!(walk.next_cell_with_addr(&heap), Some((3, (Con, a))));
@@ -450,8 +450,8 @@ mod test {
         assert_eq!(walk.next_cell_with_addr(&heap), None);
 
         // Handle jump to strucuture
-        heap.cells = vec![(Comp, 2), (Con, p), (Con, a), (Comp, 2), (Ref, 0), (Ref, 1)];
-        heap.var_regs = vec![Var(1).into(), Addr(0).into()];
+        heap.cells = vec![(Comp, 2), (Con, p), (Con, a), (Comp, 2), (Var, 0), (Var, 1)];
+        heap.var_regs = vec![VarId(1).into(), Addr(0).into()];
         let mut walk = TermWalk::new(3);
         assert_eq!(walk.next_cell_with_addr(&heap), Some((3, (Comp, 2))));
         assert_eq!(walk.next_cell_with_addr(&heap), Some((0, (Comp, 2))));
@@ -465,11 +465,11 @@ mod test {
         // Handle jump to strucuture
         heap.cells = vec![
             (Comp, 2),
-            (Ref, 0),
+            (Var, 0),
             (Con, a),
             (Comp, 2),
             (Con, p),
-            (Ref, 1),
+            (Var, 1),
             LIS,
             (Con, p),
             LIS,
@@ -536,7 +536,7 @@ mod test {
         // Arg -> Ref -> strucutre
         heap.cells = vec![(Comp, 2), (Con, p), (Arg, 0), (Comp, 2), (Con, p), (Con, a)];
         let mut sub = Substitution::default();
-        sub.set_arg(0, Var(0));
+        sub.set_arg(0, VarId(0));
         heap.var_regs = vec![Addr(3).into()];
         let mut walk = TermWalk::new(0);
         let cells = accumulate_cells(&heap, &mut walk, &sub);
@@ -550,7 +550,7 @@ mod test {
         // Arg -> Ref -> Ref -> strucutre
 
         heap.cells = vec![(Comp, 2), (Con, p), (Arg, 0), (Comp, 2), (Con, p), (Con, a)];
-        heap.var_regs = vec![Var(1).into(), Addr(3).into()];
+        heap.var_regs = vec![VarId(1).into(), Addr(3).into()];
         let mut walk = TermWalk::new(0);
         let cells = accumulate_cells(&heap, &mut walk, &sub);
         assert_eq!(cells.len(), 5);
@@ -608,7 +608,7 @@ mod test {
             (Con, p),
             (Comp, 2),
             (Con, q),
-            (Ref, 0),
+            (Var, 0),
             (Con, a),
             (Tup, 2),
             (Con, a),
@@ -699,7 +699,7 @@ mod test {
             (Arg, 0),
             (Con, a),
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             (Con, a),
             (Tup, 2),
             (Con, b),
@@ -737,7 +737,7 @@ mod test {
             (Con, p),
             (Comp, 2),
             (Con, q),
-            (Ref, 0),
+            (Var, 0),
             (Con, a),
             (Tup, 2),
             (Arg, 0),
@@ -786,8 +786,8 @@ mod test {
             (Con, a),
         ];
         let mut subs = Substitution::default();
-        subs.set_arg(0, Var(0));
-        heap.var_regs = vec![Var(1).into(), Addr(6).into()];
+        subs.set_arg(0, VarId(0));
+        heap.var_regs = vec![VarId(1).into(), Addr(6).into()];
         let mut walk = TermWalk::new(0);
         //walk to first argument
         assert_eq!(walk.next_cell(&heap), Some((Comp, 3)));

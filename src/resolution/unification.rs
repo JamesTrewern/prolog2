@@ -30,27 +30,27 @@ pub fn unify(
                     return undo_substitution(heap, substitution);
                 }
             }
-            (Ref, Ref) => {
+            (Var, Var) => {
                 if value1 != value2 {
-                    heap.bind(value1, Var(value2));
-                    substitution.push_bound_var(value1, false, Var(value2));
+                    heap.bind(value1, VarId(value2));
+                    substitution.push_bound_var(value1, false, VarId(value2));
                 }
             }
-            (Ref, Lis | Comp | Set | Tup) => {
+            (Var, Lis | Comp | Set | Tup) => {
                 if !bind_ref_to_complex(heap, &mut substitution, value1, addr2, &mut walk.walk2) {
                     return undo_substitution(heap, substitution);
                 }
             }
-            (Lis | Comp | Set | Tup, Ref) => {
+            (Lis | Comp | Set | Tup, Var) => {
                 if !bind_ref_to_complex(heap, &mut substitution, value2, addr1, &mut walk.walk1) {
                     return undo_substitution(heap, substitution);
                 }
             }
-            (Ref, _) => {
+            (Var, _) => {
                 heap.bind(value1, Addr(addr2));
                 substitution.push_bound_var(value1, false, Addr(addr2));
             }
-            (_, Ref) => {
+            (_, Var) => {
                 heap.bind(value2, Addr(addr1));
                 substitution.push_bound_var(value2, false, Addr(addr1));
             }
@@ -123,7 +123,7 @@ fn occurs(
     let mut bound_args = SmallVec::<[usize; 2]>::new();
     //TODO make this quicker perhaps SIMD?
     for (arg_id, arg_reg) in binding.arg_regs.iter().enumerate() {
-        if let Some(Var(var_id_2)) = arg_reg.get_bind() {
+        if let Some(VarId(var_id_2)) = arg_reg.get_bind() {
             if var_id == var_id_2 {
                 bound_args.push(arg_id);
             }
@@ -133,7 +133,7 @@ fn occurs(
 
     while let Some((tag, value)) = walk.next_cell(heap) {
         match tag {
-            Ref if value == var_id => return None,
+            Var if value == var_id => return None,
             Arg if bound_args.contains(&value) => return None,
             Arg => contains_args = true,
             _ => (),
@@ -158,7 +158,7 @@ fn bind_arg(
                 substitution.set_arg(arg_id, Addr(addr));
             }
         }
-        Ref => substitution.set_arg(arg_id, Var(value)),
+        Var => substitution.set_arg(arg_id, VarId(value)),
         _ => substitution.set_arg(arg_id, Addr(addr)),
     }
     true
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(sub, Substitution::default());
 
         //Same Ref Comp
-        heap.cells = vec![(Comp, 2), (Con, p), (Ref, 0), (Comp, 2), (Con, p), (Ref, 0)];
+        heap.cells = vec![(Comp, 2), (Con, p), (Var, 0), (Comp, 2), (Con, p), (Var, 0)];
         heap.var_regs.push(VarReg::UNBOUND);
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub, Substitution::default());
@@ -221,7 +221,7 @@ mod tests {
         assert_eq!(sub, Substitution::default());
 
         //Same Ref Comp
-        heap.cells = vec![(Tup, 2), (Con, p), (Ref, 0), (Tup, 2), (Con, p), (Ref, 0)];
+        heap.cells = vec![(Tup, 2), (Con, p), (Var, 0), (Tup, 2), (Con, p), (Var, 0)];
         heap.var_regs.push(VarReg::UNBOUND);
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub, Substitution::default());
@@ -246,7 +246,7 @@ mod tests {
             (Con, a),
             (Comp, 2),
             (Con, p),
-            (Ref, 0),
+            (Var, 0),
             (Con, a),
         ];
         heap.var_regs = vec![Addr(6).into()];
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(sub, Substitution::default());
 
         //Ref chain jump
-        heap.var_regs = vec![Var(1).into(), Addr(6).into()];
+        heap.var_regs = vec![VarId(1).into(), Addr(6).into()];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub, Substitution::default());
     }
@@ -308,7 +308,7 @@ mod tests {
             // 5: p(X)
             (Comp, 2),
             (Con, p),
-            (Ref, 0), // X -> q(a)
+            (Var, 0), // X -> q(a)
             // 8: q(a)
             (Comp, 2),
             (Con, q),
@@ -346,7 +346,7 @@ mod tests {
             // 0: p(X)
             (Comp, 2),
             (Con, p),
-            (Ref, 0), // X -> q(a)
+            (Var, 0), // X -> q(a)
             // 3: q(a)
             (Comp, 2),
             (Con, q),
@@ -354,7 +354,7 @@ mod tests {
             // 6: p(Y)
             (Comp, 2),
             (Con, p),
-            (Ref, 1), // X -> q(a)
+            (Var, 1), // X -> q(a)
             // 9: q(a)
             (Comp, 2),
             (Con, q),
@@ -519,7 +519,7 @@ mod tests {
             EMPTY_LIS,
             // 7: [X,b,c]
             LIS,
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, b),
             LIS,
@@ -547,7 +547,7 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 12: X -> [c]
             LIS,
             (Con, c),
@@ -558,7 +558,7 @@ mod tests {
         assert_eq!(sub, Substitution::default());
 
         //Same tail jump, but reached through a ref chain X -> Y -> [c]
-        heap.var_regs = vec![Var(1).into(), Addr(12).into()];
+        heap.var_regs = vec![VarId(1).into(), Addr(12).into()];
         let sub = unify(&mut heap, 0, 7, 15).unwrap();
         assert_eq!(sub, Substitution::default());
 
@@ -573,7 +573,7 @@ mod tests {
             (Con, c),
             EMPTY_LIS,
             // 7: X
-            (Ref, 0),
+            (Var, 0),
             // 8: X -> [a,b,c]
             LIS,
             (Con, a),
@@ -599,7 +599,7 @@ mod tests {
             EMPTY_LIS,
             // 7: [X,b,c]
             LIS,
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, b),
             LIS,
@@ -631,7 +631,7 @@ mod tests {
             (Con, c),
             // 5: [X,b|c]
             LIS,
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, b),
             (Con, c),
@@ -655,7 +655,7 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 10: X -> c
             (Con, c),
         ];
@@ -664,7 +664,7 @@ mod tests {
         assert_eq!(sub, Substitution::default());
 
         //Same, through a ref chain X -> Y -> c
-        heap.var_regs = vec![Var(1).into(), Addr(10).into()];
+        heap.var_regs = vec![VarId(1).into(), Addr(10).into()];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
         assert_eq!(sub, Substitution::default());
 
@@ -679,7 +679,7 @@ mod tests {
             // 5: [a|X]
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
             // 8: X -> [b|c]
             LIS,
             (Con, b),
@@ -702,7 +702,7 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 10: X -> b
             (Con, b),
         ];
@@ -733,7 +733,7 @@ mod tests {
             EMPTY_LIS,
             // 9: [X,c]
             LIS,
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, c),
             EMPTY_LIS,
@@ -749,7 +749,7 @@ mod tests {
         assert_eq!(sub, Substitution::default());
 
         //Same, through a ref chain X -> Y -> [a,b]
-        heap.var_regs = vec![Var(1).into(), Addr(14).into()];
+        heap.var_regs = vec![VarId(1).into(), Addr(14).into()];
         let sub = unify(&mut heap, 0, 9, 15).unwrap();
         assert_eq!(sub, Substitution::default());
 
@@ -770,7 +770,7 @@ mod tests {
             LIS,
             (Con, a),
             LIS,
-            (Ref, 0),
+            (Var, 0),
             EMPTY_LIS,
             LIS,
             (Con, c),
@@ -801,7 +801,7 @@ mod tests {
             LIS,
             (Con, b),
             EMPTY_LIS,
-            (Ref, 0),
+            (Var, 0),
             // 16: X -> [c]
             LIS,
             (Con, c),
@@ -825,7 +825,7 @@ mod tests {
             EMPTY_LIS,
             // 9: [X,c]
             LIS,
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, c),
             EMPTY_LIS,
@@ -1171,7 +1171,7 @@ mod tests {
             (Arg, 0),
             // 4: (X,[a,b,c],[a,b,c])
             (Tup, 3),
-            (Ref, 0),
+            (Var, 0),
             // 6: [a,b,c]
             LIS,
             (Con, a),
@@ -1204,7 +1204,7 @@ mod tests {
             (Arg, 0),
             // 4: (X,[a,b,c],[a,b,b])
             (Tup, 3),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
             LIS,
@@ -1240,7 +1240,7 @@ mod tests {
             (Arg, 0),
             // 4: (X,[a,b|c],[a,b|c])
             (Tup, 3),
-            (Ref, 0),
+            (Var, 0),
             // 6: [a,b|c]
             LIS,
             (Con, a),
@@ -1269,7 +1269,7 @@ mod tests {
             (Arg, 0),
             // 4: (X,[a,b|c],[a,b,c])
             (Tup, 3),
-            (Ref, 0),
+            (Var, 0),
             // 6: [a,b|c]
             LIS,
             (Con, a),
@@ -1305,7 +1305,7 @@ mod tests {
             (Arg, 0),
             // 4: (X,[[a,b],c],[[a,b],c])
             (Tup, 3),
-            (Ref, 0),
+            (Var, 0),
             // 6: [[a,b],c]
             LIS,
             LIS,
@@ -1342,7 +1342,7 @@ mod tests {
             (Arg, 0),
             // 4: (X,[[a,b],c],[[a,c],c])
             (Tup, 3),
-            (Ref, 0),
+            (Var, 0),
             // 6: [[a,b],c]
             LIS,
             LIS,
@@ -1453,32 +1453,32 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
         ];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
-        assert_eq!(sub.get_arg(0), Some(Var(0)));
+        assert_eq!(sub.get_arg(0), Some(VarId(0)));
         assert!(sub.bound_vars.is_empty());
         assert_eq!(heap.var_regs[0], VarReg::UNBOUND);
 
         //Same, with the arg on the right hand side
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 5, 0, 15).unwrap();
-        assert_eq!(sub.get_arg(0), Some(Var(0)));
+        assert_eq!(sub.get_arg(0), Some(VarId(0)));
         assert!(sub.bound_vars.is_empty());
         assert_eq!(heap.var_regs[0], VarReg::UNBOUND);
 
         //arg to ref bound to other ref: X -> Y, so A must record the end of the chain
-        heap.var_regs = vec![Var(1).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(1).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
-        assert_eq!(sub.get_arg(0), Some(Var(1)));
+        assert_eq!(sub.get_arg(0), Some(VarId(1)));
         assert!(sub.bound_vars.is_empty());
-        assert_eq!(heap.var_regs, [Var(1).into(), VarReg::UNBOUND]);
+        assert_eq!(heap.var_regs, [VarId(1).into(), VarReg::UNBOUND]);
 
         //Longer chain X -> Y -> Z
-        heap.var_regs = vec![Var(1).into(), Var(2).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(1).into(), VarId(2).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
-        assert_eq!(sub.get_arg(0), Some(Var(2)));
+        assert_eq!(sub.get_arg(0), Some(VarId(2)));
         assert!(sub.bound_vars.is_empty());
     }
 
@@ -1496,18 +1496,18 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 5: [a,b|Y]
             LIS,
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 1),
+            (Var, 1),
         ];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[0]);
-        assert_eq!(heap.var_regs, [Var(1).into(), VarReg::UNBOUND]);
+        assert_eq!(heap.var_regs, [VarId(1).into(), VarReg::UNBOUND]);
 
         //The same variable on both tails needs no binding: [a,b|X] vs [a,b|X]
         heap.cells = vec![
@@ -1516,13 +1516,13 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 5: [a,b|X]
             LIS,
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
         ];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
@@ -1536,17 +1536,17 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 5: [a,b|Y]
             LIS,
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 1),
+            (Var, 1),
         ];
         heap.var_regs = vec![
-            Var(2).into(),
-            Var(3).into(),
+            VarId(2).into(),
+            VarId(3).into(),
             VarReg::UNBOUND,
             VarReg::UNBOUND,
         ];
@@ -1554,11 +1554,16 @@ mod tests {
         assert_eq!(sub.bound_vars.as_slice(), &[2]);
         assert_eq!(
             heap.var_regs,
-            [Var(2).into(), Var(3).into(), Var(3).into(), VarReg::UNBOUND]
+            [
+                VarId(2).into(),
+                VarId(3).into(),
+                VarId(3).into(),
+                VarReg::UNBOUND
+            ]
         );
 
         //Two chains that already meet at the same variable need no binding
-        heap.var_regs = vec![Var(2).into(), Var(2).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(2).into(), VarId(2).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
         assert_eq!(sub, Substitution::default());
     }
@@ -1586,23 +1591,23 @@ mod tests {
             (Tup, 2),
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
-            (Ref, 1),
+            (Var, 1),
         ];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 7, 15).unwrap();
-        assert_eq!(sub.get_arg(0), Some(Var(1)));
+        assert_eq!(sub.get_arg(0), Some(VarId(1)));
         assert_eq!(sub.bound_vars.as_slice(), &[0]);
-        assert_eq!(heap.var_regs, [Var(1).into(), VarReg::UNBOUND]);
+        assert_eq!(heap.var_regs, [VarId(1).into(), VarReg::UNBOUND]);
 
         //Same, but the second query variable is behind a chain Y -> Z
-        heap.var_regs = vec![VarReg::UNBOUND, Var(2).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarReg::UNBOUND, VarId(2).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 7, 15).unwrap();
-        assert_eq!(sub.get_arg(0), Some(Var(2)));
+        assert_eq!(sub.get_arg(0), Some(VarId(2)));
         assert_eq!(sub.bound_vars.as_slice(), &[0]);
-        assert_eq!(heap.var_regs[0], Var(2).into());
+        assert_eq!(heap.var_regs[0], VarId(2).into());
 
         //Both tails meet the same variable, so nothing is bound
         heap.cells = vec![
@@ -1618,14 +1623,14 @@ mod tests {
             (Tup, 2),
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
         ];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 7, 15).unwrap();
-        assert_eq!(sub.get_arg(0), Some(Var(0)));
+        assert_eq!(sub.get_arg(0), Some(VarId(0)));
         assert!(sub.bound_vars.is_empty());
         assert_eq!(heap.var_regs, [VarReg::UNBOUND]);
     }
@@ -1644,7 +1649,7 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 5: [a,b]
             LIS,
             (Con, a),
@@ -1665,10 +1670,10 @@ mod tests {
         assert_eq!(heap.var_regs[0], Addr(9).into());
 
         //Through Ref Chain: X -> Y, so the end of the chain is what binds
-        heap.var_regs = vec![Var(1).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(1).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[1]);
-        assert_eq!(heap.var_regs, [Var(1).into(), Addr(9).into()]);
+        assert_eq!(heap.var_regs, [VarId(1).into(), Addr(9).into()]);
 
         //Through Arg: (A,[a,b|A]) vs (X,[a,b])
         //  A = X, then A (i.e. X) meets [] and must bind to it.
@@ -1683,7 +1688,7 @@ mod tests {
             (Arg, 0),
             // 7: (X,[a,b])
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
             LIS,
@@ -1711,7 +1716,7 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 5: [a]
             LIS,
             (Con, a),
@@ -1735,7 +1740,7 @@ mod tests {
             // 0: [a|X]
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
             // 3: [a,b,c]
             LIS,
             (Con, a),
@@ -1758,10 +1763,10 @@ mod tests {
         assert_eq!(heap.var_regs[0], Addr(5).into());
 
         //Through Ref Chain: X -> Y
-        heap.var_regs = vec![Var(1).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(1).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[1]);
-        assert_eq!(heap.var_regs, [Var(1).into(), Addr(5).into()]);
+        assert_eq!(heap.var_regs, [VarId(1).into(), Addr(5).into()]);
 
         //Through Arg: (A,[a|A]) vs (X,[a,b,c])
         heap.cells = vec![
@@ -1773,7 +1778,7 @@ mod tests {
             (Arg, 0),
             // 5: (X,[a,b,c])
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
             LIS,
@@ -1800,14 +1805,14 @@ mod tests {
             (Arg, 0),
             // 5: (X,[a|X])
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
         ];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
-        assert_eq!(sub.get_arg(0), Some(Var(0)));
+        assert_eq!(sub.get_arg(0), Some(VarId(0)));
         assert!(sub.bound_vars.is_empty());
         assert_eq!(heap.var_regs, [VarReg::UNBOUND]);
 
@@ -1819,10 +1824,10 @@ mod tests {
             (Arg, 0),
             // 3: (X,[a|X])
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
         ];
         heap.var_regs = vec![VarReg::UNBOUND];
         assert!(unify(&mut heap, 0, 3, 31).is_none());
@@ -1837,10 +1842,10 @@ mod tests {
             (Arg, 0),
             // 3: (X,[a|Y])
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
-            (Ref, 1),
+            (Var, 1),
         ];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
@@ -1865,7 +1870,7 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 5: [a,b|c]
             LIS,
             (Con, a),
@@ -1886,10 +1891,10 @@ mod tests {
         assert_eq!(heap.var_regs[0], Addr(9).into());
 
         //Through Ref Chain: X -> Y
-        heap.var_regs = vec![Var(1).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(1).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[1]);
-        assert_eq!(heap.var_regs, [Var(1).into(), Addr(9).into()]);
+        assert_eq!(heap.var_regs, [VarId(1).into(), Addr(9).into()]);
 
         //Through Arg: (A,[a,b|A]) vs (X,[a,b|c])
         heap.cells = vec![
@@ -1903,7 +1908,7 @@ mod tests {
             (Arg, 0),
             // 7: (X,[a,b|c])
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
             LIS,
@@ -1931,7 +1936,7 @@ mod tests {
             // 0: [a|X]
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
             // 3: [a,[b,c]]
             LIS,
             (Con, a),
@@ -1956,10 +1961,10 @@ mod tests {
         assert_eq!(heap.var_regs[0], Addr(5).into());
 
         //Through Ref Chain: X -> Y
-        heap.var_regs = vec![Var(1).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(1).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[1]);
-        assert_eq!(heap.var_regs, [Var(1).into(), Addr(5).into()]);
+        assert_eq!(heap.var_regs, [VarId(1).into(), Addr(5).into()]);
 
         //Binding the head of a nested list: [[a|X],c] vs [[a,b],c]
         heap.cells = vec![
@@ -1967,7 +1972,7 @@ mod tests {
             LIS,
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, c),
             EMPTY_LIS,
@@ -1997,7 +2002,7 @@ mod tests {
             (Arg, 0),
             // 5: (X,[a,[b,c]])
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
             LIS,
@@ -2060,7 +2065,7 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 10: X -> []
             EMPTY_LIS,
         ];
@@ -2070,7 +2075,7 @@ mod tests {
         assert!(sub.bound_vars.is_empty());
 
         //Longer chain X -> Y -> []
-        heap.var_regs = vec![Var(1).into(), Addr(10).into()];
+        heap.var_regs = vec![VarId(1).into(), Addr(10).into()];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
         assert_eq!(sub.get_arg(0), Some(Addr(10)));
         assert!(sub.bound_vars.is_empty());
@@ -2136,7 +2141,7 @@ mod tests {
             // 3: [a|X]
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
             // 6: X -> [b,c]
             LIS,
             (Con, b),
@@ -2150,7 +2155,7 @@ mod tests {
         assert!(sub.bound_vars.is_empty());
 
         //Longer chain X -> Y -> [b,c]
-        heap.var_regs = vec![Var(1).into(), Addr(6).into()];
+        heap.var_regs = vec![VarId(1).into(), Addr(6).into()];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub.get_arg(0), Some(Addr(6)));
         assert!(sub.bound_vars.is_empty());
@@ -2224,7 +2229,7 @@ mod tests {
             (Con, a),
             LIS,
             (Con, b),
-            (Ref, 0),
+            (Var, 0),
             // 10: X -> c
             (Con, c),
         ];
@@ -2234,7 +2239,7 @@ mod tests {
         assert!(sub.bound_vars.is_empty());
 
         //Longer chain X -> Y -> c
-        heap.var_regs = vec![Var(1).into(), Addr(10).into()];
+        heap.var_regs = vec![VarId(1).into(), Addr(10).into()];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
         assert_eq!(sub.get_arg(0), Some(Addr(10)));
         assert!(sub.bound_vars.is_empty());
@@ -2309,7 +2314,7 @@ mod tests {
             // 3: [a|X]
             LIS,
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
             // 6: X -> [[b,c]]
             LIS,
             LIS,
@@ -2325,7 +2330,7 @@ mod tests {
         assert!(sub.bound_vars.is_empty());
 
         //Longer chain X -> Y -> [[b,c]]
-        heap.var_regs = vec![Var(1).into(), Addr(6).into()];
+        heap.var_regs = vec![VarId(1).into(), Addr(6).into()];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub.get_arg(0), Some(Addr(6)));
         assert!(sub.bound_vars.is_empty());
@@ -2359,37 +2364,37 @@ mod tests {
     fn unify_refs() {
         let mut heap = QueryHeap::new(&[], None);
 
-        heap.cells = vec![(Ref, 0), (Ref, 1)];
+        heap.cells = vec![(Var, 0), (Var, 1)];
 
         //Simplest
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[0]);
-        assert_eq!(heap.var_regs[0], Var(1).into());
+        assert_eq!(heap.var_regs[0], VarId(1).into());
         assert_eq!(heap.var_regs[1], VarReg::UNBOUND);
 
         //Through chain on rhs
-        heap.var_regs = vec![VarReg::UNBOUND, Var(2).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarReg::UNBOUND, VarId(2).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[0]);
         assert_eq!(
             heap.var_regs,
-            [Var(2).into(), Var(2).into(), VarReg::UNBOUND]
+            [VarId(2).into(), VarId(2).into(), VarReg::UNBOUND]
         );
 
         //Through chain on lhs
-        heap.var_regs = vec![Var(2).into(), VarReg::UNBOUND, VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(2).into(), VarReg::UNBOUND, VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[2]);
         assert_eq!(
             heap.var_regs,
-            [Var(2).into(), VarReg::UNBOUND, Var(1).into(),]
+            [VarId(2).into(), VarReg::UNBOUND, VarId(1).into(),]
         );
 
         //Through chain on lhs & rhs
         heap.var_regs = vec![
-            Var(2).into(),
-            Var(3).into(),
+            VarId(2).into(),
+            VarId(3).into(),
             VarReg::UNBOUND,
             VarReg::UNBOUND,
         ];
@@ -2397,7 +2402,12 @@ mod tests {
         assert_eq!(sub.bound_vars.as_slice(), &[2]);
         assert_eq!(
             heap.var_regs,
-            [Var(2).into(), Var(3).into(), Var(3).into(), VarReg::UNBOUND]
+            [
+                VarId(2).into(),
+                VarId(3).into(),
+                VarId(3).into(),
+                VarReg::UNBOUND
+            ]
         );
     }
 
@@ -2406,18 +2416,18 @@ mod tests {
         let mut heap = QueryHeap::new(&[], None);
 
         //Bind arg to ref
-        heap.cells = vec![(Arg, 0), (Ref, 0)];
+        heap.cells = vec![(Arg, 0), (Var, 0)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert!(sub.bound_vars.is_empty());
-        assert_eq!(sub.get_arg(0).unwrap(), Var(0));
+        assert_eq!(sub.get_arg(0).unwrap(), VarId(0));
 
         //Bind arg to ref through chain
-        heap.cells = vec![(Arg, 0), (Ref, 0)];
-        heap.var_regs = vec![Var(1).into(), VarReg::UNBOUND];
+        heap.cells = vec![(Arg, 0), (Var, 0)];
+        heap.var_regs = vec![VarId(1).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert!(sub.bound_vars.is_empty());
-        assert_eq!(sub.get_arg(0).unwrap(), Var(1));
+        assert_eq!(sub.get_arg(0).unwrap(), VarId(1));
     }
 
     #[test]
@@ -2425,20 +2435,20 @@ mod tests {
         let mut heap = QueryHeap::new(&[], None);
 
         // Unify through arg
-        heap.cells = vec![(Tup, 2), (Arg, 0), (Arg, 0), (Tup, 2), (Ref, 0), (Ref, 1)];
+        heap.cells = vec![(Tup, 2), (Arg, 0), (Arg, 0), (Tup, 2), (Var, 0), (Var, 1)];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
-        assert_eq!(sub.get_arg(0).unwrap(), Var(1));
+        assert_eq!(sub.get_arg(0).unwrap(), VarId(1));
         assert_eq!(sub.bound_vars.as_slice(), [0]);
-        assert_eq!(heap.var_regs[0], Var(1).into());
+        assert_eq!(heap.var_regs[0], VarId(1).into());
 
         //unify through arg + chain
-        heap.cells = vec![(Tup, 2), (Arg, 0), (Arg, 0), (Tup, 2), (Ref, 0), (Ref, 1)];
-        heap.var_regs = vec![VarReg::UNBOUND, Var(2).into(), VarReg::UNBOUND];
+        heap.cells = vec![(Tup, 2), (Arg, 0), (Arg, 0), (Tup, 2), (Var, 0), (Var, 1)];
+        heap.var_regs = vec![VarReg::UNBOUND, VarId(2).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
-        assert_eq!(sub.get_arg(0).unwrap(), Var(2));
+        assert_eq!(sub.get_arg(0).unwrap(), VarId(2));
         assert_eq!(sub.bound_vars.as_slice(), [0]);
-        assert_eq!(heap.var_regs[0], Var(2).into());
+        assert_eq!(heap.var_regs[0], VarId(2).into());
 
         //(A,A,B) / (X,Y,X)
         // A -> X
@@ -2450,16 +2460,16 @@ mod tests {
             (Arg, 0),
             (Arg, 1),
             (Tup, 3),
-            (Ref, 0),
-            (Ref, 1),
-            (Ref, 0),
+            (Var, 0),
+            (Var, 1),
+            (Var, 0),
         ];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 4, 15).unwrap();
-        assert_eq!(sub.get_arg(0).unwrap(), Var(1));
-        assert_eq!(sub.get_arg(1).unwrap(), Var(1));
+        assert_eq!(sub.get_arg(0).unwrap(), VarId(1));
+        assert_eq!(sub.get_arg(1).unwrap(), VarId(1));
         assert_eq!(sub.bound_vars.as_slice(), [0]);
-        assert_eq!(heap.var_regs[0], Var(1).into());
+        assert_eq!(heap.var_regs[0], VarId(1).into());
     }
 
     //-----------------------------------------------------------
@@ -2472,7 +2482,7 @@ mod tests {
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
 
-        heap.cells = vec![(Ref, 0), (Comp, 2), (Con, p), (Con, a)];
+        heap.cells = vec![(Var, 0), (Comp, 2), (Con, p), (Con, a)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let binding = unify(&mut heap, 0, 1, 15).unwrap();
         assert!(binding.bound(0));
@@ -2492,7 +2502,7 @@ mod tests {
         let p = SymbolDB::set_const("p");
         let mut heap = QueryHeap::new(&[], None);
 
-        heap.cells = vec![(Ref, 0), LIS, (Con, p), LIS, (Con, a), EMPTY_LIS];
+        heap.cells = vec![(Var, 0), LIS, (Con, p), LIS, (Con, a), EMPTY_LIS];
         heap.var_regs = vec![VarReg::UNBOUND];
         let binding = unify(&mut heap, 0, 1, 15).unwrap();
         assert!(binding.bound(0));
@@ -2511,17 +2521,17 @@ mod tests {
             (Tup, 2),
             (Con, p),
             (Con, a),
-            (Ref, 0), // Var(1) -> Addr(0)
-            (Ref, 2),
+            (Var, 0), // Var(1) -> Addr(0)
+            (Var, 2),
         ];
-        heap.var_regs = vec![Var(1).into(), Addr(0).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(1).into(), Addr(0).into(), VarReg::UNBOUND];
         let binding = unify(&mut heap, 3, 4, 15).unwrap();
         assert!(binding.bound(2));
         assert!(!binding.bound(0));
         assert!(!binding.needs_rebuild[0]);
         assert_eq!(heap.var_regs[2], Addr(0).into());
         // Switch lhs rhs
-        heap.var_regs = vec![Var(1).into(), Addr(0).into(), VarReg::UNBOUND];
+        heap.var_regs = vec![VarId(1).into(), Addr(0).into(), VarReg::UNBOUND];
         let binding = unify(&mut heap, 4, 3, 15).unwrap();
         assert!(binding.bound(2));
         assert!(!binding.bound(0));
@@ -2545,7 +2555,7 @@ mod tests {
             (Tup, 2),
             (Con, p),
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
         ];
         heap.var_regs = vec![VarReg::UNBOUND];
         let binding = unify(&mut heap, 0, 3, 15).unwrap();
@@ -2604,21 +2614,21 @@ mod tests {
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
         heap.cells = vec![
             // 0: X
-            (Ref, 0),
+            (Var, 0),
             // 1: (X, Y)
             (Tup, 2),
-            (Ref, 0),
-            (Ref, 1),
+            (Var, 0),
+            (Var, 1),
         ];
         assert!(unify(&mut heap, 0, 1, 31).is_none());
 
         heap.cells = vec![
             // 0: X
-            (Ref, 0),
+            (Var, 0),
             // 1: (Y, Z)
             (Tup, 2),
-            (Ref, 1),
-            (Ref, 2),
+            (Var, 1),
+            (Var, 2),
         ];
         assert!(unify(&mut heap, 0, 1, 31).is_some());
     }
@@ -2638,8 +2648,8 @@ mod tests {
             (Arg, 1),
             // 5: (X,X)
             (Tup, 2),
-            (Ref, 0),
-            (Ref, 0),
+            (Var, 0),
+            (Var, 0),
         ];
         assert!(unify(&mut heap, 0, 5, 31).is_none());
 
@@ -2652,8 +2662,8 @@ mod tests {
             (Arg, 2),
             // 5: (X,X)
             (Tup, 2),
-            (Ref, 0),
-            (Ref, 0),
+            (Var, 0),
+            (Var, 0),
         ];
         assert!(unify(&mut heap, 0, 5, 31).is_some());
     }
@@ -2671,10 +2681,10 @@ mod tests {
             (Arg, 0),
             // 3: (X,(X,Y))
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             (Tup, 2),
-            (Ref, 0),
-            (Ref, 1),
+            (Var, 0),
+            (Var, 1),
         ];
         assert!(unify(&mut heap, 0, 3, 31).is_none());
 
@@ -2685,10 +2695,10 @@ mod tests {
             (Arg, 0),
             // 3: (X,(Y,Z))
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             (Tup, 2),
-            (Ref, 1),
-            (Ref, 2),
+            (Var, 1),
+            (Var, 2),
         ];
         assert!(unify(&mut heap, 0, 3, 31).is_some());
     }
@@ -2709,9 +2719,9 @@ mod tests {
             (Arg, 1),
             // 6: (X,X,X)
             (Tup, 3),
-            (Ref, 0),
-            (Ref, 0),
-            (Ref, 0),
+            (Var, 0),
+            (Var, 0),
+            (Var, 0),
         ];
         assert!(unify(&mut heap, 0, 6, 31).is_none());
 
@@ -2725,9 +2735,9 @@ mod tests {
             (Arg, 3),
             // 6: (X,X,X)
             (Tup, 3),
-            (Ref, 0),
-            (Ref, 0),
-            (Ref, 0),
+            (Var, 0),
+            (Var, 0),
+            (Var, 0),
         ];
         assert!(unify(&mut heap, 0, 6, 31).is_some());
     }
@@ -2745,10 +2755,10 @@ mod tests {
             (Arg, 0),
             // 3: ((X,Y),X)
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             (Tup, 2),
-            (Ref, 0),
-            (Ref, 1),
+            (Var, 0),
+            (Var, 1),
         ];
         assert!(unify(&mut heap, 0, 3, 31).is_none());
 
@@ -2759,10 +2769,10 @@ mod tests {
             (Arg, 0),
             // 3: ((X,Y),Z)
             (Tup, 2),
-            (Ref, 0),
+            (Var, 0),
             (Tup, 2),
-            (Ref, 1),
-            (Ref, 2),
+            (Var, 1),
+            (Var, 2),
         ];
         assert!(unify(&mut heap, 0, 3, 31).is_some());
     }
@@ -2799,9 +2809,9 @@ mod tests {
             (Arg, 1),
             // 6: (X, Y, Y)
             (Tup, 3),
-            (Ref, 0),
-            (Ref, 1),
-            (Ref, 1),
+            (Var, 0),
+            (Var, 1),
+            (Var, 1),
         ];
 
         assert!(unify(&mut heap, 0, 6, 31).is_none());
@@ -2821,11 +2831,11 @@ mod tests {
             (Arg, 1),
             // 4: (X, X, (X,Y))
             (Tup, 3),
-            (Ref, 0),
-            (Ref, 0),
+            (Var, 0),
+            (Var, 0),
             (Tup, 2),
-            (Ref, 0),
-            (Ref, 1),
+            (Var, 0),
+            (Var, 1),
         ];
 
         assert!(unify(&mut heap, 0, 4, 31).is_none());
@@ -2865,7 +2875,7 @@ mod tests {
         let mut heap = QueryHeap::new(&[], None);
 
         //X = p(a,b)
-        heap.cells = vec![(Ref, 0), (Comp, 3), (Con, p), (Con, a), (Con, b)];
+        heap.cells = vec![(Var, 0), (Comp, 3), (Con, p), (Con, a), (Con, b)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[0]);
@@ -2873,21 +2883,21 @@ mod tests {
         assert_eq!(heap.var_regs[0], Addr(1).into());
 
         //X = (a,b)
-        heap.cells = vec![(Ref, 0), (Tup, 2), (Con, a), (Con, b)];
+        heap.cells = vec![(Var, 0), (Tup, 2), (Con, a), (Con, b)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[false]);
         assert_eq!(heap.var_regs[0], Addr(1).into());
 
         //X = [a,b]
-        heap.cells = vec![(Ref, 0), LIS, (Con, a), LIS, (Con, b), EMPTY_LIS];
+        heap.cells = vec![(Var, 0), LIS, (Con, a), LIS, (Con, b), EMPTY_LIS];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[false]);
         assert_eq!(heap.var_regs[0], Addr(1).into());
 
         //Nesting changes nothing while the term stays ground: X = p((a,b))
-        heap.cells = vec![(Ref, 0), (Comp, 2), (Con, p), (Tup, 2), (Con, a), (Con, b)];
+        heap.cells = vec![(Var, 0), (Comp, 2), (Con, p), (Tup, 2), (Con, a), (Con, b)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[false]);
@@ -2904,7 +2914,7 @@ mod tests {
         let mut heap = QueryHeap::new(&[], None);
 
         //p(A) = X  -- ref on the rhs
-        heap.cells = vec![(Comp, 2), (Con, p), (Arg, 0), (Ref, 0)];
+        heap.cells = vec![(Comp, 2), (Con, p), (Arg, 0), (Var, 0)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[0]);
@@ -2919,28 +2929,28 @@ mod tests {
         assert_eq!(heap.var_regs[0], Addr(0).into());
 
         //(a,A) = X
-        heap.cells = vec![(Tup, 2), (Con, a), (Arg, 0), (Ref, 0)];
+        heap.cells = vec![(Tup, 2), (Con, a), (Arg, 0), (Var, 0)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[true]);
         assert_eq!(heap.var_regs[0], Addr(0).into());
 
         //[a|A] = X
-        heap.cells = vec![LIS, (Con, a), (Arg, 0), (Ref, 0)];
+        heap.cells = vec![LIS, (Con, a), (Arg, 0), (Var, 0)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[true]);
         assert_eq!(heap.var_regs[0], Addr(0).into());
 
         //{a,A} = X  -- sets reach bind_ref_to_complex too
-        heap.cells = vec![(Set, 2), (Con, a), (Arg, 0), (Ref, 0)];
+        heap.cells = vec![(Set, 2), (Con, a), (Arg, 0), (Var, 0)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 3, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[true]);
         assert_eq!(heap.var_regs[0], Addr(0).into());
 
         //The arg can sit arbitrarily deep: p((a,A)) = X
-        heap.cells = vec![(Comp, 2), (Con, p), (Tup, 2), (Con, a), (Arg, 0), (Ref, 0)];
+        heap.cells = vec![(Comp, 2), (Con, p), (Tup, 2), (Con, a), (Arg, 0), (Var, 0)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 5, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[true]);
@@ -2956,29 +2966,29 @@ mod tests {
         let mut heap = QueryHeap::new(&[], None);
 
         //X = Y  -- (Ref, Ref)
-        heap.cells = vec![(Ref, 0), (Ref, 1)];
+        heap.cells = vec![(Var, 0), (Var, 1)];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.bound_vars.as_slice(), &[0]);
         assert_eq!(sub.needs_rebuild.as_slice(), &[false]);
-        assert_eq!(heap.var_regs[0], Var(1).into());
+        assert_eq!(heap.var_regs[0], VarId(1).into());
 
         //X = a  -- (Ref, _)
-        heap.cells = vec![(Ref, 0), (Con, a)];
+        heap.cells = vec![(Var, 0), (Con, a)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[false]);
         assert_eq!(heap.var_regs[0], Addr(1).into());
 
         //a = X  -- (_, Ref)
-        heap.cells = vec![(Con, a), (Ref, 0)];
+        heap.cells = vec![(Con, a), (Var, 0)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[false]);
         assert_eq!(heap.var_regs[0], Addr(0).into());
 
         //X = 5  -- integers are atomic
-        heap.cells = vec![(Ref, 0), (Int, 5)];
+        heap.cells = vec![(Var, 0), (Int, 5)];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[false]);
@@ -2987,7 +2997,7 @@ mod tests {
         //X = []  -- ELis is not in the Lis|Comp|Set|Tup arm, so this is the
         //atomic path rather than bind_ref_to_complex. Either way there is
         //nothing to rebuild.
-        heap.cells = vec![(Ref, 0), EMPTY_LIS];
+        heap.cells = vec![(Var, 0), EMPTY_LIS];
         heap.var_regs = vec![VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 1, 15).unwrap();
         assert_eq!(sub.needs_rebuild.as_slice(), &[false]);
@@ -3011,13 +3021,13 @@ mod tests {
             // 0: p(X)
             (Comp, 2),
             (Con, p),
-            (Ref, 0), // X -> Addr(3)
+            (Var, 0), // X -> Addr(3)
             // 3: q(A)
             (Comp, 2),
             (Con, q),
             (Arg, 0),
             // 6: Y
-            (Ref, 1),
+            (Var, 1),
         ];
         heap.var_regs = vec![Addr(3).into(), VarReg::UNBOUND];
 
@@ -3034,13 +3044,13 @@ mod tests {
             // 0: p(X)
             (Comp, 2),
             (Con, p),
-            (Ref, 0), // X -> Addr(3)
+            (Var, 0), // X -> Addr(3)
             // 3: q(q)
             (Comp, 2),
             (Con, q),
             (Con, q),
             // 6: Y
-            (Ref, 1),
+            (Var, 1),
         ];
         heap.var_regs = vec![Addr(3).into(), VarReg::UNBOUND];
         let sub = unify(&mut heap, 0, 6, 15).unwrap();
@@ -3068,7 +3078,7 @@ mod tests {
             // 5: (a, X)
             (Tup, 2),
             (Con, a),
-            (Ref, 0),
+            (Var, 0),
         ];
         heap.var_regs = vec![VarReg::UNBOUND];
 
@@ -3102,9 +3112,9 @@ mod tests {
             (Con, b),
             // 8: (X, Y, Z)
             (Tup, 3),
-            (Ref, 0),
-            (Ref, 1),
-            (Ref, 2),
+            (Var, 0),
+            (Var, 1),
+            (Var, 2),
         ];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
 
@@ -3187,7 +3197,7 @@ mod tests {
             LIS,
             (Con, c),
             EMPTY_LIS,
-            (Ref, 0),
+            (Var, 0),
         ];
         heap.var_regs = vec![VarReg::UNBOUND];
 
@@ -3233,7 +3243,7 @@ mod tests {
             (Con, a),
             (Con, b),
             LIS,
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, c),
             EMPTY_LIS,
@@ -3282,7 +3292,7 @@ mod tests {
             // 8: goal p(Y, [b])
             (Comp, 3),
             (Con, p),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, b),
             EMPTY_LIS,
@@ -3341,9 +3351,9 @@ mod tests {
             // 10: goal p(X, [X])
             (Comp, 3),
             (Con, p),
-            (Ref, 0),
+            (Var, 0),
             LIS,
-            (Ref, 0),
+            (Var, 0),
             EMPTY_LIS,
         ];
         heap.var_regs = vec![VarReg::UNBOUND];
@@ -3479,11 +3489,11 @@ mod tests {
             // 7: goal p(X, [a], Y)
             (Comp, 4),
             (Con, p),
-            (Ref, 0),
+            (Var, 0),
             LIS,
             (Con, a),
             EMPTY_LIS,
-            (Ref, 1),
+            (Var, 1),
         ];
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND];
 
@@ -3718,7 +3728,7 @@ mod tests {
             // 6: goal
             (Comp, 3),
             (Con, p),
-            (Ref, 0),
+            (Var, 0),
             (Con, c),
         ];
         heap.var_regs = vec![VarReg::UNBOUND];
@@ -3738,7 +3748,7 @@ mod tests {
             // 8: goal
             (Comp, 3),
             (Con, p),
-            (Ref, 0),
+            (Var, 0),
             (Set, 2),
             (Con, a),
             (Con, c),

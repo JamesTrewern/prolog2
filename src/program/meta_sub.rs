@@ -1,7 +1,7 @@
 use crate::{
     heap::{
         ArgRegs, Heap, QueryHeap,
-        VarBind::{Addr, Var},
+        VarBind::{Addr, VarId},
         VarReg,
     },
     program::{
@@ -119,7 +119,7 @@ impl MetaSub {
                 continue;
             }
             match (b1, b2) {
-                (Var(var_id), other) | (other, Var(var_id)) => {
+                (VarId(var_id), other) | (other, VarId(var_id)) => {
                     binding.push(var_id);
                     heap.bind(var_id, other);
                 }
@@ -234,7 +234,7 @@ mod build_clause_tests {
             "X and Y keep the arg ids they had in the template"
         );
         assert!(
-            prog_heap.iter().all(|cell| cell.0 != Ref),
+            prog_heap.iter().all(|cell| cell.0 != Var),
             "no Ref cell may reach the program heap"
         );
     }
@@ -329,7 +329,7 @@ mod tests {
     use crate::heap::{
         Cell, Heap, QueryHeap, SymbolDB,
         Tag::Con,
-        VarBind::{Addr, Var},
+        VarBind::{Addr, VarId},
         VarReg,
     };
 
@@ -429,7 +429,7 @@ mod tests {
             assert_eq!(heap.var_deref(var_y), Addr(addr_p));
             assert_eq!(heap.var_deref(var_x), Addr(addr_q));
             // Shared var was already equal on both sides, so it's left untouched
-            assert_eq!(heap.var_deref(shared), Var(shared));
+            assert_eq!(heap.var_deref(shared), VarId(shared));
         }
     }
 
@@ -455,8 +455,8 @@ mod tests {
             .expect("a variable repeated on both sides should unify with itself");
 
         assert_eq!(binding, vec![var_a], "only the first position binds");
-        assert_eq!(heap.var_deref(var_a), Var(var_b));
-        assert_eq!(heap.var_deref(var_b), Var(var_b));
+        assert_eq!(heap.var_deref(var_a), VarId(var_b));
+        assert_eq!(heap.var_deref(var_b), VarId(var_b));
     }
 
     /// The same shape, but the repeated variable meets an address the second
@@ -491,7 +491,7 @@ mod tests {
             let var_x = heap.new_var(VarReg::UNBOUND);
             let var_y = heap.new_var(VarReg::UNBOUND); // chain target of var_x, still unbound
             let var_z = heap.new_var(VarReg::UNBOUND);
-            heap.bind(var_x, Var(var_y)); // var_x -> var_y
+            heap.bind(var_x, VarId(var_y)); // var_x -> var_y
 
             let lhs = fresh_meta_sub(0, vec![VarReg::from_var(var_x)]);
             let rhs = fresh_meta_sub(0, vec![VarReg::from_var(var_z)]);
@@ -501,7 +501,7 @@ mod tests {
                 .expect("a var chained to another var should unify with a fresh var");
             // The end of the chain (var_y) is what gets bound, not var_x itself
             assert_eq!(binding, vec![var_y]);
-            assert_eq!(heap.var_deref(var_x), Var(var_z));
+            assert_eq!(heap.var_deref(var_x), VarId(var_z));
         }
 
         // Var set to other var: match addr
@@ -510,7 +510,7 @@ mod tests {
             let addr_p = make_addr(&mut heap, "p");
             let var_x = heap.new_var(VarReg::UNBOUND);
             let var_y = heap.new_var(VarReg::UNBOUND);
-            heap.bind(var_x, Var(var_y)); // var_x -> var_y
+            heap.bind(var_x, VarId(var_y)); // var_x -> var_y
 
             let lhs = fresh_meta_sub(0, vec![VarReg::from_var(var_x)]);
             let rhs = fresh_meta_sub(0, vec![VarReg::from_addr(addr_p)]);
@@ -571,7 +571,7 @@ mod tests {
             let rhs = fresh_meta_sub(0, vec![VarReg::from_var(var_y), VarReg::from_addr(addr_q)]);
 
             assert!(lhs.unify(&rhs, &mut heap).is_none());
-            assert_eq!(heap.var_deref(var_y), Var(var_y)); // binding was undone
+            assert_eq!(heap.var_deref(var_y), VarId(var_y)); // binding was undone
         }
     }
 }

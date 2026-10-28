@@ -66,9 +66,9 @@ impl<'a> QueryHeap<'a> {
     pub fn dup_term(&mut self, addr: usize, ref_map: &mut HashMap<usize, usize>) {
         let mut walk = TermWalk::new(addr);
         while let Some(cell) = walk.next_cell(self) {
-            if cell.0 == Ref {
+            if cell.0 == Var {
                 if let Some(&mapped) = ref_map.get(&addr) {
-                    self.heap_push((Ref, mapped));
+                    self.heap_push((Var, mapped));
                 } else {
                     let new_var_id = self.set_var(None);
                     ref_map.insert(cell.1, new_var_id);
@@ -171,7 +171,7 @@ impl Heap for QueryHeap<'_> {
                 if self.var_regs[var_id].bound() {
                     return Addr(self.var_regs[var_id].0);
                 } else {
-                    return Var(var_id);
+                    return VarId(var_id);
                 }
             }
         }
@@ -203,7 +203,7 @@ impl Heap for QueryHeap<'_> {
             var_id
         });
 
-        self.heap_push((Ref, var_id));
+        self.heap_push((Var, var_id));
         var_id
     }
 

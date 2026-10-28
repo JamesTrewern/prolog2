@@ -42,7 +42,7 @@ pub fn length(
     };
 
     match len_arg {
-        (Ref, var_id) => {
+        (Var, var_id) => {
             let int_addr = heap.heap_push((Int, len));
             heap.bind(var_id, Addr(int_addr));
             [var_id].into()
@@ -67,7 +67,7 @@ pub fn sort(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    let (Ref, var_id) = resolve_to_cell(heap, goal_arg(heap, goal, 1)) else {
+    let (Var, var_id) = resolve_to_cell(heap, goal_arg(heap, goal, 1)) else {
         return false.into();
     };
 
