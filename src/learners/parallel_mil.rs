@@ -25,7 +25,11 @@ use crate::{
     Config,
 };
 
-use super::{sub_h_unification::least_sub_h, utils::collect_used_pred};
+use super::{
+    specialise::specialise_h,
+    sub_h_unification::least_sub_h,
+    utils::{collect_used_pred, reduce as reduce_hypothesis, union_sub_hypotheses},
+};
 
 use lazy_static::lazy_static;
 
@@ -105,20 +109,40 @@ impl App {
             .collect();
 
         // Build final top program from surviving hypotheses
-        let Some(top_programs) = least_sub_h(
+        let Some(groups) = least_sub_h(
             &examples.pos,
             &examples.neg,
             sub_hypotheses,
             &self.prog_heap,
             &self.predicate_table,
-            self.config.max_depth,
+            self.config,
         ) else {
             println!("No Valid Hypothesis Found");
             return None;
         };
         let mut buffer = Vec::new();
-        for (i, mut top_program) in top_programs.into_iter().enumerate() {
+        for (i, group) in groups.into_iter().enumerate() {
             println!("Program {i}");
+            // Sub hypotheses in a group routinely share clauses, so union
+            // rather than concatenate.
+            let mut top_program = union_sub_hypotheses(group, &self.prog_heap);
+
+            // Reduce before collecting the invented predicates' definitions.
+            // Afterwards those definitions are in the clause list *and* still
+            // in the predicate table, so dropping one from the list would not
+            // make anything unprovable and reduce would strip every one of
+            // them as redundant.
+            if reduce {
+                top_program = reduce_hypothesis(
+                    &examples.pos,
+                    top_program,
+                    &self.prog_heap,
+                    &self.predicate_table,
+                    self.config,
+                    true,
+                );
+            }
+
             collect_used_pred(&mut top_program, &self.prog_heap, &self.predicate_table);
             buffer.push(top_prog_to_string(top_program, &self.prog_heap));
         }
@@ -435,8 +459,7 @@ fn specialise(
             let tx = tx.clone();
             let completed = completed.clone();
             s.spawn(move |_| {
-                let keep =
-                    specialise_thread(neg_examples, hypothesis, heap, predicate_table, config);
+                let keep = specialise_h(neg_examples, hypothesis, heap, predicate_table, config);
                 let _ = tx.send((idx, keep));
                 let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                 eprint!("\rSpecialise: {done}/{total} hypotheses tested");
@@ -448,43 +471,6 @@ fn specialise(
     eprintln!(" ...done");
 
     collector.join().unwrap()
-}
-
-/// Test one hypothesis against all negative examples.
-/// Returns `true` if the hypothesis should be retained (no negative is provable).
-fn specialise_thread(
-    neg_examples: &[String],
-    hypothesis: &[Clause],
-    heap: &[Cell],
-    predicate_table: &PredicateTable,
-    config: Config,
-) -> bool {
-    // Use the original max_depth to bound recursive hypotheses, but disable learning
-    let config = Config {
-        max_depth: config.max_depth,
-        max_clause: 0,
-        max_pred: 0,
-        debug: false,
-        protect_h_preds: config.protect_h_preds,
-    };
-
-    for example in neg_examples {
-        let mut query_heap = QueryHeap::new(heap, None);
-        let goal = match parse_example(example, &mut query_heap) {
-            Ok(g) => g,
-            Err(e) => {
-                eprintln!("Failed to parse negative example '{}': {}", example, e);
-                continue;
-            }
-        };
-        let mut proof = Proof::new(&query_heap, &[goal]);
-        proof.add_test_clauses(&hypothesis);
-        // If any negative example is provable, reject this hypothesis
-        if proof.prove(&mut query_heap, predicate_table, config) {
-            return false;
-        }
-    }
-    true
 }
 
 fn top_prog_to_string(top_program: Vec<Clause>, heap: &impl Heap) -> String {

@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    io::{self, Write},
     ops::{Deref, DerefMut},
 };
 
@@ -111,9 +112,11 @@ pub(super) fn count_coverage(
     (coverage, count)
 }
 
+/// Combine a group's sub hypotheses into one clause list, dropping clauses
+/// that appear in more than one of them.
 pub(super) fn union_sub_hypotheses(
     sub_hypotheses: Vec<Vec<Clause>>,
-    heap: &Vec<Cell>,
+    heap: &impl Heap,
 ) -> Vec<Clause> {
     let mut top_program = Vec::new();
     let mut seen = HashSet::new();
@@ -197,6 +200,72 @@ pub(super) fn count_pred_clauses(
         }
     }
     count
+}
+
+/// Plotkin's program reduction (Algorithm 3).
+/// Sequentially tries removing each clause; if all positives are still provable
+/// without it, the clause is redundant and permanently removed.
+pub(super) fn reduce(
+    pos_examples: &[String],
+    mut hypothesis: Vec<Clause>,
+    heap: &[Cell],
+    predicate_table: &PredicateTable,
+    config: Config,
+    verbose: bool,
+) -> Vec<Clause> {
+    let config = Config {
+        max_depth: config.max_depth,
+        max_clause: 0,
+        max_pred: 0,
+        debug: false,
+        protect_h_preds: config.protect_h_preds,
+    };
+
+    // New reduction method
+    // pop clause
+    // check coverage if same continue
+    // if less coverage add clause to front (design vec with easy front adding)
+    // loop until clauses_considered == initial size
+
+    let total = hypothesis.len();
+    let mut removed = 0usize;
+    let mut i = 0;
+    while i < hypothesis.len() {
+        if verbose {
+            eprint!(
+                "\rReduce: {}/{total} checked, {removed} removed    ",
+                i + removed + 1
+            );
+            let _ = io::stderr().flush();
+        }
+
+        let c = hypothesis.remove(i);
+
+        // Check if all positive examples are still provable without clause i
+        let redundant = pos_examples.iter().all(|example| {
+            let mut query_heap = QueryHeap::new(heap, None);
+            let goal = match parse_example(example, &mut query_heap) {
+                Ok(g) => g,
+                Err(_) => return true, // skip unparseable examples
+            };
+            let mut proof = Proof::new(&query_heap, &[goal]);
+            proof.add_test_clauses(&hypothesis);
+            proof.prove(&mut query_heap, predicate_table, config)
+        });
+
+        if redundant {
+            removed += 1;
+            // Don't increment i — next clause slides into this position
+        } else {
+            hypothesis.insert(i, c);
+            i += 1;
+        }
+    }
+    if verbose {
+        eprintln!(" ...done");
+    }
+
+    hypothesis
 }
 
 #[cfg(test)]

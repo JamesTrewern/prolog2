@@ -291,12 +291,27 @@ impl PredDefTable {
         lb..ub
     }
 
+    /// Debug aid: print each definition as its meta clause ids and the terms
+    /// substituted into them.
+    ///
+    /// A `PredDef` holds substitutions rather than clauses, and rebuilding the
+    /// clauses would need a mutable heap and the predicate table holding the
+    /// templates -- more than a print wants -- so this shows the substitution
+    /// itself.
     pub fn _print_defs(&self, heap: &impl Heap) {
         for (i, pred_def) in self.pred_defs.iter().enumerate() {
             println!("====== Definition {i} ======");
             for msub in &pred_def.meta_subs {
-                // todo!()
-                //println!("{}", clause.to_string(heap))
+                let subs: Vec<String> = msub
+                    .subs
+                    .iter()
+                    .map(|sub| match sub.get_bind() {
+                        Some(Addr(addr)) => heap.term_string(addr),
+                        Some(Var(var_id)) => format!("Var_{var_id}"),
+                        None => "UNBOUND".to_string(),
+                    })
+                    .collect();
+                println!("meta clause {}: {}", msub.meta_clause_id, subs.join(", "));
             }
             println!("===========================");
         }
