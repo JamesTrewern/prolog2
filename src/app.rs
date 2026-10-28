@@ -663,7 +663,7 @@ impl App {
         match &self.examples {
             Some(examples) => match self.top_prog {
                 TopProg::True(_) => {
-                    self.run_top_prog();
+                    self.run_parallel();
                     ExitCode::SUCCESS
                 }
                 TopProg::False => self.start_query(examples.to_query()).map_or_else(

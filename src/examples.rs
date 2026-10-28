@@ -170,7 +170,7 @@ fn top_prog_robots() {
     let mut app = App::from_setup_json("examples/robots/tpc_config.json")
         .expect("failed to load config")
         .auto(true);
-    app.run_top_prog();
+    app.run_parallel();
 }
 
 // Regression test for the molecules example.
@@ -199,7 +199,7 @@ fn top_prog_trains() {
     let mut app = App::from_setup_json("examples/trains/tpc_config.json")
         .expect("failed to load config")
         .auto(true);
-    let result = app.run_top_prog().unwrap().pop().unwrap();
+    let result = app.run_parallel().unwrap().pop().unwrap();
     assert_eq!(result.lines().count(), 2);
     //This creates a valid hypothesis, but due to race conditions
     //in multi-threading predicate names and ordering of body literals is not deterministic
@@ -211,5 +211,5 @@ fn top_prog_trains() {
 fn colreg() {
     let mut app =
         App::from_setup_json("examples/colreg/setup_turn.json").expect("failed to load config");
-    let _result = app.run_top_prog();
+    let _result = app.run_parallel();
 }

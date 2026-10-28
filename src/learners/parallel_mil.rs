@@ -37,7 +37,7 @@ lazy_static! {
 }
 
 impl App {
-    pub fn run_top_prog(&mut self) -> Option<Vec<String>> {
+    pub fn run_parallel(&mut self) -> Option<Vec<String>> {
         let Some(mut examples) = self.examples.clone() else {
             panic!("Can't start top prog without examples");
         };
