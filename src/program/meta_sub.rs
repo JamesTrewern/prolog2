@@ -5,8 +5,7 @@ use crate::{
         VarReg,
     },
     program::{
-        clause::{BitFlag64, Clause},
-        predicate_table::PredicateTable,
+        PredicateTable, {BitFlag64, Clause},
     },
     resolution::{build, Substitution},
 };
@@ -60,7 +59,7 @@ impl MetaSub {
     /// directly.
     ///
     /// Mirrors the clause construction in
-    /// [`Env::try_choices`](crate::resolution::Env), with the substitution
+    /// `Env::try_choices`, with the substitution
     /// read back out of `self` instead of the live argument registers. The
     /// meta variables' bindings are inlined as terms; every other variable
     /// stays an `Arg` cell, leaving a template a later proof can instantiate.
@@ -141,7 +140,7 @@ mod build_clause_tests {
     use crate::{
         heap::{Cell, Heap, SymbolDB, Tag::*, VarReg},
         parser::_build_clause,
-        program::{clause::Clause, predicate_table::PredicateTable},
+        program::{Clause, PredicateTable},
     };
 
     // These tests assert on cells rather than `Clause::to_string`. An `Arg`

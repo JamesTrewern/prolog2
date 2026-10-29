@@ -6,7 +6,7 @@ use super::{specialise::clauses_entail_negative, utils::count_coverage};
 use crate::{
     heap::{Cell, Heap, QueryHeap},
     learners::utils::{count_pred_clauses, Coverage},
-    program::{clause::Clause, predicate_table::PredicateTable},
+    program::{Clause, PredicateTable},
     Config,
 };
 
@@ -329,7 +329,7 @@ mod coverage_group_tests {
         heap::Cell,
         learners::utils::{compile_examples, Coverage},
         parser::_build_clause,
-        program::{clause::Clause, predicate_table::PredicateTable},
+        program::{Clause, PredicateTable},
         Config,
     };
 

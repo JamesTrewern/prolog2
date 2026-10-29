@@ -1,6 +1,6 @@
 use crate::{
     heap::{Heap, QueryHeap, Tag::*, VarBind::Addr},
-    program::{clause::MAX_ARG, hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{Hypothesis, PredicateTable, MAX_ARG},
     resolution::unify,
     Config,
 };

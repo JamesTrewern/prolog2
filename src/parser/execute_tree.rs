@@ -10,12 +10,11 @@ use crate::{
     heap::Heap,
     parser::{tokenise, ParserError, TokenStream},
     program::{
-        clause::{Clause, MAX_ARG},
-        predicate_table::PredicateTable,
+        PredicateTable, {Clause, MAX_ARG},
     },
 };
 
-pub fn build_clause(
+pub(crate) fn build_clause(
     literals: Vec<Term>,
     meta_vars: Option<(Vec<String>, Vec<String>)>,
     heap: &mut impl Heap,
@@ -183,7 +182,7 @@ fn check_meta_rule_vars(literals: &[Term], meta_vars: &[String]) -> Result<(), P
 /// Returns [`ParserError::MalformedMetaRule`] if a meta rule's trailing meta
 /// variable declaration is missing, is not a set or list, contains anything
 /// other than variables, or names a variable the rule does not use.
-pub fn execute_tree(
+pub(crate) fn execute_tree(
     syntax_tree: Vec<TreeClause>,
     heap: &mut impl Heap,
     pred_table: &mut PredicateTable,
@@ -352,7 +351,7 @@ mod tests {
     use crate::{
         heap::{Cell, SymbolDB, Tag},
         parser::execute_tree::execute_tree,
-        program::predicate_table::{Predicate, PredicateTable},
+        program::{Predicate, PredicateTable},
     };
 
     use super::super::{build_tree::TokenStream, tokeniser::tokenise};

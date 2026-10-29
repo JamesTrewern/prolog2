@@ -3,7 +3,7 @@
 use super::env::Env;
 use crate::{
     heap::{Heap, QueryHeap},
-    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{Clause, Hypothesis, PredicateTable},
     Config,
 };
 

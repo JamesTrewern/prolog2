@@ -12,9 +12,16 @@ mod symbol_db;
 mod varbind;
 mod walk;
 
-pub use argument_registers::ArgRegs;
+// Public: what a native predicate needs to read its goal and build a result.
+// `HeapPoint` and `VarReg` are here because they appear in the signatures of
+// public `QueryHeap` methods rather than because they are named directly.
 pub use heap::{Cell, Heap, Tag, EMPTY_LIS, LIS};
 pub use query_heap::{HeapPoint, QueryHeap};
 pub use symbol_db::SymbolDB;
 pub use varbind::{VarBind, VarReg};
-pub use walk::{DualWalk, SubWalk, TermWalk, Walk};
+pub use walk::{TermWalk, Walk};
+
+// Internal: argument registers belong to clause resolution, and the paired
+// walks to unification.
+pub(crate) use argument_registers::ArgRegs;
+pub(crate) use walk::{DualWalk, SubWalk};

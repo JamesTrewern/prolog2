@@ -1,14 +1,14 @@
 // Broad test on example files to prove working state of application
 use crate::app::{App, Solution};
 
-pub fn contains_clause(solution: &Solution, clause: &str) -> bool {
+pub(crate) fn contains_clause(solution: &Solution, clause: &str) -> bool {
     solution
         .hypothesis
         .lines()
         .any(|h_clause| h_clause == clause)
 }
 
-pub fn matching_hypothesis(solution: &Solution, expected_h: &[&str]) -> bool {
+pub(crate) fn matching_hypothesis(solution: &Solution, expected_h: &[&str]) -> bool {
     if solution.hypothesis.chars().filter(|c| *c == '\n').count() != expected_h.len() {
         return false;
     }
@@ -20,7 +20,7 @@ pub fn matching_hypothesis(solution: &Solution, expected_h: &[&str]) -> bool {
     true
 }
 
-pub fn hypothesis_exists(solutions: &[Solution], expected_h: &[&str]) {
+pub(crate) fn hypothesis_exists(solutions: &[Solution], expected_h: &[&str]) {
     if !solutions
         .iter()
         .any(|solution| matching_hypothesis(solution, expected_h))
@@ -39,7 +39,7 @@ pub fn hypothesis_exists(solutions: &[Solution], expected_h: &[&str]) {
     }
 }
 
-pub fn test_solutions(app: App, expected_hypotheses: &[&[&str]]) {
+pub(crate) fn test_solutions(app: App, expected_hypotheses: &[&[&str]]) {
     let mut i = 0;
     let solutions: Vec<Solution> = app
         .query_session_from_examples()

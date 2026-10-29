@@ -8,7 +8,7 @@ pub(crate) enum FindReturn {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DirGraph8 {
+pub(crate) struct DirGraph8 {
     pub size: usize,
     edges: [u8; 8],
 }
@@ -67,14 +67,14 @@ impl DirGraph8 {
         Self { size: N, edges }
     }
 
-    pub fn new(size: usize) -> Self {
+    pub(crate) fn new(size: usize) -> Self {
         Self {
             size,
             edges: [0; 8],
         }
     }
 
-    pub fn add_edge(&mut self, from: usize, to: usize) {
+    pub(crate) fn add_edge(&mut self, from: usize, to: usize) {
         self[from] = self[from] | 1 << to
     }
 
@@ -95,7 +95,7 @@ impl DirGraph8 {
     /// Returns grouping as slice with size 8 and length
     /// If no SCC groups return none
     #[cfg(test)]
-    pub fn cyclic_groups(&self) -> Option<(Self, Self)> {
+    pub(crate) fn cyclic_groups(&self) -> Option<(Self, Self)> {
         let r = self.closure();
         //No Groups
         if u64::from_ne_bytes(r) & Self::IDENTITY64 == 0 {
@@ -154,7 +154,7 @@ impl DirGraph8 {
         ))
     }
 
-    pub fn ordered_cyclic_groups(&self) -> Option<Self> {
+    pub(crate) fn ordered_cyclic_groups(&self) -> Option<Self> {
         let mut r = self.closure();
         //No Groups
         if u64::from_ne_bytes(r) & Self::IDENTITY64 == 0 {
@@ -208,7 +208,7 @@ impl DirGraph8 {
         })
     }
 
-    pub fn order(&self) -> [usize; 8] {
+    pub(crate) fn order(&self) -> [usize; 8] {
         let r = self.closure();
         let mut order: [usize; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
         order[..self.size].sort_by_key(|&i| r[i].count_ones());
@@ -222,7 +222,7 @@ impl DirGraph8 {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DirGraph16 {
+pub(crate) struct DirGraph16 {
     pub size: usize,
     edges: [u16; 16],
 }
@@ -264,14 +264,14 @@ impl DirGraph16 {
         Self { size: N, edges }
     }
 
-    pub fn new(size: usize) -> Self {
+    pub(crate) fn new(size: usize) -> Self {
         Self {
             size,
             edges: [0; 16],
         }
     }
 
-    pub fn add_edge(&mut self, from: usize, to: usize) {
+    pub(crate) fn add_edge(&mut self, from: usize, to: usize) {
         self[from] = self[from] | 1 << to
     }
 
@@ -292,7 +292,7 @@ impl DirGraph16 {
     /// Returns the groups and the edges between groups, each sized to the number of groups.
     /// If no SCC groups return none
     #[cfg(test)]
-    pub fn cyclic_groups(&self) -> Option<(Self, Self)> {
+    pub(crate) fn cyclic_groups(&self) -> Option<(Self, Self)> {
         let r = self.closure();
         let (ra, rb) = to_halves(r);
         let (ia, ib) = Self::IDENTITY;
@@ -353,7 +353,7 @@ impl DirGraph16 {
     }
 
     /// As [`DirGraph8::ordered_cyclic_groups`], for up to 16 nodes.
-    pub fn ordered_cyclic_groups(&self) -> Option<Self> {
+    pub(crate) fn ordered_cyclic_groups(&self) -> Option<Self> {
         let r = self.closure();
         let (ra, rb) = to_halves(r);
         let (ia, ib) = Self::IDENTITY;
@@ -404,7 +404,7 @@ impl DirGraph16 {
     }
 
     /// As [`DirGraph8::order`], for up to 16 nodes.
-    pub fn order(&self) -> [usize; 16] {
+    pub(crate) fn order(&self) -> [usize; 16] {
         let r = self.closure();
         let mut order: [usize; 16] = std::array::from_fn(|i| i);
         order[..self.size].sort_by_key(|&i| r[i].count_ones());

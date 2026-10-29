@@ -17,7 +17,7 @@ use crate::{
         VarReg,
     },
     learners::predicate_unification::{PredDef, PredDefTable, MAX_PRED_DEFS},
-    program::{clause::Clause, meta_sub::MetaSub, predicate_table::PredicateTable},
+    program::{Clause, MetaSub, PredicateTable},
     resolution::Proof,
     Config,
 };

@@ -5,7 +5,7 @@ use fsize::fsize;
 use crate::heap::{Heap, SymbolDB, Tag, EMPTY_LIS, LIS};
 
 #[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
-pub enum Str {
+pub(crate) enum Str {
     Comp,
     Tup,
     Set,
@@ -22,7 +22,7 @@ impl Str {
 }
 
 #[derive(Debug, PartialEq, Clone, PartialOrd)]
-pub enum Term {
+pub(crate) enum Term {
     Str(Str, Vec<Term>),
     List(Vec<Term>, Box<Term>),
     EmptyList,
@@ -36,7 +36,7 @@ pub enum Term {
 }
 
 impl Term {
-    pub fn parse_unit(token: &str) -> Option<Self> {
+    pub(super) fn parse_unit(token: &str) -> Option<Self> {
         let c = token.chars().next()?;
         match c {
             '\'' => Some(Term::Constant(token[1..token.len() - 1].into())),
@@ -59,7 +59,7 @@ impl Term {
 
     /// Convenience wrapper function for encode, returns address of new term
     /// Helps to maintian old code
-    pub fn encode(
+    pub(super) fn encode(
         self,
         heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
@@ -70,7 +70,7 @@ impl Term {
         addr
     }
 
-    pub fn encode_rec(
+    pub(super) fn encode_rec(
         self,
         heap: &mut impl Heap,
         var_values: &mut HashMap<String, usize>,
@@ -100,7 +100,7 @@ impl Term {
         }
     }
 
-    pub fn extract_vars(&self, vars: &mut Vec<String>) {
+    pub(crate) fn extract_vars(&self, vars: &mut Vec<String>) {
         match self {
             Term::List(head, tail) => {
                 for term in head {

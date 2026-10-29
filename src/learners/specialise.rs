@@ -23,7 +23,7 @@ use crate::{
         Tag::{Con, Var},
         TermWalk, Walk,
     },
-    program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{Clause, Hypothesis, PredicateTable},
     resolution::Proof,
     Config,
 };

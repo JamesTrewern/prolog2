@@ -9,7 +9,7 @@ use crate::{
     heap::{Cell, Heap, QueryHeap, SymbolDB, VarBind::*},
     parser::{build_clause, execute_tree, tokenise, TokenStream},
     predicate_modules::{maths::set_approx_tolerance, PredicateModule, STANDARD_MODULES},
-    program::predicate_table::PredicateTable,
+    program::PredicateTable,
     resolution::Proof,
     Error, Result,
 };
@@ -595,7 +595,7 @@ impl App {
     /// Opens a [`QuerySession`] for a Prolog query string.
     ///
     /// Unlike [`App::start_query`], this method performs no I/O. Solutions are
-    /// retrieved by calling [`QuerySession::next_solution`] (or by iterating,
+    /// retrieved by calling [`Iterator::next`] on it (or by iterating,
     /// since [`QuerySession`] implements [`Iterator`]).
     ///
     /// The session borrows `self` for its lifetime, so the engine cannot be
@@ -757,7 +757,7 @@ fn continue_proof(auto: bool) -> bool {
 /// Created by [`App::query_session`] or [`App::query_session_from_examples`].
 /// Borrows the engine for its lifetime.
 ///
-/// Solutions are retrieved one at a time via [`QuerySession::next_solution`].
+/// Solutions are retrieved one at a time by iterating it.
 /// `QuerySession` also implements [`Iterator`]`<Item = `[`Solution`]`>`, so it
 /// can be used directly in `for` loops or with iterator adaptors.
 ///

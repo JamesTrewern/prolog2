@@ -13,7 +13,7 @@ use super::{utils::*, PredReturn, PredicateModule};
 use crate::{
     heap::{Heap, QueryHeap, Tag, VarBind::Addr},
     predicate_modules::maths::Number,
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{Hypothesis, PredicateTable},
     Config,
 };
 
@@ -390,19 +390,19 @@ mod tests {
     use super::SETS;
     use crate::predicate_modules::{utils::TestWrapper, DEFAULTS, MATHS};
 
-    pub fn test_wrapper() -> TestWrapper {
+    pub(super) fn test_wrapper() -> TestWrapper {
         TestWrapper::new(&[DEFAULTS, MATHS, SETS])
     }
 
-    pub fn query_result(query: &str) -> Vec<String> {
+    pub(super) fn query_result(query: &str) -> Vec<String> {
         test_wrapper().query_result(query)
     }
 
-    pub fn succeeds(query: &str) -> bool {
+    pub(super) fn succeeds(query: &str) -> bool {
         test_wrapper().succeeds(query)
     }
 
-    pub fn all_bindings(query: &str, var: &str) -> Vec<String> {
+    pub(super) fn all_bindings(query: &str, var: &str) -> Vec<String> {
         test_wrapper().all_bindings(query, var)
     }
 

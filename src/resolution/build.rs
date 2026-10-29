@@ -2,13 +2,13 @@
 
 use crate::{
     heap::{Heap, QueryHeap, Tag::*, TermWalk, VarBind::*, Walk},
-    program::clause::BitFlag64,
+    program::BitFlag64,
     resolution::Substitution,
 };
 
 /// If a ref if bound to some complex term which contains args we want
 /// to rebuild this term in the query space replacing args with refs or arg reg values
-pub fn re_build_bound_arg_terms(heap: &mut QueryHeap, substitution: &mut Substitution) {
+pub(super) fn re_build_bound_arg_terms(heap: &mut QueryHeap, substitution: &mut Substitution) {
     for i in 0..substitution.len() {
         if substitution.needs_rebuild[i] {
             // Assume if needs rebuild is true variable register is an addr
@@ -23,7 +23,7 @@ pub fn re_build_bound_arg_terms(heap: &mut QueryHeap, substitution: &mut Substit
 
 /// Build a new term from previous term and substitution.
 /// Assume that src_addr does not point to bound ref.
-pub fn build(
+pub(crate) fn build(
     heap: &mut impl Heap,
     substitution: &mut Substitution,
     meta_vars: Option<BitFlag64>,
@@ -66,7 +66,7 @@ mod tests {
     use super::{build, re_build_bound_arg_terms};
     use crate::{
         heap::{Cell, Heap, QueryHeap, SymbolDB, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
-        program::clause::{BitFlag64, MAX_ARG},
+        program::{BitFlag64, MAX_ARG},
         resolution::{unify, Substitution},
     };
 
@@ -255,10 +255,7 @@ mod tests {
         );
         assert_eq!(sub.get_arg(0), Some(VarId(1)));
         assert_eq!(sub.get_arg(1), Some(VarId(2)));
-        assert!(
-            !heap.contains_args(q),
-            "no Arg cells may survive a rebuild"
-        );
+        assert!(!heap.contains_args(q), "no Arg cells may survive a rebuild");
         assert!(
             heap.var_regs[0].value() >= prog.len(),
             "the rebuilt term must live in query space, not the program heap"
@@ -274,13 +271,13 @@ mod tests {
         let q_sym = SymbolDB::set_const("q");
 
         let prog = prog(vec![
-            poison(),    // 0
-            LIS,         // 1: head subterm [A0]
-            (Arg, 0),    // 2
-            EMPTY_LIS,   // 3
-            (Comp, 2),   // 4: body literal q(A0)
+            poison(),     // 0
+            LIS,          // 1: head subterm [A0]
+            (Arg, 0),     // 2
+            EMPTY_LIS,    // 3
+            (Comp, 2),    // 4: body literal q(A0)
             (Con, q_sym), // 5
-            (Arg, 0),    // 6
+            (Arg, 0),     // 6
         ]);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -489,7 +486,10 @@ mod tests {
         assert_eq!(goal, q + 3);
         assert_eq!(heap.term_string(goal), "q(f(a))");
         let built = heap[goal..].to_vec();
-        assert_eq!(built, [(Comp, 2), (Con, q_sym), (Comp, 2), (Con, f), (Con, a)]);
+        assert_eq!(
+            built,
+            [(Comp, 2), (Con, q_sym), (Comp, 2), (Con, f), (Con, a)]
+        );
 
         // Perturb the source term; the built goal must be unaffected.
         heap.cells[2] = (Con, b);
@@ -730,7 +730,10 @@ mod tests {
 
         let goal = build(&mut heap, &mut sub, None, 1);
 
-        assert_eq!(goal, q, "build returns the heap length captured before it pushes");
+        assert_eq!(
+            goal, q,
+            "build returns the heap length captured before it pushes"
+        );
         assert_eq!(heap[q..], [(Var, 0)]);
         assert_eq!(sub.get_arg(0), Some(VarId(0)));
     }
@@ -1317,7 +1320,7 @@ mod tests {
         heap.cells.extend([(Comp, 2), (Con, p), (Var, 0)]);
         heap.var_regs = vec![VarReg::UNBOUND];
 
-        let mut sub = unify(&mut heap, 1, q,31).expect("p(A0) must unify with p(X)");
+        let mut sub = unify(&mut heap, 1, q, 31).expect("p(A0) must unify with p(X)");
 
         // `Arg` against `Ref` records a variable binding, not an address, so
         // nothing was bound in the heap and there is nothing to rebuild.
@@ -1365,7 +1368,7 @@ mod tests {
         heap.cells.extend([(Comp, 2), (Con, p), (Var, 0)]);
         heap.var_regs = vec![VarReg::UNBOUND];
 
-        let mut sub = unify(&mut heap, 1, q,31).expect("p([A0]) must unify with p(X)");
+        let mut sub = unify(&mut heap, 1, q, 31).expect("p([A0]) must unify with p(X)");
 
         // X is bound to the list *in the program heap*, and that list is
         // flagged for rebuild because it contains an `Arg`.
@@ -1385,7 +1388,11 @@ mod tests {
             heap.var_regs[0].value() >= prog.len(),
             "after the rebuild X must point into query space"
         );
-        assert_eq!(sub.get_arg(0), Some(VarId(1)), "A0 got a fresh query variable");
+        assert_eq!(
+            sub.get_arg(0),
+            Some(VarId(1)),
+            "A0 got a fresh query variable"
+        );
 
         let g1 = build(&mut heap, &mut sub, None, 6);
         let g2 = build(&mut heap, &mut sub, None, 9);
@@ -1433,11 +1440,10 @@ mod tests {
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
-        heap.cells
-            .extend([(Comp, 3), (Con, p), (Var, 0), (Var, 1)]);
+        heap.cells.extend([(Comp, 3), (Con, p), (Var, 0), (Var, 1)]);
         heap.var_regs = vec![VarReg::UNBOUND; 2];
 
-        let mut sub = unify(&mut heap, 1, q,31).expect("p([A0], b) must unify with p(X, Z)");
+        let mut sub = unify(&mut heap, 1, q, 31).expect("p([A0], b) must unify with p(X, Z)");
 
         assert_eq!(&sub[..], &[0, 1]);
         assert_eq!(&sub.needs_rebuild[..], &[true, false]);
@@ -1492,9 +1498,13 @@ mod tests {
         heap.cells
             .extend([(Comp, 2), (Con, p), LIS, (Con, a), EMPTY_LIS]);
 
-        let mut sub = unify(&mut heap, 1, q,31).expect("p(A0) must unify with p([a])");
+        let mut sub = unify(&mut heap, 1, q, 31).expect("p(A0) must unify with p([a])");
 
-        assert_eq!(sub.get_arg(0), Some(Addr(q + 2)), "A0 points at the goal's list");
+        assert_eq!(
+            sub.get_arg(0),
+            Some(Addr(q + 2)),
+            "A0 points at the goal's list"
+        );
         assert!(sub.is_empty(), "no heap variable was bound");
 
         re_build_bound_arg_terms(&mut heap, &mut sub);
@@ -1506,6 +1516,9 @@ mod tests {
             [(Comp, 2), (Con, q_sym), LIS, (Con, a), EMPTY_LIS]
         );
         assert_eq!(heap.term_string(goal), "q([a])");
-        assert!(heap.var_regs.is_empty(), "a ground resolution allocates no variables");
+        assert!(
+            heap.var_regs.is_empty(),
+            "a ground resolution allocates no variables"
+        );
     }
 }

@@ -6,7 +6,9 @@ const DELIMINATORS: &[char] = &[
     '(', ')', ',', '.', ' ', '\r', '\n', '\t', '\\', ':', '-', '+', '/', '*', '=', '[', ']', '|',
     '>', '<', '{', '}',
 ];
-const KNOWN_SYMBOLS: &[&str] = &[":-", "==", "=\\=", "\\=", "=:=", "=~=", "**", "=<", ">=", "/*", "*/", "=.."];
+const KNOWN_SYMBOLS: &[&str] = &[
+    ":-", "==", "=\\=", "\\=", "=:=", "=~=", "**", "=<", ">=", "/*", "*/", "=..",
+];
 
 // --------------------------------------------------------------------------------------
 // Tokenise File
@@ -133,7 +135,10 @@ fn walk_string(
     Err(ParserError::UnclosedStringLiteral { delimiter: mark })
 }
 
-fn walk_multi_line_comment(characters: &Vec<char>, mut i: usize) -> Result<(usize, usize), ParserError> {
+fn walk_multi_line_comment(
+    characters: &Vec<char>,
+    mut i: usize,
+) -> Result<(usize, usize), ParserError> {
     let mut newlines = 0;
     while i <= characters.len() - 2 {
         if characters[i] == '\n' {
@@ -213,7 +218,7 @@ fn form_known_symbols(tokens: &mut Vec<String>) {
     }
 }
 
-pub fn tokenise<'a>(text: impl AsRef<str>) -> Result<Vec<String>, ParserError> {
+pub(crate) fn tokenise<'a>(text: impl AsRef<str>) -> Result<Vec<String>, ParserError> {
     let text = text.as_ref();
     let mut tokens = Vec::<String>::new();
     let mut last_i = 0;
@@ -332,14 +337,20 @@ mod tests {
 
         match tokenise(file) {
             Ok(tokens) => panic!("Should have thrown error\nTokens: {tokens:?}"),
-            Err(e) => assert!(matches!(e, ParserError::UnclosedStringLiteral { delimiter: '"' })),
+            Err(e) => assert!(matches!(
+                e,
+                ParserError::UnclosedStringLiteral { delimiter: '"' }
+            )),
         }
 
         let file = "'a string".to_string();
 
         match tokenise(file) {
             Ok(tokens) => panic!("Should have thrown error\nTokens: {tokens:?}"),
-            Err(e) => assert!(matches!(e, ParserError::UnclosedStringLiteral { delimiter: '\'' })),
+            Err(e) => assert!(matches!(
+                e,
+                ParserError::UnclosedStringLiteral { delimiter: '\'' }
+            )),
         }
     }
 
@@ -360,19 +371,13 @@ mod tests {
 
         assert_eq!(tokenise("'a\\'b'").unwrap(), ["'a'b'"]);
 
-        assert_eq!(
-            tokenise("\" \\n \\t \\\\ \"").unwrap(),
-            ["\" \n \t \\ \""]
-        );
+        assert_eq!(tokenise("\" \\n \\t \\\\ \"").unwrap(), ["\" \n \t \\ \""]);
     }
 
     #[test]
     fn float_tokenisation() {
         assert_eq!(tokenise("123.123").unwrap(), ["123.123"]);
-        assert_eq!(
-            tokenise("123.123.123").unwrap(),
-            ["123.123", ".", "123"]
-        );
+        assert_eq!(tokenise("123.123.123").unwrap(), ["123.123", ".", "123"]);
         assert_eq!(tokenise("123 . 123").unwrap(), ["123", ".", "123"]);
     }
 

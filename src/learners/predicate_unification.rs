@@ -12,7 +12,7 @@ use crate::{
         Tag::*,
         VarBind::{Addr, VarId},
     },
-    program::{clause::Clause, meta_sub::MetaSub},
+    program::{Clause, MetaSub},
     utils::{DirGraph16, DirGraph8, FindReturn},
 };
 
@@ -22,10 +22,10 @@ use crate::{
 /// ([`DirGraph16`](crate::utils::DirGraph16)). A hypothesis cannot invent
 /// more predicates than it has clauses, so bounding `max_clause` by this
 /// bounds the number of clause sets too.
-pub const MAX_PRED_DEFS: usize = 16;
+pub(super) const MAX_PRED_DEFS: usize = 16;
 
 #[derive(Debug)]
-pub struct PredDef {
+pub(super) struct PredDef {
     pub meta_subs: SmallVec<[MetaSub; 4]>,
     meta_clause_ranges: HashMap<usize, (usize, usize)>,
 }
@@ -44,7 +44,7 @@ impl DerefMut for PredDef {
 
 impl PredDef {
     /// Take clauses to form new predicate definition (orders clauses)
-    pub fn new(mut meta_subs: SmallVec<[MetaSub; 4]>) -> Self {
+    pub(super) fn new(mut meta_subs: SmallVec<[MetaSub; 4]>) -> Self {
         meta_subs.sort_by_key(|meta_sub| meta_sub.meta_clause_id);
         let mut meta_clause_ranges = HashMap::new();
         let mut start = 0;
@@ -85,7 +85,7 @@ impl PredDef {
     /// the one it depends on, which the debug assertion below reports rather
     /// than papering over by coining a constant for a predicate that already
     /// has one.
-    pub fn make_const(&mut self, heap: &mut impl Heap, next_id: &mut usize) {
+    pub(super) fn make_const(&mut self, heap: &mut impl Heap, next_id: &mut usize) {
         // Heads first, across every clause. A mutually recursive group is
         // collected into a single definition, so one clause's body predicate
         // may be the head of a *later* clause in this same definition; coining
@@ -129,7 +129,7 @@ impl PredDef {
     /// Attempt to unify two clause definitions
     /// Self should be constant
     /// will update variable bindings on heap effecting other variable clause defintions waiting to unify
-    pub fn unify(&self, other: &PredDef, heap: &mut QueryHeap) -> bool {
+    pub(super) fn unify(&self, other: &PredDef, heap: &mut QueryHeap) -> bool {
         // TODO consider if different meta_rules might result in the same clause
         if self.cmp(other) != Equal {
             return false;
@@ -180,7 +180,7 @@ impl PredDef {
         true
     }
 
-    pub fn cmp(&self, other: &Self) -> Ordering {
+    pub(super) fn cmp(&self, other: &Self) -> Ordering {
         match self.meta_subs.len().cmp(&other.meta_subs.len()) {
             Equal => {
                 for (msub1, msub2) in self.meta_subs.iter().zip(other.meta_subs.iter()) {
@@ -195,7 +195,7 @@ impl PredDef {
         }
     }
 
-    pub fn extract_pred_defs_from_h(
+    pub(super) fn extract_pred_defs_from_h(
         clauses: &mut Vec<Clause>,
         meta_subs: &mut Vec<MetaSub>,
         heap: &impl Heap,
@@ -293,7 +293,7 @@ impl PredDef {
 }
 
 #[derive(Default, Debug)]
-pub struct PredDefTable {
+pub(super) struct PredDefTable {
     pub pred_defs: Vec<PredDef>,
     pub next_id: usize,
     /// Symbol ids of the constants coined to name the predicates defined
@@ -308,7 +308,7 @@ pub struct PredDefTable {
 }
 
 impl PredDefTable {
-    pub fn insert(&mut self, pred_def: PredDef, heap: &mut QueryHeap) {
+    pub(super) fn insert(&mut self, pred_def: PredDef, heap: &mut QueryHeap) {
         match self.binary_search(&pred_def) {
             FindReturn::InsertPos(insert_pos) => self.add_def(pred_def, insert_pos, heap),
             FindReturn::Index(i) => {
@@ -329,7 +329,7 @@ impl PredDefTable {
     }
 
     /// The constants naming the predicates this table defines.
-    pub fn pred_symbols(&self) -> &HashSet<usize> {
+    pub(super) fn pred_symbols(&self) -> &HashSet<usize> {
         &self.pred_symbols
     }
 
@@ -389,7 +389,7 @@ impl PredDefTable {
     /// clauses would need a mutable heap and the predicate table holding the
     /// templates -- more than a print wants -- so this shows the substitution
     /// itself.
-    pub fn _print_defs(&self, heap: &impl Heap) {
+    pub(super) fn _print_defs(&self, heap: &impl Heap) {
         for (i, pred_def) in self.pred_defs.iter().enumerate() {
             println!("====== Definition {i} ======");
             for msub in &pred_def.meta_subs {
@@ -409,7 +409,7 @@ impl PredDefTable {
     }
 
     #[cfg(test)]
-    pub fn extract_pred_defs_from_h(
+    pub(super) fn extract_pred_defs_from_h(
         &mut self,
         clauses: &mut Vec<Clause>,
         meta_subs: &mut Vec<MetaSub>,
@@ -441,8 +441,7 @@ mod tests {
         learners::predicate_unification::{PredDef, PredDefTable},
         parser::_build_clause,
         program::{
-            clause::Clause,
-            hypothesis::{Constraints, Hypothesis},
+            Clause, {Constraints, Hypothesis},
         },
         resolution::{build, Substitution},
     };
@@ -560,12 +559,18 @@ mod tests {
 
         let mut h1 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), VarId(0)]), (1, &[VarId(0), Addr(q), Addr(r)])],
+            [
+                (0, &[Addr(p), VarId(0)]),
+                (1, &[VarId(0), Addr(q), Addr(r)]),
+            ],
             &mut heap,
         );
         let mut h2 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), VarId(1)]), (1, &[VarId(1), Addr(q), Addr(r)])],
+            [
+                (0, &[Addr(p), VarId(1)]),
+                (1, &[VarId(1), Addr(q), Addr(r)]),
+            ],
             &mut heap,
         );
 
@@ -598,12 +603,18 @@ mod tests {
         // Var_0 is q-then-r, Var_1 is q-then-s: different definitions.
         let mut h1 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), VarId(0)]), (1, &[VarId(0), Addr(q), Addr(r)])],
+            [
+                (0, &[Addr(p), VarId(0)]),
+                (1, &[VarId(0), Addr(q), Addr(r)]),
+            ],
             &mut heap,
         );
         let mut h2 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), VarId(1)]), (1, &[VarId(1), Addr(q), Addr(s)])],
+            [
+                (0, &[Addr(p), VarId(1)]),
+                (1, &[VarId(1), Addr(q), Addr(s)]),
+            ],
             &mut heap,
         );
 
@@ -915,13 +926,19 @@ mod tests {
 
         let mut h1 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), VarId(0)]), (1, &[VarId(0), Addr(q), Addr(r)])],
+            [
+                (0, &[Addr(p), VarId(0)]),
+                (1, &[VarId(0), Addr(q), Addr(r)]),
+            ],
             &mut heap,
         );
 
         let mut h2 = build_hypothesis(
             meta_rules,
-            [(0, &[Addr(p), VarId(1)]), (1, &[VarId(1), Addr(q), Addr(r)])],
+            [
+                (0, &[Addr(p), VarId(1)]),
+                (1, &[VarId(1), Addr(q), Addr(r)]),
+            ],
             &mut heap,
         );
 

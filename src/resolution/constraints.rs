@@ -1,9 +1,9 @@
 use crate::{
     heap::{QueryHeap, VarReg},
-    program::clause::BitFlag64,
+    program::BitFlag64,
 };
 
-pub fn pre_pass_constraint(
+pub(super) fn pre_pass_constraint(
     arg_regs: &mut [VarReg],
     constrained_args: Option<BitFlag64>,
     heap: &mut QueryHeap,

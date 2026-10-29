@@ -1,8 +1,6 @@
 use std::process::ExitCode;
 
-use prolog2::{
-    app::App,
-};
+use prolog2::app::App;
 
 fn setup_path() -> String {
     std::env::args()

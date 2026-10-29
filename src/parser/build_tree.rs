@@ -15,21 +15,21 @@ const INFIX_ORDER: &[&[&str]] = &[
 ];
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum TreeClause {
+pub(crate) enum TreeClause {
     Fact(Term),
     Rule(Vec<Term>),
     MetaRule(Vec<Term>),
     MetaFact(Term, Term), // head and set of existentially quantified variables
 }
 
-pub struct TokenStream {
+pub(crate) struct TokenStream {
     tokens: Vec<String>,
     index: usize,
     line: usize,
 }
 
 impl TokenStream {
-    pub fn new(tokens: Vec<String>) -> Self {
+    pub(crate) fn new(tokens: Vec<String>) -> Self {
         TokenStream {
             tokens,
             index: 0,
@@ -37,7 +37,7 @@ impl TokenStream {
         }
     }
 
-    pub fn next(&mut self) -> Option<&str> {
+    pub(super) fn next(&mut self) -> Option<&str> {
         loop {
             if self.index == self.tokens.len() {
                 return None;
@@ -55,7 +55,7 @@ impl TokenStream {
         }
     }
 
-    pub fn peek(&self) -> Option<&str> {
+    pub(super) fn peek(&self) -> Option<&str> {
         let mut index = self.index;
         loop {
             if index == self.tokens.len() {
@@ -264,7 +264,7 @@ impl TokenStream {
         Ok(body)
     }
 
-    pub fn parse_clause(&mut self) -> Result<Option<TreeClause>, ParserError> {
+    pub(super) fn parse_clause(&mut self) -> Result<Option<TreeClause>, ParserError> {
         match self.peek() {
             None => return Ok(None),
             Some(_) => {
@@ -343,7 +343,7 @@ impl TokenStream {
         }
     }
 
-    pub fn parse_goals(&mut self) -> Result<Vec<Term>, ParserError> {
+    pub(crate) fn parse_goals(&mut self) -> Result<Vec<Term>, ParserError> {
         let mut literals = vec![self.parse_expression()?];
         loop {
             match self.next() {
@@ -361,7 +361,7 @@ impl TokenStream {
         Ok(literals)
     }
 
-    pub fn parse_all(&mut self) -> Result<Vec<TreeClause>, ParserError> {
+    pub(crate) fn parse_all(&mut self) -> Result<Vec<TreeClause>, ParserError> {
         let mut clauses = Vec::<TreeClause>::new();
         loop {
             match self.parse_clause() {
@@ -591,10 +591,7 @@ mod tests {
         let sub_list = Term::List(vec![b.clone(), c.clone()], Box::new(t.clone()));
         let list = Term::List(vec![a.clone(), sub_list.clone()], Box::new(Term::EmptyList));
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(
-            term,
-            Term::Str(Str::Comp, vec![p.clone(), list.clone()])
-        );
+        assert_eq!(term, Term::Str(Str::Comp, vec![p.clone(), list.clone()]));
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(term, Term::Str(Str::Comp, vec![p.clone(), list]));
 
@@ -632,10 +629,7 @@ mod tests {
             term,
             Term::Str(
                 Str::Set,
-                vec![
-                    a.clone(),
-                    Term::Str(Str::Set, vec![b.clone(), c.clone()])
-                ]
+                vec![a.clone(), Term::Str(Str::Set, vec![b.clone(), c.clone()])]
             )
         );
         let term = TokenStream::new(text).parse_expression().unwrap();
@@ -643,24 +637,15 @@ mod tests {
             term,
             Term::Str(
                 Str::Set,
-                vec![
-                    a.clone(),
-                    Term::Str(Str::Set, vec![b.clone(), c.clone()])
-                ]
+                vec![a.clone(), Term::Str(Str::Set, vec![b.clone(), c.clone()])]
             )
         );
 
         let text = tokenise("{a,{}}").unwrap();
         let term = TokenStream::new(text.clone()).parse_term().unwrap();
-        assert_eq!(
-            term,
-            Term::Str(Str::Set, vec![a.clone(), Term::EmptySet])
-        );
+        assert_eq!(term, Term::Str(Str::Set, vec![a.clone(), Term::EmptySet]));
         let term = TokenStream::new(text).parse_expression().unwrap();
-        assert_eq!(
-            term,
-            Term::Str(Str::Set, vec![a.clone(), Term::EmptySet])
-        );
+        assert_eq!(term, Term::Str(Str::Set, vec![a.clone(), Term::EmptySet]));
     }
 
     #[test]
@@ -686,10 +671,7 @@ mod tests {
         let term = TokenStream::new(text).parse_expression().unwrap();
         assert_eq!(
             term,
-            Term::Str(
-                Str::Tup,
-                vec![a.clone(), Term::Str(Str::Tup, vec![])]
-            )
+            Term::Str(Str::Tup, vec![a.clone(), Term::Str(Str::Tup, vec![])])
         );
 
         let text = tokenise("p((a,b,c))").unwrap();
@@ -953,10 +935,7 @@ mod tests {
                                         Str::Comp,
                                         vec![
                                             power,
-                                            Term::Str(
-                                                Str::Comp,
-                                                vec![divide, two, one_and_half]
-                                            ),
+                                            Term::Str(Str::Comp, vec![divide, two, one_and_half]),
                                             Term::Str(Str::Tup, vec![three, y])
                                         ]
                                     )

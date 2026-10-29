@@ -1,20 +1,24 @@
 //! Resolution engine.
 //!
 //! Implements second-order SLD resolution with backtracking.
-//! [`Proof`](crate::resolution::proof::Proof) drives the search,
-//! [`unification`](crate::resolution::unification) handles term matching, and
-//! [`build`](crate::resolution::build) constructs new terms from substitutions.
+//! [`Proof`](crate::resolution::Proof) drives the search,
+//! unification handles term matching, and
+//! term building constructs new terms from substitutions.
 
 mod build;
+mod constraints;
 #[allow(dead_code)]
 #[allow(unused)]
 mod env;
 mod proof;
-mod unification;
 mod substitution;
-mod constraints;
+mod unification;
 
-pub use build::{build, re_build_bound_arg_terms};
+// Public: what a native predicate needs to run a nested proof or to unify
+// two terms itself, as `meta_predicates` and `defaults` do.
 pub use proof::Proof;
 pub use unification::unify;
-pub use substitution::Substitution;
+
+// Internal: term construction and the substitution it threads through.
+pub(crate) use build::build;
+pub(crate) use substitution::Substitution;

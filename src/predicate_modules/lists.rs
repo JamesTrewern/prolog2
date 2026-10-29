@@ -10,7 +10,7 @@ use std::sync::Arc;
 use super::{maths::Number, utils::*, PredReturn, PredicateModule};
 use crate::{
     heap::{Heap, QueryHeap, SymbolDB, Tag::*, VarBind::Addr, EMPTY_LIS, LIS},
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{Hypothesis, PredicateTable},
     Config,
 };
 

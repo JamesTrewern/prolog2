@@ -8,8 +8,7 @@ use crate::{
     heap::{Cell, Heap, QueryHeap, Tag::Con},
     parser::{build_clause, tokenise, TokenStream},
     program::{
-        clause::Clause,
-        predicate_table::{Predicate, PredicateTable},
+        Clause, {Predicate, PredicateTable},
     },
     resolution::Proof,
     Config,
@@ -32,7 +31,7 @@ impl DerefMut for Coverage {
 }
 
 impl Coverage {
-    pub fn from_len(len: usize) -> Self {
+    pub(super) fn from_len(len: usize) -> Self {
         if len > 128 {
             todo!("More than 128 pos examples not yet implemented");
         }
@@ -40,32 +39,32 @@ impl Coverage {
         Self(mask)
     }
 
-    pub fn sub_set(&self, other: &Self) -> bool {
+    pub(super) fn sub_set(&self, other: &Self) -> bool {
         other.0 | self.0 == other.0
     }
 
     /// How many bits set in self not set in other
-    pub fn difference(&self, other: &Self) -> usize {
+    pub(super) fn difference(&self, other: &Self) -> usize {
         (self.0 & !other.0).count_ones() as usize
     }
 
-    pub fn count(&self, max_bit: usize) -> usize {
+    pub(super) fn count(&self, max_bit: usize) -> usize {
         (self.0 & !(u128::MAX << max_bit)).count_ones() as usize
     }
 
-    pub fn set(&mut self, i: usize) {
+    pub(super) fn set(&mut self, i: usize) {
         self.0 |= 1 << i
     }
 
-    pub fn get(&self, i: usize) -> bool {
+    pub(super) fn get(&self, i: usize) -> bool {
         self.0 & 1 << i != 0
     }
 
-    pub fn all(&self) -> bool {
+    pub(super) fn all(&self) -> bool {
         self.0 == u128::MAX
     }
 
-    pub fn _none(&self) -> bool {
+    pub(super) fn _none(&self) -> bool {
         self.0 == 0
     }
 }

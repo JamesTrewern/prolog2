@@ -6,8 +6,7 @@ use std::ops::{Deref, DerefMut};
 
 type JumpStack = SmallVec<[(usize, usize); 3]>;
 /// Stack for walking terms and saving indirection points
-/// [i].0: current address
-/// [i].1: cells left to walk
+/// Each frame is `(current address, cells left to walk)`.
 #[derive(Debug)]
 pub struct TermWalk {
     stack: JumpStack,
@@ -225,34 +224,20 @@ impl<'a> Walk for SubWalk<'a> {
     }
 }
 
-pub struct DualWalk {
+pub(crate) struct DualWalk {
     pub(crate) walk1: TermWalk,
     pub(crate) walk2: TermWalk,
 }
 
 impl DualWalk {
-    pub fn new(addr1: usize, addr2: usize) -> Self {
+    pub(crate) fn new(addr1: usize, addr2: usize) -> Self {
         Self {
             walk1: TermWalk::new(addr1),
             walk2: TermWalk::new(addr2),
         }
     }
 
-    pub fn next_cells(&mut self, heap: &impl Heap) -> Option<(Cell, Cell)> {
-        Some((self.walk1.next_cell(heap)?, self.walk2.next_cell(heap)?))
-    }
-
-    pub fn next_cells_with_addrs(
-        &mut self,
-        heap: &impl Heap,
-    ) -> Option<((usize, Cell), (usize, Cell))> {
-        Some((
-            self.walk1.next_cell_with_addr(heap)?,
-            self.walk2.next_cell_with_addr(heap)?,
-        ))
-    }
-
-    pub fn next_cells_with_addrs_arg_deref(
+    pub(crate) fn next_cells_with_addrs_arg_deref(
         &mut self,
         heap: &impl Heap,
         sub: &Substitution,

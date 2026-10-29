@@ -7,13 +7,13 @@ use smallvec::SmallVec;
 
 use crate::{
     heap::{ArgRegs, Heap, VarBind::*},
-    program::clause::MetaData,
+    program::MetaData,
 };
 
-use super::{clause::Clause, meta_sub::MetaSub};
+use super::{Clause, MetaSub};
 
 /// Constraint set for existentially quantified variables in a learned clause.
-pub type Constraints = SmallVec<[usize; 5]>;
+pub(crate) type Constraints = SmallVec<[usize; 5]>;
 
 static PRED_N: AtomicUsize = AtomicUsize::new(0);
 
@@ -30,7 +30,7 @@ pub struct Hypothesis {
     ///
     /// A predicate variable enters this set the first time it becomes the head
     /// of a hypothesis clause. Membership changes how goals on that variable
-    /// are resolved: [`Env::get_choices`] offers such a goal only meta clauses
+    /// are resolved: `Env::get_choices` offers such a goal only meta clauses
     /// and existing hypothesis clauses, never background facts, which is what
     /// forces the search to *define* the predicate rather than alias it to a
     /// background relation.
@@ -57,7 +57,7 @@ impl Hypothesis {
     /// aliases one to the other, so the id recorded at invention time and the
     /// id a later goal presents may differ while naming the same predicate.
     /// Comparing raw ids would let an aliased goal escape the gate in
-    /// [`Env::get_choices`] and pick up the background facts.
+    /// `Env::get_choices` and pick up the background facts.
     pub fn is_invented_pred(&self, heap: &impl Heap, var_id: usize) -> bool {
         self.invented_preds
             .iter()
@@ -186,7 +186,7 @@ mod invented_pred_tests {
     use super::*;
     use crate::{
         heap::{QueryHeap, SymbolDB, Tag::*, VarBind::VarId, VarReg},
-        program::clause::BitFlag64,
+        program::BitFlag64,
     };
 
     /// A heap holding two unary clause heads:

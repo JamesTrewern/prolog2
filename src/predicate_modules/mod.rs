@@ -33,12 +33,12 @@ pub mod strings;
 /// Helpers for reading goal arguments and building results.
 pub mod utils;
 
-
 pub mod sets;
 pub use defaults::DEFAULTS;
 pub use lists::LISTS;
 pub use maths::MATHS;
 pub use meta_predicates::META_PREDICATES;
+pub use sets::SETS;
 pub use strings::STRINGS;
 
 use crate::{
@@ -46,7 +46,7 @@ use crate::{
         Heap, QueryHeap,
         VarBind::{self, Addr},
     },
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{Hypothesis, PredicateTable},
     Config,
 };
 use smallvec::SmallVec;

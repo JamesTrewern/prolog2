@@ -6,7 +6,7 @@ use std::{
 
 use crate::{predicate_modules::PredicateFunction, utils::FindReturn};
 
-use super::clause::Clause;
+use super::Clause;
 
 /// A `(symbol_id, arity)` pair identifying a predicate.
 pub(crate) type SymbolArity = (usize, usize);
@@ -36,7 +36,7 @@ pub struct PredicateEntry {
 pub struct PredicateTable {
     predicates: Vec<PredicateEntry>,
     body_list: Vec<usize>,
-    /// Reverse index from [`MetaData::id`](super::clause::MetaData::id) to the
+    /// Reverse index from `MetaData::id` to the
     /// meta clause's location, as a `(symbol_arity, clause index)` pair.
     ///
     /// Keyed on `symbol_arity` rather than an index into `predicates` because
@@ -135,10 +135,10 @@ impl PredicateTable {
         Ok(())
     }
 
-    /// Look up a meta clause by its [`MetaData::id`](super::clause::MetaData::id).
+    /// Look up a meta clause by its `MetaData::id`.
     ///
     /// Used to recover the template a
-    /// [`MetaSub`](super::meta_sub::MetaSub) was recorded against, since a
+    /// `MetaSub` was recorded against, since a
     /// `MetaSub` stores only the id and the substitution, not the clause.
     pub fn get_meta_clause(&self, meta_clause_id: usize) -> Option<&Clause> {
         let (symbol_arity, clause_idx) = *self.meta_clause_index.get(&meta_clause_id)?;
@@ -241,11 +241,12 @@ impl DerefMut for PredicateTable {
 mod tests {
     use std::collections::HashMap;
 
-    use super::{super::clause::Clause, Predicate, PredicateEntry, PredicateTable};
+    use super::{super::Clause, Predicate, PredicateEntry, PredicateTable};
     use crate::{
         heap::{QueryHeap, SymbolDB},
         predicate_modules::PredReturn,
-        program::{hypothesis::Hypothesis, predicate_table::FindReturn},
+        program::Hypothesis,
+        utils::FindReturn,
         Config,
     };
 

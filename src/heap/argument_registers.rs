@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::{heap::VarReg, program::clause::BitFlag64};
+use crate::{heap::VarReg, program::BitFlag64};
 use multiversion::multiversion;
 
 #[derive(Debug, PartialEq, Eq, Clone)]

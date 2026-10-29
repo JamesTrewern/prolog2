@@ -12,9 +12,7 @@ use crate::{
     },
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
-        clause::{BitFlag64, Clause, MAX_ARG},
-        hypothesis::Hypothesis,
-        predicate_table::{Predicate, PredicateTable},
+        Hypothesis, {BitFlag64, Clause, MAX_ARG}, {Predicate, PredicateTable},
     },
     resolution::{
         build::{build, re_build_bound_arg_terms},
@@ -73,7 +71,7 @@ pub(super) struct Env {
 }
 
 impl Env {
-    pub fn new(goal: usize, depth: usize, heap_point: HeapPoint) -> Self {
+    pub(super) fn new(goal: usize, depth: usize, heap_point: HeapPoint) -> Self {
         Env {
             goal,
             bound_vars: Box::new([]),
@@ -89,7 +87,7 @@ impl Env {
     // ── accessors for strategy-specific fields ──────────────────────────
 
     /// Whether the last successful clause try added a hypothesis clause.
-    pub fn new_clause(&self) -> bool {
+    pub(super) fn new_clause(&self) -> bool {
         matches!(
             &self.strategy,
             Strategy::Clause {
@@ -100,7 +98,7 @@ impl Env {
     }
 
     /// The predicate variable invented by the last successful clause try, if any.
-    pub fn invent_pred(&self) -> Option<usize> {
+    pub(super) fn invent_pred(&self) -> Option<usize> {
         match &self.strategy {
             Strategy::Clause { invent_pred, .. } => *invent_pred,
             _ => None,
@@ -131,7 +129,7 @@ impl Env {
     /// — always sees the whole hypothesis, since reusing learned clauses
     /// across examples is the point of resolving such a goal at all; see the
     /// `None` arm of [`Self::get_choices_con_pred`].
-    pub fn get_choices(
+    pub(super) fn get_choices(
         &mut self,
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
@@ -296,7 +294,7 @@ impl Env {
 
     // ── undo / backtrack ────────────────────────────────────────────────
 
-    pub fn undo_try(
+    pub(super) fn undo_try(
         &mut self,
         hypothesis: &mut Hypothesis,
         heap: &mut QueryHeap,
@@ -339,7 +337,7 @@ impl Env {
 
     /// Reset this env when backtracking past it, so it gets fresh choices on
     /// a future visit via a different proof path.
-    pub fn reset(&mut self, heap: &mut QueryHeap) {
+    pub(super) fn reset(&mut self, heap: &mut QueryHeap) {
         heap.truncate(self.heap_point);
         self.got_choices = false;
         match &mut self.strategy {
@@ -359,7 +357,7 @@ impl Env {
 
     // ── try choices (dispatch) ──────────────────────────────────────────
 
-    pub fn try_choices(
+    pub(super) fn try_choices(
         &mut self,
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,

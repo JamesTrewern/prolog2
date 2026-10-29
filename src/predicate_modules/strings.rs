@@ -15,7 +15,7 @@ use std::sync::Arc;
 use super::{utils::*, PredReturn, PredicateModule};
 use crate::{
     heap::{Cell, Heap, QueryHeap, SymbolDB, Tag::*, VarBind::Addr},
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{Hypothesis, PredicateTable},
     Config,
 };
 

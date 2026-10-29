@@ -36,7 +36,7 @@ impl BitFlag64 {
     /// Iterate the set bit indices in ascending order.
     ///
     /// The inverse of the filter in
-    /// [`MetaSub::from_arg_regs`](crate::program::meta_sub::MetaSub::from_arg_regs),
+    /// [`MetaSub::from_arg_regs`](crate::program::MetaSub::from_arg_regs),
     /// which compacts the argument registers by discarding every position
     /// whose bit is clear. Zipping this iterator with the compacted vector
     /// recovers the original argument ids.

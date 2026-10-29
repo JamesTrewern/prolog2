@@ -1,3 +1,4 @@
+#![warn(unreachable_pub)]
 //! # Prolog²
 //!
 //! A Meta-Interpretive Learning (MIL) framework implementing native second-order
@@ -10,7 +11,8 @@
 //! [`predicate_modules::PredicateModule`] bundles native Rust predicate functions
 //! together with optional Prolog source code. Modules are registered with the
 //! [`app::App`] builder, which also handles configuration loading and execution.
-//! Examples of builtin predicate functions can be found at: https://github.com/JamesTrewern/prolog2/tree/master/src/predicate_modules
+//! Examples of builtin predicate functions can be found at
+//! <https://github.com/JamesTrewern/prolog2/tree/master/src/predicate_modules>.
 //!
 //! ### Writing a native predicate
 //!
@@ -35,8 +37,8 @@
 //!     MATHS, META_PREDICATES, PredReturn, PredicateFunction, PredicateModule,
 //! };
 //! use prolog2::heap::QueryHeap;
-//! use prolog2::program::hypothesis::Hypothesis;
-//! use prolog2::program::predicate_table::PredicateTable;
+//! use prolog2::program::Hypothesis;
+//! use prolog2::program::PredicateTable;
 //!
 //! fn my_pred(
 //!     heap: &mut QueryHeap,
@@ -80,10 +82,17 @@
 pub mod app;
 /// Heap memory management: cells, query heaps, and the symbol database.
 pub mod heap;
-/// Learning strategies built on top of prolog^2 engine
-pub mod learners;
-/// Prolog source parsing: tokenisation, syntax tree construction, and term encoding.
-pub mod parser;
+/// Learning strategies built on top of prolog^2 engine.
+///
+/// Private: the strategies are reached through [`App`](app::App), not named
+/// directly.
+mod learners;
+/// Prolog source parsing: tokenisation, syntax tree construction, and term
+/// encoding.
+///
+/// Private: parsing is driven through [`App`](app::App), and the one type a
+/// caller needs, [`ParserError`], is re-exported at the crate root.
+mod parser;
 /// Built-in predicate modules and the predicate module system.
 pub mod predicate_modules;
 /// Program representation: clauses, hypotheses, and the predicate table.
@@ -95,8 +104,8 @@ mod utils;
 
 // Re-export commonly used types at crate root.
 pub use app::{BodyPred, Config, Examples, SetUp};
+pub use parser::ParserError;
 
-use crate::parser::ParserError;
 use std::fmt;
 
 #[derive(Debug)]
@@ -163,7 +172,7 @@ impl From<ParserError> for Error {
 /// 3. Walk the original clauses in that order; assign `pred_1`, `pred_2`, …
 ///    to each unique `pred_\d+` token in order of first appearance.
 /// 4. Apply the renaming to all clauses and return them in the sorted order.
-pub fn normalise_hypothesis(clauses: &[String]) -> Vec<String> {
+pub(crate) fn normalise_hypothesis(clauses: &[String]) -> Vec<String> {
     if clauses.is_empty() {
         return Vec::new();
     }
@@ -291,7 +300,7 @@ fn replace_pred_ids(s: &str, replacement: &str) -> String {
 }
 
 /// Find all invented-predicate tokens in `s`, in order of appearance.
-pub fn find_pred_tokens(s: &str) -> Vec<String> {
+fn find_pred_tokens(s: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let bytes = s.as_bytes();
     let mut i = 0;
@@ -308,7 +317,8 @@ pub fn find_pred_tokens(s: &str) -> Vec<String> {
 }
 
 /// Convenience: produce a canonical key string from a hypothesis for deduplication.
-pub fn hypothesis_canonical_key(clauses: &[String]) -> String {
+#[cfg(test)]
+fn hypothesis_canonical_key(clauses: &[String]) -> String {
     normalise_hypothesis(clauses).join("|")
 }
 

@@ -8,7 +8,7 @@ use crate::{
         VarBind::Addr,
     },
     predicate_modules::utils::{goal_arg, resolve_to_cell_and_addr},
-    program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
+    program::{Hypothesis, PredicateTable},
     Config,
 };
 
@@ -507,7 +507,7 @@ pub fn arith_eq_pred(
 /// configured tolerance: `|a − b| ≤ (pct / 100) × max(|a|, |b|)`.
 /// When both values are zero the predicate always succeeds.
 ///
-/// The tolerance percentage is set globally via [`set_approx_tolerance`]
+/// The tolerance percentage is set globally via `set_approx_tolerance`
 /// (default 10 %) or via the `approx_tolerance_pct` field in `setup.json`.
 pub fn approx_eq_pred(
     heap: &mut QueryHeap,
