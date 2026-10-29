@@ -122,22 +122,39 @@ impl App {
             println!("No Valid Hypothesis Found");
             return None;
         };
-        let mut buffer = Vec::new();
-        for (i, group) in groups.into_iter().enumerate() {
-            println!("Program {i}");
-            // Sub hypotheses in a group routinely share clauses, so union
-            // rather than concatenate.
-            let mut top_program = union_sub_hypotheses(group, &self.prog_heap);
 
-            // Reduce before collecting the invented predicates' definitions.
-            // Afterwards those definitions are in the clause list *and* still
-            // in the predicate table, so dropping one from the list would not
-            // make anything unprovable and reduce would strip every one of
-            // them as redundant.
+        let hypotheses: Vec<Vec<Clause>> = groups
+            .into_iter()
+            .map(|group| {
+                let mut hypothesis = union_sub_hypotheses(group, &self.prog_heap);
+                collect_used_pred(
+                    &mut hypothesis,
+                    &self.prog_heap,
+                    &self.predicate_table,
+                    &pred_symbols,
+                );
+                hypothesis
+            })
+            .collect();
+
+        let mut buffer = Vec::new();
+        for (i, mut hypothesis) in hypotheses.into_iter().enumerate() {
+            println!("Hypothesis {i}");
+
+            //Remove used preds from predicate table for reduction
+            for clause in &hypothesis {
+                for literal in clause.iter() {
+                    let (symbol, arity) = self.prog_heap.symbol_arity(*literal);
+                    if pred_symbols.contains(&symbol) {
+                        self.predicate_table.remove_predicate((symbol, arity));
+                    }
+                }
+            }
+
             if reduce {
-                top_program = reduce_hypothesis(
+                hypothesis = reduce_hypothesis(
                     &pos_goals,
-                    top_program,
+                    hypothesis,
                     &self.prog_heap,
                     &self.predicate_table,
                     self.config,
@@ -145,13 +162,7 @@ impl App {
                 );
             }
 
-            collect_used_pred(
-                &mut top_program,
-                &self.prog_heap,
-                &self.predicate_table,
-                &pred_symbols,
-            );
-            buffer.push(top_prog_to_string(top_program, &self.prog_heap));
+            buffer.push(top_prog_to_string(hypothesis, &self.prog_heap));
         }
         Some(buffer)
     }

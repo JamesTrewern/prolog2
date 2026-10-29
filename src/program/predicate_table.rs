@@ -167,7 +167,7 @@ impl PredicateTable {
     }
 
     //Remove predicate by SymbolArity key, if clause predicate return the range to remove from clause table
-    pub fn _remove_predicate(&mut self, symbol_arity: SymbolArity) {
+    pub fn remove_predicate(&mut self, symbol_arity: SymbolArity) {
         if let FindReturn::Index(predicate_idx) = self.find_predicate(symbol_arity) {
             if let Predicate::Clauses(_clauses) = self.remove(predicate_idx).predicate {
                 self.body_list.retain(|i| *i != predicate_idx);
@@ -424,7 +424,7 @@ mod tests {
         // Test removing p
         let (mut pred_table, p, _q, _pred_func) = setup();
         let len_before = pred_table.len();
-        pred_table._remove_predicate((p, 2));
+        pred_table.remove_predicate((p, 2));
         assert_eq!(pred_table.len(), len_before - 1);
         assert_eq!(pred_table.get_predicate((p, 2)), None);
         // body_list should be cleared since p was the body predicate
@@ -439,14 +439,14 @@ mod tests {
         // Test removing q
         let (mut pred_table, _p, q, _pred_func) = setup();
         let len_before = pred_table.len();
-        pred_table._remove_predicate((q, 2));
+        pred_table.remove_predicate((q, 2));
         assert_eq!(pred_table.len(), len_before - 1);
         assert_eq!(pred_table.get_predicate((q, 2)), None);
 
         // Test removing entry at symbol 0
         let (mut pred_table, p, q, _pred_func) = setup();
         let len_before = pred_table.len();
-        pred_table._remove_predicate((0, 2));
+        pred_table.remove_predicate((0, 2));
         assert_eq!(pred_table.len(), len_before - 1);
         assert_eq!(pred_table.get_predicate((0, 2)), None);
         // p and q should still be present
