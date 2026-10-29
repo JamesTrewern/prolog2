@@ -82,8 +82,6 @@ fn undo_substitution(heap: &mut QueryHeap, substitution: Substitution) -> Option
 /// unbound variables the lack of element ordering makes correct binding
 /// impossible.
 fn set_equal(heap: &mut QueryHeap, addr1: usize, addr2: usize, walk: &mut DualWalk) -> bool {
-    //TODO this does not handle complex terms
-
     let len_1 = heap[addr1].1;
     let len_2 = heap[addr2].1;
     if len_1 != len_2 {
@@ -151,7 +149,12 @@ fn bind_arg(
     walk: &mut TermWalk,
 ) -> bool {
     match tag {
-        Comp | Tup | Lis => {
+        // Multi-cell terms: `sub_walk` both runs the occurs check and steps
+        // the walk over the subterm. Leaving a tag out here does not just
+        // skip the occurs check -- the walk then descends into the term's
+        // elements and pairs them against whatever follows in the other
+        // term, which misaligns everything after it.
+        Comp | Tup | Lis | Set => {
             if arg_occurs(heap, arg_id, walk.sub_walk(heap)) {
                 return false;
             } else {

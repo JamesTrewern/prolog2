@@ -291,42 +291,59 @@ pub trait Heap:
         }
     }
 
+    /// Are the terms at these two addresses structurally equal?
+    ///
+    /// Both terms are walked in step with [`TermWalk`], which normalises
+    /// variables as it goes: one bound to a term is followed into it, and one
+    /// aliased to another unbound variable is reported under its
+    /// representative. That matters because variable bindings live in the
+    /// registers rather than in the cells, so two cells naming the same
+    /// variable -- `(Var, i)` where `i` is aliased to `j`, against
+    /// `(Var, j)` -- are only equal once the walk has resolved them.
+    ///
+    /// Sets are the exception to walking in step: their elements are
+    /// unordered, so they cannot be compared position by position. Each
+    /// element is matched against any element of the other set, and both
+    /// subterms are then consumed so the surrounding walk resumes after them.
     fn term_equal(&self, addr1: usize, addr2: usize) -> bool {
         if addr1 == addr2 {
             return true;
         }
+
         let (mut walk1, mut walk2) = (TermWalk::new(addr1), TermWalk::new(addr2));
         loop {
-            let (Some(cell1), Some(cell2)) = (walk1.next_cell(self), walk2.next_cell(self)) else {
-                return true;
-            };
+            match (
+                walk1.next_cell_with_addr(self),
+                walk2.next_cell_with_addr(self),
+            ) {
+                (None, None) => return true,
 
-            match (cell1, cell2) {
-                ((Set, len1), (Set, len2)) if len1 == len2 => {
-                    // Set equality: every element in set1 must have a match in set2
-                    // and vice-versa (lengths already equal, so one direction suffices
-                    // given no duplicates — sets are deduplicated at parse time).
-                    let r1 = addr1 + 1..=addr1 + len1;
-                    let r2 = addr2 + 1..=addr2 + len2;
-                    if !r1
-                        .clone()
-                        .all(|a| r2.clone().any(|b| self.term_equal(a, b)))
-                    {
+                // Equal sizes only; a size mismatch falls to the cell
+                // comparison below and fails there.
+                (Some((set1, (Set, len1))), Some((set2, (Set, len2)))) if len1 == len2 => {
+                    if !sets_equal(self, set1, set2) {
                         return false;
                     }
-                    walk1.skip_addrs(len1);
-                    walk2.skip_addrs(len1);
+                    consume_subterm(&mut walk1, self);
+                    consume_subterm(&mut walk2, self);
                 }
-                ((Stri, i1), (Stri, i2)) => {
-                    if *SymbolDB::get_string(i1) != *SymbolDB::get_string(i2) {
+
+                // Equal text may have been interned twice under different
+                // indices, so compare the content.
+                (Some((_, (Stri, index1))), Some((_, (Stri, index2)))) => {
+                    if *SymbolDB::get_string(index1) != *SymbolDB::get_string(index2) {
                         return false;
                     }
                 }
-                _ => {
-                    if self[addr1] != self[addr2] {
+
+                (Some((_, cell1)), Some((_, cell2))) => {
+                    if cell1 != cell2 {
                         return false;
                     }
                 }
+
+                // One term ran out before the other.
+                _ => return false,
             }
         }
     }
@@ -491,6 +508,29 @@ pub trait Heap:
         self.term_string_rec(&mut addr, &mut buf).unwrap();
         buf
     }
+}
+
+/// Do two sets hold the same elements, in any order?
+///
+/// Equal sizes plus a match for every element of the first is enough, since
+/// a set holds no duplicates.
+fn sets_equal(heap: &impl Heap, addr1: usize, addr2: usize) -> bool {
+    let (elements1, elements2) = (heap.str_args(addr1), heap.str_args(addr2));
+    elements1
+        .iter()
+        .all(|&a| elements2.iter().any(|&b| heap.term_equal(a, b)))
+}
+
+/// Step `walk` past the subterm whose header it just returned.
+///
+/// [`TermWalk::sub_walk`] takes the subterm's cells off the parent frame and
+/// hands back a walk over them; draining that walk leaves the parent pointing
+/// at whatever follows. Needed because the subterm's cell count is not the
+/// element count recorded in its header once its elements are themselves
+/// multi-cell.
+fn consume_subterm(walk: &mut TermWalk, heap: &impl Heap) {
+    let mut sub_walk = walk.sub_walk(heap);
+    while sub_walk.next_cell(heap).is_some() {}
 }
 
 impl Heap for Vec<Cell> {
@@ -767,5 +807,254 @@ mod tests {
         heap.var_regs = vec![VarReg::UNBOUND, VarId(2).into(), VarReg::UNBOUND];
         assert_eq!(heap.symbol_arity(0), (0, 1));
         assert_eq!(heap.symbol_arity(3), (0, 1));
+    }
+}
+
+#[cfg(test)]
+mod term_equal_tests {
+    use crate::heap::{Cell, Heap, QueryHeap, SymbolDB, Tag::*, VarBind, VarReg, EMPTY_LIS, LIS};
+
+    fn con(name: &str) -> Cell {
+        (Con, SymbolDB::set_const(name))
+    }
+
+    /// Lay `cells` on a fresh heap and return the address they start at.
+    fn push(heap: &mut QueryHeap, cells: &[Cell]) -> usize {
+        let addr = heap.heap_len();
+        for &cell in cells {
+            heap.heap_push(cell);
+        }
+        addr
+    }
+
+    fn heap() -> QueryHeap<'static> {
+        QueryHeap::new(&[], None)
+    }
+
+    #[test]
+    fn atoms_compare_by_symbol() {
+        let mut heap = heap();
+        let a = push(&mut heap, &[con("a")]);
+        let same = push(&mut heap, &[con("a")]);
+        let other = push(&mut heap, &[con("b")]);
+
+        assert!(heap.term_equal(a, same));
+        assert!(!heap.term_equal(a, other));
+    }
+
+    /// The case that used to be wrong: two compounds of the same arity were
+    /// reported equal whatever their functors or arguments, because only the
+    /// header cells were ever compared.
+    #[test]
+    fn compounds_of_equal_arity_compare_their_contents() {
+        let mut heap = heap();
+        let f_a = push(&mut heap, &[(Comp, 2), con("f"), con("a")]);
+        let f_a_again = push(&mut heap, &[(Comp, 2), con("f"), con("a")]);
+        let g_b = push(&mut heap, &[(Comp, 2), con("g"), con("b")]);
+        let f_b = push(&mut heap, &[(Comp, 2), con("f"), con("b")]);
+
+        assert!(heap.term_equal(f_a, f_a_again));
+        assert!(!heap.term_equal(f_a, g_b), "different functor");
+        assert!(!heap.term_equal(f_a, f_b), "different argument");
+    }
+
+    #[test]
+    fn compounds_of_different_arity_differ() {
+        let mut heap = heap();
+        let f_a = push(&mut heap, &[(Comp, 2), con("f"), con("a")]);
+        let f_a_b = push(&mut heap, &[(Comp, 3), con("f"), con("a"), con("b")]);
+        assert!(!heap.term_equal(f_a, f_a_b));
+    }
+
+    #[test]
+    fn nested_compounds_compare_all_the_way_down() {
+        let mut heap = heap();
+        let outer = push(
+            &mut heap,
+            &[(Comp, 2), con("f"), (Comp, 2), con("g"), con("a")],
+        );
+        let same = push(
+            &mut heap,
+            &[(Comp, 2), con("f"), (Comp, 2), con("g"), con("a")],
+        );
+        let inner_differs = push(
+            &mut heap,
+            &[(Comp, 2), con("f"), (Comp, 2), con("g"), con("b")],
+        );
+
+        assert!(heap.term_equal(outer, same));
+        assert!(!heap.term_equal(outer, inner_differs));
+    }
+
+    /// Sets are unordered, so equality has to match elements in any order.
+    #[test]
+    fn sets_compare_regardless_of_order() {
+        let mut heap = heap();
+        let a_b = push(&mut heap, &[(Set, 2), con("a"), con("b")]);
+        let b_a = push(&mut heap, &[(Set, 2), con("b"), con("a")]);
+        let a_c = push(&mut heap, &[(Set, 2), con("a"), con("c")]);
+
+        assert!(heap.term_equal(a_b, b_a));
+        assert!(!heap.term_equal(a_b, a_c));
+    }
+
+    /// A set holding multi-cell elements: its members have to be found by
+    /// walking each one's length, not by assuming a cell apiece.
+    #[test]
+    fn sets_of_compounds_compare_regardless_of_order() {
+        let mut heap = heap();
+        let f_a_then_g_b = push(
+            &mut heap,
+            &[
+                (Set, 2),
+                (Comp, 2),
+                con("f"),
+                con("a"),
+                (Comp, 2),
+                con("g"),
+                con("b"),
+            ],
+        );
+        let g_b_then_f_a = push(
+            &mut heap,
+            &[
+                (Set, 2),
+                (Comp, 2),
+                con("g"),
+                con("b"),
+                (Comp, 2),
+                con("f"),
+                con("a"),
+            ],
+        );
+        let differs = push(
+            &mut heap,
+            &[
+                (Set, 2),
+                (Comp, 2),
+                con("f"),
+                con("a"),
+                (Comp, 2),
+                con("g"),
+                con("c"),
+            ],
+        );
+
+        assert!(heap.term_equal(f_a_then_g_b, g_b_then_f_a));
+        assert!(!heap.term_equal(f_a_then_g_b, differs));
+    }
+
+    #[test]
+    fn sets_of_different_size_differ() {
+        let mut heap = heap();
+        let two = push(&mut heap, &[(Set, 2), con("a"), con("b")]);
+        let one = push(&mut heap, &[(Set, 1), con("a")]);
+        assert!(!heap.term_equal(two, one));
+    }
+
+    #[test]
+    fn lists_compare_element_by_element() {
+        let mut heap = heap();
+        let a_b = push(&mut heap, &[LIS, con("a"), LIS, con("b"), EMPTY_LIS]);
+        let same = push(&mut heap, &[LIS, con("a"), LIS, con("b"), EMPTY_LIS]);
+        let reversed = push(&mut heap, &[LIS, con("b"), LIS, con("a"), EMPTY_LIS]);
+        let shorter = push(&mut heap, &[LIS, con("a"), EMPTY_LIS]);
+
+        assert!(heap.term_equal(a_b, same));
+        assert!(!heap.term_equal(a_b, reversed), "lists are ordered");
+        assert!(!heap.term_equal(a_b, shorter));
+    }
+
+    #[test]
+    fn lists_of_compounds_compare_their_elements() {
+        let mut heap = heap();
+        let cells = |last: &str| {
+            vec![
+                LIS,
+                (Comp, 2),
+                con("f"),
+                con("a"),
+                LIS,
+                con(last),
+                EMPTY_LIS,
+            ]
+        };
+        let first = push(&mut heap, &cells("b"));
+        let same = push(&mut heap, &cells("b"));
+        let differs = push(&mut heap, &cells("c"));
+
+        assert!(heap.term_equal(first, same));
+        assert!(!heap.term_equal(first, differs));
+    }
+
+    /// Equal text interned twice gets different indices, so strings have to
+    /// be compared by content.
+    #[test]
+    fn strings_compare_by_content() {
+        let mut heap = heap();
+        let first = push(&mut heap, &[(Stri, SymbolDB::set_string("hi".into()))]);
+        let same = push(&mut heap, &[(Stri, SymbolDB::set_string("hi".into()))]);
+        let other = push(&mut heap, &[(Stri, SymbolDB::set_string("ho".into()))]);
+
+        assert!(heap.term_equal(first, same));
+        assert!(!heap.term_equal(first, other));
+    }
+
+    /// Bindings live in the registers, not the cells, so `(Var, i)` and
+    /// `(Var, j)` are different cells even when `i` is aliased to `j`. The
+    /// walk reports both under the representative, which is the only reason
+    /// they compare equal.
+    #[test]
+    fn variables_aliased_to_one_representative_compare_equal() {
+        let mut heap = heap();
+        let j = heap.new_var(VarReg::UNBOUND);
+        let i = heap.new_var(VarReg::UNBOUND);
+        heap.bind(i, VarBind::VarId(j));
+
+        let cell_i = push(&mut heap, &[(Var, i)]);
+        let cell_j = push(&mut heap, &[(Var, j)]);
+
+        assert!(heap.term_equal(cell_i, cell_j));
+        assert!(heap.term_equal(cell_j, cell_i), "and the other way round");
+    }
+
+    #[test]
+    fn distinct_unbound_variables_differ() {
+        let mut heap = heap();
+        let i = heap.new_var(VarReg::UNBOUND);
+        let j = heap.new_var(VarReg::UNBOUND);
+
+        let cell_i = push(&mut heap, &[(Var, i)]);
+        let cell_j = push(&mut heap, &[(Var, j)]);
+
+        assert!(!heap.term_equal(cell_i, cell_j));
+    }
+
+    /// The same aliasing, nested inside a term the walk has to recurse into.
+    #[test]
+    fn aliased_variables_inside_a_compound_compare_equal() {
+        let mut heap = heap();
+        let j = heap.new_var(VarReg::UNBOUND);
+        let i = heap.new_var(VarReg::UNBOUND);
+        let unrelated = heap.new_var(VarReg::UNBOUND);
+        heap.bind(i, VarBind::VarId(j));
+
+        let f_i = push(&mut heap, &[(Comp, 2), con("f"), (Var, i)]);
+        let f_j = push(&mut heap, &[(Comp, 2), con("f"), (Var, j)]);
+        let f_other = push(&mut heap, &[(Comp, 2), con("f"), (Var, unrelated)]);
+
+        assert!(heap.term_equal(f_i, f_j));
+        assert!(!heap.term_equal(f_i, f_other));
+    }
+
+    #[test]
+    fn a_bound_variable_compares_as_the_term_it_names() {
+        let mut heap = heap();
+        let f_a = push(&mut heap, &[(Comp, 2), con("f"), con("a")]);
+        let var_id = heap.set_var(None);
+        let var_cell = push(&mut heap, &[(Var, var_id)]);
+        heap.bind(var_id, VarBind::Addr(f_a));
+
+        assert!(heap.term_equal(var_cell, f_a));
     }
 }
