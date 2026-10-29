@@ -434,6 +434,9 @@ impl Env {
                 }
                 PredReturn::Choices(alts) => {
                     *alternatives = alts;
+                    // The predicate may have built terms for its alternatives
+                    // to bind to, and those have to outlive the undo:
+                    self.heap_point = heap.heap_point();
                 }
             }
         }
@@ -448,6 +451,10 @@ impl Env {
             bound_vars.push(var_id);
             heap.bind(var_id, binding);
         }
+        // Recorded so `undo_try` unbinds them before the next alternative is
+        // tried; without this the second attempt would bind an already-bound
+        // variable.
+        self.bound_vars = bound_vars.into_boxed_slice();
         if goals.is_empty() {
             Some(Vec::new())
         } else {
