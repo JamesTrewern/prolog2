@@ -33,8 +33,8 @@ pub mod strings;
 /// Helpers for reading goal arguments and building results.
 pub mod utils;
 
-// Set predicates, not yet implemented: see sets.rs.
-// pub mod sets;
+
+pub mod sets;
 pub use defaults::DEFAULTS;
 pub use lists::LISTS;
 pub use maths::MATHS;

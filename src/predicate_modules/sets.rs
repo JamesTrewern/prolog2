@@ -11,7 +11,7 @@
 
 use super::{utils::*, PredReturn, PredicateModule};
 use crate::{
-    heap::{Heap, QueryHeap, Tag},
+    heap::{Heap, QueryHeap, Tag, VarBind::Addr},
     predicate_modules::maths::Number,
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
@@ -19,26 +19,39 @@ use crate::{
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/// Read the set at `addr`, returning the base address (of the `Set` cell) and
-/// the element count. Returns `None` if the cell isn't a set.
-fn read_set(heap: &QueryHeap, addr: usize) -> Option<(usize, usize)> {
-    // let addr = resolve(heap, heap.deref_addr(addr));
-    // match heap[addr] {
-    //     (Tag::Set, len) => Some((addr, len)),
-    //     _ => None,
-    // }
-    todo!()
+/// The element addresses of the set at `addr`, or `None` if it is not a set.
+///
+/// Elements are read with [`read_structure_addrs`], which walks each one by
+/// its length rather than assuming a cell apiece, so a set may hold compound
+/// terms: `{f(a), b}` reads as two elements.
+fn read_set(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>> {
+    match resolve_to_cell(heap, addr) {
+        (Tag::Set, _) => read_structure_addrs(heap, addr),
+        _ => None,
+    }
 }
 
-/// Collect the heap addresses of every element in a set.
-fn set_elements(base: usize, len: usize) -> Vec<usize> {
-    (base + 1..=base + len).collect()
+/// Is `elem` structurally equal to any member of `elements`?
+fn set_contains(heap: &QueryHeap, elements: &[usize], elem: usize) -> bool {
+    elements.iter().any(|&member| heap.term_equal(member, elem))
 }
 
-/// Check whether element at `elem_addr` exists in the set at `set_base` with
-/// `set_len` elements, using structural equality.
-fn set_contains(heap: &QueryHeap, set_base: usize, set_len: usize, elem_addr: usize) -> bool {
-    (set_base + 1..=set_base + set_len).any(|a| heap.term_equal(a, elem_addr))
+/// Read both set arguments of a three-argument predicate.
+fn read_two_sets(heap: &QueryHeap, goal: usize) -> Option<(Vec<usize>, Vec<usize>)> {
+    let first = read_set(heap, goal_arg(heap, goal, 0))?;
+    let second = read_set(heap, goal_arg(heap, goal, 1))?;
+    Some((first, second))
+}
+
+/// Build `elements` into a set and unify it with the goal's third argument.
+///
+/// Every binary set operation ends this way: the result argument may be
+/// unbound, in which case it takes the new set, or already bound, in which
+/// case it has to match.
+fn finish_set_result(heap: &mut QueryHeap, goal: usize, elements: &[usize]) -> PredReturn {
+    let result = goal_arg(heap, goal, 2);
+    let new_set = build_set(heap, elements);
+    unify_with_term(heap, result, new_set)
 }
 
 fn factorial(mut n: usize) -> usize {
@@ -54,12 +67,11 @@ fn n_choose_r(n: usize, r: usize) -> usize {
     factorial(n) / ((factorial(r)) * factorial(n - r))
 }
 
-/// Generate all k-element combinations from a slice of element addresses.
+/// Every `k`-element combination of `elems`, flattened end to end.
 ///
-/// Returns a `Vec` of `Vec<usize>`, where each inner `Vec` is one combination.
-/// Order is lexicographic with respect to the original element order.
-/// - `combinations(elems, 0)` always returns `vec![vec![]]` (one empty combination).
-/// - `combinations(elems, k)` where `k > elems.len()` returns `vec![]` (impossible).
+/// The result holds `k` addresses per combination, so combination `i` is
+/// `result[i * k..(i + 1) * k]`. Returns empty when `k` is zero or larger
+/// than the input.
 fn combinations(elems: &[usize], k: usize) -> Vec<usize> {
     if k == 0 || k > elems.len() {
         return vec![];
@@ -72,28 +84,24 @@ fn combinations(elems: &[usize], k: usize) -> Vec<usize> {
 }
 
 fn combo_rec(elems: &[usize], k: usize, sub_set: &mut Vec<usize>, result: &mut Vec<usize>) {
-    if k == 1 {
-        for elem in elems {
-            sub_set.push(*elem);
-            result.extend(sub_set.iter());
-            sub_set.pop();
-        }
-    } else {
-        for i in 0..elems.len() + 1 - k {
-            sub_set.push(elems[i]);
-            combo_rec(&elems[i + 1..], k - 1, sub_set, result);
-            sub_set.pop();
-        }
+    if sub_set.len() == k {
+        result.extend_from_slice(sub_set);
+        return;
+    }
+    for (i, &elem) in elems.iter().enumerate() {
+        sub_set.push(elem);
+        combo_rec(&elems[i + 1..], k, sub_set, result);
+        sub_set.pop();
     }
 }
 
 // ── Predicates ────────────────────────────────────────────────────────────────
 
-/// `set_member(?Elem, +Set)` — check membership or enumerate elements.
+/// `set_member(?Elem, +Set)` — Elem is a member of Set.
 ///
-/// If `Elem` is bound, checks whether it is in `Set` (returns True/False).
-/// If `Elem` is unbound, returns `PredReturn::Choices` with one alternative
-/// per set element, each binding `Elem` to that element.
+/// If `Elem` is bound this is a membership check. If it is unbound, every
+/// element is offered as a [`PredReturn::Choices`] alternative, so
+/// backtracking enumerates the set.
 pub fn set_member_pred(
     heap: &mut QueryHeap,
     _hypothesis: &mut Hypothesis,
@@ -101,42 +109,34 @@ pub fn set_member_pred(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let elem_addr = goal_arg(heap, goal, 0);
-    // let set_arg = goal_arg(heap, goal, 1);
-    // let Some((base, len)) = read_set(heap, set_arg) else {
-    //     return false.into();
-    // };
+    let elem = goal_arg(heap, goal, 0);
+    let Some(elements) = read_set(heap, goal_arg(heap, goal, 1)) else {
+        return PredReturn::False;
+    };
 
-    // if is_var(heap, elem_addr) {
-    //     // Unbound — enumerate all elements as choices
-    //     let var_addr = heap[elem_addr].1; // The Ref target (itself)
-    //     let alternatives: Vec<(Vec<(usize, usize)>, Vec<usize>)> = set_elements(base, len)
-    //         .into_iter()
-    //         .map(|el_addr| (vec![(var_addr, el_addr)], vec![]))
-    //         .collect();
-    //     if alternatives.is_empty() {
-    //         PredReturn::False
-    //     } else {
-    //         PredReturn::Choices(alternatives)
-    //     }
-    // } else {
-    //     // Bound — check membership
-    //     set_contains(heap, base, len, elem_addr).into()
-    // }
-    todo!()
+    let (Tag::Var, var_id) = resolve_to_cell(heap, elem) else {
+        return set_contains(heap, &elements, elem).into();
+    };
+
+    if elements.is_empty() {
+        return PredReturn::False;
+    }
+    PredReturn::Choices(
+        elements
+            .into_iter()
+            .map(|element| (vec![(var_id, Addr(element))], vec![]))
+            .collect(),
+    )
 }
 
-/// `subset(?SubSet, +Set, +Size)` — SubSet is a subset of Set with exactly Size elements.
+/// `subset(?SubSet, +Set, +Size)` — SubSet is a subset of Set with exactly
+/// Size elements.
 ///
-/// **Check mode** (`SubSet` bound): succeeds iff `SubSet` has exactly `Size` elements
-/// and every element of `SubSet` is also an element of `Set`.
+/// With `SubSet` bound this checks that it has `Size` elements and that all
+/// of them are in `Set`. With `SubSet` unbound, every `Size`-element subset
+/// is offered as an alternative.
 ///
-/// **Generate mode** (`SubSet` unbound): returns [`PredReturn::Choices`] with one
-/// alternative per distinct `Size`-element subset of `Set`, each binding `SubSet` to
-/// that subset. On backtracking the engine tries each alternative in turn.
-///
-/// Fails immediately if `Size` is negative, if `Size > |Set|`, or if the first argument
-/// is neither a variable nor a set.
+/// Fails if `Size` is not an integer or exceeds the size of `Set`.
 pub fn subset_sized(
     heap: &mut QueryHeap,
     _hypothesis: &mut Hypothesis,
@@ -144,53 +144,56 @@ pub fn subset_sized(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let k = match Number::try_from(heap[goal_arg(heap, goal, 2)]) {
-    //     Ok(Number::Int(value)) => value as usize,
-    //     _ => return false.into(),
-    // };
+    let size_arg = resolve_to_cell(heap, goal_arg(heap, goal, 2));
+    let Ok(Number::Int(size)) = Number::try_from(size_arg) else {
+        return PredReturn::False;
+    };
+    if size < 0 {
+        return PredReturn::False;
+    }
+    let size = size as usize;
 
-    // let Some(set) = read_set(heap, goal_arg(heap, goal, 1)) else {
-    //     return false.into();
-    // };
-    // if k > set.1 {
-    //     return false.into();
-    // }
+    let Some(elements) = read_set(heap, goal_arg(heap, goal, 1)) else {
+        return PredReturn::False;
+    };
+    if size > elements.len() {
+        return PredReturn::False;
+    }
 
-    // let subset_arg = goal_arg(heap, goal, 0);
+    let subset_arg = goal_arg(heap, goal, 0);
+    let (Tag::Var, var_id) = resolve_to_cell(heap, subset_arg) else {
+        // Check mode: the right cardinality, and every element present.
+        let Some(subset) = read_set(heap, subset_arg) else {
+            return PredReturn::False;
+        };
+        return (subset.len() == size
+            && subset
+                .iter()
+                .all(|&elem| set_contains(heap, &elements, elem)))
+        .into();
+    };
 
-    // if is_var(heap, subset_arg) {
-    //     if k == 0 {
-    //         let set_addr = heap.heap_push((Tag::Set, 0));
-    //         return PredReturn::Success(vec![(subset_arg, set_addr)], vec![]);
-    //     }
-    //     // Generate mode: enumerate every k-element subset of Set.
-    //     let elems = set_elements(set.0, set.1);
-    //     let combos = combinations(&elems, k);
-    //     if combos.is_empty() {
-    //         return false.into();
-    //     }
-    //     // Push all subset structures onto the heap upfront, then wrap each in a
-    //     // single-binding choice. Heap cells from unchosen alternatives are harmless
-    //     // garbage — they will never be referenced once a different branch is taken.
-    //     let mut alternatives = Vec::with_capacity(combos.len() / k);
-    //     let mut i = 0;
-    //     while i < combos.len() {
-    //         let new_set = build_set(heap, &combos[i..i + k]);
-    //         alternatives.push((vec![(subset_arg, new_set)], vec![]));
-    //         i += k;
-    //     }
-    //     PredReturn::Choices(alternatives)
-    // } else if let Some(subset) = read_set(heap, subset_arg) {
-    //     // Check mode: subset must have exactly k elements, all contained in Set.
-    //     (subset.1 == k
-    //         && set_elements(subset.0, subset.1)
-    //             .iter()
-    //             .all(|elem_addr| set_contains(heap, set.0, set.1, *elem_addr)))
-    //     .into()
-    // } else {
-    //     false.into()
-    // }
-    todo!()
+    if size == 0 {
+        let empty = build_set(heap, &[] as &[usize]);
+        return PredReturn::bind_addr(heap, var_id, empty);
+    }
+
+    // Each subset is built up front and offered as one alternative. Cells
+    // belonging to alternatives that are never taken are unreachable rather
+    // than wrong, and go away when the heap is truncated on backtracking.
+    let combos = combinations(&elements, size);
+    let alternatives: Vec<_> = combos
+        .chunks(size)
+        .map(|combo| {
+            let subset = build_set(heap, combo);
+            (vec![(var_id, Addr(subset))], vec![])
+        })
+        .collect();
+
+    if alternatives.is_empty() {
+        return PredReturn::False;
+    }
+    PredReturn::Choices(alternatives)
 }
 
 /// `set_union(+Set1, +Set2, ?Result)` — Result is the union of Set1 and Set2.
@@ -201,34 +204,13 @@ pub fn set_union_pred(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let Some((base1, len1)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-    //     return false.into();
-    // };
-    // let Some((base2, len2)) = read_set(heap, goal_arg(heap, goal, 1)) else {
-    //     return false.into();
-    // };
-    // let result_addr = goal_arg(heap, goal, 2);
-
-    // // Collect all elements from set1, then add elements from set2 not already present
-    // let mut all_addrs: Vec<usize> = set_elements(base1, len1);
-    // for a in set_elements(base2, len2) {
-    //     if !all_addrs
-    //         .iter()
-    //         .any(|&existing| heap.term_equal(existing, a))
-    //     {
-    //         all_addrs.push(a);
-    //     }
-    // }
-
-    // let new_set = build_set(heap, &all_addrs);
-
-    // if is_var(heap, result_addr) {
-    //     PredReturn::Success(vec![(result_addr, new_set)], vec![])
-    // } else {
-    //     // Check mode: verify equality
-    //     heap.term_equal(result_addr, new_set).into()
-    // }
-    todo!()
+    let Some((first, second)) = read_two_sets(heap, goal) else {
+        return PredReturn::False;
+    };
+    // `build_set` drops duplicates, so the two can simply be concatenated.
+    let mut union = first;
+    union.extend(second);
+    finish_set_result(heap, goal, &union)
 }
 
 /// `set_intersection(+Set1, +Set2, ?Result)` — Result is the intersection.
@@ -239,30 +221,18 @@ pub fn set_intersection_pred(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let Some((base1, len1)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-    //     return false.into();
-    // };
-    // let Some((base2, len2)) = read_set(heap, goal_arg(heap, goal, 1)) else {
-    //     return false.into();
-    // };
-    // let result_addr = goal_arg(heap, goal, 2);
-
-    // let common: Vec<usize> = set_elements(base1, len1)
-    //     .into_iter()
-    //     .filter(|&a| set_contains(heap, base2, len2, a))
-    //     .collect();
-
-    // let new_set = build_set(heap, &common);
-
-    // if is_var(heap, result_addr) {
-    //     PredReturn::Success(vec![(result_addr, new_set)], vec![])
-    // } else {
-    //     heap.term_equal(result_addr, new_set).into()
-    // }
-    todo!()
+    let Some((first, second)) = read_two_sets(heap, goal) else {
+        return PredReturn::False;
+    };
+    let common: Vec<usize> = first
+        .into_iter()
+        .filter(|&elem| set_contains(heap, &second, elem))
+        .collect();
+    finish_set_result(heap, goal, &common)
 }
 
-/// `set_difference(+Set1, +Set2, ?Result)` — Result = Set1 \ Set2.
+/// `set_difference(+Set1, +Set2, ?Result)` — Result is Set1 without the
+/// elements of Set2.
 pub fn set_difference_pred(
     heap: &mut QueryHeap,
     _hypothesis: &mut Hypothesis,
@@ -270,30 +240,18 @@ pub fn set_difference_pred(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let Some((base1, len1)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-    //     return false.into();
-    // };
-    // let Some((base2, len2)) = read_set(heap, goal_arg(heap, goal, 1)) else {
-    //     return false.into();
-    // };
-    // let result_addr = goal_arg(heap, goal, 2);
-
-    // let diff: Vec<usize> = set_elements(base1, len1)
-    //     .into_iter()
-    //     .filter(|&a| !set_contains(heap, base2, len2, a))
-    //     .collect();
-
-    // let new_set = build_set(heap, &diff);
-
-    // if is_var(heap, result_addr) {
-    //     PredReturn::Success(vec![(result_addr, new_set)], vec![])
-    // } else {
-    //     heap.term_equal(result_addr, new_set).into()
-    // }
-    todo!()
+    let Some((first, second)) = read_two_sets(heap, goal) else {
+        return PredReturn::False;
+    };
+    let difference: Vec<usize> = first
+        .into_iter()
+        .filter(|&elem| !set_contains(heap, &second, elem))
+        .collect();
+    finish_set_result(heap, goal, &difference)
 }
 
-/// `set_symmetric_difference(+Set1, +Set2, ?Result)` — elements in one but not both.
+/// `set_symmetric_difference(+Set1, +Set2, ?Result)` — the elements in one
+/// set but not both.
 pub fn set_symdiff_pred(
     heap: &mut QueryHeap,
     _hypothesis: &mut Hypothesis,
@@ -301,35 +259,24 @@ pub fn set_symdiff_pred(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let Some((base1, len1)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-    //     return false.into();
-    // };
-    // let Some((base2, len2)) = read_set(heap, goal_arg(heap, goal, 1)) else {
-    //     return false.into();
-    // };
-    // let result_addr = goal_arg(heap, goal, 2);
-
-    // let mut sym: Vec<usize> = set_elements(base1, len1)
-    //     .into_iter()
-    //     .filter(|&a| !set_contains(heap, base2, len2, a))
-    //     .collect();
-    // for a in set_elements(base2, len2) {
-    //     if !set_contains(heap, base1, len1, a) {
-    //         sym.push(a);
-    //     }
-    // }
-
-    // let new_set = build_set(heap, &sym);
-
-    // if is_var(heap, result_addr) {
-    //     PredReturn::Success(vec![(result_addr, new_set)], vec![])
-    // } else {
-    //     heap.term_equal(result_addr, new_set).into()
-    // }
-    todo!()
+    let Some((first, second)) = read_two_sets(heap, goal) else {
+        return PredReturn::False;
+    };
+    let mut symmetric: Vec<usize> = first
+        .iter()
+        .copied()
+        .filter(|&elem| !set_contains(heap, &second, elem))
+        .collect();
+    symmetric.extend(
+        second
+            .iter()
+            .copied()
+            .filter(|&elem| !set_contains(heap, &first, elem)),
+    );
+    finish_set_result(heap, goal, &symmetric)
 }
 
-/// `set_size(+Set, ?N)` — N is the cardinality of Set.
+/// `set_size(+Set, ?N)` — N is the number of elements in Set.
 pub fn set_size_pred(
     heap: &mut QueryHeap,
     _hypothesis: &mut Hypothesis,
@@ -337,24 +284,14 @@ pub fn set_size_pred(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let Some((_base, len)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-    //     return false.into();
-    // };
-    // let n_addr = goal_arg(heap, goal, 1);
-
-    // if is_var(heap, n_addr) {
-    //     let int_addr = heap.heap_push((Tag::Int, len));
-    //     PredReturn::Success(vec![(n_addr, int_addr)], vec![])
-    // } else {
-    //     match heap[n_addr] {
-    //         (Tag::Int, v) => (v == len).into(),
-    //         _ => PredReturn::False,
-    //     }
-    // }
-    todo!()
+    let Some(elements) = read_set(heap, goal_arg(heap, goal, 0)) else {
+        return PredReturn::False;
+    };
+    unify_with_int(heap, goal_arg(heap, goal, 1), elements.len() as isize)
 }
 
-/// `set_add(+Set, +Elem, ?Result)` — Result is Set with Elem added (no-op if present).
+/// `set_add(+Set, +Elem, ?Result)` — Result is Set with Elem added, which is
+/// Set itself if Elem is already a member.
 pub fn set_add_pred(
     heap: &mut QueryHeap,
     _hypothesis: &mut Hypothesis,
@@ -362,42 +299,20 @@ pub fn set_add_pred(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let Some((base, len)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-    //     return false.into();
-    // };
-    // let elem_addr = goal_arg(heap, goal, 1);
-    // let result_addr = goal_arg(heap, goal, 2);
+    let Some(mut elements) = read_set(heap, goal_arg(heap, goal, 0)) else {
+        return PredReturn::False;
+    };
+    let elem = goal_arg(heap, goal, 1);
 
-    // // If already present, result = original set
-    // if set_contains(heap, base, len, elem_addr) {
-    //     if is_var(heap, result_addr) {
-    //         // Bind to the original set address
-    //         todo!("handle unwrap properly");
-    //         let set_addr = resolve(heap, heap.deref_addr(goal_arg(heap, goal, 0)));
-    //         PredReturn::Success(vec![(result_addr, set_addr)], vec![])
-    //     } else {
-    //         todo!("handle unwrap properly");
-    //         heap.term_equal(
-    //             result_addr,
-    //             resolve(heap, heap.deref_addr(goal_arg(heap, goal, 0))),
-    //         )
-    //         .into()
-    //     }
-    // } else {
-    //     // Build new set with element added
-    //     let mut addrs: Vec<usize> = set_elements(base, len);
-    //     addrs.push(elem_addr);
-    //     let new_set = build_set(heap, &addrs);
-    //     if is_var(heap, result_addr) {
-    //         PredReturn::Success(vec![(result_addr, new_set)], vec![])
-    //     } else {
-    //         heap.term_equal(result_addr, new_set).into()
-    //     }
-    // }
-    todo!()
+    // Pushed unconditionally: `build_set` would drop it as a duplicate
+    // anyway, so an already-present element needs no special case.
+    if !set_contains(heap, &elements, elem) {
+        elements.push(elem);
+    }
+    finish_set_result(heap, goal, &elements)
 }
 
-/// `set_del(+Set, +Elem, ?Result)` — Result is Set with Elem removed.
+/// `set_del(+Set, +Elem, ?Result)` — Result is Set without Elem.
 pub fn set_del_pred(
     heap: &mut QueryHeap,
     _hypothesis: &mut Hypothesis,
@@ -405,27 +320,18 @@ pub fn set_del_pred(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let Some((base, len)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-    //     return false.into();
-    // };
-    // let elem_addr = goal_arg(heap, goal, 1);
-    // let result_addr = goal_arg(heap, goal, 2);
-
-    // let remaining: Vec<usize> = set_elements(base, len)
-    //     .into_iter()
-    //     .filter(|&a| !heap.term_equal(a, elem_addr))
-    //     .collect();
-
-    // let new_set = build_set(heap, &remaining);
-    // if is_var(heap, result_addr) {
-    //     PredReturn::Success(vec![(result_addr, new_set)], vec![])
-    // } else {
-    //     heap.term_equal(result_addr, new_set).into()
-    // }
-    todo!()
+    let Some(elements) = read_set(heap, goal_arg(heap, goal, 0)) else {
+        return PredReturn::False;
+    };
+    let elem = goal_arg(heap, goal, 1);
+    let remaining: Vec<usize> = elements
+        .into_iter()
+        .filter(|&member| !heap.term_equal(member, elem))
+        .collect();
+    finish_set_result(heap, goal, &remaining)
 }
 
-/// `set_to_list(+Set, ?List)` — convert set to list.
+/// `set_to_list(+Set, ?List)` — List holds the elements of Set.
 pub fn set_to_list_pred(
     heap: &mut QueryHeap,
     _hypothesis: &mut Hypothesis,
@@ -433,23 +339,16 @@ pub fn set_to_list_pred(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let Some((base, len)) = read_set(heap, goal_arg(heap, goal, 0)) else {
-    //     return false.into();
-    // };
-    // let list_addr_arg = goal_arg(heap, goal, 1);
-
-    // let addrs = set_elements(base, len);
-    // let list = build_list(heap, &addrs);
-
-    // if is_var(heap, list_addr_arg) {
-    //     PredReturn::Success(vec![(list_addr_arg, list)], vec![])
-    // } else {
-    //     heap.term_equal(list_addr_arg, list).into()
-    // }
-    todo!()
+    let Some(elements) = read_set(heap, goal_arg(heap, goal, 0)) else {
+        return PredReturn::False;
+    };
+    let list_arg = goal_arg(heap, goal, 1);
+    let list = build_list(heap, &elements);
+    unify_with_term(heap, list_arg, list)
 }
 
-/// `list_to_set(+List, ?Set)` — convert list to set (deduplicating).
+/// `list_to_set(+List, ?Set)` — Set holds the elements of List with
+/// duplicates removed.
 pub fn list_to_set_pred(
     heap: &mut QueryHeap,
     _hypothesis: &mut Hypothesis,
@@ -457,21 +356,12 @@ pub fn list_to_set_pred(
     _predicate_table: &PredicateTable,
     _config: Config,
 ) -> PredReturn {
-    // let list_arg = goal_arg(heap, goal, 0);
-    // let set_arg = goal_arg(heap, goal, 1);
-
-    // let Some(addrs) = read_list_addrs(heap, list_arg) else {
-    //     return false.into();
-    // };
-
-    // let new_set = build_set(heap, &addrs);
-
-    // if is_var(heap, set_arg) {
-    //     PredReturn::Success(vec![(set_arg, new_set)], vec![])
-    // } else {
-    //     heap.term_equal(set_arg, new_set).into()
-    // }
-    todo!()
+    let Some(elements) = read_list_addrs(heap, goal_arg(heap, goal, 0)) else {
+        return PredReturn::False;
+    };
+    let set_arg = goal_arg(heap, goal, 1);
+    let new_set = build_set(heap, &elements);
+    unify_with_term(heap, set_arg, new_set)
 }
 
 // ── Module registration ───────────────────────────────────────────────────────

@@ -544,6 +544,18 @@ mod build_tests {
         assert_eq!(heap.heap_len(), set + 1 + term.len());
     }
 
+    /// Distinct compound elements must both survive -- the dedup check has
+    /// to compare whole terms, not just their first cell.
+    #[test]
+    fn a_set_keeps_distinct_compound_terms() {
+        let mut heap = heap();
+        let f_a: Vec<Cell> = vec![(Comp, 2), con_cell("f"), con_cell("a")];
+        let g_b: Vec<Cell> = vec![(Comp, 2), con_cell("g"), con_cell("b")];
+
+        let set = build_set(&mut heap, &[f_a.as_slice(), g_b.as_slice()]);
+        assert_eq!(heap.term_string(set), "{f(a),g(b)}");
+    }
+
     #[test]
     fn a_set_of_distinct_terms_keeps_all_of_them() {
         let mut heap = heap();
