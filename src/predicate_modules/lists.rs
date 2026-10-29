@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use super::{helpers::*, maths::Number, PredReturn, PredicateModule};
+use super::{maths::Number, utils::*, PredReturn, PredicateModule};
 use crate::{
     heap::{Heap, QueryHeap, SymbolDB, Tag::*, VarBind::Addr, EMPTY_LIS, LIS},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
@@ -98,7 +98,7 @@ pub fn sort(
                 n1.partial_cmp(n2).unwrap_or(std::cmp::Ordering::Equal)
             });
             let sorted_addrs: Vec<usize> = indexed.into_iter().map(|(a, _)| a).collect();
-            let list_addr = build_list_from_addrs(heap, &sorted_addrs);
+            let list_addr = build_list(heap, &sorted_addrs);
             heap.bind(var_id, Addr(list_addr));
             [var_id].into()
         }
@@ -122,7 +122,7 @@ pub fn sort(
                 .collect();
             indexed.sort_by(|(_, s1), (_, s2)| s1.cmp(s2));
             let sorted_addrs: Vec<usize> = indexed.into_iter().map(|(a, _)| a).collect();
-            let list_addr = build_list_from_addrs(heap, &sorted_addrs);
+            let list_addr = build_list(heap, &sorted_addrs);
             heap.bind(var_id, Addr(list_addr));
             [var_id].into()
         }
@@ -142,7 +142,7 @@ pub static LISTS: PredicateModule = (
 #[cfg(test)]
 mod tests {
     use super::{
-        super::{helpers::TestWrapper, DEFAULTS, MATHS, META_PREDICATES},
+        super::{utils::TestWrapper, DEFAULTS, MATHS, META_PREDICATES},
         LISTS,
     };
 

@@ -9,7 +9,7 @@
 //! are present.  Predicates like `member/2` that need to enumerate choices use
 //! `PredReturn::Choices` to create backtrackable alternatives.
 
-use super::{helpers::*, PredReturn, PredicateModule};
+use super::{utils::*, PredReturn, PredicateModule};
 use crate::{
     heap::{Heap, QueryHeap, Tag},
     predicate_modules::maths::Number,
@@ -175,7 +175,7 @@ pub fn subset_sized(
     //     let mut alternatives = Vec::with_capacity(combos.len() / k);
     //     let mut i = 0;
     //     while i < combos.len() {
-    //         let new_set = build_set_from_addrs(heap, &combos[i..i + k]);
+    //         let new_set = build_set(heap, &combos[i..i + k]);
     //         alternatives.push((vec![(subset_arg, new_set)], vec![]));
     //         i += k;
     //     }
@@ -220,7 +220,7 @@ pub fn set_union_pred(
     //     }
     // }
 
-    // let new_set = build_set_from_addrs(heap, &all_addrs);
+    // let new_set = build_set(heap, &all_addrs);
 
     // if is_var(heap, result_addr) {
     //     PredReturn::Success(vec![(result_addr, new_set)], vec![])
@@ -252,7 +252,7 @@ pub fn set_intersection_pred(
     //     .filter(|&a| set_contains(heap, base2, len2, a))
     //     .collect();
 
-    // let new_set = build_set_from_addrs(heap, &common);
+    // let new_set = build_set(heap, &common);
 
     // if is_var(heap, result_addr) {
     //     PredReturn::Success(vec![(result_addr, new_set)], vec![])
@@ -283,7 +283,7 @@ pub fn set_difference_pred(
     //     .filter(|&a| !set_contains(heap, base2, len2, a))
     //     .collect();
 
-    // let new_set = build_set_from_addrs(heap, &diff);
+    // let new_set = build_set(heap, &diff);
 
     // if is_var(heap, result_addr) {
     //     PredReturn::Success(vec![(result_addr, new_set)], vec![])
@@ -319,7 +319,7 @@ pub fn set_symdiff_pred(
     //     }
     // }
 
-    // let new_set = build_set_from_addrs(heap, &sym);
+    // let new_set = build_set(heap, &sym);
 
     // if is_var(heap, result_addr) {
     //     PredReturn::Success(vec![(result_addr, new_set)], vec![])
@@ -387,7 +387,7 @@ pub fn set_add_pred(
     //     // Build new set with element added
     //     let mut addrs: Vec<usize> = set_elements(base, len);
     //     addrs.push(elem_addr);
-    //     let new_set = build_set_from_addrs(heap, &addrs);
+    //     let new_set = build_set(heap, &addrs);
     //     if is_var(heap, result_addr) {
     //         PredReturn::Success(vec![(result_addr, new_set)], vec![])
     //     } else {
@@ -416,7 +416,7 @@ pub fn set_del_pred(
     //     .filter(|&a| !heap.term_equal(a, elem_addr))
     //     .collect();
 
-    // let new_set = build_set_from_addrs(heap, &remaining);
+    // let new_set = build_set(heap, &remaining);
     // if is_var(heap, result_addr) {
     //     PredReturn::Success(vec![(result_addr, new_set)], vec![])
     // } else {
@@ -439,7 +439,7 @@ pub fn set_to_list_pred(
     // let list_addr_arg = goal_arg(heap, goal, 1);
 
     // let addrs = set_elements(base, len);
-    // let list = build_list_from_addrs(heap, &addrs);
+    // let list = build_list(heap, &addrs);
 
     // if is_var(heap, list_addr_arg) {
     //     PredReturn::Success(vec![(list_addr_arg, list)], vec![])
@@ -464,7 +464,7 @@ pub fn list_to_set_pred(
     //     return false.into();
     // };
 
-    // let new_set = build_set_from_addrs(heap, &addrs);
+    // let new_set = build_set(heap, &addrs);
 
     // if is_var(heap, set_arg) {
     //     PredReturn::Success(vec![(set_arg, new_set)], vec![])
@@ -498,7 +498,7 @@ pub static SETS: PredicateModule = (
 #[cfg(test)]
 mod tests {
     use super::SETS;
-    use crate::predicate_modules::{helpers::TestWrapper, DEFAULTS, MATHS};
+    use crate::predicate_modules::{utils::TestWrapper, DEFAULTS, MATHS};
 
     pub fn test_wrapper() -> TestWrapper {
         TestWrapper::new(&[DEFAULTS, MATHS, SETS])

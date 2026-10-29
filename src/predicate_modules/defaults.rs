@@ -5,7 +5,7 @@ use crate::{
     Config,
 };
 
-use super::{helpers::*, PredReturn, PredicateModule};
+use super::{utils::*, PredReturn, PredicateModule};
 
 // ---------------------------------------------------------------------------
 // Unification / equality
@@ -65,7 +65,7 @@ pub fn univ(
             // the existing list. Handles ground lists, partial lists with
             // variable tails, and variables in elements all in one shot.
             let comp_arg_addrs = heap.str_args(comp_addr);
-            let built_list = build_list_from_addrs(heap, &comp_arg_addrs);
+            let built_list = build_list(heap, &comp_arg_addrs);
             match unify(heap, built_list, lis_addr, MAX_ARG) {
                 Some(sub) => PredReturn::Success(sub.bound_vars, vec![]),
                 None => false.into(),
@@ -73,7 +73,7 @@ pub fn univ(
         }
         (Comp, Var) => {
             let comp_arg_addrs = heap.str_args(comp_addr);
-            let new_list_addr = build_list_from_addrs(heap, &comp_arg_addrs);
+            let new_list_addr = build_list(heap, &comp_arg_addrs);
             heap.bind(lis_value, Addr(new_list_addr));
             [lis_value].into()
         }
@@ -81,7 +81,7 @@ pub fn univ(
             let Some(addrs) = read_list_addrs(heap, lis_addr) else {
                 return false.into();
             };
-            let new_comp_addr = build_compound_from_addrs(heap, &addrs);
+            let new_comp_addr = build_compound(heap, &addrs);
             heap.bind(comp_value, Addr(new_comp_addr));
             [comp_value].into()
         }
@@ -276,7 +276,7 @@ pub static DEFAULTS: PredicateModule = (
 
 #[cfg(test)]
 mod tests {
-    use super::{super::helpers::TestWrapper, DEFAULTS};
+    use super::{super::utils::TestWrapper, DEFAULTS};
 
     fn tw() -> TestWrapper {
         TestWrapper::new(&[DEFAULTS])

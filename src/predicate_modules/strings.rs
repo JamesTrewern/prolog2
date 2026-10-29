@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use super::{helpers::*, PredReturn, PredicateModule};
+use super::{utils::*, PredReturn, PredicateModule};
 use crate::{
     heap::{Cell, Heap, QueryHeap, SymbolDB, Tag::*, VarBind::Addr},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
@@ -20,32 +20,6 @@ use crate::{
 };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
-
-/// Read the text of a `Con` or `Stri` cell, or `None` for anything else.
-fn read_text(heap: &QueryHeap, addr: usize) -> Option<Arc<str>> {
-    match resolve_to_cell(heap, addr) {
-        (Con, id) => Some(SymbolDB::get_const(id)),
-        (Stri, idx) => Some(SymbolDB::get_string(idx)),
-        _ => None,
-    }
-}
-
-/// Push a fresh constant (`Con`) cell and return its heap address.
-fn push_const(heap: &mut QueryHeap, text: &str) -> usize {
-    let id = SymbolDB::set_const(text);
-    heap.heap_push((Con, id))
-}
-
-/// Push a fresh string (`Stri`) cell and return its heap address.
-fn push_string(heap: &mut QueryHeap, text: Arc<str>) -> usize {
-    let idx = SymbolDB::set_string(text.to_string());
-    heap.heap_push((Stri, idx))
-}
-
-/// Push an integer (`Int`) cell and return its heap address.
-fn push_int(heap: &mut QueryHeap, n: isize) -> usize {
-    heap.heap_push((Int, n as usize))
-}
 
 /// Parse a string as `Int` (tried first) or `Flt`, push the result, and
 /// return its address, or `None` if the text is not a valid number.
@@ -278,21 +252,7 @@ pub fn atom_length_pred(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    let const_a = goal_arg(heap, goal, 0);
-    let len_a = goal_arg(heap, goal, 1);
-    let (Con, id) = heap[const_a] else {
-        return false.into();
-    };
-    let len = SymbolDB::get_const(id).chars().count();
-    match heap[len_a] {
-        (Var, var_id) => {
-            let result = push_int(heap, len as isize);
-            heap.bind(var_id, Addr(result));
-            [var_id].into()
-        }
-        (Int, v) => (len == v).into(),
-        _ => PredReturn::False,
-    }
+    length_impl(heap, goal, |cell| matches!(cell, (Con, _)))
 }
 
 /// `string_length/2`: length (in characters) of a string.
@@ -303,21 +263,22 @@ pub fn string_length_pred(
     _: &PredicateTable,
     _: Config,
 ) -> PredReturn {
-    let str_a = goal_arg(heap, goal, 0);
-    let len_a = goal_arg(heap, goal, 1);
-    let (Stri, idx) = heap[str_a] else {
-        return false.into();
-    };
-    let len = SymbolDB::get_string(idx).chars().count();
-    match heap[len_a] {
-        (Var, var_id) => {
-            let result = push_int(heap, len as isize);
-            heap.bind(var_id, Addr(result));
-            [var_id].into()
-        }
-        (Int, v) => (len == v).into(),
-        _ => PredReturn::False,
+    length_impl(heap, goal, |cell| matches!(cell, (Stri, _)))
+}
+
+/// Shared logic for `atom_length` / `string_length`.
+///
+/// `accepts` keeps each predicate to its own representation: `atom_length`
+/// rejects a string and vice versa, even though both are readable as text.
+fn length_impl(heap: &mut QueryHeap, goal: usize, accepts: fn(Cell) -> bool) -> PredReturn {
+    let text_arg = goal_arg(heap, goal, 0);
+    if !accepts(resolve_to_cell(heap, text_arg)) {
+        return PredReturn::False;
     }
+    let Some(text) = read_text(heap, text_arg) else {
+        return PredReturn::False;
+    };
+    unify_with_int(heap, goal_arg(heap, goal, 1), text.chars().count() as isize)
 }
 
 // ── Concatenation predicates ──────────────────────────────────────────────────
@@ -507,7 +468,7 @@ fn chars_impl(
                 .chars()
                 .map(|c| (Con, SymbolDB::set_const(c.to_string())))
                 .collect();
-            let result = build_list_from_cells(heap, &cells);
+            let result = build_list(heap, &cells);
             heap.bind(var_id, Addr(result));
             [var_id].into()
         }
@@ -598,7 +559,7 @@ fn codes_impl(
         (Some(text), Var) => {
             let var_id = list_value;
             let cells: Vec<Cell> = text.chars().map(|c| (Int, c as usize)).collect();
-            let result = build_list_from_cells(heap, &cells);
+            let result = build_list(heap, &cells);
             heap.bind(var_id, Addr(result));
             [var_id].into()
         }
@@ -835,7 +796,7 @@ pub static STRINGS: PredicateModule = (
 #[cfg(test)]
 mod tests {
     use super::{
-        super::{helpers::TestWrapper, DEFAULTS},
+        super::{utils::TestWrapper, DEFAULTS},
         STRINGS,
     };
 
@@ -965,6 +926,14 @@ mod tests {
     fn atom_length_check() {
         tw().assert_true("atom_length(hello, 5).");
         tw().assert_false("atom_length(hello, 4).");
+        tw().assert_binding("atom_length(hello, N).", ("N", "5"));
+        // Each predicate keeps to its own representation, even though both
+        // are readable as text.
+        tw().assert_false("atom_length(\"hello\", 5).");
+        tw().assert_true("string_length(\"hello\", 5).");
+        tw().assert_false("string_length(\"hello\", 4).");
+        tw().assert_binding("string_length(\"hello\", N).", ("N", "5"));
+        tw().assert_false("string_length(hello, 5).");
     }
 
     // ── string_length/2 ───────────────────────────────────────────────────

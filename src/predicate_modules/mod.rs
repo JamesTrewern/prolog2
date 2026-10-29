@@ -1,7 +1,27 @@
+//! Native predicates, and the pieces for writing your own.
+//!
+//! A predicate module is a [`PredicateModule`](crate::predicate_modules::PredicateModule): a slice of
+//! `(name, arity, function)` triples implemented in Rust, paired with any
+//! Prolog source that builds on them. [`App::load_module`](crate::app::App::load_module)
+//! registers one.
+//!
+//! Each function has the signature [`PredicateFunction`](crate::predicate_modules::PredicateFunction) and returns a
+//! [`PredReturn`](crate::predicate_modules::PredReturn) saying whether the goal succeeded, failed, bound variables,
+//! or produced several alternatives to try on backtracking.
+//!
+//! Functions receive the goal as a heap address, so reading arguments and
+//! building results means working with cells. [`utils`](crate::predicate_modules::utils) exists for that: it
+//! covers reading an argument, producing a value, and unifying that value
+//! with an output argument that may arrive either unbound or already bound.
+//! Start there rather than indexing the heap directly.
+//!
+//! The modules below double as worked examples -- [`maths`](crate::predicate_modules::maths) for evaluating
+//! nested expressions, [`lists`](crate::predicate_modules::lists) for walking and building structures,
+//! [`strings`](crate::predicate_modules::strings) for predicates that accept more than one representation of
+//! their input.
+
 /// Built-in defaults
 pub mod defaults;
-/// Helper functions for predicate modules
-pub mod helpers;
 /// Built-in list predicates
 pub mod lists;
 /// Built-in maths predicates.
@@ -10,7 +30,10 @@ pub mod maths;
 pub mod meta_predicates;
 /// Built-in string and atom predicates.
 pub mod strings;
-/// Built-in set predicates
+/// Helpers for reading goal arguments and building results.
+pub mod utils;
+
+// Set predicates, not yet implemented: see sets.rs.
 // pub mod sets;
 pub use defaults::DEFAULTS;
 pub use lists::LISTS;

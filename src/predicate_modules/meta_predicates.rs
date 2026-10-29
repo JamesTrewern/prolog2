@@ -1,6 +1,6 @@
 use crate::{
     heap::{Heap, QueryHeap},
-    predicate_modules::helpers::{goal_arg, resolve_to_cell_and_addr},
+    predicate_modules::utils::{goal_arg, resolve_to_cell_and_addr},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::Proof,
     Config,

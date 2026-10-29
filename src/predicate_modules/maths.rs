@@ -7,7 +7,7 @@ use crate::{
         Tag::{self, *},
         VarBind::Addr,
     },
-    predicate_modules::helpers::{goal_arg, resolve_to_cell_and_addr},
+    predicate_modules::utils::{goal_arg, resolve_to_cell_and_addr},
     program::{hypothesis::Hypothesis, predicate_table::PredicateTable},
     Config,
 };
@@ -231,65 +231,69 @@ impl PartialOrd for Number {
 // sub-expression propagates as None rather than panicking.
 // ---------------------------------------------------------------------------
 
+/// Evaluate both arguments and combine them.
+///
+/// `None` from either side propagates, so a bad sub-expression fails the
+/// whole expression rather than panicking.
+fn binary_op(addr: usize, heap: &QueryHeap, op: fn(Number, Number) -> Number) -> Option<Number> {
+    let lhs = evaluate_term(goal_arg(heap, addr, 0), heap)?;
+    let rhs = evaluate_term(goal_arg(heap, addr, 1), heap)?;
+    Some(op(lhs, rhs))
+}
+
+/// Evaluate the single argument as a float and apply `op`.
+fn unary_float_op(addr: usize, heap: &QueryHeap, op: fn(f64) -> f64) -> Option<Number> {
+    let value = evaluate_term(goal_arg(heap, addr, 0), heap)?.float();
+    Some(Number::Flt(op(value)))
+}
+
+/// Evaluate the single argument and apply `op`, keeping its numeric type.
+fn unary_op(addr: usize, heap: &QueryHeap, op: fn(Number) -> Number) -> Option<Number> {
+    Some(op(evaluate_term(goal_arg(heap, addr, 0), heap)?))
+}
+
 fn add(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
-    Some(evaluate_term(lhs, heap)? + evaluate_term(rhs, heap)?)
+    binary_op(addr, heap, |lhs, rhs| lhs + rhs)
 }
 
 fn sub(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
-    Some(evaluate_term(lhs, heap)? - evaluate_term(rhs, heap)?)
+    binary_op(addr, heap, |lhs, rhs| lhs - rhs)
 }
 
 fn mul(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
-    Some(evaluate_term(lhs, heap)? * evaluate_term(rhs, heap)?)
+    binary_op(addr, heap, |lhs, rhs| lhs * rhs)
 }
 
 fn div(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
-    Some(evaluate_term(lhs, heap)? / evaluate_term(rhs, heap)?)
+    binary_op(addr, heap, |lhs, rhs| lhs / rhs)
 }
 
 fn pow(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    let (lhs, rhs) = (goal_arg(heap, addr, 0), goal_arg(heap, addr, 1));
-    Some(evaluate_term(lhs, heap)?.power(evaluate_term(rhs, heap)?))
+    binary_op(addr, heap, Number::power)
 }
 
 fn cos(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(
-        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().cos(),
-    ))
+    unary_float_op(addr, heap, f64::cos)
 }
 
 fn sin(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(
-        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().sin(),
-    ))
+    unary_float_op(addr, heap, f64::sin)
 }
 
 fn tan(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(
-        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().tan(),
-    ))
+    unary_float_op(addr, heap, f64::tan)
 }
 
 fn acos(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(
-        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().acos(),
-    ))
+    unary_float_op(addr, heap, f64::acos)
 }
 
 fn asin(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(
-        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().asin(),
-    ))
+    unary_float_op(addr, heap, f64::asin)
 }
 
 fn atan(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(
-        evaluate_term(goal_arg(heap, addr, 0), heap)?.float().atan(),
-    ))
+    unary_float_op(addr, heap, f64::atan)
 }
 
 fn log(addr: usize, heap: &QueryHeap) -> Option<Number> {
@@ -301,29 +305,19 @@ fn log(addr: usize, heap: &QueryHeap) -> Option<Number> {
 }
 
 fn abs(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    let lhs = goal_arg(heap, addr, 0);
-    Some(evaluate_term(lhs, heap)?.abs())
+    unary_op(addr, heap, Number::abs)
 }
 
 fn round(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    let lhs = goal_arg(heap, addr, 0);
-    Some(evaluate_term(lhs, heap)?.round())
+    unary_op(addr, heap, Number::round)
 }
 
 fn to_radians(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(
-        evaluate_term(goal_arg(heap, addr, 0), heap)?
-            .float()
-            .to_radians(),
-    ))
+    unary_float_op(addr, heap, f64::to_radians)
 }
 
 fn to_degrees(addr: usize, heap: &QueryHeap) -> Option<Number> {
-    Some(Number::Flt(
-        evaluate_term(goal_arg(heap, addr, 0), heap)?
-            .float()
-            .to_degrees(),
-    ))
+    unary_float_op(addr, heap, f64::to_degrees)
 }
 
 fn neg(addr: usize, heap: &QueryHeap) -> Option<Number> {
@@ -553,7 +547,7 @@ pub static MATHS: PredicateModule = (
 #[cfg(test)]
 mod tests {
     use super::MATHS;
-    use crate::predicate_modules::helpers::TestWrapper;
+    use crate::predicate_modules::utils::TestWrapper;
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
