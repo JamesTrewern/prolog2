@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    specialise::hypothesis_entails_negative,
+    specialise::{specialise_candidate, NegativeCache, Verdict},
     sub_h_unification::least_sub_h,
     utils::{
         collect_used_pred, compile_examples, reduce as reduce_hypothesis, union_sub_hypotheses,
@@ -181,6 +181,11 @@ fn build_sub_hypotheses(
         .build()
         .unwrap();
 
+    // One cache for the whole run, shared by every worker. Borrowed rather
+    // than cloned: the point is that the workers see each other's verdicts.
+    let cache = NegativeCache::new();
+    let cache = &cache;
+
     let (tx, rx) = mpsc::channel();
     let total = pos_goals.len();
     let completed = Arc::new(AtomicUsize::new(0));
@@ -204,6 +209,7 @@ fn build_sub_hypotheses(
                             predicate_table,
                             heap,
                             config,
+                            cache,
                         );
                         // Counted before the send so the status line can never
                         // show more results merged than searched.
@@ -219,6 +225,15 @@ fn build_sub_hypotheses(
         merge_thread_results(rx, heap, total, &searched)
     });
     eprintln!();
+
+    let (hits, misses, stored) = cache.stats();
+    let tested = hits + misses;
+    if tested > 0 {
+        println!(
+            "Specialised {tested} candidates: {stored} distinct, {hits} answered from cache ({}%)",
+            hits * 100 / tested
+        );
+    }
 
     result
 }
@@ -317,9 +332,9 @@ fn merge_thread_results(
     (acc_heap.cells, hypotheses, pdt)
 }
 
-/// Canonical string key for a hypothesis, used to drop duplicate clause sets
-/// found across different positive examples (or different backtracked
-/// solutions of the same example).
+/// Canonical string key for a hypothesis, used by the merge to drop clause
+/// sets that print identically once their invented predicates have been
+/// given constants.
 fn dedup_key(clauses: &[Clause], heap: &impl Heap) -> String {
     let mut literals: Vec<String> = clauses
         .iter()
@@ -339,26 +354,25 @@ fn dedup_key(clauses: &[Clause], heap: &impl Heap) -> String {
 /// entails one is dropped before its clauses or its invented predicates are
 /// extracted at all.
 ///
-/// Duplicate candidates (backtracking solutions that print identically via
-/// [`dedup_key`]) are dropped here too, so the channel and collector never
-/// see them.
+/// Duplicates are dropped by the same check, which recognises a hypothesis
+/// any worker has already collected, not just one this thread found earlier.
 ///
-/// Returns the deduplicated clause sets (with predicate definitions extracted
-/// out), the predicate definitions themselves ordered by dependency, and the
-/// heap that both rely on. See [`extract_hypothesis`] for how a single
-/// proof's hypothesis is folded into this thread-local heap.
+/// Returns the clause sets (with predicate definitions extracted out), the
+/// predicate definitions themselves ordered by dependency, and the heap that
+/// both rely on. See [`extract_hypothesis`] for how a single proof's
+/// hypothesis is folded into this thread-local heap.
 fn sub_hypotheses_for_example(
     goal: usize,
     neg_goals: &[usize],
     predicate_table: &PredicateTable,
     prog_heap: &[Cell],
     config: Config,
+    cache: &NegativeCache,
 ) -> ThreadResult {
     let mut query_heap = QueryHeap::new(prog_heap, None);
     let mut dst = QueryHeap::new(&[], None);
     let mut clause_sets = Vec::new();
     let mut pred_defs = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
 
     let mut proof = Proof::new(&query_heap, &[goal]);
 
@@ -366,22 +380,24 @@ fn sub_hypotheses_for_example(
         // Specialise here rather than in a pass of its own: a hypothesis
         // proving a negative would be discarded later anyway, and rejecting
         // it now keeps its invented predicates out of the definition table,
-        // which is where the cost of keeping them shows up.
-        if hypothesis_entails_negative(
+        // which is where the cost of keeping them shows up. A candidate
+        // another worker already collected is dropped here for the same
+        // reason -- the merge would only discard the duplicate at the end.
+        match specialise_candidate(
             neg_goals,
             &proof.hypothesis,
             &mut query_heap,
             predicate_table,
             config,
+            cache,
         ) {
-            continue;
+            Verdict::EntailsNegative | Verdict::AlreadyFound => continue,
+            Verdict::Keep => {}
         }
 
         let (clauses, defs) = extract_hypothesis(&proof, &query_heap, &mut dst);
-        if seen.insert(dedup_key(&clauses, &dst)) {
-            clause_sets.push(clauses);
-            pred_defs.extend(defs);
-        }
+        clause_sets.push(clauses);
+        pred_defs.extend(defs);
     }
 
     (clause_sets, pred_defs, (dst.cells, dst.var_regs))
