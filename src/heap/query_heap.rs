@@ -55,11 +55,15 @@ impl<'a> QueryHeap<'a> {
 
     /// `count` heaps that read this one's cells but write their own.
     ///
-    /// Each gets a copy of the variable registers, so a branch can bind a
-    /// variable this heap owns without the others, or this heap, seeing it.
-    /// That is what makes the branches independent enough to run on separate
-    /// threads, and it means nothing has to be undone afterwards: a branch is
-    /// simply dropped.
+    /// Each starts with no variable registers of its own, so **every term a
+    /// branch reads from its parent must be ground**: a `Var` cell would
+    /// dereference against an empty register table. Callers ground what they
+    /// want read first, which is cheaper than copying the parent's registers
+    /// into every branch.
+    ///
+    /// Nothing has to be undone afterwards. A branch cannot write its
+    /// parent's cells (`IndexMut` refuses them) and binds only registers it
+    /// created, so dropping it leaves the parent exactly as it was.
     ///
     /// Borrows `self` for as long as the branches live, so the parent cannot
     /// allocate while they exist -- which is exactly the invariant their
@@ -75,7 +79,7 @@ impl<'a> QueryHeap<'a> {
                 cells: Vec::new(),
                 prog_cells: self.prog_cells,
                 root: Some(&self.cells),
-                var_regs: self.var_regs.clone(),
+                var_regs: Vec::new(),
             })
             .collect()
     }

@@ -11,13 +11,37 @@
 //! Both answer the same question and both report it the same way round:
 //! `true` means a negative is provable, so the candidate must go.
 
+use std::collections::HashMap;
+
 use crate::{
-    heap::{Cell, QueryHeap},
+    heap::{
+        Cell, Heap, QueryHeap, SymbolDB,
+        Tag::{Con, Var},
+        TermWalk, Walk,
+    },
     program::{clause::Clause, hypothesis::Hypothesis, predicate_table::PredicateTable},
     resolution::Proof,
     Config,
 };
+use lazy_static::lazy_static;
 use rayon::prelude::*;
+
+/// Most distinct predicate variables one hypothesis can hold.
+const MAX_INVENTED: usize = 64;
+
+lazy_static! {
+    /// Constants standing in for a hypothesis's predicate variables while it
+    /// is tested against the negatives.
+    ///
+    /// Interned once. Minting them per candidate would take the symbol
+    /// table's write lock on every one of them, which at this volume is
+    /// itself a bottleneck. The `$` prefix keeps them clear of the `pred_N`
+    /// constants the predicate definition table coins, which name real
+    /// predicates and would otherwise collide.
+    static ref INVENTED_SYMBOLS: Vec<usize> = (0..MAX_INVENTED)
+        .map(|i| SymbolDB::set_const(format!("$inv_{i}")))
+        .collect();
+}
 
 /// Learning disabled, so a negative is tested against the candidate rather
 /// than extended into a new hypothesis. `max_depth` is kept to bound
@@ -57,6 +81,57 @@ pub(super) fn clauses_entail_negative(
     })
 }
 
+/// Copy `hypothesis`'s clauses onto `heap`, replacing every predicate
+/// variable with a constant.
+///
+/// A predicate variable left as a variable would have to be protected, by
+/// the invented-predicate registry and the constraint set, from resolving
+/// against a background fact and collapsing the invention. Giving it a
+/// constant of its own enforces the same thing structurally -- nothing else
+/// in the program carries that symbol -- so the test proofs need neither
+/// mechanism.
+///
+/// It also leaves the clauses completely ground, which is what lets the
+/// branches below start with no variable registers at all: with no `Var`
+/// cell left to dereference, a branch never consults its parent's.
+///
+/// Appends to `heap`; the caller truncates.
+fn ground_hypothesis(heap: &mut QueryHeap, hypothesis: &Hypothesis) -> Vec<Clause> {
+    let mut consts: HashMap<usize, usize> = HashMap::new();
+
+    hypothesis
+        .iter()
+        .map(|clause| {
+            let literals: Vec<usize> = clause
+                .iter()
+                .map(|&literal| {
+                    let new_addr = heap.heap_len();
+                    let mut walk = TermWalk::new(literal);
+                    // `next_cell` resolves as it goes: a bound variable is
+                    // replaced by the term it names, and an unbound one comes
+                    // back as its representative, so each distinct predicate
+                    // variable is seen under one id however it was aliased.
+                    while let Some(cell) = walk.next_cell(heap) {
+                        if let (Var, var_id) = cell {
+                            let next = consts.len();
+                            assert!(
+                                next < MAX_INVENTED,
+                                "hypothesis holds more than {MAX_INVENTED} predicate variables"
+                            );
+                            let symbol = *consts.entry(var_id).or_insert(INVENTED_SYMBOLS[next]);
+                            heap.heap_push((Con, symbol));
+                        } else {
+                            heap.heap_push(cell);
+                        }
+                    }
+                    new_addr
+                })
+                .collect();
+            Clause::new(literals, None, clause.max_arg_id)
+        })
+        .collect()
+}
+
 /// Does this hypothesis, still mid-search, prove any negative example?
 ///
 /// Each negative gets its own [branch](QueryHeap::branch) of the search heap:
@@ -80,21 +155,33 @@ pub(super) fn clauses_entail_negative(
 pub(super) fn hypothesis_entails_negative(
     neg_goals: &[usize],
     hypothesis: &Hypothesis,
-    heap: &QueryHeap,
+    heap: &mut QueryHeap,
     predicate_table: &PredicateTable,
     config: Config,
 ) -> bool {
     if neg_goals.is_empty() {
         return false;
     }
-    let config = test_config(config);
+    // Nothing is left to protect once the predicate variables are constants.
+    let config = Config {
+        protect_h_preds: false,
+        ..test_config(config)
+    };
+
+    let point = heap.heap_point();
+    let grounded = ground_hypothesis(heap, hypothesis);
 
     let mut branches = heap.branch(neg_goals.len());
-    branches
+    let entailed = branches
         .par_iter_mut()
         .zip(neg_goals.par_iter())
         .any(|(branch, &goal)| {
-            let mut inner = Proof::with_hypothesis(branch, &[goal], hypothesis);
+            let mut inner = Proof::new(branch, &[goal]);
+            inner.add_test_clauses(&grounded);
             inner.prove(branch, predicate_table, config)
-        })
+        });
+
+    drop(branches);
+    heap.truncate(point);
+    entailed
 }

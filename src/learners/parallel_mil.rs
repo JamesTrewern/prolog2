@@ -370,7 +370,7 @@ fn sub_hypotheses_for_example(
         if hypothesis_entails_negative(
             neg_goals,
             &proof.hypothesis,
-            &query_heap,
+            &mut query_heap,
             predicate_table,
             config,
         ) {
