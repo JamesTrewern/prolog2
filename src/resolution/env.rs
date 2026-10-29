@@ -166,11 +166,15 @@ impl Env {
         }
     }
 
-    ///If goal is tuple select conjunction strategy
-    fn get_tup_goals(&mut self, heap: &mut QueryHeap) {
-        let goals = todo!();
+    /// A tuple goal is a conjunction: every element has to be proved.
+    ///
+    /// The elements are taken as they lie on the heap rather than copied, so
+    /// a nested tuple stays a tuple and becomes a conjunction of its own when
+    /// [`Self::get_choices`] reaches it. An empty tuple yields no goals, which
+    /// succeeds -- the empty conjunction is true.
+    fn get_tup_goals(&mut self, heap: &QueryHeap) {
         self.strategy = Strategy::Conjunction {
-            goals,
+            goals: heap.str_args(self.goal),
             expanded: false,
         }
     }

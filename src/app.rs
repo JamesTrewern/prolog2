@@ -452,7 +452,7 @@ impl App {
     /// Returns [`Error::Parser`] if the source contains a syntax error.
     pub fn load_code(mut self, code: impl AsRef<str>) -> Result<Self> {
         let syntax_tree = TokenStream::new(tokenise(code)?).parse_all()?;
-        execute_tree(syntax_tree, &mut self.prog_heap, &mut self.predicate_table);
+        execute_tree(syntax_tree, &mut self.prog_heap, &mut self.predicate_table)?;
         Ok(self)
     }
 

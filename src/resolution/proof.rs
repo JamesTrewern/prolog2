@@ -151,4 +151,79 @@ impl<'a> Proof<'a> {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::app::App;
+
+    fn app_with(code: &str) -> App {
+        App::default()
+            .load_code(code)
+            .expect("test program should load")
+            .auto(true)
+    }
+
+    /// A tuple goal is a conjunction. This used to reach a `todo!()` in
+    /// `Env::get_tup_goals` and panic, and tuples are ordinary parser output,
+    /// so any query containing one brought the engine down.
+    #[test]
+    fn tuple_goal_proves_each_element() {
+        let app = app_with("a. b.");
+
+        assert_eq!(
+            app.query_session("(a,b).")
+                .expect("query should parse")
+                .count(),
+            1,
+            "both elements hold, so the conjunction has one solution"
+        );
+        assert_eq!(
+            app.query_session("(a,c).")
+                .expect("query should parse")
+                .count(),
+            0,
+            "c is not provable, so the conjunction fails"
+        );
+    }
+
+    /// Nested tuples are left on the heap rather than flattened, so the inner
+    /// one becomes a conjunction of its own when the search reaches it.
+    #[test]
+    fn nested_tuple_goal_proves_each_element() {
+        let app = app_with("a. b. c.");
+
+        assert_eq!(
+            app.query_session("(a,(b,c)).")
+                .expect("query should parse")
+                .count(),
+            1
+        );
+        assert_eq!(
+            app.query_session("(a,(b,d)).")
+                .expect("query should parse")
+                .count(),
+            0
+        );
+    }
+
+    /// A tuple goal binds variables like any other conjunction, and the
+    /// bindings have to agree across the elements.
+    #[test]
+    fn tuple_goal_shares_bindings_between_elements() {
+        let app = app_with("p(1). p(2). q(2). q(3).");
+
+        let solutions: Vec<String> = app
+            .query_session("(p(X),q(X)).")
+            .expect("query should parse")
+            .map(|solution| format!("{:?}", solution))
+            .collect();
+
+        assert_eq!(
+            solutions.len(),
+            1,
+            "only X=2 satisfies both sides, got {solutions:?}"
+        );
+        assert!(
+            solutions[0].contains('2'),
+            "expected X=2, got {solutions:?}"
+        );
+    }
+}
