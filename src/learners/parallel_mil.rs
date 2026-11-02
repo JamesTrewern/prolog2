@@ -522,9 +522,10 @@ fn top_prog_to_string(top_program: Vec<Clause>, heap: &impl Heap) -> String {
 
 #[cfg(test)]
 mod extraction_tests {
-    use crate::heap::test_prog;
     use super::*;
-    use crate::heap::{Heap,
+    use crate::heap::test_prog;
+    use crate::heap::{
+        Heap,
         Tag::{Comp, Con},
     };
 
@@ -750,8 +751,8 @@ mod extraction_tests {
 
 #[cfg(test)]
 mod merge_tests {
-    use crate::heap::test_prog;
     use super::*;
+    use crate::heap::test_prog;
     use crate::heap::Tag::{Comp, Con};
 
     /// [`merge_thread_results`] with the progress-reporting arguments filled
@@ -796,7 +797,8 @@ mod merge_tests {
         };
         let pred_def = PredDef::new(smallvec![meta_sub]);
 
-        let (cells, hypotheses, pdt) = merge(vec![(Vec::new(), vec![pred_def], parts(heap))], test_prog());
+        let (cells, hypotheses, pdt) =
+            merge(vec![(Vec::new(), vec![pred_def], parts(heap))], test_prog());
 
         assert!(hypotheses.is_empty());
         for (i, cell) in cells.iter().enumerate() {

@@ -189,7 +189,7 @@ mod encode_tests {
 
     use super::Term;
     use crate::{
-        heap::{ProgramHeap, Heap, QueryHeap, Tag, EMPTY_LIS, LIS},
+        heap::{Heap, ProgramHeap, QueryHeap, Tag, EMPTY_LIS, LIS},
         parser::term::Str,
     };
 
@@ -283,7 +283,7 @@ mod encode_tests {
     #[test]
     fn program_encode_compound() {
         let mut heap = ProgramHeap::new();
-                let p_id = heap.symbols().set_const("p");
+        let p_id = heap.symbols().set_const("p");
         let a_id = heap.symbols().set_const("a");
         let f_id = heap.symbols().set_const("f");
 
@@ -562,7 +562,7 @@ mod encode_tests {
     #[test]
     fn program_encode_tuple() {
         let mut heap = ProgramHeap::new();
-                let p_id = heap.symbols().set_const("p");
+        let p_id = heap.symbols().set_const("p");
         let a_id = heap.symbols().set_const("a");
         let f_id = heap.symbols().set_const("f");
 
@@ -842,7 +842,7 @@ mod encode_tests {
     #[test]
     fn program_encode_set() {
         let mut heap = ProgramHeap::new();
-                let p_id = heap.symbols().set_const("p");
+        let p_id = heap.symbols().set_const("p");
         let a_id = heap.symbols().set_const("a");
         let f_id = heap.symbols().set_const("f");
 
@@ -868,7 +868,10 @@ mod encode_tests {
         let term = Term::Str(Str::Set, vec![q.clone(), a.clone(), q.clone()]);
         let addr = term.encode(&mut heap, &mut HashMap::new(), false);
         assert_eq!(heap.term_string(addr), "{a,Q}");
-        assert_eq!(heap.cells()[start..], [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Arg, 0)]);
+        assert_eq!(
+            heap.cells()[start..],
+            [(Tag::Set, 2), (Tag::Con, a_id), (Tag::Arg, 0)]
+        );
 
         let start = heap.heap_len();
 
@@ -1099,7 +1102,7 @@ mod encode_tests {
     #[test]
     fn program_encode_list() {
         let mut heap = ProgramHeap::new();
-                let a_id = heap.symbols().set_const("a");
+        let a_id = heap.symbols().set_const("a");
 
         let q = Term::Variable("Q".into());
         let x = Term::Variable("X".into());

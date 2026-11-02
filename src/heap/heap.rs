@@ -101,7 +101,7 @@ pub trait Heap:
     /// `Arg` ids are clause-local, so a name belongs to an address rather
     /// than to an id: the same id in two clauses is two different variables.
     /// Only the program heap records these, from parsing; an `Arg` in query
-    /// space gets a positional name instead (see [`arg_name`]).
+    /// space gets a positional name instead: `A`, `B`, ... `Z`, `A2`.
     fn arg_name(&self, _addr: usize) -> Option<Arc<str>> {
         None
     }
@@ -577,13 +577,14 @@ fn consume_subterm(walk: &mut TermWalk, heap: &impl Heap) {
     while sub_walk.next_cell(heap).is_some() {}
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::heap::test_prog;
     use std::collections::HashMap;
 
-    use crate::heap::{Heap, query_heap::QueryHeap,
+    use crate::heap::{
+        query_heap::QueryHeap,
+        Heap,
         VarBind::{Addr, VarId},
         VarReg,
     };
@@ -823,11 +824,10 @@ mod tests {
 #[cfg(test)]
 mod term_equal_tests {
     use crate::heap::test_prog;
-    
+
     use crate::heap::{Cell, Heap, QueryHeap, Tag::*, VarBind, VarReg, EMPTY_LIS, LIS};
 
     fn con(name: &str) -> Cell {
-
         let prog = test_prog();
         (Con, prog.symbols().set_const(name))
     }
@@ -840,7 +840,6 @@ mod term_equal_tests {
         }
         addr
     }
-
 
     fn heap() -> QueryHeap<'static> {
         QueryHeap::new(test_prog(), None)

@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    heap::{Cell, Heap, QueryHeap, Tag::Con, ProgramHeap},
+    heap::{Cell, Heap, ProgramHeap, QueryHeap, Tag::Con},
     parser::{build_clause, tokenise, TokenStream},
     program::{
         Clause, {Predicate, PredicateTable},
@@ -323,7 +323,7 @@ pub(super) fn reduce(
 
 #[cfg(test)]
 mod tests {
-    
+
     use crate::learners::utils::Coverage;
 
     #[test]

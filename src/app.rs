@@ -501,7 +501,10 @@ impl App {
         for (symbol, arity, pred_fn) in predicate_module.0.iter() {
             self.predicate_table
                 .insert_predicate_function(
-                    (self.prog_heap.symbols().set_const((*symbol).to_string()), *arity),
+                    (
+                        self.prog_heap.symbols().set_const((*symbol).to_string()),
+                        *arity,
+                    ),
                     *pred_fn,
                 )
                 .unwrap();

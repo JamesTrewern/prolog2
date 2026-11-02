@@ -121,7 +121,7 @@ fn learn_map_double() {
     const H1: &[&str] = &[
         "map_double([A|B],[C|D],double):-double(A,C),map_double(B,D,double).",
         "double(A,B):-add(A,A,B).",
-        "map_double([],[],A)."
+        "map_double([],[],A).",
     ];
     let app = App::from_setup_json("examples/map/learn_config.json")
         .expect("failed to load config")

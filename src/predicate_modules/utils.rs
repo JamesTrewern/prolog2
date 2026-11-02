@@ -449,11 +449,9 @@ impl TestWrapper {
 
 #[cfg(test)]
 mod build_tests {
-    use crate::heap::test_prog;
     use super::*;
-    use crate::heap::{Heap, ProgramHeap, Cell, QueryHeap};
-
-
+    use crate::heap::test_prog;
+    use crate::heap::{Cell, Heap, ProgramHeap, QueryHeap};
 
     fn con_cell(prog: &ProgramHeap, name: &str) -> Cell {
         (Con, prog.symbols().set_const(name))
@@ -505,7 +503,14 @@ mod build_tests {
     fn a_compound_takes_its_functor_first() {
         let prog = test_prog();
         let mut heap = QueryHeap::new(prog, None);
-        let comp = build_compound(&mut heap, &[con_cell(prog, "f"), con_cell(prog, "a"), con_cell(prog, "b")]);
+        let comp = build_compound(
+            &mut heap,
+            &[
+                con_cell(prog, "f"),
+                con_cell(prog, "a"),
+                con_cell(prog, "b"),
+            ],
+        );
         assert_eq!(heap.term_string(comp), "f(a,b)");
     }
 
@@ -568,7 +573,14 @@ mod build_tests {
     fn a_set_of_distinct_terms_keeps_all_of_them() {
         let prog = test_prog();
         let mut heap = QueryHeap::new(prog, None);
-        let set = build_set(&mut heap, &[con_cell(prog, "a"), con_cell(prog, "b"), con_cell(prog, "c")]);
+        let set = build_set(
+            &mut heap,
+            &[
+                con_cell(prog, "a"),
+                con_cell(prog, "b"),
+                con_cell(prog, "c"),
+            ],
+        );
         assert_eq!(heap.term_string(set), "{a,b,c}");
     }
 }

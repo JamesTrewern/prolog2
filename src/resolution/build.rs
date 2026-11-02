@@ -65,7 +65,7 @@ fn build_arg(
 mod tests {
     use super::{build, re_build_bound_arg_terms};
     use crate::{
-        heap::{ProgramHeap, Cell, Heap, QueryHeap, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
+        heap::{Cell, Heap, ProgramHeap, QueryHeap, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
         program::{BitFlag64, MAX_ARG},
         resolution::{unify, Substitution},
     };
@@ -138,12 +138,15 @@ mod tests {
     #[test]
     fn rebuild_replaces_arg_with_fresh_ref() {
         let mut prog = ProgramHeap::new();
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            LIS,       // 1: [A0]
-            (Arg, 0),  // 2
-            EMPTY_LIS, // 3
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                LIS,           // 1: [A0]
+                (Arg, 0),      // 2
+                EMPTY_LIS,     // 3
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -183,12 +186,15 @@ mod tests {
         let f = prog.symbols().set_const("f");
         let a = prog.symbols().set_const("a");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 2), // 1: f(a)
-            (Con, f),  // 2
-            (Con, a),  // 3
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: f(a)
+                (Con, f),      // 2
+                (Con, a),      // 3
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
 
@@ -225,19 +231,22 @@ mod tests {
         let g = prog.symbols().set_const("g");
         let a = prog.symbols().set_const("a");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 4), // 1: p(A0, g(A1, a), [A0])
-            (Con, p),  // 2
-            (Arg, 0),  // 3
-            (Comp, 3), // 4:   g(A1, a)
-            (Con, g),  // 5
-            (Arg, 1),  // 6
-            (Con, a),  // 7
-            LIS,       // 8:   [A0]
-            (Arg, 0),  // 9
-            EMPTY_LIS, // 10
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 4),     // 1: p(A0, g(A1, a), [A0])
+                (Con, p),      // 2
+                (Arg, 0),      // 3
+                (Comp, 3),     // 4:   g(A1, a)
+                (Con, g),      // 5
+                (Arg, 1),      // 6
+                (Con, a),      // 7
+                LIS,           // 8:   [A0]
+                (Arg, 0),      // 9
+                EMPTY_LIS,     // 10
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -281,15 +290,18 @@ mod tests {
         let mut prog = ProgramHeap::new();
         let q_sym = prog.symbols().set_const("q");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog),     // 0
-            LIS,          // 1: head subterm [A0]
-            (Arg, 0),     // 2
-            EMPTY_LIS,    // 3
-            (Comp, 2),    // 4: body literal q(A0)
-            (Con, q_sym), // 5
-            (Arg, 0),     // 6
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                LIS,           // 1: head subterm [A0]
+                (Arg, 0),      // 2
+                EMPTY_LIS,     // 3
+                (Comp, 2),     // 4: body literal q(A0)
+                (Con, q_sym),  // 5
+                (Arg, 0),      // 6
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -330,12 +342,15 @@ mod tests {
         let a = prog.symbols().set_const("a");
         let b = prog.symbols().set_const("b");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 2), // 1: p(A0)
-            (Con, p),  // 2
-            (Arg, 0),  // 3
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: p(A0)
+                (Con, p),      // 2
+                (Arg, 0),      // 3
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -368,12 +383,15 @@ mod tests {
     #[test]
     fn two_vars_bound_to_same_term_get_separate_copies() {
         let mut prog = ProgramHeap::new();
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            LIS,       // 1: [A0]
-            (Arg, 0),  // 2
-            EMPTY_LIS, // 3
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                LIS,           // 1: [A0]
+                (Arg, 0),      // 2
+                EMPTY_LIS,     // 3
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -421,14 +439,17 @@ mod tests {
         let mut prog = ProgramHeap::new();
         let p = prog.symbols().set_const("p");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 4), // 1: p(A0, A0, A1)
-            (Con, p),  // 2
-            (Arg, 0),  // 3
-            (Arg, 0),  // 4
-            (Arg, 1),  // 5
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 4),     // 1: p(A0, A0, A1)
+                (Con, p),      // 2
+                (Arg, 0),      // 3
+                (Arg, 0),      // 4
+                (Arg, 1),      // 5
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -454,12 +475,15 @@ mod tests {
         let mut prog = ProgramHeap::new();
         let q_sym = prog.symbols().set_const("q");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog),     // 0
-            (Comp, 2),    // 1: q(A0)
-            (Con, q_sym), // 2
-            (Arg, 0),     // 3
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: q(A0)
+                (Con, q_sym),  // 2
+                (Arg, 0),      // 3
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -489,12 +513,15 @@ mod tests {
         let a = prog.symbols().set_const("a");
         let b = prog.symbols().set_const("b");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog),     // 0
-            (Comp, 2),    // 1: q(A0)
-            (Con, q_sym), // 2
-            (Arg, 0),     // 3
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: q(A0)
+                (Con, q_sym),  // 2
+                (Arg, 0),      // 3
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -526,15 +553,18 @@ mod tests {
         let q_sym = prog.symbols().set_const("q");
         let g = prog.symbols().set_const("g");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog),     // 0
-            (Comp, 2),    // 1: q(A0)
-            (Con, q_sym), // 2
-            (Arg, 0),     // 3
-            (Comp, 2),    // 4: g(A1)
-            (Con, g),     // 5
-            (Arg, 1),     // 6
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: q(A0)
+                (Con, q_sym),  // 2
+                (Arg, 0),      // 3
+                (Comp, 2),     // 4: g(A1)
+                (Con, g),      // 5
+                (Arg, 1),      // 6
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -564,15 +594,18 @@ mod tests {
         let q_sym = prog.symbols().set_const("q");
         let r = prog.symbols().set_const("r");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog),     // 0
-            (Comp, 2),    // 1: q(A0)
-            (Con, q_sym), // 2
-            (Arg, 0),     // 3
-            (Comp, 2),    // 4: r(A0)
-            (Con, r),     // 5
-            (Arg, 0),     // 6
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: q(A0)
+                (Con, q_sym),  // 2
+                (Arg, 0),      // 3
+                (Comp, 2),     // 4: r(A0)
+                (Con, r),      // 5
+                (Arg, 0),      // 6
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -609,20 +642,23 @@ mod tests {
         let mut prog = ProgramHeap::new();
         let p = prog.symbols().set_const("p");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 4), // 1: p({A0,A1}, (A2,A3), [A4|A5])
-            (Con, p),  // 2
-            (Set, 2),  // 3
-            (Arg, 0),  // 4
-            (Arg, 1),  // 5
-            (Tup, 2),  // 6
-            (Arg, 2),  // 7
-            (Arg, 3),  // 8
-            LIS,       // 9
-            (Arg, 4),  // 10
-            (Arg, 5),  // 11
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 4),     // 1: p({A0,A1}, (A2,A3), [A4|A5])
+                (Con, p),      // 2
+                (Set, 2),      // 3
+                (Arg, 0),      // 4
+                (Arg, 1),      // 5
+                (Tup, 2),      // 6
+                (Arg, 2),      // 7
+                (Arg, 3),      // 8
+                LIS,           // 9
+                (Arg, 4),      // 10
+                (Arg, 5),      // 11
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -660,14 +696,17 @@ mod tests {
         let b = prog.symbols().set_const("b");
         let c = prog.symbols().set_const("c");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            LIS,      // 1: [a,b|A0]
-            (Con, a), // 2
-            LIS,      // 3
-            (Con, b), // 4
-            (Arg, 0), // 5
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                LIS,           // 1: [a,b|A0]
+                (Con, a),      // 2
+                LIS,           // 3
+                (Con, b),      // 4
+                (Arg, 0),      // 5
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -693,12 +732,15 @@ mod tests {
         let mut prog = ProgramHeap::new();
         let p = prog.symbols().set_const("p");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 2), // 1: p(A0)
-            (Con, p),  // 2
-            (Arg, 0),  // 3
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: p(A0)
+                (Con, p),      // 2
+                (Arg, 0),      // 3
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -721,15 +763,18 @@ mod tests {
         let p = prog.symbols().set_const("p");
         let a = prog.symbols().set_const("a");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 3), // 1: p(a, [a])
-            (Con, p),  // 2
-            (Con, a),  // 3
-            LIS,       // 4
-            (Con, a),  // 5
-            EMPTY_LIS, // 6
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 3),     // 1: p(a, [a])
+                (Con, p),      // 2
+                (Con, a),      // 3
+                LIS,           // 4
+                (Con, a),      // 5
+                EMPTY_LIS,     // 6
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -755,10 +800,13 @@ mod tests {
     #[test]
     fn bare_arg_template() {
         let mut prog = ProgramHeap::new();
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Arg, 0), // 1
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Arg, 0),      // 1
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -794,14 +842,17 @@ mod tests {
         let mut prog = ProgramHeap::new();
         let p = prog.symbols().set_const("p");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 3), // 1: A0(A1, A2) — the metarule head
-            (Arg, 0),  // 2   A0 is the predicate symbol
-            (Arg, 1),  // 3
-            (Arg, 2),  // 4
-            (Con, p),  // 5: the symbol A0 is bound to
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 3),     // 1: A0(A1, A2) — the metarule head
+                (Arg, 0),      // 2   A0 is the predicate symbol
+                (Arg, 1),      // 3
+                (Arg, 2),      // 4
+                (Con, p),      // 5: the symbol A0 is bound to
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -837,15 +888,18 @@ mod tests {
         let p = prog.symbols().set_const("p");
         let a = prog.symbols().set_const("a");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 3), // 1: A0(A1, A2)
-            (Arg, 0),  // 2
-            (Arg, 1),  // 3
-            (Arg, 2),  // 4
-            (Con, p),  // 5
-            (Con, a),  // 6
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 3),     // 1: A0(A1, A2)
+                (Arg, 0),      // 2
+                (Arg, 1),      // 3
+                (Arg, 2),      // 4
+                (Con, p),      // 5
+                (Con, a),      // 6
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -875,13 +929,16 @@ mod tests {
     #[test]
     fn unbound_meta_var_creates_fresh_var() {
         let mut prog = ProgramHeap::new();
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 3), // 1: A0(A1, A2)
-            (Arg, 0),  // 2
-            (Arg, 1),  // 3
-            (Arg, 2),  // 4
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 3),     // 1: A0(A1, A2)
+                (Arg, 0),      // 2
+                (Arg, 1),      // 3
+                (Arg, 2),      // 4
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -901,13 +958,16 @@ mod tests {
     #[test]
     fn meta_var_bound_to_var_emits_ref() {
         let mut prog = ProgramHeap::new();
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 3), // 1: A0(A1, A2)
-            (Arg, 0),  // 2
-            (Arg, 1),  // 3
-            (Arg, 2),  // 4
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 3),     // 1: A0(A1, A2)
+                (Arg, 0),      // 2
+                (Arg, 1),      // 3
+                (Arg, 2),      // 4
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -937,19 +997,22 @@ mod tests {
         let p = prog.symbols().set_const("p");
         let q_sym = prog.symbols().set_const("q");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog),     // 0
-            (Comp, 3),    // 1: head A0(A1, A2)
-            (Arg, 0),     // 2
-            (Arg, 1),     // 3
-            (Arg, 2),     // 4
-            (Comp, 3),    // 5: body A3(A1, A2)
-            (Arg, 3),     // 6
-            (Arg, 1),     // 7
-            (Arg, 2),     // 8
-            (Con, p),     // 9
-            (Con, q_sym), // 10
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 3),     // 1: head A0(A1, A2)
+                (Arg, 0),      // 2
+                (Arg, 1),      // 3
+                (Arg, 2),      // 4
+                (Comp, 3),     // 5: body A3(A1, A2)
+                (Arg, 3),      // 6
+                (Arg, 1),      // 7
+                (Arg, 2),      // 8
+                (Con, p),      // 9
+                (Con, q_sym),  // 10
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -1006,14 +1069,17 @@ mod tests {
         let mut prog = ProgramHeap::new();
         let p = prog.symbols().set_const("p");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 3), // 1: A63(A62, A0)
-            (Arg, 63), // 2  flagged
-            (Arg, 62), // 3  unflagged
-            (Arg, 0),  // 4  unflagged
-            (Con, p),  // 5
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 3),     // 1: A63(A62, A0)
+                (Arg, 63),     // 2  flagged
+                (Arg, 62),     // 3  unflagged
+                (Arg, 0),      // 4  unflagged
+                (Con, p),      // 5
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -1045,15 +1111,18 @@ mod tests {
         let t = prog.symbols().set_const("t");
         let s = prog.symbols().set_const("s");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 2), // 1: template t(A0)
-            (Con, t),  // 2
-            (Arg, 0),  // 3
-            (Comp, 2), // 4: the term A0 is bound to, s(A1)
-            (Con, s),  // 5
-            (Arg, 1),  // 6
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: template t(A0)
+                (Con, t),      // 2
+                (Arg, 0),      // 3
+                (Comp, 2),     // 4: the term A0 is bound to, s(A1)
+                (Con, s),      // 5
+                (Arg, 1),      // 6
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -1192,10 +1261,13 @@ mod tests {
         let p = prog.symbols().set_const("p");
         let a = prog.symbols().set_const("a");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Con, a), // 1: a program constant
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Con, a),      // 1: a program constant
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -1369,15 +1441,18 @@ mod tests {
         let p = prog.symbols().set_const("p");
         let q_sym = prog.symbols().set_const("q");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog),     // 0
-            (Comp, 2),    // 1: head p(A0)
-            (Con, p),     // 2
-            (Arg, 0),     // 3
-            (Comp, 2),    // 4: body q(A0)
-            (Con, q_sym), // 5
-            (Arg, 0),     // 6
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: head p(A0)
+                (Con, p),      // 2
+                (Arg, 0),      // 3
+                (Comp, 2),     // 4: body q(A0)
+                (Con, q_sym),  // 5
+                (Arg, 0),      // 6
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -1415,20 +1490,23 @@ mod tests {
         let q_sym = prog.symbols().set_const("q");
         let r = prog.symbols().set_const("r");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog),     // 0
-            (Comp, 2),    // 1: head p([A0])
-            (Con, p),     // 2
-            LIS,          // 3
-            (Arg, 0),     // 4
-            EMPTY_LIS,    // 5
-            (Comp, 2),    // 6: body q(A0)
-            (Con, q_sym), // 7
-            (Arg, 0),     // 8
-            (Comp, 2),    // 9: body r(A0)
-            (Con, r),     // 10
-            (Arg, 0),     // 11
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: head p([A0])
+                (Con, p),      // 2
+                LIS,           // 3
+                (Arg, 0),      // 4
+                EMPTY_LIS,     // 5
+                (Comp, 2),     // 6: body q(A0)
+                (Con, q_sym),  // 7
+                (Arg, 0),      // 8
+                (Comp, 2),     // 9: body r(A0)
+                (Con, r),      // 10
+                (Arg, 0),      // 11
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -1497,15 +1575,18 @@ mod tests {
         let p = prog.symbols().set_const("p");
         let b = prog.symbols().set_const("b");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog), // 0
-            (Comp, 3), // 1: p([A0], b)
-            (Con, p),  // 2
-            LIS,       // 3
-            (Arg, 0),  // 4
-            EMPTY_LIS, // 5
-            (Con, b),  // 6
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 3),     // 1: p([A0], b)
+                (Con, p),      // 2
+                LIS,           // 3
+                (Arg, 0),      // 4
+                EMPTY_LIS,     // 5
+                (Con, b),      // 6
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
@@ -1553,15 +1634,18 @@ mod tests {
         let q_sym = prog.symbols().set_const("q");
         let a = prog.symbols().set_const("a");
 
-        let cells = check_prog(&prog, vec![
-            poison(&prog),     // 0
-            (Comp, 2),    // 1: head p(A0)
-            (Con, p),     // 2
-            (Arg, 0),     // 3
-            (Comp, 2),    // 4: body q(A0)
-            (Con, q_sym), // 5
-            (Arg, 0),     // 6
-        ]);
+        let cells = check_prog(
+            &prog,
+            vec![
+                poison(&prog), // 0
+                (Comp, 2),     // 1: head p(A0)
+                (Con, p),      // 2
+                (Arg, 0),      // 3
+                (Comp, 2),     // 4: body q(A0)
+                (Con, q_sym),  // 5
+                (Arg, 0),      // 6
+            ],
+        );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();

@@ -60,7 +60,9 @@ pub fn atom_string_pred(
     let (con_cell, _) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
     let (stri_cell, _) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1));
     match (con_cell, stri_cell) {
-        ((Con, id), (Stri, idx)) => (heap.symbols().get_const(id) == heap.symbols().get_string(idx)).into(),
+        ((Con, id), (Stri, idx)) => {
+            (heap.symbols().get_const(id) == heap.symbols().get_string(idx)).into()
+        }
         ((Con, id), (Var, var_id)) => {
             let result = push_string(heap, heap.symbols().get_const(id));
             heap.bind(var_id, Addr(result));

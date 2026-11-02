@@ -432,7 +432,8 @@ fn extract_body_var_preds(pred_set: &mut HashSet<usize>, clause: &Clause, heap: 
 #[cfg(test)]
 mod tests {
     use crate::{
-        heap::{ProgramHeap, ArgRegs, Heap, QueryHeap,
+        heap::{
+            ArgRegs, Heap, ProgramHeap, QueryHeap,
             Tag::*,
             VarBind::{self, *},
             VarReg,
@@ -551,7 +552,7 @@ mod tests {
     /// must collapse to a single table entry.
     #[test]
     fn identical_definitions_collapse_to_one_entry() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -594,7 +595,7 @@ mod tests {
     /// get its own coined constant.
     #[test]
     fn differing_definitions_stay_separate() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -635,7 +636,7 @@ mod tests {
     /// rather than comparing position by position.
     #[test]
     fn clause_order_within_a_definition_does_not_matter() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -701,7 +702,7 @@ mod tests {
     ///     Var_1(X,Y):- q(X), r(Y).
     #[test]
     fn dependencies_are_defined_before_their_dependents() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -742,7 +743,7 @@ mod tests {
     ///     Var_1(X,Y):- Var_1(X,Y).
     #[test]
     fn a_recursive_dependency_is_still_defined_first() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta_rules = [(&meta0, 2)];
 
@@ -781,7 +782,7 @@ mod tests {
     /// so the order must be the chain reversed, deepest dependency first.
     #[test]
     fn more_than_eight_invented_predicates_are_ordered() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -821,7 +822,7 @@ mod tests {
     /// shared variable in the right order.
     #[test]
     fn more_than_eight_invented_predicates_all_ground() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -866,7 +867,7 @@ mod tests {
     /// derefs to the constant coined for the dependency's head.
     #[test]
     fn inserting_in_order_grounds_the_shared_variable() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -917,7 +918,7 @@ mod tests {
     #[test]
     fn one_clause_pred() {
         // Create meta rules
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -967,7 +968,7 @@ mod tests {
     #[test]
     fn two_clause_pred() {
         // Create meta rules
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -1018,7 +1019,7 @@ mod tests {
     #[test]
     fn dependent_pred() {
         // Create meta rules
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -1069,7 +1070,7 @@ mod tests {
     #[test]
     fn dependend_different() {
         // Create meta rules
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
@@ -1122,7 +1123,7 @@ mod tests {
     #[test]
     fn simple_mutual() {
         // Create meta rules
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta_rules = [(&meta0, 2)];
 
@@ -1184,7 +1185,7 @@ mod tests {
     #[test]
     fn mutual_dependent() {
         // Create meta rules
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];

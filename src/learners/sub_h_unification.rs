@@ -4,7 +4,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{specialise::clauses_entail_negative, utils::count_coverage};
 use crate::{
-    heap::{Heap, QueryHeap, ProgramHeap},
+    heap::{Heap, ProgramHeap, QueryHeap},
     learners::utils::{count_pred_clauses, Coverage},
     program::{Clause, PredicateTable},
     Config,
@@ -324,8 +324,8 @@ impl HProfile {
 
 #[cfg(test)]
 mod coverage_group_tests {
-    use crate::heap::ProgramHeap;
     use super::{find_coverage_groups, HProfile};
+    use crate::heap::ProgramHeap;
     use crate::{
         learners::utils::{compile_examples, Coverage},
         parser::_build_clause,
@@ -367,7 +367,7 @@ mod coverage_group_tests {
     /// neither does the fact `r(c)`, but combined they prove `p(c)`.
     #[test]
     fn a_group_entailing_a_negative_is_rejected_and_the_search_continues() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let rule = _build_clause(&mut prog_heap, "p(X):-r(X).");
         let bad_fact = _build_clause(&mut prog_heap, "r(c).");
         let good_fact = _build_clause(&mut prog_heap, "r(d).");
@@ -407,7 +407,7 @@ mod coverage_group_tests {
     /// being unreachable.
     #[test]
     fn without_negatives_both_covers_are_kept() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let rule = _build_clause(&mut prog_heap, "p(X):-r(X).");
         let bad_fact = _build_clause(&mut prog_heap, "r(c).");
         let good_fact = _build_clause(&mut prog_heap, "r(d).");
@@ -441,7 +441,7 @@ mod coverage_group_tests {
     /// one-profile group could look like a complete cover.
     #[test]
     fn returned_groups_are_complete_covers() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let a = _build_clause(&mut prog_heap, "a(1).");
         let b = _build_clause(&mut prog_heap, "b(1).");
         let c = _build_clause(&mut prog_heap, "c(1).");
@@ -482,7 +482,7 @@ mod coverage_group_tests {
     /// complete group now costs a proof search against every negative.
     #[test]
     fn groups_are_not_repeated_in_a_different_order() {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let a = _build_clause(&mut prog_heap, "a(1).");
         let b = _build_clause(&mut prog_heap, "b(1).");
 

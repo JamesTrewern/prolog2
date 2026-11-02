@@ -99,7 +99,10 @@ impl SymbolDB {
         let preloaded = KNOWN_SYMBOLS
             .iter()
             .map(|&symbol| Arc::<str>::from(symbol))
-            .chain((0..PRED_VAR_PLACEHOLDER_COUNT).map(|i| Arc::<str>::from(format!("$inv_{i}").as_str())));
+            .chain(
+                (0..PRED_VAR_PLACEHOLDER_COUNT)
+                    .map(|i| Arc::<str>::from(format!("$inv_{i}").as_str())),
+            );
 
         let mut symbols = Vec::new();
         let mut index = HashMap::new();
@@ -141,5 +144,4 @@ impl SymbolDB {
         strings.push(value.into());
         strings.len() - 1
     }
-
 }

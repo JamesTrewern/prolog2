@@ -229,14 +229,19 @@ pub(crate) fn _build_clause(heap: &mut impl Heap, clause: &str) -> Clause {
         }
         TreeClause::MetaFact(head, meta_data) => {
             let meta_vars = extract_var_names_from_set(meta_data).unwrap();
-            build_clause(vec![head], Some((meta_vars.clone(), meta_vars)), heap, false)
+            build_clause(
+                vec![head],
+                Some((meta_vars.clone(), meta_vars)),
+                heap,
+                false,
+            )
         }
     }
 }
 
 #[cfg(test)]
 mod malformed_meta_rule_tests {
-    
+
     use super::{extract_meta_rule_vars, extract_var_names_from_list, extract_var_names_from_set};
     use crate::{
         app::App,

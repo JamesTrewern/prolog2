@@ -19,9 +19,9 @@ use std::{
 
 use crate::{
     heap::{
-        Heap, ProgramHeap, QueryHeap, PRED_VAR_PLACEHOLDER_BASE, PRED_VAR_PLACEHOLDER_COUNT,
+        Heap, ProgramHeap, QueryHeap,
         Tag::{Con, Var},
-        TermWalk, Walk,
+        TermWalk, Walk, PRED_VAR_PLACEHOLDER_BASE, PRED_VAR_PLACEHOLDER_COUNT,
     },
     program::{Clause, Hypothesis, PredicateTable},
     resolution::Proof,

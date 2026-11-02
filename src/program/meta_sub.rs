@@ -136,11 +136,10 @@ impl MetaSub {
 
 #[cfg(test)]
 mod build_clause_tests {
-    
 
     use super::MetaSub;
     use crate::{
-        heap::{ProgramHeap, Cell, Heap, Tag::*, VarReg},
+        heap::{Cell, Heap, ProgramHeap, Tag::*, VarReg},
         parser::_build_clause,
         program::{Clause, PredicateTable},
     };
@@ -160,7 +159,7 @@ mod build_clause_tests {
         meta_src: &str,
         consts: [&'static str; N],
     ) -> (ProgramHeap, Clause, [usize; N]) {
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let meta = _build_clause(&mut prog_heap, meta_src);
         let addrs = consts.map(|name| {
             let symbol = prog_heap.symbols().set_const(name);
@@ -304,7 +303,7 @@ mod build_clause_tests {
         // `predicates` is sorted, so adding a predicate that sorts earlier
         // shifts every entry index after it. The index is keyed on
         // symbol_arity precisely so that this does not disturb it.
-        let mut prog_heap= ProgramHeap::new();
+        let mut prog_heap = ProgramHeap::new();
         let first = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let second = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let (first_id, second_id) = (first.meta_data.unwrap().id, second.meta_data.unwrap().id);
@@ -334,8 +333,8 @@ mod build_clause_tests {
 mod tests {
     use crate::heap::test_prog;
 
-    use crate::heap::ProgramHeap;
     use super::MetaSub;
+    use crate::heap::ProgramHeap;
     use crate::heap::{
         Heap, QueryHeap,
         Tag::Con,
@@ -344,7 +343,6 @@ mod tests {
     };
 
     fn make_addr(heap: &mut QueryHeap, name: &str) -> usize {
-
         let prog = test_prog();
         let sym = prog.symbols().set_const(name);
         heap.heap_push((Con, sym))
@@ -359,7 +357,7 @@ mod tests {
 
     #[test]
     fn meta_sub_unification() {
-        let prog_heap= ProgramHeap::new();
+        let prog_heap = ProgramHeap::new();
 
         // lhs all addr, rhs all var
         {
@@ -454,7 +452,7 @@ mod tests {
     /// this test hangs rather than fails if the guard is removed.
     #[test]
     fn repeated_variable_pair_does_not_self_bind() {
-        let prog_heap= ProgramHeap::new();
+        let prog_heap = ProgramHeap::new();
         let mut heap = QueryHeap::new(&prog_heap, None);
         let var_a = heap.new_var(VarReg::UNBOUND);
         let var_b = heap.new_var(VarReg::UNBOUND);
@@ -475,7 +473,7 @@ mod tests {
     /// time: the alias from position 0 must be followed to the live variable.
     #[test]
     fn repeated_variable_against_addr_follows_the_alias() {
-        let prog_heap= ProgramHeap::new();
+        let prog_heap = ProgramHeap::new();
         let mut heap = QueryHeap::new(&prog_heap, None);
         let addr_p = make_addr(&mut heap, "p");
         let var_a = heap.new_var(VarReg::UNBOUND);
@@ -495,7 +493,7 @@ mod tests {
 
     #[test]
     fn meta_sub_unification_chain() {
-        let prog_heap= ProgramHeap::new();
+        let prog_heap = ProgramHeap::new();
 
         // Var set to other var: match var
         {

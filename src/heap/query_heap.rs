@@ -83,7 +83,7 @@ impl<'a> QueryHeap<'a> {
     /// For scratch heaps whose cells are later relocated into another heap:
     /// addresses that begin at zero need no program-length offset unwound at
     /// the point of the move.
-    pub fn detached(prog: &'a ProgramHeap) -> QueryHeap<'a> {
+    pub(crate) fn detached(prog: &'a ProgramHeap) -> QueryHeap<'a> {
         QueryHeap {
             cells: Vec::new(),
             prog,
@@ -140,7 +140,7 @@ impl<'a> QueryHeap<'a> {
     ///
     /// # Panics
     ///
-    /// Neither branch kind nests -- see [`Self::branches`].
+    /// If this heap is itself a branch; neither branch kind nests.
     pub fn branch_inherit<'b>(&'b self, count: usize) -> Vec<QueryHeap<'b>> {
         self.branches(count, true)
     }
@@ -525,5 +525,78 @@ mod branch_tests {
         let heap = parent(prog);
         let branches = heap.branch_inherit(1);
         let _ = branches[0].branch_ground(1);
+    }
+}
+
+#[cfg(test)]
+mod dup_term_tests {
+    use super::super::{test_prog, Heap, QueryHeap, Tag::*};
+    use std::collections::HashMap;
+
+    /// The same source variable must map to one fresh variable.
+    ///
+    /// This is the property the `ref_map` exists for, and the one a key
+    /// mismatch between its insert and its lookup silently broke: every
+    /// occurrence then minted a new variable, so `f(X,X)` duplicated as
+    /// `f(A,B)` and two positions that had to agree no longer did.
+    #[test]
+    fn repeated_variables_stay_shared() {
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
+        let f = heap.symbols().set_const("f");
+
+        // Deliberately make the variable's id differ from the term's
+        // address. With them equal -- the natural first thing to write, `X`
+        // as var 0 in a term at address 0 -- a lookup keyed on the address
+        // instead of the id coincides with the right answer, and the test
+        // passes while sharing is broken.
+        for _ in 0..3 {
+            heap.new_var(super::VarReg::UNBOUND);
+        }
+        let x = heap.new_var(super::VarReg::UNBOUND);
+        assert_ne!(x, 0, "the point of the padding above");
+
+        // f(X, X) with X unbound, laid out by hand.
+        heap.cells.extend([(Comp, 3), (Con, f), (Var, x), (Var, x)]);
+
+        let src = 0;
+        let copy = heap.heap_len();
+        heap.dup_term(src, &mut HashMap::new());
+
+        let cells = &heap[copy..];
+        assert_eq!(cells.len(), 4, "a copy is the same shape as its source");
+        assert_eq!(cells[0], (Comp, 3));
+        assert_eq!(cells[1], (Con, f));
+        assert_eq!(
+            cells[2], cells[3],
+            "both occurrences must be the same fresh variable"
+        );
+        assert_ne!(cells[2], (Var, x), "and it must be fresh, not the original");
+    }
+
+    /// A shared `ref_map` keeps variables shared across separate calls, which
+    /// is how the literals of one clause stay connected.
+    #[test]
+    fn a_shared_ref_map_links_separate_terms() {
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
+        let p = heap.symbols().set_const("p");
+        let q = heap.symbols().set_const("q");
+
+        let x = heap.new_var(super::VarReg::UNBOUND);
+        heap.cells.extend([(Comp, 2), (Con, p), (Var, x)]); // p(X) at 0
+        heap.cells.extend([(Comp, 2), (Con, q), (Var, x)]); // q(X) at 3
+
+        let mut ref_map = HashMap::new();
+        let first = heap.heap_len();
+        heap.dup_term(0, &mut ref_map);
+        let second = heap.heap_len();
+        heap.dup_term(3, &mut ref_map);
+
+        assert_eq!(
+            heap[first + 2],
+            heap[second + 2],
+            "X in p(X) and X in q(X) must copy to the same variable"
+        );
     }
 }
