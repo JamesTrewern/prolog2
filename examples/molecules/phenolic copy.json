@@ -32,5 +32,7 @@
     "files": [
         "examples/molecules"
     ],
-    "top_prog": true
+    "parallel": {
+        "reduce": false
+    }
 }

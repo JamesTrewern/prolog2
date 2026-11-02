@@ -5,11 +5,11 @@
         "debug": false
     },
     "body_predicates" : [
-        {"symbol" : "neg", "arity": 2},
-        {"symbol" : "minus", "arity": 3},
-        {"symbol" : "add", "arity": 3},
-        {"symbol" : "mult", "arity": 3},
-        {"symbol" : "squared", "arity": 2}
+        "neg/2",
+        "minus/3",
+        "add/3",
+        "mult/3",
+        "squared/2"
     ],
     "examples" : {
         "pos" : ["discriminant_simple(1,5,6,19)", "discriminant_simple(2,3,5,-1)", "discriminant_simple(1,4,3,13)"],

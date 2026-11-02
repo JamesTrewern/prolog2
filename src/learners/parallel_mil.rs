@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    app::{App, TopProg},
+    app::App,
     heap::{
         Cell, Heap, ProgramHeap, QueryHeap,
         Tag::Var,
@@ -24,7 +24,7 @@ use crate::{
 
 use super::{
     specialise::{specialise_candidate, NegativeCache, Verdict},
-    sub_h_unification::least_sub_h,
+    sub_h_unification::{least_sub_h, SearchCtx},
     utils::{
         collect_used_pred, compile_examples, reduce as reduce_hypothesis, union_sub_hypotheses,
     },
@@ -41,10 +41,10 @@ impl App {
         let Some(mut examples) = self.examples.clone() else {
             panic!("Can't start top prog without examples");
         };
-        let reduce = match self.top_prog {
-            TopProg::True(reduce) => reduce,
-            _ => false,
-        };
+        // Called directly as well as through `App::run`, which only reaches
+        // here when `parallel` is set -- so a direct caller that has not set
+        // it gets the defaults rather than a panic.
+        let parallel = self.parallel.unwrap_or_default();
         // Checked once, here, rather than left to fail deep in the search: a
         // hypothesis can invent at most one predicate per clause, and the
         // dependency graph that orders their definitions holds
@@ -62,7 +62,7 @@ impl App {
             examples.pos.len(),
             examples.neg.len()
         );
-        examples.normalise_for_top_prog();
+        examples.normalise_for_parallel();
 
         // Built once onto the program heap, then proved over and over by
         // every stage below. Appending leaves earlier addresses valid, so the
@@ -114,9 +114,12 @@ impl App {
             &pos_goals,
             &neg_goals,
             sub_hypotheses,
-            &self.prog_heap,
-            &self.predicate_table,
-            self.config,
+            SearchCtx::new(
+                &self.prog_heap,
+                &self.predicate_table,
+                self.config,
+                parallel,
+            ),
             &pred_symbols,
         ) else {
             println!("No Valid Hypothesis Found");
@@ -151,7 +154,7 @@ impl App {
                 }
             }
 
-            if reduce {
+            if parallel.reduce {
                 hypothesis = reduce_hypothesis(
                     &pos_goals,
                     hypothesis,

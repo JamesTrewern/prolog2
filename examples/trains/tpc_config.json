@@ -27,8 +27,9 @@
             "e(west10)"
         ]
     },
-    "top_prog": true,
-    "reduce": true,
+    "parallel": {
+        "reduce": true
+    },
     "files": [
         "examples/trains/trains.pl"
     ]

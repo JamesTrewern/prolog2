@@ -269,8 +269,9 @@ move_up([4/3,G,4 - 4],[4/4,G,4 - 4]).
         ],
         "neg": []
     },
-    "top_prog": true,
-    "reduce": true,
+    "parallel": {
+        "reduce": true
+    },
     "files": [
         "examples/robots/robots.pl"
     ]

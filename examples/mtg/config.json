@@ -5,195 +5,54 @@
         "debug": false
     },
     "body_predicates": [
-        {
-            "symbol": "destroy_verb",
-            "arity": 2
-        },
-        {
-            "symbol": "exile_verb",
-            "arity": 2
-        },
-        {
-            "symbol": "return_verb",
-            "arity": 2
-        },
-        {
-            "symbol": "target_permanent",
-            "arity": 2
-        },
-        {
-            "symbol": "target",
-            "arity": 2
-        },
-        {
-            "symbol": "target_artifact_type",
-            "arity": 2
-        },
-        {
-            "symbol": "target_creature_type",
-            "arity": 2
-        },
-        {
-            "symbol": "target_enchantment_type",
-            "arity": 2
-        },
-        {
-            "symbol": "target_land_type",
-            "arity": 2
-        },
-        {
-            "symbol": "target_basic_land_type",
-            "arity": 2
-        },
-        {
-            "symbol": "target_planeswalker_type",
-            "arity": 2
-        },
-        {
-            "symbol": "all_permanents_of_type",
-            "arity": 2
-        },
-        {
-            "symbol": "artifact_type",
-            "arity": 2
-        },
-        {
-            "symbol": "creature_type",
-            "arity": 2
-        },
-        {
-            "symbol": "enchantment_type",
-            "arity": 2
-        },
-        {
-            "symbol": "land_type",
-            "arity": 2
-        },
-        {
-            "symbol": "basic_land_type",
-            "arity": 2
-        },
-        {
-            "symbol": "planeswalker_type",
-            "arity": 2
-        },
-        {
-            "symbol": "all_of_artifact_type",
-            "arity": 2
-        },
-        {
-            "symbol": "all_of_creature_type",
-            "arity": 2
-        },
-        {
-            "symbol": "all_of_enchantment_type",
-            "arity": 2
-        },
-        {
-            "symbol": "all_of_land_type",
-            "arity": 2
-        },
-        {
-            "symbol": "all_of_basic_land_type",
-            "arity": 2
-        },
-        {
-            "symbol": "all_of_planeswalker_type",
-            "arity": 2
-        },
-        {
-            "symbol": "all",
-            "arity": 2
-        },
-        {
-            "symbol": "artifact_types",
-            "arity": 2
-        },
-        {
-            "symbol": "creature_types",
-            "arity": 2
-        },
-        {
-            "symbol": "enchantment_types",
-            "arity": 2
-        },
-        {
-            "symbol": "land_types",
-            "arity": 2
-        },
-        {
-            "symbol": "basic_land_types",
-            "arity": 2
-        },
-        {
-            "symbol": "planeswalker_types",
-            "arity": 2
-        },
-        {
-            "symbol": "a_permanent_type",
-            "arity": 2
-        },
-        {
-            "symbol": "permanent_type",
-            "arity": 2
-        },
-        {
-            "symbol": "permanent_types",
-            "arity": 2
-        },
-        {
-            "symbol": "target_from_battlefield_to_hand",
-            "arity": 2
-        },
-        {
-            "symbol": "target_from_graveyard_to_hand",
-            "arity": 2
-        },
-        {
-            "symbol": "target_from_graveyard_to_battlefield",
-            "arity": 2
-        },
-        {
-            "symbol": "from_battlefield_to_hand",
-            "arity": 2
-        },
-        {
-            "symbol": "from_graveyard_to_hand",
-            "arity": 2
-        },
-        {
-            "symbol": "from_graveyard_to_battlefield",
-            "arity": 2
-        },
+        "destroy_verb/2",
+        "exile_verb/2",
+        "return_verb/2",
+        "target_permanent/2",
+        "target/2",
+        "target_artifact_type/2",
+        "target_creature_type/2",
+        "target_enchantment_type/2",
+        "target_land_type/2",
+        "target_basic_land_type/2",
+        "target_planeswalker_type/2",
+        "all_permanents_of_type/2",
+        "artifact_type/2",
+        "creature_type/2",
+        "enchantment_type/2",
+        "land_type/2",
+        "basic_land_type/2",
+        "planeswalker_type/2",
+        "all_of_artifact_type/2",
+        "all_of_creature_type/2",
+        "all_of_enchantment_type/2",
+        "all_of_land_type/2",
+        "all_of_basic_land_type/2",
+        "all_of_planeswalker_type/2",
+        "all/2",
+        "artifact_types/2",
+        "creature_types/2",
+        "enchantment_types/2",
+        "land_types/2",
+        "basic_land_types/2",
+        "planeswalker_types/2",
+        "a_permanent_type/2",
+        "permanent_type/2",
+        "permanent_types/2",
+        "target_from_battlefield_to_hand/2",
+        "target_from_graveyard_to_hand/2",
+        "target_from_graveyard_to_battlefield/2",
+        "from_battlefield_to_hand/2",
+        "from_graveyard_to_hand/2",
+        "from_graveyard_to_battlefield/2",
         
-        {
-            "symbol": "all_from_graveyard_to_hand",
-            "arity": 2
-        },
-        {
-            "symbol": "all_from_graveyard_to_battlefield",
-            "arity": 2
-        },
-        {
-            "symbol": "a",
-            "arity": 2
-        },
-        {
-            "symbol": "zone_graveyard",
-            "arity": 2
-        },
-        {
-            "symbol": "to_battlefield",
-            "arity": 2
-        },
-        {
-            "symbol": "the",
-            "arity": 2
-        },
-        {
-            "symbol": "zone_battlefield",
-            "arity": 2
-        }
+        "all_from_graveyard_to_hand/2",
+        "all_from_graveyard_to_battlefield/2",
+        "a/2",
+        "zone_graveyard/2",
+        "to_battlefield/2",
+        "the/2",
+        "zone_battlefield/2"
     ],
     "examples": {
         "pos": [
@@ -1556,7 +1415,6 @@
         ],
         "neg": []
     },
-    "top_prog": false,
     "files": [
         "examples/mtg/mtg_fragment.pl"
     ]

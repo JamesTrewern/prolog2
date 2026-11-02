@@ -103,7 +103,7 @@ pub mod resolution;
 mod utils;
 
 // Re-export commonly used types at crate root.
-pub use app::{BodyPred, Config, Examples, SetUp};
+pub use app::{BodyPred, Config, Examples, ParallelConfig, SetUp, DEFAULT_FINAL_H_COUNT};
 pub use parser::ParserError;
 
 use std::fmt;

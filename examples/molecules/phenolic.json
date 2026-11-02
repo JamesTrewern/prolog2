@@ -26,6 +26,5 @@
     "files": [
         "examples/molecules"
     ],
-    "top_prog": false,
     "auto": false
 }

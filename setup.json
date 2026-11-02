@@ -65,6 +65,7 @@
     "files": [
         "examples/colreg/combined_bk.pl", "examples/colreg/meta.pl", "examples/colreg/waypoint_meta.pl"
     ],
-    "top_prog": true,
-    "reduce": true
+    "parallel": {
+        "reduce": true
+    }
 }

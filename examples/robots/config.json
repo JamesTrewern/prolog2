@@ -55,7 +55,6 @@
         ],
         "neg": []
     },
-    "top_prog": false,
     "files": [
         "examples/robots/robots.pl"
     ]

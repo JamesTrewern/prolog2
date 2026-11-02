@@ -50,6 +50,7 @@
         "examples/colreg/meta.pl",
         "examples/colreg/side_meta.pl"
     ],
-    "top_prog": true,
-    "reduce": true
+    "parallel": {
+        "reduce": true
+    }
 }

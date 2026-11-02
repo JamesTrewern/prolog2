@@ -27,9 +27,6 @@ pub struct Config {
     /// Keep invented predicates insulated from the rest of the program.
     #[serde(default = "protect_h_preds_default")]
     pub protect_h_preds: bool,
-    /// Break ties between equally-sized sub hypotheses by literal count.
-    #[serde(default)]
-    pub sort_by_literals: bool,
 }
 
 /// Default for [`Config::protect_h_preds`]: absent means enabled.
@@ -48,7 +45,6 @@ impl Default for Config {
             max_clause: 4,
             debug: false,
             protect_h_preds: protect_h_preds_default(),
-            sort_by_literals: false,
         }
     }
 }
@@ -185,26 +181,62 @@ pub struct Examples {
     pub neg: Vec<String>,
 }
 
-pub enum TopProg {
-    True(bool), //Run Top Program Construction with option to reduce or not
-    False,
+/// Settings for parallel learning — Top Program Construction across all the
+/// positive examples at once.
+///
+/// Its presence is what selects that mode: [`SetUp::parallel`] is an
+/// `Option`, so a config either carries this block and learns, or omits it
+/// and runs the examples as a direct query. That is why there is no `enabled`
+/// field here.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct ParallelConfig {
+    /// Run Plotkin's program reduction over each learned program, dropping
+    /// clauses the remaining ones already cover.
+    /// Off by default, which is useful for profiling or for inspecting the
+    /// raw top program.
+    #[serde(default)]
+    pub reduce: bool,
+    /// Break ties between equally-sized sub hypotheses by literal count.
+    #[serde(default)]
+    pub sort_by_literals: bool,
+    /// How many complete programs to return.
+    /// Defaults to [`DEFAULT_FINAL_H_COUNT`].
+    #[serde(default = "default_final_h_count")]
+    pub final_h_count: usize,
 }
+
+/// Default for [`ParallelConfig::final_h_count`].
+pub const DEFAULT_FINAL_H_COUNT: usize = 5;
+
+fn default_final_h_count() -> usize {
+    DEFAULT_FINAL_H_COUNT
+}
+
+impl Default for ParallelConfig {
+    fn default() -> Self {
+        Self {
+            reduce: false,
+            sort_by_literals: false,
+            final_h_count: DEFAULT_FINAL_H_COUNT,
+        }
+    }
+}
+
 /// Top-level setup loaded from a JSON configuration file.
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct SetUp {
     pub config: Config,
     pub body_predicates: Vec<BodyPred>,
     pub files: Vec<String>,
     pub examples: Option<Examples>,
-    /// When true, run Top Program Construction instead of a direct query.
+    /// When true, the examples are run as a query without prompting.
     #[serde(default)]
     pub auto: bool,
-    /// When true, run Top Program Construction instead of a direct query.
+    /// Present to learn from the examples by parallel Top Program
+    /// Construction; absent to run them as a direct query.
     #[serde(default)]
-    pub top_prog: bool,
-    /// When true, skip the reduction step in Top Program Construction.
-    #[serde(default)]
-    pub reduce: bool,
+    pub parallel: Option<ParallelConfig>,
     /// Tolerance for the `=~=` (approximately-equal) operator, as an integer
     /// percentage. `5` means "within 5 %". Defaults to `10`.
     #[serde(default = "default_approx_tolerance")]
@@ -233,7 +265,7 @@ impl Examples {
         buffer
     }
 
-    pub fn normalise_for_top_prog(&mut self) {
+    pub fn normalise_for_parallel(&mut self) {
         fn normalise(ex: &mut String) {
             *ex = ex.trim().into();
             if ex.chars().last() != Some('.') {
@@ -282,7 +314,7 @@ pub struct App {
     pub(crate) config: Config,
     pub(crate) auto: bool,
     pub(crate) examples: Option<Examples>,
-    pub(crate) top_prog: TopProg,
+    pub(crate) parallel: Option<ParallelConfig>,
     // log_file: Option<String>
 }
 
@@ -310,7 +342,7 @@ impl App {
             config: Config::default(),
             auto: false,
             examples: None,
-            top_prog: TopProg::False,
+            parallel: None,
         }
     }
 
@@ -334,10 +366,13 @@ impl App {
         App { auto, ..self }
     }
 
-    /// Configures whether Top Program Construction is run instead of a direct
-    /// query, and whether the learned program is reduced afterwards.
-    pub fn top_prog(self, top_prog: TopProg) -> Self {
-        App { top_prog, ..self }
+    /// Learn from the examples by parallel Top Program Construction rather
+    /// than running them as a direct query.
+    pub fn parallel(self, parallel: ParallelConfig) -> Self {
+        App {
+            parallel: Some(parallel),
+            ..self
+        }
     }
 
     /// Sets the positive and negative training examples used by [`App::run`]
@@ -366,19 +401,13 @@ impl App {
 
         set_approx_tolerance(setup.approx_tolerance_pct);
 
-        let top_prog = if setup.top_prog {
-            TopProg::True(setup.reduce)
-        } else {
-            TopProg::False
-        };
-
         let mut app = App {
             predicate_table: PredicateTable::new(),
             prog_heap: ProgramHeap::new(),
             config: setup.config,
             auto: setup.auto,
             examples: setup.examples,
-            top_prog,
+            parallel: setup.parallel,
         };
 
         for predicate_module in STANDARD_MODULES {
@@ -405,12 +434,7 @@ impl App {
 
         set_approx_tolerance(setup.approx_tolerance_pct);
 
-        self.top_prog = if setup.top_prog {
-            TopProg::True(setup.reduce)
-        } else {
-            TopProg::False
-        };
-
+        self.parallel = setup.parallel;
         self.config = setup.config;
         self.examples = setup.examples;
         self.auto = setup.auto;
@@ -644,12 +668,12 @@ impl App {
     ///   algorithm and prints any learned clauses.
     pub fn run(mut self) -> ExitCode {
         match &self.examples {
-            Some(examples) => match self.top_prog {
-                TopProg::True(_) => {
+            Some(examples) => match self.parallel {
+                Some(_) => {
                     self.run_parallel();
                     ExitCode::SUCCESS
                 }
-                TopProg::False => self.start_query(examples.to_query()).map_or_else(
+                None => self.start_query(examples.to_query()).map_or_else(
                     |e| {
                         eprintln!("{e}");
                         ExitCode::FAILURE

@@ -72,8 +72,6 @@ Configured in a JSON file (default: `setup.json`):
     },
     "files" : ["examples/simple_family.pl"],
     "auto" : true,
-    "top_prog" : false,
-    "reduce" : false,
     "approx_tolerance_pct" : 10
 }
 ```
@@ -81,7 +79,7 @@ Configured in a JSON file (default: `setup.json`):
 `max_depth`: how many sub_goals deep the solver is allowed to go.<br>
 `max_clause`: number of clauses that can be added to hypothesis. This also bounds predicate invention, which has no setting of its own: an invented predicate needs a clause defining it on top of the clause that calls it, so a hypothesis can hold at most `max_clause - 1` invented predicates.<br>
 
-`examples`, `auto`, `top_prog`, and `reduce` are all optional fields.
+`examples`, `auto`, `parallel`, and `approx_tolerance_pct` are all optional fields. Any other key is an error rather than being ignored, so a typo or a field name from an older version is reported instead of silently taking its default.
 
 `approx_tolerance_pct` sets the tolerance for the `=~=` (approximately-equal) operator. The value is an integer percentage — `10` means the two sides may differ by up to 10 % relative to the larger magnitude. Defaults to `10` if omitted. Can also be set programmatically via `App::approx_tolerance(pct)`.
 
@@ -98,8 +96,11 @@ Prolog<sup>2</sup> supports Top Program Construction (TPC) as an alternative to 
 
 The TPC pipeline has three stages: **Generalise** searches each positive example in parallel to collect all constructible clauses, **Specialise** removes any clause that entails a negative example, and **Reduce** applies Plotkin's reduction to eliminate redundant clauses while preferring general patterns over specific ones.
 
-To enable TPC, add `"top_prog": true` to your config file:<br>
-The reduction step is turned off by default (useful for profiling or inspecting the raw top program), to include the reduction step add `"reduce": true` to the config.
+To enable TPC, add a `"parallel"` block to your config file. Its presence is what selects TPC over a direct query, so there is no separate on/off flag; an empty block `"parallel": {}` runs TPC with every option at its default. The block takes three optional fields:<br>
+
+`reduce`: run Plotkin's program reduction over each learned program. Off by default, which is useful for profiling or for inspecting the raw top program.<br>
+`sort_by_literals`: when two candidate sub hypotheses tie on coverage and clause count, prefer the one with fewer body literals. Off by default. A tiebreaker only — it never outranks coverage or clause count.<br>
+`final_h_count`: how many complete programs to return. Defaults to `5`. Many combinations of sub hypotheses usually cover every positive while proving no negative, and each costs a proof search against every negative to confirm, so this bounds how many are collected before the search stops.
 
 ``` json
 {
@@ -118,8 +119,9 @@ The reduction step is turned off by default (useful for profiling or inspecting 
         "pos" : ["e(east1)", "e(east2)", "e(east3)", "e(east4)", "e(east5)"],
         "neg" : ["e(west6)", "e(west7)", "e(west8)", "e(west9)", "e(west10)"]
     },
-    "top_prog" : true,
-    "reduce" : true,
+    "parallel" : {
+        "reduce" : true
+    },
     "files" : ["examples/trains/trains.pl"]
 }
 ```

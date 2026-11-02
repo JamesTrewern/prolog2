@@ -49,6 +49,7 @@
         "examples/colreg/combined_bk.pl",
         "examples/colreg/meta.pl"
     ],
-    "top_prog": true,
-    "reduce": true
+    "parallel": {
+        "reduce": true
+    }
 }
