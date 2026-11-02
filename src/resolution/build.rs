@@ -65,7 +65,7 @@ fn build_arg(
 mod tests {
     use super::{build, re_build_bound_arg_terms};
     use crate::{
-        heap::{Cell, Heap, QueryHeap, SymbolDB, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
+        heap::{ProgramHeap, Cell, Heap, QueryHeap, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
         program::{BitFlag64, MAX_ARG},
         resolution::{unify, Substitution},
     };
@@ -97,15 +97,19 @@ mod tests {
     /// Every program fixture starts with one at address 0, so no real term
     /// begins at address 0. Code that falls back to address 0 by accident then
     /// shows up in an assertion instead of matching a real cell.
-    fn poison() -> Cell {
-        (Con, SymbolDB::set_const("__poison__"))
+    fn poison(prog: &ProgramHeap) -> Cell {
+        (Con, prog.symbols().set_const("__poison__"))
     }
 
-    /// Build a program-heap fixture, checking the invariants above.
-    fn prog(cells: Vec<Cell>) -> Vec<Cell> {
+    /// Check a program-heap fixture against the invariants above.
+    ///
+    /// Takes the heap rather than returning one: the cells name constants in
+    /// `prog`'s symbol table, so that table has to exist -- and be the one the
+    /// cells are later installed in -- before the cells can be built.
+    fn check_prog(prog: &ProgramHeap, cells: Vec<Cell>) -> Vec<Cell> {
         assert_eq!(
             cells[0],
-            poison(),
+            poison(prog),
             "program fixture must begin with a poison cell"
         );
         assert!(
@@ -133,12 +137,14 @@ mod tests {
     /// single unbound `Arg`.
     #[test]
     fn rebuild_replaces_arg_with_fresh_ref() {
-        let prog = prog(vec![
-            poison(),  // 0
+        let mut prog = ProgramHeap::new();
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             LIS,       // 1: [A0]
             (Arg, 0),  // 2
             EMPTY_LIS, // 3
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -173,15 +179,17 @@ mod tests {
     /// copy. It must not allocate and must not be repointed.
     #[test]
     fn unflagged_binding_is_untouched() {
-        let f = SymbolDB::set_const("f");
-        let a = SymbolDB::set_const("a");
+        let mut prog = ProgramHeap::new();
+        let f = prog.symbols().set_const("f");
+        let a = prog.symbols().set_const("a");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 2), // 1: f(a)
             (Con, f),  // 2
             (Con, a),  // 3
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
 
         heap.var_regs = vec![Addr(1).into()];
@@ -212,12 +220,13 @@ mod tests {
     /// terms without rebuilding" — after this call that must be true.
     #[test]
     fn rebuild_resolves_nested_args_and_preserves_sharing() {
-        let p = SymbolDB::set_const("p");
-        let g = SymbolDB::set_const("g");
-        let a = SymbolDB::set_const("a");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let g = prog.symbols().set_const("g");
+        let a = prog.symbols().set_const("a");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 4), // 1: p(A0, g(A1, a), [A0])
             (Con, p),  // 2
             (Arg, 0),  // 3
@@ -229,6 +238,7 @@ mod tests {
             (Arg, 0),  // 9
             EMPTY_LIS, // 10
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -268,10 +278,11 @@ mod tests {
     /// two unrelated variables.
     #[test]
     fn rebuild_shares_fresh_var_with_later_goal_build() {
-        let q_sym = SymbolDB::set_const("q");
+        let mut prog = ProgramHeap::new();
+        let q_sym = prog.symbols().set_const("q");
 
-        let prog = prog(vec![
-            poison(),     // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog),     // 0
             LIS,          // 1: head subterm [A0]
             (Arg, 0),     // 2
             EMPTY_LIS,    // 3
@@ -279,6 +290,7 @@ mod tests {
             (Con, q_sym), // 5
             (Arg, 0),     // 6
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -313,16 +325,18 @@ mod tests {
     /// occupies three cells, because the count is of subterms, not cells.
     #[test]
     fn rebuild_expands_arg_bound_to_query_term() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 2), // 1: p(A0)
             (Con, p),  // 2
             (Arg, 0),  // 3
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -353,12 +367,14 @@ mod tests {
     /// cache, the change is deliberate.
     #[test]
     fn two_vars_bound_to_same_term_get_separate_copies() {
-        let prog = prog(vec![
-            poison(),  // 0
+        let mut prog = ProgramHeap::new();
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             LIS,       // 1: [A0]
             (Arg, 0),  // 2
             EMPTY_LIS, // 3
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -402,16 +418,18 @@ mod tests {
     /// `Arg` cell itself.
     #[test]
     fn distinct_args_get_distinct_vars() {
-        let p = SymbolDB::set_const("p");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 4), // 1: p(A0, A0, A1)
             (Con, p),  // 2
             (Arg, 0),  // 3
             (Arg, 0),  // 4
             (Arg, 1),  // 5
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
         let mut sub = Substitution::default();
@@ -433,14 +451,16 @@ mod tests {
     /// allocate a new register.
     #[test]
     fn arg_bound_to_var_emits_ref_without_allocating() {
-        let q_sym = SymbolDB::set_const("q");
+        let mut prog = ProgramHeap::new();
+        let q_sym = prog.symbols().set_const("q");
 
-        let prog = prog(vec![
-            poison(),     // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog),     // 0
             (Comp, 2),    // 1: q(A0)
             (Con, q_sym), // 2
             (Arg, 0),     // 3
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -463,17 +483,19 @@ mod tests {
     /// expansion is a copy: mutating the source afterwards must not change it.
     #[test]
     fn arg_bound_to_addr_copies_structure() {
-        let q_sym = SymbolDB::set_const("q");
-        let f = SymbolDB::set_const("f");
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
+        let mut prog = ProgramHeap::new();
+        let q_sym = prog.symbols().set_const("q");
+        let f = prog.symbols().set_const("f");
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
 
-        let prog = prog(vec![
-            poison(),     // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog),     // 0
             (Comp, 2),    // 1: q(A0)
             (Con, q_sym), // 2
             (Arg, 0),     // 3
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -500,11 +522,12 @@ mod tests {
     /// args, so expansion has to recurse.
     #[test]
     fn arg_bound_to_addr_containing_further_args() {
-        let q_sym = SymbolDB::set_const("q");
-        let g = SymbolDB::set_const("g");
+        let mut prog = ProgramHeap::new();
+        let q_sym = prog.symbols().set_const("q");
+        let g = prog.symbols().set_const("g");
 
-        let prog = prog(vec![
-            poison(),     // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog),     // 0
             (Comp, 2),    // 1: q(A0)
             (Con, q_sym), // 2
             (Arg, 0),     // 3
@@ -512,6 +535,7 @@ mod tests {
             (Con, g),     // 5
             (Arg, 1),     // 6
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -536,11 +560,12 @@ mod tests {
     /// is the reason `build` takes the substitution by `&mut`.
     #[test]
     fn fresh_vars_shared_across_body_literals() {
-        let q_sym = SymbolDB::set_const("q");
-        let r = SymbolDB::set_const("r");
+        let mut prog = ProgramHeap::new();
+        let q_sym = prog.symbols().set_const("q");
+        let r = prog.symbols().set_const("r");
 
-        let prog = prog(vec![
-            poison(),     // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog),     // 0
             (Comp, 2),    // 1: q(A0)
             (Con, q_sym), // 2
             (Arg, 0),     // 3
@@ -548,6 +573,7 @@ mod tests {
             (Con, r),     // 5
             (Arg, 0),     // 6
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
         let mut sub = Substitution::default();
@@ -580,10 +606,11 @@ mod tests {
     /// `LIS` a fixed span of two, so this walks all four in one term.
     #[test]
     fn all_structure_tags_expand_args() {
-        let p = SymbolDB::set_const("p");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 4), // 1: p({A0,A1}, (A2,A3), [A4|A5])
             (Con, p),  // 2
             (Set, 2),  // 3
@@ -596,6 +623,7 @@ mod tests {
             (Arg, 4),  // 10
             (Arg, 5),  // 11
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
         let mut sub = Substitution::default();
@@ -627,18 +655,20 @@ mod tests {
     /// always spans exactly two subterms.
     #[test]
     fn list_with_arg_tail_splices() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
+        let mut prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
 
-        let prog = prog(vec![
-            poison(), // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             LIS,      // 1: [a,b|A0]
             (Con, a), // 2
             LIS,      // 3
             (Con, b), // 4
             (Arg, 0), // 5
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -660,14 +690,16 @@ mod tests {
     /// value, and `(ELis, 0)` collides with `(Int, 0)`.
     #[test]
     fn arg_bound_to_empty_list() {
-        let p = SymbolDB::set_const("p");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 2), // 1: p(A0)
             (Con, p),  // 2
             (Arg, 0),  // 3
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -685,11 +717,12 @@ mod tests {
     /// stay green under every mutation that only affects arg handling.
     #[test]
     fn ground_template_is_copied_verbatim() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 3), // 1: p(a, [a])
             (Con, p),  // 2
             (Con, a),  // 3
@@ -697,6 +730,7 @@ mod tests {
             (Con, a),  // 5
             EMPTY_LIS, // 6
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
         let mut sub = Substitution::default();
@@ -720,10 +754,12 @@ mod tests {
     /// only cell pushed comes from `set_var` rather than the copy path.
     #[test]
     fn bare_arg_template() {
-        let prog = prog(vec![
-            poison(), // 0
+        let mut prog = ProgramHeap::new();
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Arg, 0), // 1
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
         let mut sub = Substitution::default();
@@ -755,16 +791,18 @@ mod tests {
     /// Flagged args are substituted; unflagged args are emitted verbatim.
     #[test]
     fn non_meta_args_pass_through_unchanged() {
-        let p = SymbolDB::set_const("p");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 3), // 1: A0(A1, A2) — the metarule head
             (Arg, 0),  // 2   A0 is the predicate symbol
             (Arg, 1),  // 3
             (Arg, 2),  // 4
             (Con, p),  // 5: the symbol A0 is bound to
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -795,11 +833,12 @@ mod tests {
     /// the clause literals with `Some(..)`.
     #[test]
     fn non_meta_arg_ignores_an_existing_binding() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 3), // 1: A0(A1, A2)
             (Arg, 0),  // 2
             (Arg, 1),  // 3
@@ -807,6 +846,7 @@ mod tests {
             (Con, p),  // 5
             (Con, a),  // 6
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -834,13 +874,15 @@ mod tests {
     /// has a `todo!("push invented pred, could be ignored")` on that path.
     #[test]
     fn unbound_meta_var_creates_fresh_var() {
-        let prog = prog(vec![
-            poison(),  // 0
+        let mut prog = ProgramHeap::new();
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 3), // 1: A0(A1, A2)
             (Arg, 0),  // 2
             (Arg, 1),  // 3
             (Arg, 2),  // 4
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -858,13 +900,15 @@ mod tests {
     /// variable — the middle branch of `build_arg` under meta mode.
     #[test]
     fn meta_var_bound_to_var_emits_ref() {
-        let prog = prog(vec![
-            poison(),  // 0
+        let mut prog = ProgramHeap::new();
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 3), // 1: A0(A1, A2)
             (Arg, 0),  // 2
             (Arg, 1),  // 3
             (Arg, 2),  // 4
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -889,11 +933,12 @@ mod tests {
     /// variables for `X` and `Y`, and the learned clause must still ignore them.
     #[test]
     fn metarule_end_to_end_matches_env_ordering() {
-        let p = SymbolDB::set_const("p");
-        let q_sym = SymbolDB::set_const("q");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let q_sym = prog.symbols().set_const("q");
 
-        let prog = prog(vec![
-            poison(),     // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog),     // 0
             (Comp, 3),    // 1: head A0(A1, A2)
             (Arg, 0),     // 2
             (Arg, 1),     // 3
@@ -905,6 +950,7 @@ mod tests {
             (Con, p),     // 9
             (Con, q_sym), // 10
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -957,16 +1003,18 @@ mod tests {
     /// the boundary rather than overflowing the shift or the register array.
     #[test]
     fn meta_flags_work_at_the_top_of_the_arg_range() {
-        let p = SymbolDB::set_const("p");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 3), // 1: A63(A62, A0)
             (Arg, 63), // 2  flagged
             (Arg, 62), // 3  unflagged
             (Arg, 0),  // 4  unflagged
             (Con, p),  // 5
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -993,11 +1041,12 @@ mod tests {
     /// nothing else in the suite distinguishes the two.
     #[test]
     fn meta_mask_is_forwarded_through_a_bound_arg() {
-        let t = SymbolDB::set_const("t");
-        let s = SymbolDB::set_const("s");
+        let mut prog = ProgramHeap::new();
+        let t = prog.symbols().set_const("t");
+        let s = prog.symbols().set_const("s");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 2), // 1: template t(A0)
             (Con, t),  // 2
             (Arg, 0),  // 3
@@ -1005,6 +1054,7 @@ mod tests {
             (Con, s),  // 5
             (Arg, 1),  // 6
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1049,10 +1099,12 @@ mod tests {
     /// mechanism.
     #[test]
     fn hypothesis_ref_bound_to_const_materialises_it() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
 
-        let prog = prog(vec![poison()]);
+        let cells = check_prog(&prog, vec![poison(&prog)]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1079,9 +1131,11 @@ mod tests {
     /// An unbound ref survives as a ref, so the clause keeps a variable there.
     #[test]
     fn hypothesis_ref_unbound_stays_a_ref() {
-        let p = SymbolDB::set_const("p");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
 
-        let prog = prog(vec![poison()]);
+        let cells = check_prog(&prog, vec![poison(&prog)]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1103,9 +1157,11 @@ mod tests {
     /// not the variable written in the template.
     #[test]
     fn hypothesis_ref_bound_to_var_collapses_to_representative() {
-        let p = SymbolDB::set_const("p");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
 
-        let prog = prog(vec![poison()]);
+        let cells = check_prog(&prog, vec![poison(&prog)]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1132,13 +1188,15 @@ mod tests {
     /// behaviour in case that ever looks like an optimisation worth taking.
     #[test]
     fn hypothesis_ref_bound_to_program_constant() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
 
-        let prog = prog(vec![
-            poison(), // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Con, a), // 1: a program constant
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1163,11 +1221,13 @@ mod tests {
     /// mentions a large term twice pays for it twice.
     #[test]
     fn hypothesis_ref_to_structure_is_copied_per_occurrence() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
 
-        let prog = prog(vec![poison()]);
+        let cells = check_prog(&prog, vec![poison(&prog)]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1208,10 +1268,12 @@ mod tests {
     /// the goal build and preserved by the template build.
     #[test]
     fn hypothesis_refs_and_args_built_as_goal_and_as_template() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
 
-        let prog = prog(vec![poison()]);
+        let cells = check_prog(&prog, vec![poison(&prog)]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1255,10 +1317,12 @@ mod tests {
     /// changes what an already-stored clause means.
     #[test]
     fn hypothesis_ref_binding_is_time_dependent() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
 
-        let prog = prog(vec![poison()]);
+        let cells = check_prog(&prog, vec![poison(&prog)]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1301,11 +1365,12 @@ mod tests {
     /// that same variable.
     #[test]
     fn clause_head_arg_bound_to_goal_var_then_body_built() {
-        let p = SymbolDB::set_const("p");
-        let q_sym = SymbolDB::set_const("q");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let q_sym = prog.symbols().set_const("q");
 
-        let prog = prog(vec![
-            poison(),     // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog),     // 0
             (Comp, 2),    // 1: head p(A0)
             (Con, p),     // 2
             (Arg, 0),     // 3
@@ -1313,6 +1378,7 @@ mod tests {
             (Con, q_sym), // 5
             (Arg, 0),     // 6
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1344,12 +1410,13 @@ mod tests {
     /// `A0` must be the same one both body literals see.
     #[test]
     fn head_structure_binds_goal_var_triggering_rebuild() {
-        let p = SymbolDB::set_const("p");
-        let q_sym = SymbolDB::set_const("q");
-        let r = SymbolDB::set_const("r");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let q_sym = prog.symbols().set_const("q");
+        let r = prog.symbols().set_const("r");
 
-        let prog = prog(vec![
-            poison(),     // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog),     // 0
             (Comp, 2),    // 1: head p([A0])
             (Con, p),     // 2
             LIS,          // 3
@@ -1362,6 +1429,7 @@ mod tests {
             (Con, r),     // 10
             (Arg, 0),     // 11
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1425,11 +1493,12 @@ mod tests {
     /// program heap on purpose, because a ground program term is safe to share.
     #[test]
     fn flagged_bindings_are_copied_unflagged_ones_stay_shared() {
-        let p = SymbolDB::set_const("p");
-        let b = SymbolDB::set_const("b");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let b = prog.symbols().set_const("b");
 
-        let prog = prog(vec![
-            poison(),  // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog), // 0
             (Comp, 3), // 1: p([A0], b)
             (Con, p),  // 2
             LIS,       // 3
@@ -1437,6 +1506,7 @@ mod tests {
             EMPTY_LIS, // 5
             (Con, b),  // 6
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
@@ -1478,12 +1548,13 @@ mod tests {
     /// goal's term in place of `A0`.
     #[test]
     fn head_arg_binds_to_goal_structure_and_flows_into_body() {
-        let p = SymbolDB::set_const("p");
-        let q_sym = SymbolDB::set_const("q");
-        let a = SymbolDB::set_const("a");
+        let mut prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let q_sym = prog.symbols().set_const("q");
+        let a = prog.symbols().set_const("a");
 
-        let prog = prog(vec![
-            poison(),     // 0
+        let cells = check_prog(&prog, vec![
+            poison(&prog),     // 0
             (Comp, 2),    // 1: head p(A0)
             (Con, p),     // 2
             (Arg, 0),     // 3
@@ -1491,6 +1562,7 @@ mod tests {
             (Con, q_sym), // 5
             (Arg, 0),     // 6
         ]);
+        prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 

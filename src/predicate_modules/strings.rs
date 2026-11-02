@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use super::{utils::*, PredReturn, PredicateModule};
 use crate::{
-    heap::{Cell, Heap, QueryHeap, SymbolDB, Tag::*, VarBind::Addr},
+    heap::{Cell, Heap, QueryHeap, Tag::*, VarBind::Addr},
     program::{Hypothesis, PredicateTable},
     Config,
 };
@@ -60,14 +60,14 @@ pub fn atom_string_pred(
     let (con_cell, _) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
     let (stri_cell, _) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1));
     match (con_cell, stri_cell) {
-        ((Con, id), (Stri, idx)) => (SymbolDB::get_const(id) == SymbolDB::get_string(idx)).into(),
+        ((Con, id), (Stri, idx)) => (heap.symbols().get_const(id) == heap.symbols().get_string(idx)).into(),
         ((Con, id), (Var, var_id)) => {
-            let result = push_string(heap, SymbolDB::get_const(id));
+            let result = push_string(heap, heap.symbols().get_const(id));
             heap.bind(var_id, Addr(result));
             [var_id].into()
         }
         ((Var, var_id), (Stri, idx)) => {
-            let result = push_const(heap, &SymbolDB::get_string(idx));
+            let result = push_const(heap, &heap.symbols().get_string(idx));
             heap.bind(var_id, Addr(result));
             [var_id].into()
         }
@@ -92,7 +92,7 @@ pub fn atom_number_pred(
     let num_a = goal_arg(heap, goal, 1);
     match (heap[const_a], heap[num_a]) {
         ((Con, id), (Var, var_id)) => {
-            let text = SymbolDB::get_const(id);
+            let text = heap.symbols().get_const(id);
             match parse_and_push_number(heap, &text) {
                 Some(result) => {
                     heap.bind(var_id, Addr(result));
@@ -108,12 +108,12 @@ pub fn atom_number_pred(
             [var_id].into()
         }
         ((Con, id), (Int, v)) => {
-            let text = SymbolDB::get_const(id);
+            let text = heap.symbols().get_const(id);
             text.parse::<isize>()
                 .map_or(PredReturn::False, |n| (n == v as isize).into())
         }
         ((Con, id), (Flt, v)) => {
-            let text = SymbolDB::get_const(id);
+            let text = heap.symbols().get_const(id);
             text.parse::<f64>()
                 .map_or(PredReturn::False, |f| (f.to_bits() == v as u64).into())
         }
@@ -144,7 +144,7 @@ pub fn number_string_pred(
             [var_id].into()
         }
         ((Var, var_id), (Stri, idx)) => {
-            let text = SymbolDB::get_string(idx);
+            let text = heap.symbols().get_string(idx);
             match parse_and_push_number(heap, &text) {
                 Some(result) => {
                     heap.bind(var_id, Addr(result));
@@ -154,12 +154,12 @@ pub fn number_string_pred(
             }
         }
         ((Int, v), (Stri, idx)) => {
-            let text = SymbolDB::get_string(idx);
+            let text = heap.symbols().get_string(idx);
             text.parse::<isize>()
                 .map_or(PredReturn::False, |n| (n == v as isize).into())
         }
         ((Flt, v), (Stri, idx)) => {
-            let text = SymbolDB::get_string(idx);
+            let text = heap.symbols().get_string(idx);
             text.parse::<f64>()
                 .map_or(PredReturn::False, |f| (f.to_bits() == v as u64).into())
         }
@@ -209,7 +209,7 @@ pub fn char_code_pred(
         let (Con, id) = heap[addr] else {
             return None;
         };
-        let name = SymbolDB::get_const(id);
+        let name = heap.symbols().get_const(id);
         let mut iter = name.chars();
         match (iter.next(), iter.next()) {
             (Some(c), None) => Some(c),
@@ -466,7 +466,7 @@ fn chars_impl(
             let var_id = list_value;
             let cells: Vec<Cell> = text
                 .chars()
-                .map(|c| (Con, SymbolDB::set_const(c.to_string())))
+                .map(|c| (Con, heap.symbols().set_const(c.to_string())))
                 .collect();
             let result = build_list(heap, &cells);
             heap.bind(var_id, Addr(result));
@@ -484,7 +484,7 @@ fn chars_impl(
                 let Con = tag else {
                     return false.into();
                 };
-                let name = SymbolDB::get_const(v);
+                let name = heap.symbols().get_const(v);
                 let mut iter = name.chars();
                 match (iter.next(), iter.next()) {
                     (Some(c), None) => buf.push(c),
@@ -510,7 +510,7 @@ fn chars_impl(
                 let Con = tag else {
                     return false.into();
                 };
-                let name = SymbolDB::get_const(v);
+                let name = heap.symbols().get_const(v);
                 let mut iter = name.chars();
                 match (iter.next(), iter.next()) {
                     (Some(c2), None) if c2 == c => {}

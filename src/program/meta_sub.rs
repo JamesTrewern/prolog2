@@ -136,31 +136,34 @@ impl MetaSub {
 
 #[cfg(test)]
 mod build_clause_tests {
+    
+
     use super::MetaSub;
     use crate::{
-        heap::{Cell, Heap, SymbolDB, Tag::*, VarReg},
+        heap::{ProgramHeap, Cell, Heap, Tag::*, VarReg},
         parser::_build_clause,
         program::{Clause, PredicateTable},
     };
 
     // These tests assert on cells rather than `Clause::to_string`. An `Arg`
-    // cell is named through `SymbolDB::get_var(addr, heap_id)`, a global map
-    // keyed on the cell's *address*, and a `Vec<Cell>` program heap always
-    // reports heap_id 0 -- so two tests parsing into their own program heap
-    // write names to the same keys and read back each other's. Cells are also
-    // the sharper assertion: the distinction this code turns on is `Arg` vs
-    // `Ref`, which a rendered string hides.
+    // cell is named through `get_var(addr, heap_id)`, keyed on the cell's
+    // *address*, and a program heap always reports heap_id 0 -- so two tests
+    // sharing a program heap would write names to the same keys and read back
+    // each other's. Each test here builds its own `ProgramHeap`, which now
+    // carries its own table, so that no longer bites; cells remain the sharper
+    // assertion either way, since the distinction this code turns on is `Arg`
+    // vs `Ref` and a rendered string hides it.
 
     /// A program heap holding one meta clause template, plus the constants
     /// named in `consts` pushed after it.
     fn prog_with_meta<const N: usize>(
         meta_src: &str,
         consts: [&'static str; N],
-    ) -> (Vec<Cell>, Clause, [usize; N]) {
-        let mut prog_heap: Vec<Cell> = Vec::new();
+    ) -> (ProgramHeap, Clause, [usize; N]) {
+        let mut prog_heap= ProgramHeap::new();
         let meta = _build_clause(&mut prog_heap, meta_src);
         let addrs = consts.map(|name| {
-            let symbol = SymbolDB::set_const(name);
+            let symbol = prog_heap.symbols().set_const(name);
             prog_heap.heap_push((Con, symbol))
         });
         (prog_heap, meta, addrs)
@@ -174,15 +177,20 @@ mod build_clause_tests {
     }
 
     /// The functor cell followed by one cell per argument.
-    fn literal_cells(heap: &Vec<Cell>, addr: usize) -> Vec<Cell> {
+    fn literal_cells(heap: &ProgramHeap, addr: usize) -> Vec<Cell> {
         heap.str_args(addr)
             .into_iter()
             .map(|arg_addr| heap[arg_addr])
             .collect()
     }
 
-    fn con(name: &str) -> Cell {
-        (Con, SymbolDB::set_const(name))
+    /// A `Con` cell naming `name` in `prog`'s table.
+    ///
+    /// Takes the heap because the fixtures below build their own: an id
+    /// interned anywhere else would not denote the same symbol in the heap
+    /// under test.
+    fn con(prog: &ProgramHeap, name: &str) -> Cell {
+        (Con, prog.symbols().set_const(name))
     }
 
     #[test]
@@ -197,15 +205,15 @@ mod build_clause_tests {
         assert_eq!(clause.len(), 3);
         assert_eq!(
             literal_cells(&prog_heap, clause.head()),
-            vec![con("p"), (Arg, 0), (Arg, 1)]
+            vec![con(&prog_heap, "p"), (Arg, 0), (Arg, 1)]
         );
         assert_eq!(
             literal_cells(&prog_heap, clause.body()[0]),
-            vec![con("q"), (Arg, 0)]
+            vec![con(&prog_heap, "q"), (Arg, 0)]
         );
         assert_eq!(
             literal_cells(&prog_heap, clause.body()[1]),
-            vec![con("r"), (Arg, 1)]
+            vec![con(&prog_heap, "r"), (Arg, 1)]
         );
         assert!(
             !clause.meta(),
@@ -250,11 +258,11 @@ mod build_clause_tests {
 
         assert_eq!(
             literal_cells(&prog_heap, clause.head()),
-            vec![con("p"), (Arg, 0), (Arg, 1)]
+            vec![con(&prog_heap, "p"), (Arg, 0), (Arg, 1)]
         );
         assert_eq!(
             literal_cells(&prog_heap, clause.body()[0]),
-            vec![con("q"), (Arg, 0), (Arg, 1)]
+            vec![con(&prog_heap, "q"), (Arg, 0), (Arg, 1)]
         );
     }
 
@@ -278,7 +286,7 @@ mod build_clause_tests {
             .expect("the id was just added to the table");
         assert_eq!(
             literal_cells(&prog_heap, clause.head()),
-            vec![con("p"), (Arg, 0), (Arg, 1)]
+            vec![con(&prog_heap, "p"), (Arg, 0), (Arg, 1)]
         );
 
         // An id the table never saw resolves to nothing rather than to some
@@ -296,7 +304,7 @@ mod build_clause_tests {
         // `predicates` is sorted, so adding a predicate that sorts earlier
         // shifts every entry index after it. The index is keyed on
         // symbol_arity precisely so that this does not disturb it.
-        let mut prog_heap: Vec<Cell> = Vec::new();
+        let mut prog_heap= ProgramHeap::new();
         let first = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let second = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let (first_id, second_id) = (first.meta_data.unwrap().id, second.meta_data.unwrap().id);
@@ -324,16 +332,21 @@ mod build_clause_tests {
 
 #[cfg(test)]
 mod tests {
+    use crate::heap::test_prog;
+
+    use crate::heap::ProgramHeap;
     use super::MetaSub;
     use crate::heap::{
-        Cell, Heap, QueryHeap, SymbolDB,
+        Heap, QueryHeap,
         Tag::Con,
         VarBind::{Addr, VarId},
         VarReg,
     };
 
     fn make_addr(heap: &mut QueryHeap, name: &str) -> usize {
-        let sym = SymbolDB::set_const(name);
+
+        let prog = test_prog();
+        let sym = prog.symbols().set_const(name);
         heap.heap_push((Con, sym))
     }
 
@@ -346,7 +359,7 @@ mod tests {
 
     #[test]
     fn meta_sub_unification() {
-        let prog_heap: Vec<Cell> = vec![];
+        let prog_heap= ProgramHeap::new();
 
         // lhs all addr, rhs all var
         {
@@ -441,7 +454,7 @@ mod tests {
     /// this test hangs rather than fails if the guard is removed.
     #[test]
     fn repeated_variable_pair_does_not_self_bind() {
-        let prog_heap: Vec<Cell> = vec![];
+        let prog_heap= ProgramHeap::new();
         let mut heap = QueryHeap::new(&prog_heap, None);
         let var_a = heap.new_var(VarReg::UNBOUND);
         let var_b = heap.new_var(VarReg::UNBOUND);
@@ -462,7 +475,7 @@ mod tests {
     /// time: the alias from position 0 must be followed to the live variable.
     #[test]
     fn repeated_variable_against_addr_follows_the_alias() {
-        let prog_heap: Vec<Cell> = vec![];
+        let prog_heap= ProgramHeap::new();
         let mut heap = QueryHeap::new(&prog_heap, None);
         let addr_p = make_addr(&mut heap, "p");
         let var_a = heap.new_var(VarReg::UNBOUND);
@@ -482,7 +495,7 @@ mod tests {
 
     #[test]
     fn meta_sub_unification_chain() {
-        let prog_heap: Vec<Cell> = vec![];
+        let prog_heap= ProgramHeap::new();
 
         // Var set to other var: match var
         {

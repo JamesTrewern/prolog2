@@ -185,7 +185,7 @@ impl DerefMut for Hypothesis {
 mod invented_pred_tests {
     use super::*;
     use crate::{
-        heap::{QueryHeap, SymbolDB, Tag::*, VarBind::VarId, VarReg},
+        heap::{Heap, ProgramHeap, QueryHeap, Tag::*, VarBind::VarId, VarReg},
         program::BitFlag64,
     };
 
@@ -197,9 +197,10 @@ mod invented_pred_tests {
     /// Returns the heap plus the two clauses. `var_count` unbound variable
     /// registers are created so tests can alias them.
     fn heap_with_two_heads(var_count: usize) -> (QueryHeap<'static>, Clause, Clause) {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog: &'static ProgramHeap = Box::leak(Box::new(ProgramHeap::new()));
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(prog, None);
         heap.cells = vec![(Comp, 2), (Var, 0), (Con, a), (Comp, 2), (Con, p), (Con, a)];
         heap.var_regs = vec![VarReg::UNBOUND; var_count];
         (

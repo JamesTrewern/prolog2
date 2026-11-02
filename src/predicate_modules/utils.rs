@@ -27,7 +27,7 @@
 use std::sync::Arc;
 
 use crate::{
-    heap::{Cell, Heap, QueryHeap, SymbolDB, Tag::*, VarBind, EMPTY_LIS, LIS},
+    heap::{Cell, Heap, QueryHeap, Tag::*, VarBind, EMPTY_LIS, LIS},
     predicate_modules::PredReturn,
 };
 
@@ -140,8 +140,8 @@ pub fn read_structure_addrs(heap: &QueryHeap, addr: usize) -> Option<Vec<usize>>
 /// need to care which one it was handed.
 pub fn read_text(heap: &QueryHeap, addr: usize) -> Option<Arc<str>> {
     match resolve_to_cell(heap, addr) {
-        (Con, id) => Some(SymbolDB::get_const(id)),
-        (Stri, idx) => Some(SymbolDB::get_string(idx)),
+        (Con, id) => Some(heap.symbols().get_const(id)),
+        (Stri, idx) => Some(heap.symbols().get_string(idx)),
         _ => None,
     }
 }
@@ -155,13 +155,13 @@ pub fn read_text(heap: &QueryHeap, addr: usize) -> Option<Arc<str>> {
 
 /// Intern `text` as an atom and push a `Con` cell for it.
 pub fn push_const(heap: &mut QueryHeap, text: &str) -> usize {
-    let id = SymbolDB::set_const(text);
+    let id = heap.symbols().set_const(text);
     heap.heap_push((Con, id))
 }
 
 /// Intern `text` as a string and push a `Stri` cell for it.
 pub fn push_string(heap: &mut QueryHeap, text: Arc<str>) -> usize {
-    let idx = SymbolDB::set_string(text.to_string());
+    let idx = heap.symbols().set_string(text.to_string());
     heap.heap_push((Stri, idx))
 }
 
@@ -216,7 +216,7 @@ pub fn unify_with_const(heap: &mut QueryHeap, arg: usize, text: &str) -> PredRet
             let addr = push_const(heap, text);
             PredReturn::bind_addr(heap, var_id, addr)
         }
-        (Con, id) => (&*SymbolDB::get_const(id) == text).into(),
+        (Con, id) => (&*heap.symbols().get_const(id) == text).into(),
         _ => PredReturn::False,
     }
 }
@@ -228,7 +228,7 @@ pub fn unify_with_string(heap: &mut QueryHeap, arg: usize, text: Arc<str>) -> Pr
             let addr = push_string(heap, text);
             PredReturn::bind_addr(heap, var_id, addr)
         }
-        (Stri, idx) => (SymbolDB::get_string(idx) == text).into(),
+        (Stri, idx) => (heap.symbols().get_string(idx) == text).into(),
         _ => PredReturn::False,
     }
 }
@@ -449,32 +449,33 @@ impl TestWrapper {
 
 #[cfg(test)]
 mod build_tests {
+    use crate::heap::test_prog;
     use super::*;
-    use crate::heap::{Cell, QueryHeap, SymbolDB};
+    use crate::heap::{Heap, ProgramHeap, Cell, QueryHeap};
 
-    fn heap() -> QueryHeap<'static> {
-        QueryHeap::new(&[], None)
-    }
 
-    fn con_cell(name: &str) -> Cell {
-        (Con, SymbolDB::set_const(name))
+
+    fn con_cell(prog: &ProgramHeap, name: &str) -> Cell {
+        (Con, prog.symbols().set_const(name))
     }
 
     /// `f(a)` laid out as the cells of a finished term.
-    fn compound_cells() -> Vec<Cell> {
-        vec![(Comp, 2), con_cell("f"), con_cell("a")]
+    fn compound_cells(prog: &ProgramHeap) -> Vec<Cell> {
+        vec![(Comp, 2), con_cell(prog, "f"), con_cell(prog, "a")]
     }
 
     #[test]
     fn a_list_can_be_built_from_cells() {
-        let mut heap = heap();
-        let list = build_list(&mut heap, &[con_cell("a"), con_cell("b")]);
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
+        let list = build_list(&mut heap, &[con_cell(prog, "a"), con_cell(prog, "b")]);
         assert_eq!(heap.term_string(list), "[a,b]");
     }
 
     #[test]
     fn a_list_can_be_built_from_addresses() {
-        let mut heap = heap();
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
         let a = push_const(&mut heap, "a");
         let b = push_const(&mut heap, "b");
         let list = build_list(&mut heap, &[a, b]);
@@ -485,30 +486,34 @@ mod build_tests {
     /// what allows an element that is itself several cells.
     #[test]
     fn a_list_can_be_built_from_prebuilt_terms() {
-        let mut heap = heap();
-        let term = compound_cells();
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
+        let term = compound_cells(prog);
         let list = build_list(&mut heap, &[term.as_slice(), term.as_slice()]);
         assert_eq!(heap.term_string(list), "[f(a),f(a)]");
     }
 
     #[test]
     fn an_empty_list_is_the_empty_list() {
-        let mut heap = heap();
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
         let list = build_list(&mut heap, &[] as &[Cell]);
         assert_eq!(heap.term_string(list), "[]");
     }
 
     #[test]
     fn a_compound_takes_its_functor_first() {
-        let mut heap = heap();
-        let comp = build_compound(&mut heap, &[con_cell("f"), con_cell("a"), con_cell("b")]);
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
+        let comp = build_compound(&mut heap, &[con_cell(prog, "f"), con_cell(prog, "a"), con_cell(prog, "b")]);
         assert_eq!(heap.term_string(comp), "f(a,b)");
     }
 
     #[test]
     fn a_tuple_holds_its_elements() {
-        let mut heap = heap();
-        let tuple = build_tuple(&mut heap, &[con_cell("a"), con_cell("b")]);
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
+        let tuple = build_tuple(&mut heap, &[con_cell(prog, "a"), con_cell(prog, "b")]);
         assert_eq!(heap.term_string(tuple), "(a,b)");
     }
 
@@ -516,7 +521,8 @@ mod build_tests {
     /// same term, so only one survives.
     #[test]
     fn a_set_drops_duplicate_atoms() {
-        let mut heap = heap();
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
         let first_a = push_const(&mut heap, "a");
         let b = push_const(&mut heap, "b");
         let second_a = push_const(&mut heap, "a");
@@ -530,8 +536,9 @@ mod build_tests {
     /// must still report the surviving count.
     #[test]
     fn a_set_drops_duplicate_compound_terms() {
-        let mut heap = heap();
-        let term = compound_cells();
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
+        let term = compound_cells(prog);
 
         let set = build_set(
             &mut heap,
@@ -548,9 +555,10 @@ mod build_tests {
     /// to compare whole terms, not just their first cell.
     #[test]
     fn a_set_keeps_distinct_compound_terms() {
-        let mut heap = heap();
-        let f_a: Vec<Cell> = vec![(Comp, 2), con_cell("f"), con_cell("a")];
-        let g_b: Vec<Cell> = vec![(Comp, 2), con_cell("g"), con_cell("b")];
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
+        let f_a: Vec<Cell> = vec![(Comp, 2), con_cell(prog, "f"), con_cell(prog, "a")];
+        let g_b: Vec<Cell> = vec![(Comp, 2), con_cell(prog, "g"), con_cell(prog, "b")];
 
         let set = build_set(&mut heap, &[f_a.as_slice(), g_b.as_slice()]);
         assert_eq!(heap.term_string(set), "{f(a),g(b)}");
@@ -558,8 +566,9 @@ mod build_tests {
 
     #[test]
     fn a_set_of_distinct_terms_keeps_all_of_them() {
-        let mut heap = heap();
-        let set = build_set(&mut heap, &[con_cell("a"), con_cell("b"), con_cell("c")]);
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
+        let set = build_set(&mut heap, &[con_cell(prog, "a"), con_cell(prog, "b"), con_cell(prog, "c")]);
         assert_eq!(heap.term_string(set), "{a,b,c}");
     }
 }

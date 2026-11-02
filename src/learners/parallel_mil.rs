@@ -11,7 +11,7 @@ use std::{
 use crate::{
     app::{App, TopProg},
     heap::{
-        Cell, Heap, QueryHeap,
+        Cell, Heap, ProgramHeap, QueryHeap,
         Tag::Var,
         VarBind::{Addr, VarId},
         VarReg,
@@ -184,7 +184,7 @@ fn build_sub_hypotheses(
     pos_goals: &[usize],
     neg_goals: &[usize],
     predicate_table: &PredicateTable,
-    heap: &[Cell],
+    heap: &ProgramHeap,
     config: Config,
 ) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
     let pool = rayon::ThreadPoolBuilder::new()
@@ -276,7 +276,7 @@ fn build_sub_hypotheses(
 /// in place rather than reclaimed.
 fn merge_thread_results(
     thread_results: impl IntoIterator<Item = ThreadResult>,
-    heap: &[Cell],
+    heap: &ProgramHeap,
     total: usize,
     searched: &AtomicUsize,
 ) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
@@ -376,12 +376,12 @@ fn sub_hypotheses_for_example(
     goal: usize,
     neg_goals: &[usize],
     predicate_table: &PredicateTable,
-    prog_heap: &[Cell],
+    prog_heap: &ProgramHeap,
     config: Config,
     cache: &NegativeCache,
 ) -> ThreadResult {
     let mut query_heap = QueryHeap::new(prog_heap, None);
-    let mut dst = QueryHeap::new(&[], None);
+    let mut dst = QueryHeap::detached(prog_heap);
     let mut clause_sets = Vec::new();
     let mut pred_defs = Vec::new();
 
@@ -522,9 +522,9 @@ fn top_prog_to_string(top_program: Vec<Clause>, heap: &impl Heap) -> String {
 
 #[cfg(test)]
 mod extraction_tests {
+    use crate::heap::test_prog;
     use super::*;
-    use crate::heap::{
-        SymbolDB,
+    use crate::heap::{Heap,
         Tag::{Comp, Con},
     };
 
@@ -545,9 +545,10 @@ mod extraction_tests {
 
     #[test]
     fn clone_var_reg_reuses_ref_map_for_repeated_unbound_variable() {
-        let mut proof_heap = QueryHeap::new(&[], None);
+        let prog = test_prog();
+        let mut proof_heap = QueryHeap::new(&prog, None);
         let v = proof_heap.new_var(VarReg::UNBOUND);
-        let mut dst = QueryHeap::new(&[], None);
+        let mut dst = QueryHeap::detached(&prog);
         let mut ref_map = HashMap::new();
 
         let first = clone_var_reg(&mut dst, &proof_heap, VarReg::from_var(v), &mut ref_map);
@@ -565,11 +566,12 @@ mod extraction_tests {
 
     #[test]
     fn clone_var_reg_clones_a_direct_address_binding() {
-        let mut proof_heap = QueryHeap::new(&[], None);
-        let sym = SymbolDB::set_const("q");
+        let prog = test_prog();
+        let mut proof_heap = QueryHeap::new(&prog, None);
+        let sym = prog.symbols().set_const("q");
         let addr_q = proof_heap.heap_push((Con, sym));
 
-        let mut dst = QueryHeap::new(&[], None);
+        let mut dst = QueryHeap::detached(&prog);
         let mut ref_map = HashMap::new();
 
         let cloned = clone_var_reg(
@@ -585,16 +587,17 @@ mod extraction_tests {
 
     #[test]
     fn clone_var_reg_inlines_a_variable_bound_since_the_meta_sub_was_recorded() {
+        let prog = test_prog();
         // Simulates a MetaSub recorded while an arg register was still an
         // unbound variable, with the proof later binding that variable to an
         // address before extraction runs.
-        let mut proof_heap = QueryHeap::new(&[], None);
-        let sym = SymbolDB::set_const("p");
+        let mut proof_heap = QueryHeap::new(&prog, None);
+        let sym = prog.symbols().set_const("p");
         let addr_p = proof_heap.heap_push((Con, sym));
         let v = proof_heap.new_var(VarReg::UNBOUND);
         proof_heap.bind(v, Addr(addr_p));
 
-        let mut dst = QueryHeap::new(&[], None);
+        let mut dst = QueryHeap::detached(&prog);
         let mut ref_map = HashMap::new();
 
         let cloned = clone_var_reg(&mut dst, &proof_heap, VarReg::from_var(v), &mut ref_map);
@@ -608,7 +611,8 @@ mod extraction_tests {
 
     #[test]
     fn clone_meta_sub_preserves_meta_clause_id_and_translates_subs() {
-        let mut proof_heap = QueryHeap::new(&[], None);
+        let prog = test_prog();
+        let mut proof_heap = QueryHeap::new(&prog, None);
         let v1 = proof_heap.new_var(VarReg::UNBOUND);
         let v2 = proof_heap.new_var(VarReg::UNBOUND);
         let meta_sub = MetaSub {
@@ -616,7 +620,7 @@ mod extraction_tests {
             subs: vec![VarReg::from_var(v1), VarReg::from_var(v2)],
         };
 
-        let mut dst = QueryHeap::new(&[], None);
+        let mut dst = QueryHeap::detached(&prog);
         let mut ref_map = HashMap::new();
         let cloned = clone_meta_sub(&mut dst, &proof_heap, &meta_sub, &mut ref_map);
 
@@ -631,13 +635,14 @@ mod extraction_tests {
 
     #[test]
     fn extract_hypothesis_leaves_ordinary_clauses_untouched_by_pred_def_extraction() {
+        let prog = test_prog();
         // A fact headed by a *constant* predicate `p` (`(Comp, 1), (Con, p)`,
         // i.e. a 0-ary predicate: a Comp's arity counts the functor cell
         // itself). `PredDef::extract_pred_defs_from_h` only lifts clauses
         // whose functor cell is a predicate *variable*, so this must be left
         // as an ordinary clause.
-        let mut proof_heap = QueryHeap::new(&[], None);
-        let sym = SymbolDB::set_const("p");
+        let mut proof_heap = QueryHeap::new(&prog, None);
+        let sym = prog.symbols().set_const("p");
         let head_addr = proof_heap.heap_len();
         proof_heap.heap_push((Comp, 1));
         proof_heap.heap_push((Con, sym));
@@ -648,7 +653,7 @@ mod extraction_tests {
         };
 
         let proof = proof_with_hypothesis(&proof_heap, vec![clause], vec![meta_sub]);
-        let mut dst = QueryHeap::new(&[], None);
+        let mut dst = QueryHeap::detached(&prog);
         let (clauses, pred_defs) = extract_hypothesis(&proof, &proof_heap, &mut dst);
 
         assert!(pred_defs.is_empty());
@@ -659,11 +664,12 @@ mod extraction_tests {
 
     #[test]
     fn extract_hypothesis_shares_variable_identity_between_clause_and_meta_sub() {
+        let prog = test_prog();
         // `pred_var(arg_var).` with `arg_var` also recorded in the clause's
         // MetaSub -- the clause head is a predicate-variable-headed Comp, so
         // this should be lifted into a PredDef rather than kept as an
         // ordinary clause.
-        let mut proof_heap = QueryHeap::new(&[], None);
+        let mut proof_heap = QueryHeap::new(&prog, None);
         let pred_var = proof_heap.new_var(VarReg::UNBOUND);
         let arg_var = proof_heap.new_var(VarReg::UNBOUND);
         let head_addr = proof_heap.heap_len();
@@ -678,7 +684,7 @@ mod extraction_tests {
         };
 
         let proof = proof_with_hypothesis(&proof_heap, vec![clause], vec![meta_sub]);
-        let mut dst = QueryHeap::new(&[], None);
+        let mut dst = QueryHeap::detached(&prog);
         let (clauses, pred_defs) = extract_hypothesis(&proof, &proof_heap, &mut dst);
 
         assert!(
@@ -704,13 +710,14 @@ mod extraction_tests {
 
     #[test]
     fn extract_hypothesis_uses_a_fresh_ref_map_each_call() {
+        let prog = test_prog();
         // Two "solutions" of the same proof can legitimately reuse the same
         // proof-heap var id (backtracking resets and reassigns registers).
         // Each call to `extract_hypothesis` must still land on a distinct
         // destination variable rather than aliasing the two solutions. Use a
         // predicate-variable-headed clause so the shared identity shows up on
         // the extracted `PredDef`'s meta sub.
-        let mut proof_heap = QueryHeap::new(&[], None);
+        let mut proof_heap = QueryHeap::new(&prog, None);
         let pred_var = proof_heap.new_var(VarReg::UNBOUND);
         let head_addr = proof_heap.heap_len();
         proof_heap.heap_push((Comp, 1));
@@ -721,7 +728,7 @@ mod extraction_tests {
             subs: vec![VarReg::from_var(pred_var)],
         };
 
-        let mut dst = QueryHeap::new(&[], None);
+        let mut dst = QueryHeap::detached(&prog);
 
         let proof1 =
             proof_with_hypothesis(&proof_heap, vec![clause.clone()], vec![meta_sub.clone()]);
@@ -743,18 +750,16 @@ mod extraction_tests {
 
 #[cfg(test)]
 mod merge_tests {
+    use crate::heap::test_prog;
     use super::*;
-    use crate::heap::{
-        SymbolDB,
-        Tag::{Comp, Con},
-    };
+    use crate::heap::Tag::{Comp, Con};
 
     /// [`merge_thread_results`] with the progress-reporting arguments filled
     /// in: these tests supply every message up front, so the number of
     /// examples searched is simply the message count.
     fn merge(
         results: Vec<ThreadResult>,
-        heap: &[Cell],
+        heap: &ProgramHeap,
     ) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
         let total = results.len();
         merge_thread_results(results, heap, total, &AtomicUsize::new(total))
@@ -763,8 +768,9 @@ mod merge_tests {
 
     /// A fresh, 0-indexed thread-local heap to build a test's clauses and
     /// predicate definitions against.
+
     fn thread_heap() -> QueryHeap<'static> {
-        QueryHeap::new(&[], None)
+        QueryHeap::new(test_prog(), None)
     }
 
     /// Deconstruct a thread-local heap into the `(cells, var_regs)` pair
@@ -790,7 +796,7 @@ mod merge_tests {
         };
         let pred_def = PredDef::new(smallvec![meta_sub]);
 
-        let (cells, hypotheses, pdt) = merge(vec![(Vec::new(), vec![pred_def], parts(heap))], &[]);
+        let (cells, hypotheses, pdt) = merge(vec![(Vec::new(), vec![pred_def], parts(heap))], test_prog());
 
         assert!(hypotheses.is_empty());
         for (i, cell) in cells.iter().enumerate() {
@@ -826,7 +832,7 @@ mod merge_tests {
             (Vec::new(), vec![pred_def], parts(heap))
         };
 
-        let (cells, hypotheses, pdt) = merge(vec![make_message(0), make_message(1)], &[]);
+        let (cells, hypotheses, pdt) = merge(vec![make_message(0), make_message(1)], test_prog());
 
         assert!(hypotheses.is_empty());
         assert_eq!(
@@ -852,8 +858,9 @@ mod merge_tests {
 
     #[test]
     fn merge_shifts_clause_literal_addresses_between_messages() {
-        let sym_p = SymbolDB::set_const("merge_test_shift_p");
-        let sym_q = SymbolDB::set_const("merge_test_shift_q");
+        let prog = test_prog();
+        let sym_p = prog.symbols().set_const("merge_test_shift_p");
+        let sym_q = prog.symbols().set_const("merge_test_shift_q");
 
         let message = |sym: usize| {
             let mut heap = thread_heap();
@@ -863,7 +870,7 @@ mod merge_tests {
             (clauses, Vec::new(), parts(heap))
         };
 
-        let (cells, hypotheses, _) = merge(vec![message(sym_p), message(sym_q)], &[]);
+        let (cells, hypotheses, _) = merge(vec![message(sym_p), message(sym_q)], test_prog());
 
         assert_eq!(
             cells,
@@ -880,7 +887,8 @@ mod merge_tests {
 
     #[test]
     fn merge_drops_duplicate_hypotheses_found_across_messages() {
-        let sym_p = SymbolDB::set_const("merge_test_dup_p");
+        let prog = test_prog();
+        let sym_p = prog.symbols().set_const("merge_test_dup_p");
 
         let message = || {
             let mut heap = thread_heap();
@@ -890,7 +898,7 @@ mod merge_tests {
             (clauses, Vec::new(), parts(heap))
         };
 
-        let (cells, hypotheses, _) = merge(vec![message(), message()], &[]);
+        let (cells, hypotheses, _) = merge(vec![message(), message()], test_prog());
 
         assert_eq!(
             hypotheses.len(),
@@ -911,6 +919,6 @@ mod merge_tests {
         let stray_var = heap.new_var(VarReg::UNBOUND);
         heap.heap_push((Var, stray_var));
 
-        let _ = merge(vec![(Vec::new(), Vec::new(), parts(heap))], &[]);
+        let _ = merge(vec![(Vec::new(), Vec::new(), parts(heap))], test_prog());
     }
 }

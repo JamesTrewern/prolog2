@@ -236,6 +236,7 @@ pub(crate) fn _build_clause(heap: &mut impl Heap, clause: &str) -> Clause {
 
 #[cfg(test)]
 mod malformed_meta_rule_tests {
+    
     use super::{extract_meta_rule_vars, extract_var_names_from_list, extract_var_names_from_set};
     use crate::{
         app::App,
@@ -349,7 +350,7 @@ mod malformed_meta_rule_tests {
 #[cfg(test)]
 mod tests {
     use crate::{
-        heap::{Cell, SymbolDB, Tag},
+        heap::{Heap, ProgramHeap, Tag},
         parser::execute_tree::execute_tree,
         program::{Predicate, PredicateTable},
     };
@@ -358,13 +359,13 @@ mod tests {
 
     #[test]
     fn facts() {
-        let mut heap = Vec::<Cell>::new();
+        let mut heap = ProgramHeap::new();
         let mut pred_table = PredicateTable::new();
         let facts = TokenStream::new(tokenise("p(a,b).q(c).").unwrap())
             .parse_all()
             .unwrap();
 
-        let [p, q, a, b, c] = ["p", "q", "a", "b", "c"].map(|s| SymbolDB::set_const(s));
+        let [p, q, a, b, c] = ["p", "q", "a", "b", "c"].map(|s| heap.symbols().set_const(s));
 
         execute_tree(facts, &mut heap, &mut pred_table).unwrap();
 
@@ -391,14 +392,14 @@ mod tests {
 
     #[test]
     fn rules() {
-        let mut heap = Vec::<Cell>::new();
+        let mut heap = ProgramHeap::new();
         let mut pred_table = PredicateTable::new();
         let facts =
             TokenStream::new(tokenise("p(X,Y):-q(X,a),q(Y,b). q(X):-r(X). q(X):-p(X).").unwrap())
                 .parse_all()
                 .unwrap();
 
-        let [p, q, r, a, b] = ["p", "q", "r", "a", "b"].map(|s| SymbolDB::set_const(s));
+        let [p, q, r, a, b] = ["p", "q", "r", "a", "b"].map(|s| heap.symbols().set_const(s));
 
         execute_tree(facts, &mut heap, &mut pred_table).unwrap();
 
@@ -447,7 +448,7 @@ mod tests {
 
     #[test]
     fn meta_rule_simple() {
-        let mut heap = Vec::<Cell>::new();
+        let mut heap = ProgramHeap::new();
         let mut pred_table = PredicateTable::new();
         let clause = TokenStream::new(tokenise("P(X,Y):-Q(X),R(Y),{P,Q,R}.").unwrap())
             .parse_all()
@@ -481,12 +482,12 @@ mod tests {
 
     #[test]
     fn meta_rule_complex() {
-        let mut heap = Vec::<Cell>::new();
+        let mut heap = ProgramHeap::new();
         let mut pred_table = PredicateTable::new();
         let clause = TokenStream::new(tokenise("p(X,Y):-Q(X,a),R(Y,b),{Q,R}.").unwrap())
             .parse_all()
             .unwrap();
-        let [p, _q, _r, a, b] = ["p", "q", "r", "a", "b"].map(|s| SymbolDB::set_const(s));
+        let [p, _q, _r, a, b] = ["p", "q", "r", "a", "b"].map(|s| heap.symbols().set_const(s));
 
         execute_tree(clause, &mut heap, &mut pred_table).unwrap();
 
@@ -522,15 +523,15 @@ mod tests {
         // El=Arg0, Q1=Arg1, Q2=Arg2
         // meta_vars = {El, Q1, Q2} = {0, 1, 2}
         // constrained_vars = {El} = {0}
-        let mut heap = Vec::<Cell>::new();
+        let mut heap = ProgramHeap::new();
         let mut pred_table = PredicateTable::new();
         let facts =
             TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),{El},[Q1,Q2].").unwrap())
                 .parse_all()
                 .unwrap();
 
-        let edge = SymbolDB::set_const("edge");
-        let _q = SymbolDB::set_const("q");
+        let edge = heap.symbols().set_const("edge");
+        let _q = heap.symbols().set_const("q");
 
         execute_tree(facts, &mut heap, &mut pred_table).unwrap();
 
@@ -555,14 +556,14 @@ mod tests {
         // El=Arg0, Q1=Arg1, Q2=Arg2
         // meta_vars = {El, Q1, Q2} = {0, 1, 2}
         // constrained_vars = {} (empty)
-        let mut heap = Vec::<Cell>::new();
+        let mut heap = ProgramHeap::new();
         let mut pred_table = PredicateTable::new();
         let facts = TokenStream::new(tokenise("edge(El,Q1,Q2):-q(Q1),q(Q2),[El,Q1,Q2].").unwrap())
             .parse_all()
             .unwrap();
 
-        let edge = SymbolDB::set_const("edge");
-        let _q = SymbolDB::set_const("q");
+        let edge = heap.symbols().set_const("edge");
+        let _q = heap.symbols().set_const("q");
 
         execute_tree(facts, &mut heap, &mut pred_table).unwrap();
 
@@ -583,7 +584,7 @@ mod tests {
 
     #[test]
     fn meta_facts() {
-        let mut heap = Vec::<Cell>::new();
+        let mut heap = ProgramHeap::new();
         let mut pred_table = PredicateTable::new();
         let facts = TokenStream::new(tokenise("Map([],[],X),{Map}.").unwrap())
             .parse_all()

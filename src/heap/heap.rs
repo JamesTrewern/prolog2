@@ -69,6 +69,14 @@ pub trait Heap:
     + Index<Range<usize>, Output = [Cell]>
     + Index<RangeFrom<usize>>
 {
+    /// The symbol table these cells are interpreted against.
+    ///
+    /// Every heap can reach one: the program heap owns it, and a query heap
+    /// forwards to the program it borrows. This is why naming a constant or
+    /// a variable needs no extra parameter anywhere -- any code holding a
+    /// heap already holds its symbols.
+    fn symbols(&self) -> &SymbolDB;
+
     /// Reset Ref cells affected by binding to self references
     /// @binding: List of (usize, usize) tuples representing heap indexes, left -> right
     fn unbind(&mut self, binding: &[usize]);
@@ -331,7 +339,7 @@ pub trait Heap:
                 // Equal text may have been interned twice under different
                 // indices, so compare the content.
                 (Some((_, (Stri, index1))), Some((_, (Stri, index2)))) => {
-                    if *SymbolDB::get_string(index1) != *SymbolDB::get_string(index2) {
+                    if *self.symbols().get_string(index1) != *self.symbols().get_string(index2) {
                         return false;
                     }
                 }
@@ -360,7 +368,7 @@ pub trait Heap:
             let (tag, value) = self[i];
             match tag {
                 Con => {
-                    println!("[{i:3}]|{tag:w$}|{:w$}|", SymbolDB::get_const(value))
+                    println!("[{i:3}]|{tag:w$}|{:w$}|", self.symbols().get_const(value))
                 }
                 Lis => println!("[{i:3}]|{tag:w$}|{value:w$}|"),
                 ELis => println!("[{i:3}]|{tag:w$}|{:w$}|", "[]"),
@@ -379,7 +387,7 @@ pub trait Heap:
                 Set => println!("[{i:3}]| Set |{value:w$}| {}", self.term_string(i)),
                 Stri => println!(
                     "[{i:3}]|Stri |{value:w$}| \"{}\"",
-                    SymbolDB::get_string(value)
+                    self.symbols().get_string(value)
                 ),
                 _ => println!("[{i:3}]|{tag:w$?}|{value:w$}|"),
             };
@@ -465,17 +473,17 @@ pub trait Heap:
     fn term_string_rec(&self, addr: &mut usize, buf: &mut String) -> Result<(), std::fmt::Error> {
         // println!("[{addr}]:{:?}", self[addr]);
         match self[*addr].0 {
-            Con => buf.write_str(&SymbolDB::get_const(self[*addr].1)),
+            Con => buf.write_str(&self.symbols().get_const(self[*addr].1)),
             Comp => self.comp_string(addr, buf),
             Lis => self.list_string(addr, buf),
             ELis => write!(buf, "[]"),
-            Arg => match SymbolDB::get_var(*addr, self.get_id(*addr)) {
+            Arg => match self.symbols().get_var(*addr, self.get_id(*addr)) {
                 Some(symbol) => buf.write_str(&symbol),
                 None => write!(buf, "Arg_{}", self[*addr].1),
             },
             Var => match self.var_deref(self[*addr].1) {
                 Addr(mut ref_addr) => self.term_string_rec(&mut ref_addr, buf),
-                VarId(var_id) => match SymbolDB::get_var(var_id, self.get_id(*addr)).to_owned() {
+                VarId(var_id) => match self.symbols().get_var(var_id, self.get_id(*addr)).to_owned() {
                     Some(symbol) => buf.write_str(&symbol),
                     // Name the *representative*, not the cell. Unifying two
                     // free variables aliases one to the other without binding
@@ -498,7 +506,7 @@ pub trait Heap:
             }
             Tup => self.tuple_string(addr, buf),
             Set => self.set_string(addr, buf),
-            Stri => write!(buf, "\"{}\"", SymbolDB::get_string(self[*addr].1)),
+            Stri => write!(buf, "\"{}\"", self.symbols().get_string(self[*addr].1)),
             AVar => write!(buf, "_"),
         }
     }
@@ -533,60 +541,23 @@ fn consume_subterm(walk: &mut TermWalk, heap: &impl Heap) {
     while sub_walk.next_cell(heap).is_some() {}
 }
 
-impl Heap for Vec<Cell> {
-    fn heap_push(&mut self, cell: Cell) -> usize {
-        let i = self.len();
-        self.push(cell);
-        i
-    }
-
-    fn heap_len(&self) -> usize {
-        self.len()
-    }
-
-    fn heap_last(&mut self) -> &mut Cell {
-        self.last_mut().unwrap()
-    }
-
-    fn set_var(&mut self, _: Option<usize>) -> usize {
-        unreachable!("Shouldn't set var in program heap");
-    }
-
-    fn bound(&self, _var_id: usize) -> Option<VarBind> {
-        unreachable!("Should not consult program heap for variable binding")
-    }
-
-    fn var_deref(&self, _: usize) -> VarBind {
-        unreachable!("no vars to deref in program heap")
-    }
-
-    fn bind(&mut self, _: usize, _: VarBind) {
-        unreachable!("Should not attempt to bind in program heap")
-    }
-
-    fn unbind(&mut self, _: &[usize]) {
-        unreachable!("Should not attempt to unbind in program heap")
-    }
-}
 
 #[cfg(test)]
 mod tests {
+    use crate::heap::test_prog;
     use std::collections::HashMap;
 
-    use crate::heap::{
-        query_heap::QueryHeap,
+    use crate::heap::{Heap, query_heap::QueryHeap,
         VarBind::{Addr, VarId},
         VarReg,
     };
 
-    use super::{
-        super::symbol_db::SymbolDB,
-        {Heap, Tag::*, EMPTY_LIS, LIS},
-    };
+    use super::{Tag::*, EMPTY_LIS, LIS};
 
     #[test]
     fn var_deref() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(&prog, None);
         heap.var_regs.extend_from_slice(&[
             VarId(1).into(),
             VarId(2).into(),
@@ -606,10 +577,11 @@ mod tests {
 
     #[test]
     fn dereference() {
-        let f = SymbolDB::set_const("f");
-        let a = SymbolDB::set_const("a");
+        let prog = test_prog();
+        let f = prog.symbols().set_const("f");
+        let a = prog.symbols().set_const("a");
 
-        let mut heap = QueryHeap::new(&[], None);
+        let mut heap = QueryHeap::new(&prog, None);
         heap.var_regs.extend_from_slice(&[
             VarId(1).into(),
             VarId(2).into(),
@@ -658,13 +630,14 @@ mod tests {
 
     #[test]
     fn clone_term() {
-        let a = SymbolDB::set_const("a");
-        let f = SymbolDB::set_const("f");
-        let p = SymbolDB::set_const("p");
+        let prog = test_prog();
+        let a = prog.symbols().set_const("a");
+        let f = prog.symbols().set_const("f");
+        let p = prog.symbols().set_const("p");
 
         //Test simple
-        let mut heap = QueryHeap::new(&[], None);
-        let mut other = QueryHeap::new(&[], None);
+        let mut heap = QueryHeap::new(&prog, None);
+        let mut other = QueryHeap::new(&prog, None);
         other.cells = vec![(Comp, 3), (Con, f), (Con, a), (Arg, 0)];
         heap.clone_term_from_other(&other, 0, &mut HashMap::new());
         assert_eq!(&heap.cells, &[(Comp, 3), (Con, f), (Con, a), (Arg, 0),]);
@@ -764,11 +737,12 @@ mod tests {
 
     #[test]
     fn str_symbol_arity() {
-        let p = SymbolDB::set_const("p");
-        let f = SymbolDB::set_const("f");
-        let a = SymbolDB::set_const("a");
+        let prog = test_prog();
+        let p = prog.symbols().set_const("p");
+        let f = prog.symbols().set_const("f");
+        let a = prog.symbols().set_const("a");
 
-        let mut heap = QueryHeap::new(&[], None);
+        let mut heap = QueryHeap::new(&prog, None);
 
         //p(a)
         heap.cells = vec![(Comp, 2), (Con, p), (Con, a)];
@@ -812,10 +786,14 @@ mod tests {
 
 #[cfg(test)]
 mod term_equal_tests {
-    use crate::heap::{Cell, Heap, QueryHeap, SymbolDB, Tag::*, VarBind, VarReg, EMPTY_LIS, LIS};
+    use crate::heap::test_prog;
+    
+    use crate::heap::{Cell, Heap, QueryHeap, Tag::*, VarBind, VarReg, EMPTY_LIS, LIS};
 
     fn con(name: &str) -> Cell {
-        (Con, SymbolDB::set_const(name))
+
+        let prog = test_prog();
+        (Con, prog.symbols().set_const(name))
     }
 
     /// Lay `cells` on a fresh heap and return the address they start at.
@@ -827,8 +805,9 @@ mod term_equal_tests {
         addr
     }
 
+
     fn heap() -> QueryHeap<'static> {
-        QueryHeap::new(&[], None)
+        QueryHeap::new(test_prog(), None)
     }
 
     #[test]
@@ -991,10 +970,14 @@ mod term_equal_tests {
     /// be compared by content.
     #[test]
     fn strings_compare_by_content() {
-        let mut heap = heap();
-        let first = push(&mut heap, &[(Stri, SymbolDB::set_string("hi".into()))]);
-        let same = push(&mut heap, &[(Stri, SymbolDB::set_string("hi".into()))]);
-        let other = push(&mut heap, &[(Stri, SymbolDB::set_string("ho".into()))]);
+        let prog = test_prog();
+        let mut heap = QueryHeap::new(prog, None);
+        let hi = prog.symbols().set_string("hi");
+        let hi_again = prog.symbols().set_string("hi");
+        let ho = prog.symbols().set_string("ho");
+        let first = push(&mut heap, &[(Stri, hi)]);
+        let same = push(&mut heap, &[(Stri, hi_again)]);
+        let other = push(&mut heap, &[(Stri, ho)]);
 
         assert!(heap.term_equal(first, same));
         assert!(!heap.term_equal(first, other));

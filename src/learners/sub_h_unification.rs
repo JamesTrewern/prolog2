@@ -4,7 +4,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::{specialise::clauses_entail_negative, utils::count_coverage};
 use crate::{
-    heap::{Cell, Heap, QueryHeap},
+    heap::{Heap, QueryHeap, ProgramHeap},
     learners::utils::{count_pred_clauses, Coverage},
     program::{Clause, PredicateTable},
     Config,
@@ -29,7 +29,7 @@ pub(super) fn least_sub_h(
     pos_goals: &[usize],
     neg_goals: &[usize],
     hypotheses: Vec<Box<[Clause]>>,
-    heap: &[Cell],
+    heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     config: Config,
     pred_symbols: &HashSet<usize>,
@@ -171,7 +171,7 @@ fn find_coverage_groups(
     max_k: usize,
     n_pos_examples: usize,
     neg_goals: &[usize],
-    heap: &[Cell],
+    heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     config: Config,
 ) -> Vec<Box<[usize]>> {
@@ -263,7 +263,7 @@ fn group_entails_negative(
     h_profiles: &[HProfile],
     group: &[usize],
     neg_goals: &[usize],
-    heap: &[Cell],
+    heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     config: Config,
 ) -> bool {
@@ -306,7 +306,7 @@ impl HProfile {
     fn new(
         h: Box<[Clause]>,
         pos_goals: &[usize],
-        heap: &[Cell],
+        heap: &ProgramHeap,
         predicate_table: &PredicateTable,
         max_depth: usize,
         pred_symbols: &HashSet<usize>,
@@ -324,9 +324,9 @@ impl HProfile {
 
 #[cfg(test)]
 mod coverage_group_tests {
+    use crate::heap::ProgramHeap;
     use super::{find_coverage_groups, HProfile};
     use crate::{
-        heap::Cell,
         learners::utils::{compile_examples, Coverage},
         parser::_build_clause,
         program::{Clause, PredicateTable},
@@ -367,7 +367,7 @@ mod coverage_group_tests {
     /// neither does the fact `r(c)`, but combined they prove `p(c)`.
     #[test]
     fn a_group_entailing_a_negative_is_rejected_and_the_search_continues() {
-        let mut prog_heap: Vec<Cell> = Vec::new();
+        let mut prog_heap= ProgramHeap::new();
         let rule = _build_clause(&mut prog_heap, "p(X):-r(X).");
         let bad_fact = _build_clause(&mut prog_heap, "r(c).");
         let good_fact = _build_clause(&mut prog_heap, "r(d).");
@@ -407,7 +407,7 @@ mod coverage_group_tests {
     /// being unreachable.
     #[test]
     fn without_negatives_both_covers_are_kept() {
-        let mut prog_heap: Vec<Cell> = Vec::new();
+        let mut prog_heap= ProgramHeap::new();
         let rule = _build_clause(&mut prog_heap, "p(X):-r(X).");
         let bad_fact = _build_clause(&mut prog_heap, "r(c).");
         let good_fact = _build_clause(&mut prog_heap, "r(d).");
@@ -441,7 +441,7 @@ mod coverage_group_tests {
     /// one-profile group could look like a complete cover.
     #[test]
     fn returned_groups_are_complete_covers() {
-        let mut prog_heap: Vec<Cell> = Vec::new();
+        let mut prog_heap= ProgramHeap::new();
         let a = _build_clause(&mut prog_heap, "a(1).");
         let b = _build_clause(&mut prog_heap, "b(1).");
         let c = _build_clause(&mut prog_heap, "c(1).");
@@ -482,7 +482,7 @@ mod coverage_group_tests {
     /// complete group now costs a proof search against every negative.
     #[test]
     fn groups_are_not_repeated_in_a_different_order() {
-        let mut prog_heap: Vec<Cell> = Vec::new();
+        let mut prog_heap= ProgramHeap::new();
         let a = _build_clause(&mut prog_heap, "a(1).");
         let b = _build_clause(&mut prog_heap, "b(1).");
 

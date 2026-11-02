@@ -257,7 +257,7 @@ mod test {
     use std::{assert_eq, vec};
 
     use crate::{
-        heap::{QueryHeap, SymbolDB, VarReg, EMPTY_LIS},
+        heap::{Heap, ProgramHeap, QueryHeap, SymbolDB, VarReg, EMPTY_LIS},
         resolution::Substitution,
     };
 
@@ -303,9 +303,10 @@ mod test {
 
     #[test]
     fn handle_ref() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
+        let mut heap = QueryHeap::new(&prog, None);
 
         // Handle ref bound to ref
         heap.cells = vec![(Comp, 2), (Var, 0), (Var, 1)];
@@ -347,9 +348,10 @@ mod test {
 
     #[test]
     fn next_cell() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
+        let mut heap = QueryHeap::new(&prog, None);
 
         // Handle ref bound to ref
         heap.cells = vec![(Comp, 2), (Var, 0), (Var, 1)];
@@ -412,9 +414,10 @@ mod test {
 
     #[test]
     fn next_cell_with_addr() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
+        let mut heap = QueryHeap::new(&prog, None);
 
         // Handle ref bound to ref
         heap.cells = vec![(Comp, 2), (Var, 0), (Var, 1)];
@@ -496,9 +499,10 @@ mod test {
 
     #[test]
     fn next_cell_with_addr_arg_deref() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
+        let mut heap = QueryHeap::new(&prog, None);
         let mut subs = Substitution::default();
 
         // Handle arg jump to strucuture
@@ -548,9 +552,10 @@ mod test {
 
     #[test]
     fn sub_walk_simple() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
+        let mut heap = QueryHeap::new(&prog, None);
         let subs = Substitution::default();
 
         //p(X(X,X),a)
@@ -581,10 +586,11 @@ mod test {
 
     #[test]
     fn sub_walk_with_ref_jump() {
-        let p = SymbolDB::set_const("p");
-        let q = SymbolDB::set_const("q");
-        let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let q = prog.symbols().set_const("q");
+        let a = prog.symbols().set_const("a");
+        let mut heap = QueryHeap::new(&prog, None);
         let subs = Substitution::default();
 
         //p(q((a,a)),a)
@@ -624,10 +630,11 @@ mod test {
 
     #[test]
     fn sub_walk_with_arg_jump() {
-        let p = SymbolDB::set_const("p");
-        let q = SymbolDB::set_const("q");
-        let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let q = prog.symbols().set_const("q");
+        let a = prog.symbols().set_const("a");
+        let mut heap = QueryHeap::new(&prog, None);
         let mut subs = Substitution::default();
 
         //p(q((a,a)),a)
@@ -667,11 +674,12 @@ mod test {
 
     #[test]
     fn sub_walk_with_arg_ref_jump() {
-        let p = SymbolDB::set_const("p");
-        let q = SymbolDB::set_const("q");
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let q = prog.symbols().set_const("q");
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let mut heap = QueryHeap::new(&prog, None);
         let mut subs = Substitution::default();
 
         //Arg jump first
@@ -797,9 +805,10 @@ mod test {
 
     #[test]
     fn return_from_jump_before_subwalk() {
-        let p = SymbolDB::set_const("p");
-        let a = SymbolDB::set_const("a");
-        let heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let a = prog.symbols().set_const("a");
+        let heap = QueryHeap::new(&prog, None);
         let subs = Substitution::default();
     }
 }

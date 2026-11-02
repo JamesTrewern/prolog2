@@ -239,11 +239,13 @@ impl DerefMut for PredicateTable {
 
 #[cfg(test)]
 mod tests {
+    use crate::heap::test_prog;
+
     use std::collections::HashMap;
 
     use super::{super::Clause, Predicate, PredicateEntry, PredicateTable};
     use crate::{
-        heap::{QueryHeap, SymbolDB},
+        heap::{Heap, QueryHeap},
         predicate_modules::PredReturn,
         program::Hypothesis,
         utils::FindReturn,
@@ -263,9 +265,10 @@ mod tests {
     /// Build a test predicate table with four entries sorted by symbol_arity.
     /// Returns (table, p, q, pred_func) so tests can use the actual symbol IDs.
     fn setup() -> (PredicateTable, usize, usize, usize) {
-        let p = SymbolDB::set_const("p");
-        let q = SymbolDB::set_const("q");
-        let pred_func = SymbolDB::set_const("func");
+        let prog = test_prog();
+        let p = prog.symbols().set_const("p");
+        let q = prog.symbols().set_const("q");
+        let pred_func = prog.symbols().set_const("func");
 
         let p_entry = PredicateEntry {
             symbol_arity: (p, 2),
@@ -316,9 +319,10 @@ mod tests {
 
     #[test]
     fn find_predicate() {
+        let prog = test_prog();
         let (pred_table, p, _q, _pred_func) = setup();
 
-        let symbol = SymbolDB::set_const("find_predicate_test_symbol");
+        let symbol = prog.symbols().set_const("find_predicate_test_symbol");
         let p_idx = pred_table
             .iter()
             .position(|e| e.symbol_arity == (p, 2))
@@ -386,8 +390,9 @@ mod tests {
 
     #[test]
     fn add_clause_to_predicate() {
+        let prog = test_prog();
         let (mut pred_table, p, _q, pred_func) = setup();
-        let r = SymbolDB::set_const("r");
+        let r = prog.symbols().set_const("r");
 
         let dummy_meta = Clause::new(vec![], Some((vec![], vec![])), 0);
 

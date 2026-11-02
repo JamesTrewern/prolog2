@@ -1,7 +1,5 @@
-use crate::heap::SymbolDB;
-
 use super::{
-    Cell, Heap,
+    Cell, Heap, ProgramHeap, SymbolDB,
     Tag::*,
     TermWalk,
     VarBind::{self, *},
@@ -10,10 +8,8 @@ use super::{
 use std::{
     collections::HashMap,
     ops::{Index, IndexMut, Range, RangeFrom},
-    sync::atomic::{AtomicUsize, Ordering::Acquire},
 };
 
-static HEAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 /// (Heap cells length, Variable registers length)
 pub type HeapPoint = (usize, usize);
 
@@ -25,6 +21,12 @@ pub type HeapPoint = (usize, usize);
 pub struct QueryHeap<'a> {
     pub(crate) id: usize,
     pub(crate) cells: Vec<Cell>,
+    /// The program this heap reads symbols from.
+    ///
+    /// Separate from `prog_cells` because the two are independent: a
+    /// detached heap (see [`Self::detached`]) addresses from zero while still
+    /// naming constants in the program's table.
+    prog: &'a ProgramHeap,
     prog_cells: &'a [Cell],
     /// The cells of the heap this one was branched from, read-only.
     ///
@@ -42,13 +44,30 @@ pub struct QueryHeap<'a> {
 }
 
 impl<'a> QueryHeap<'a> {
-    pub fn new(prog_cells: &'a [Cell], root: Option<&'a [Cell]>) -> QueryHeap<'a> {
-        let id = HEAP_ID_COUNTER.fetch_add(1, Acquire);
+    pub fn new(prog: &'a ProgramHeap, root: Option<&'a [Cell]>) -> QueryHeap<'a> {
         QueryHeap {
-            id,
+            id: prog.next_heap_id(),
             cells: Vec::new(),
-            prog_cells,
+            prog,
+            prog_cells: prog.cells(),
             root,
+            var_regs: Vec::new(),
+        }
+    }
+
+    /// A heap that shares `prog`'s symbols but none of its cells, so its own
+    /// addresses start at zero.
+    ///
+    /// For scratch heaps whose cells are later relocated into another heap:
+    /// addresses that begin at zero need no program-length offset unwound at
+    /// the point of the move.
+    pub fn detached(prog: &'a ProgramHeap) -> QueryHeap<'a> {
+        QueryHeap {
+            id: prog.next_heap_id(),
+            cells: Vec::new(),
+            prog,
+            prog_cells: &[],
+            root: None,
             var_regs: Vec::new(),
         }
     }
@@ -75,8 +94,9 @@ impl<'a> QueryHeap<'a> {
         );
         (0..count)
             .map(|_| QueryHeap {
-                id: HEAP_ID_COUNTER.fetch_add(1, Acquire),
+                id: self.prog.next_heap_id(),
                 cells: Vec::new(),
+                prog: self.prog,
                 prog_cells: self.prog_cells,
                 root: Some(&self.cells),
                 var_regs: Vec::new(),
@@ -153,7 +173,7 @@ impl<'a> QueryHeap<'a> {
     }
 
     pub fn var_string(&self, var_id: usize) -> String {
-        match SymbolDB::get_var(var_id, self.id) {
+        match self.symbols().get_var(var_id, self.id) {
             Some(symbol) => symbol.to_string(),
             None => format!("Ref_{var_id}"),
         }
@@ -161,6 +181,10 @@ impl<'a> QueryHeap<'a> {
 }
 
 impl Heap for QueryHeap<'_> {
+    fn symbols(&self) -> &SymbolDB {
+        self.prog.symbols()
+    }
+
     fn heap_push(&mut self, cell: Cell) -> usize {
         let i = self.heap_len();
         self.cells.push(cell);

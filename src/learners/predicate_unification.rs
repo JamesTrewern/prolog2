@@ -8,7 +8,7 @@ use smallvec::SmallVec;
 
 use crate::{
     heap::{
-        Heap, QueryHeap, SymbolDB,
+        Heap, QueryHeap,
         Tag::*,
         VarBind::{Addr, VarId},
     },
@@ -100,7 +100,7 @@ impl PredDef {
                     // definition, or by unification against the table.
                     bound @ Addr(_) => *head = bound.into(),
                     VarId(var_id) => {
-                        let pred_symbol = SymbolDB::set_const(format!("pred_{next_id}"));
+                        let pred_symbol = heap.symbols().set_const(format!("pred_{next_id}"));
                         let addr = heap.heap_push((Con, pred_symbol));
                         *next_id += 1;
                         heap.bind(var_id, Addr(addr));
@@ -432,8 +432,7 @@ fn extract_body_var_preds(pred_set: &mut HashSet<usize>, clause: &Clause, heap: 
 #[cfg(test)]
 mod tests {
     use crate::{
-        heap::{
-            ArgRegs, Cell, Heap, QueryHeap, SymbolDB,
+        heap::{ProgramHeap, ArgRegs, Heap, QueryHeap,
             Tag::*,
             VarBind::{self, *},
             VarReg,
@@ -446,11 +445,15 @@ mod tests {
         resolution::{build, Substitution},
     };
 
-    fn get_const_ids<const N: usize>(symbols: [&'static str; N]) -> [usize; N] {
+    /// Intern `symbols` in `prog`'s table.
+    ///
+    /// Takes the heap because each test builds its own: ids from any other
+    /// table would not name these symbols in the heap under test.
+    fn get_const_ids<const N: usize>(prog: &ProgramHeap, symbols: [&'static str; N]) -> [usize; N] {
         let mut res = [0; N];
 
         for i in 0..N {
-            res[i] = SymbolDB::set_const(symbols[i])
+            res[i] = prog.symbols().set_const(symbols[i])
         }
 
         res
@@ -548,13 +551,13 @@ mod tests {
     /// must collapse to a single table entry.
     #[test]
     fn identical_definitions_collapse_to_one_entry() {
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
         let mut h1 = build_hypothesis(
@@ -591,13 +594,13 @@ mod tests {
     /// get its own coined constant.
     #[test]
     fn differing_definitions_stay_separate() {
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r, s] = get_const_ids(["p", "q", "r", "s"]);
+        let [p, q, r, s] = get_const_ids(&prog_heap, ["p", "q", "r", "s"]);
         let [p, q, r, s] = [p, q, r, s].map(|con_id| heap.heap_push((Con, con_id)));
 
         // Var_0 is q-then-r, Var_1 is q-then-s: different definitions.
@@ -632,13 +635,13 @@ mod tests {
     /// rather than comparing position by position.
     #[test]
     fn clause_order_within_a_definition_does_not_matter() {
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
         let mut h1 = build_hypothesis(
@@ -698,13 +701,13 @@ mod tests {
     ///     Var_1(X,Y):- q(X), r(Y).
     #[test]
     fn dependencies_are_defined_before_their_dependents() {
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
         let mut h = build_hypothesis(
@@ -739,12 +742,12 @@ mod tests {
     ///     Var_1(X,Y):- Var_1(X,Y).
     #[test]
     fn a_recursive_dependency_is_still_defined_first() {
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta_rules = [(&meta0, 2)];
 
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p] = get_const_ids(["p"]);
+        let [p] = get_const_ids(&prog_heap, ["p"]);
         let [p] = [p].map(|con_id| heap.heap_push((Con, con_id)));
 
         let mut h = build_hypothesis(
@@ -778,13 +781,13 @@ mod tests {
     /// so the order must be the chain reversed, deepest dependency first.
     #[test]
     fn more_than_eight_invented_predicates_are_ordered() {
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
         let mut h = build_hypothesis(
@@ -818,13 +821,13 @@ mod tests {
     /// shared variable in the right order.
     #[test]
     fn more_than_eight_invented_predicates_all_ground() {
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
         let mut h = build_hypothesis(
@@ -863,13 +866,13 @@ mod tests {
     /// derefs to the constant coined for the dependency's head.
     #[test]
     fn inserting_in_order_grounds_the_shared_variable() {
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
         let mut h = build_hypothesis(
@@ -914,14 +917,14 @@ mod tests {
     #[test]
     fn one_clause_pred() {
         // Create meta rules
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
         let mut h1 = build_hypothesis(
@@ -964,14 +967,14 @@ mod tests {
     #[test]
     fn two_clause_pred() {
         // Create meta rules
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
         let mut h1 = build_hypothesis(
@@ -1015,14 +1018,14 @@ mod tests {
     #[test]
     fn dependent_pred() {
         // Create meta rules
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
 
         let mut h1 = build_hypothesis(
@@ -1066,14 +1069,14 @@ mod tests {
     #[test]
     fn dependend_different() {
         // Create meta rules
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
         let mut h1 = build_hypothesis(
             meta_rules,
@@ -1119,13 +1122,13 @@ mod tests {
     #[test]
     fn simple_mutual() {
         // Create meta rules
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta_rules = [(&meta0, 2)];
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, _, _] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
         let mut h1 = build_hypothesis(
             meta_rules,
@@ -1181,14 +1184,14 @@ mod tests {
     #[test]
     fn mutual_dependent() {
         // Create meta rules
-        let mut prog_heap: Vec<Cell> = vec![];
+        let mut prog_heap= ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
-        let [p, q, r] = get_const_ids(["p", "q", "r"]);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
         let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
         let mut h1 = build_hypothesis(
             meta_rules,

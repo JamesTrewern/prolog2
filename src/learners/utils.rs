@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    heap::{Cell, Heap, QueryHeap, Tag::Con},
+    heap::{Cell, Heap, QueryHeap, Tag::Con, ProgramHeap},
     parser::{build_clause, tokenise, TokenStream},
     program::{
         Clause, {Predicate, PredicateTable},
@@ -83,7 +83,7 @@ impl Coverage {
 /// state a term needs is its variable registers, and a ground goal has none.
 /// An example containing a variable would need a register per proof and so
 /// cannot be shared this way.
-pub(super) fn compile_examples(examples: &[String], heap: &mut Vec<Cell>) -> Vec<usize> {
+pub(super) fn compile_examples(examples: &[String], heap: &mut ProgramHeap) -> Vec<usize> {
     examples
         .iter()
         .map(|example| {
@@ -116,7 +116,7 @@ pub(super) fn compile_examples(examples: &[String], heap: &mut Vec<Cell>) -> Vec
 pub(super) fn count_coverage(
     pos_goals: &[usize],
     clauses: &[Clause],
-    heap: &[Cell],
+    heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     max_depth: usize,
 ) -> (Coverage, usize) {
@@ -165,10 +165,9 @@ pub(super) fn union_sub_hypotheses(
 ///
 /// Membership of `pred_symbols` is the test. The previous one -- symbol id
 /// greater than that of `pred_0` -- assumed every background predicate was
-/// interned before the first invented one. `SymbolDB` is process-global, so
-/// anything that interned `pred_0` earlier (another example in the same run,
-/// another test in the same binary) pushed the background predicates above
-/// the threshold and swept the whole fact base into the output.
+/// interned before the first invented one. Anything that interned `pred_0`
+/// earlier in the same program pushed the background predicates above the
+/// threshold and swept the whole fact base into the output.
 fn invented_body_pred<H>(
     heap: &H,
     literal: usize,
@@ -226,7 +225,7 @@ pub(super) fn collect_used_pred(
 /// Count how many predicate clauses are used hypothesis
 pub(super) fn count_pred_clauses(
     h: &Box<[Clause]>,
-    heap: &[Cell],
+    heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     pred_symbols: &HashSet<usize>,
 ) -> usize {
@@ -267,7 +266,7 @@ pub(super) fn count_pred_clauses(
 pub(super) fn reduce(
     pos_goals: &[usize],
     mut hypothesis: Vec<Clause>,
-    heap: &[Cell],
+    heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     config: Config,
     verbose: bool,
@@ -324,6 +323,7 @@ pub(super) fn reduce(
 
 #[cfg(test)]
 mod tests {
+    
     use crate::learners::utils::Coverage;
 
     #[test]

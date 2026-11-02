@@ -6,7 +6,7 @@ use console::Term;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    heap::{Cell, Heap, QueryHeap, SymbolDB, VarBind::*},
+    heap::{Heap, ProgramHeap, QueryHeap, VarBind::*},
     parser::{build_clause, execute_tree, tokenise, TokenStream},
     predicate_modules::{maths::set_approx_tolerance, PredicateModule, STANDARD_MODULES},
     program::PredicateTable,
@@ -306,7 +306,7 @@ impl Examples {
 ///   iteration over solutions without any I/O side-effects.
 pub struct App {
     pub(crate) predicate_table: PredicateTable,
-    pub(crate) prog_heap: Vec<Cell>,
+    pub(crate) prog_heap: ProgramHeap,
     pub(crate) config: Config,
     pub(crate) auto: bool,
     pub(crate) examples: Option<Examples>,
@@ -334,7 +334,7 @@ impl App {
     pub fn new() -> Self {
         App {
             predicate_table: PredicateTable::new(),
-            prog_heap: Vec::new(),
+            prog_heap: ProgramHeap::new(),
             config: Config::default(),
             auto: false,
             examples: None,
@@ -402,7 +402,7 @@ impl App {
 
         let mut app = App {
             predicate_table: PredicateTable::new(),
-            prog_heap: Vec::<Cell>::new(),
+            prog_heap: ProgramHeap::new(),
             config: setup.config,
             auto: setup.auto,
             examples: setup.examples,
@@ -501,7 +501,7 @@ impl App {
         for (symbol, arity, pred_fn) in predicate_module.0.iter() {
             self.predicate_table
                 .insert_predicate_function(
-                    (SymbolDB::set_const((*symbol).to_string()), *arity),
+                    (self.prog_heap.symbols().set_const((*symbol).to_string()), *arity),
                     *pred_fn,
                 )
                 .unwrap();
@@ -541,7 +541,7 @@ impl App {
     ) -> Result<Self> {
         for item in body_preds {
             let BodyPred { symbol, arity } = item.try_into_body_pred()?;
-            let sym = SymbolDB::set_const(symbol.clone());
+            let sym = self.prog_heap.symbols().set_const(symbol.clone());
             self.predicate_table
                 .set_body((sym, arity), true)
                 .map_err(|e| Error::BodyPred(format!("{e}: {symbol}/{arity}")))?;
@@ -617,7 +617,15 @@ impl App {
                 query_heap
                     .term_vars(*literal, false)
                     .iter()
-                    .map(|&var_id| (SymbolDB::get_var(var_id, query_heap.id).unwrap(), var_id)),
+                    .map(|&var_id| {
+                        (
+                            self.prog_heap
+                                .symbols()
+                                .get_var(var_id, query_heap.id)
+                                .unwrap(),
+                            var_id,
+                        )
+                    }),
             );
         }
         let proof = Proof::new(&query_heap, &goals);

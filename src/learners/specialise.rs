@@ -19,7 +19,7 @@ use std::{
 
 use crate::{
     heap::{
-        Cell, Heap, QueryHeap, SymbolDB,
+        Heap, ProgramHeap, QueryHeap, INVENTED_SYMBOL_BASE,
         Tag::{Con, Var},
         TermWalk, Walk,
     },
@@ -27,25 +27,15 @@ use crate::{
     resolution::Proof,
     Config,
 };
-use lazy_static::lazy_static;
 use rayon::prelude::*;
 
 /// Most distinct predicate variables one hypothesis can hold.
+///
+/// The constants standing in for them -- `$inv_0` upwards, which the symbol
+/// table preloads so that minting one never takes the write lock -- occupy
+/// [`INVENTED_SYMBOL_BASE`] onwards, so this must match the table's own
+/// count.
 const MAX_INVENTED: usize = 64;
-
-lazy_static! {
-    /// Constants standing in for a hypothesis's predicate variables while it
-    /// is tested against the negatives.
-    ///
-    /// Interned once. Minting them per candidate would take the symbol
-    /// table's write lock on every one of them, which at this volume is
-    /// itself a bottleneck. The `$` prefix keeps them clear of the `pred_N`
-    /// constants the predicate definition table coins, which name real
-    /// predicates and would otherwise collide.
-    static ref INVENTED_SYMBOLS: Vec<usize> = (0..MAX_INVENTED)
-        .map(|i| SymbolDB::set_const(format!("$inv_{i}")))
-        .collect();
-}
 
 /// Learning disabled, so a negative is tested against the candidate rather
 /// than extended into a new hypothesis. `max_depth` is kept to bound
@@ -71,7 +61,7 @@ fn test_config(config: Config) -> Config {
 pub(super) fn clauses_entail_negative(
     neg_goals: &[usize],
     clauses: &[Clause],
-    heap: &[Cell],
+    heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     config: Config,
 ) -> bool {
@@ -223,7 +213,7 @@ fn ground_hypothesis(heap: &mut QueryHeap, hypothesis: &Hypothesis) -> Vec<Claus
                                 next < MAX_INVENTED,
                                 "hypothesis holds more than {MAX_INVENTED} predicate variables"
                             );
-                            let symbol = *consts.entry(var_id).or_insert(INVENTED_SYMBOLS[next]);
+                            let symbol = *consts.entry(var_id).or_insert(INVENTED_SYMBOL_BASE + next);
                             heap.heap_push((Con, symbol));
                         } else {
                             heap.heap_push(cell);

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use super::{maths::Number, utils::*, PredReturn, PredicateModule};
 use crate::{
-    heap::{Heap, QueryHeap, SymbolDB, Tag::*, VarBind::Addr, EMPTY_LIS, LIS},
+    heap::{Heap, QueryHeap, Tag::*, VarBind::Addr, EMPTY_LIS, LIS},
     program::{Hypothesis, PredicateTable},
     Config,
 };
@@ -113,8 +113,8 @@ pub fn sort(
                 .into_iter()
                 .map(|a| {
                     let s = match heap[a] {
-                        (Stri, idx) => SymbolDB::get_string(idx),
-                        (Con, id) => SymbolDB::get_const(id),
+                        (Stri, idx) => heap.symbols().get_string(idx),
+                        (Con, id) => heap.symbols().get_const(id),
                         _ => unreachable!("sort: tag changed unexpectedly"),
                     };
                     (a, s)

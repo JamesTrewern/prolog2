@@ -180,7 +180,7 @@ fn arg_occurs(heap: &mut QueryHeap, arg_id: usize, mut walk: SubWalk) -> bool {
 mod tests {
     use super::Substitution;
     use crate::{
-        heap::{QueryHeap, SymbolDB, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
+        heap::{Heap, ProgramHeap, QueryHeap, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
         resolution::unification::unify,
     };
 
@@ -190,9 +190,10 @@ mod tests {
 
     #[test]
     fn equal_comp() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Constant Comp
         heap.cells = vec![(Comp, 2), (Con, p), (Con, a), (Comp, 2), (Con, p), (Con, a)];
@@ -214,9 +215,10 @@ mod tests {
 
     #[test]
     fn equal_tup() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Constant Comp
         heap.cells = vec![(Tup, 2), (Con, p), (Con, a), (Tup, 2), (Con, p), (Con, a)];
@@ -238,9 +240,10 @@ mod tests {
 
     #[test]
     fn equal_comp_ref_jump() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Simple ref jump
         heap.cells = vec![
@@ -264,9 +267,9 @@ mod tests {
 
     #[test]
     fn equal_comp_arg_jump() {
-        // let a = SymbolDB::set_const("a");
-        // let p = SymbolDB::set_const("p");
-        // let mut heap = QueryHeap::new(&[], None);
+        // let a = prog.symbols().set_const("a");
+        // let p = prog.symbols().set_const("p");
+        // let mut heap = QueryHeap::new(&prog, None);
 
         //Simple arg jump
 
@@ -277,10 +280,11 @@ mod tests {
 
     #[test]
     fn equal_nested_comp() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let q = SymbolDB::set_const("q");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let q = prog.symbols().set_const("q");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Basic
         heap.cells = vec![
@@ -374,10 +378,11 @@ mod tests {
 
     #[test]
     fn equal_set() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Same order
         heap.cells = vec![
@@ -412,10 +417,11 @@ mod tests {
 
     #[test]
     fn equal_list() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Proper List
         heap.cells = vec![
@@ -505,10 +511,11 @@ mod tests {
     /// succeed without creating any new bindings.
     #[test]
     fn equal_proper_list_with_ref_jump() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Jump at a head position: [a,b,c] vs [X,b,c] where X -> a
         heap.cells = vec![
@@ -619,10 +626,11 @@ mod tests {
     /// partial tail and the constant tail through bound `Ref` cells.
     #[test]
     fn equal_con_tail_list_with_ref_jump() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Jump at a head position: [a,b|c] vs [X,b|c] where X -> a
         heap.cells = vec![
@@ -717,10 +725,11 @@ mod tests {
     /// an element of the inner list, and the outer tail through bound `Ref`s.
     #[test]
     fn equal_nested_list_with_ref_jump() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Jump replacing the whole inner list: [[a,b],c] vs [X,c] where X -> [a,b]
         heap.cells = vec![
@@ -848,10 +857,11 @@ mod tests {
     /// first tuple slot, then re-uses `A` at a head / tail position of a list.
     #[test]
     fn equal_proper_list_with_arg_jump() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Arg jump at a head position: (A,[A,b,c]) vs (a,[a,b,c])
         heap.cells = vec![
@@ -964,10 +974,11 @@ mod tests {
     /// re-used `Arg` sits in a constant-tail position.
     #[test]
     fn equal_con_tail_list_with_arg_jump() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Arg jump at the constant tail: (A,[a|A]) vs (c,[a|c])
         heap.cells = vec![
@@ -1052,10 +1063,11 @@ mod tests {
     /// list, so the jump target is itself a list.
     #[test]
     fn equal_nested_list_with_arg_jump() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Arg standing for the inner list: (A,[A,c]) vs ([a,b],[[a,b],c])
         heap.cells = vec![
@@ -1161,10 +1173,11 @@ mod tests {
     /// ref it was bound to and land on the list.
     #[test]
     fn equal_proper_list_with_arg_ref_jump() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: (A,A,A)
@@ -1230,10 +1243,11 @@ mod tests {
     /// `Arg` -> `Ref` -> improper list, see `equal_proper_list_with_arg_ref_jump`.
     #[test]
     fn equal_con_tail_list_with_arg_ref_jump() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: (A,A,A)
@@ -1295,10 +1309,11 @@ mod tests {
     /// `Arg` -> `Ref` -> nested list, see `equal_proper_list_with_arg_ref_jump`.
     #[test]
     fn equal_nested_list_with_arg_ref_jump() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: (A,A,A)
@@ -1376,9 +1391,10 @@ mod tests {
     /// over the prefixes.
     #[test]
     fn unify_tail_same_arg() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //[a,b|A] vs [a,b|A]
         heap.cells = vec![
@@ -1439,9 +1455,10 @@ mod tests {
     /// is bound.
     #[test]
     fn unify_tail_arg_to_ref() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //arg to unbound ref: [a,b|A] vs [a,b|X]
         heap.cells = vec![
@@ -1488,9 +1505,10 @@ mod tests {
     /// Two unbound `Ref` tails meeting: one variable is bound to the other.
     #[test]
     fn unify_ref_tails() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //[a,b|X] vs [a,b|Y]
         heap.cells = vec![
@@ -1577,8 +1595,9 @@ mod tests {
     /// two variables together must be reflected back into the arg register.
     #[test]
     fn unify_ref_tails_through_arg() {
-        let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //([a|A],[a|A]) vs ([a|X],[a|Y])
         heap.cells = vec![
@@ -1641,9 +1660,10 @@ mod tests {
     /// `[a,b|X]` vs `[a,b]` — the open tail `X` must bind to the `[]` cell.
     #[test]
     fn bind_ref_tail_to_empty_list() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Standard
         heap.cells = vec![
@@ -1733,10 +1753,11 @@ mod tests {
     /// list `[b,c]`, i.e. to the cons cell that starts it.
     #[test]
     fn bind_ref_tail_to_other_list() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Standard
         heap.cells = vec![
@@ -1861,10 +1882,11 @@ mod tests {
     /// producing the improper list `[a,b|c]`.
     #[test]
     fn bind_ref_tail_to_con() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Standard
         heap.cells = vec![
@@ -1929,10 +1951,11 @@ mod tests {
     /// whose single element is itself a list.
     #[test]
     fn bind_ref_tail_to_mested_list() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Standard
         heap.cells = vec![
@@ -2027,9 +2050,10 @@ mod tests {
     /// register. No query variable is touched.
     #[test]
     fn bind_arg_tail_to_empty_list() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Standard
         heap.cells = vec![
@@ -2106,10 +2130,11 @@ mod tests {
     /// `[a|A]` vs `[a,b,c]` — the arg register records the remaining list.
     #[test]
     fn bind_arg_tail_to_other_list() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Standard
         heap.cells = vec![
@@ -2190,10 +2215,11 @@ mod tests {
     /// `[a,b|A]` vs `[a,b|c]` — the arg register records the constant tail.
     #[test]
     fn bind_arg_tail_to_con() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Standard
         heap.cells = vec![
@@ -2252,10 +2278,11 @@ mod tests {
     /// whose single element is itself a list.
     #[test]
     fn bind_arg_tail_to_mested_list() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Standard
         heap.cells = vec![
@@ -2341,10 +2368,10 @@ mod tests {
 
     #[test]
     fn bind_variable_tail() {
-        // let a = SymbolDB::set_const("a");
-        // let b = SymbolDB::set_const("b");
-        // let c = SymbolDB::set_const("c");
-        // let mut heap = QueryHeap::new(&[], None);
+        // let a = prog.symbols().set_const("a");
+        // let b = prog.symbols().set_const("b");
+        // let c = prog.symbols().set_const("c");
+        // let mut heap = QueryHeap::new(&prog, None);
 
         //Arg Tail to Empty List
 
@@ -2365,7 +2392,8 @@ mod tests {
 
     #[test]
     fn unify_refs() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![(Var, 0), (Var, 1)];
 
@@ -2416,7 +2444,8 @@ mod tests {
 
     #[test]
     fn arg_to_ref() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Bind arg to ref
         heap.cells = vec![(Arg, 0), (Var, 0)];
@@ -2435,7 +2464,8 @@ mod tests {
 
     #[test]
     fn unify_ref_through_arg() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         // Unify through arg
         heap.cells = vec![(Tup, 2), (Arg, 0), (Arg, 0), (Tup, 2), (Var, 0), (Var, 1)];
@@ -2481,9 +2511,10 @@ mod tests {
 
     #[test]
     fn ref_to_con_comp() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![(Var, 0), (Comp, 2), (Con, p), (Con, a)];
         heap.var_regs = vec![VarReg::UNBOUND];
@@ -2501,9 +2532,10 @@ mod tests {
 
     #[test]
     fn ref_to_con_lis() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![(Var, 0), LIS, (Con, p), LIS, (Con, a), EMPTY_LIS];
         heap.var_regs = vec![VarReg::UNBOUND];
@@ -2515,9 +2547,10 @@ mod tests {
 
     #[test]
     fn ref_to_con_tup_through_ref_jump() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             //0: (p,a)
@@ -2544,9 +2577,10 @@ mod tests {
 
     #[test]
     fn ref_to_con_tup_through_arg() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             //0: (A,A)
@@ -2569,16 +2603,16 @@ mod tests {
 
     #[test]
     fn bind_arg_to_con_comp() {
-        // let a = SymbolDB::set_const("a");
-        // let p = SymbolDB::set_const("p");
-        // let mut heap = QueryHeap::new(&[], None);
+        // let a = prog.symbols().set_const("a");
+        // let p = prog.symbols().set_const("p");
+        // let mut heap = QueryHeap::new(&prog, None);
     }
 
     #[test]
     fn bind_arg_to_con_tup() {
-        // let a = SymbolDB::set_const("a");
-        // let p = SymbolDB::set_const("p");
-        // let mut heap = QueryHeap::new(&[], None);
+        // let a = prog.symbols().set_const("a");
+        // let p = prog.symbols().set_const("p");
+        // let mut heap = QueryHeap::new(&prog, None);
     }
 
     //-----------------------------------------------------------
@@ -2587,7 +2621,8 @@ mod tests {
 
     #[test]
     fn arg_occurs() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: A
@@ -2612,7 +2647,8 @@ mod tests {
 
     #[test]
     fn ref_occurs() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
         heap.cells = vec![
@@ -2638,7 +2674,8 @@ mod tests {
 
     #[test]
     fn arg_occurs_in_bound_ref() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.var_regs.push(VarReg::UNBOUND);
 
@@ -2673,7 +2710,8 @@ mod tests {
 
     #[test]
     fn ref_occurs_in_bound_arg() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
 
@@ -2708,7 +2746,8 @@ mod tests {
 
     #[test]
     fn occurs_two_args_bound_to_same_var() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.var_regs = vec![VarReg::UNBOUND];
 
@@ -2747,7 +2786,8 @@ mod tests {
 
     #[test]
     fn occurs_arg_bound_to_structure_then_var() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
 
@@ -2798,7 +2838,8 @@ mod tests {
     /// A correct occurs check should return `None`.
     #[test]
     fn arg_occurs_arg_ref_chain() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
 
@@ -2822,7 +2863,8 @@ mod tests {
 
     #[test]
     fn ref_occurs_arg_ref_chain() {
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND, VarReg::UNBOUND];
 
@@ -2872,10 +2914,11 @@ mod tests {
     /// `Arg` cells to substitute, so the term on the heap is already correct.
     #[test]
     fn needs_rebuild_false_for_ground_complex() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //X = p(a,b)
         heap.cells = vec![(Var, 0), (Comp, 3), (Con, p), (Con, a), (Con, b)];
@@ -2912,9 +2955,10 @@ mod tests {
     /// tag is.
     #[test]
     fn needs_rebuild_true_for_complex_with_args() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //p(A) = X  -- ref on the rhs
         heap.cells = vec![(Comp, 2), (Con, p), (Arg, 0), (Var, 0)];
@@ -2965,8 +3009,9 @@ mod tests {
     /// rebuild.
     #[test]
     fn needs_rebuild_false_for_ref_and_atomic_bindings() {
-        let a = SymbolDB::set_const("a");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //X = Y  -- (Ref, Ref)
         heap.cells = vec![(Var, 0), (Var, 1)];
@@ -3016,9 +3061,10 @@ mod tests {
     /// steps through `X` into `q(A)` and finds one.
     #[test]
     fn needs_rebuild_follows_bound_ref_into_arg_term() {
-        let p = SymbolDB::set_const("p");
-        let q = SymbolDB::set_const("q");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let q = prog.symbols().set_const("q");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: p(X)
@@ -3067,9 +3113,10 @@ mod tests {
     /// `(Arg, 0)`, so it must be rebuilt before it can stand as `X`'s value.
     #[test]
     fn needs_rebuild_true_when_arg_already_bound() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: (A, p(A))
@@ -3097,11 +3144,12 @@ mod tests {
     /// flags line up rather than merely containing the right multiset.
     #[test]
     fn needs_rebuild_aligns_with_bound_vars() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let p = SymbolDB::set_const("p");
-        let q = SymbolDB::set_const("q");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let p = prog.symbols().set_const("p");
+        let q = prog.symbols().set_const("q");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: (p(A), q(a), b)
@@ -3136,9 +3184,10 @@ mod tests {
     /// later have to expand.
     #[test]
     fn needs_rebuild_empty_when_no_vars_bind() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Ground vs ground: nothing is recorded at all.
         heap.cells = vec![(Comp, 2), (Con, p), (Con, a), (Comp, 2), (Con, p), (Con, a)];
@@ -3173,12 +3222,13 @@ mod tests {
     /// `X` binds to still contains `(Arg, 0)`, this is a rebuild case.
     #[test]
     fn head_list_tail_arg_reused_in_comp() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let f = SymbolDB::set_const("f");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let f = prog.symbols().set_const("f");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p([a|A], f(A))
@@ -3221,11 +3271,12 @@ mod tests {
     /// rather than into the head.
     #[test]
     fn head_arg_shared_between_tuple_and_list() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p((A,b), [A,c])
@@ -3261,7 +3312,7 @@ mod tests {
         assert_eq!(heap.var_regs[0], Addr(13).into());
 
         //Same head against p((a,b), [d,c]) must fail: A is already a.
-        let d = SymbolDB::set_const("d");
+        let d = prog.symbols().set_const("d");
         heap.cells[16] = (Con, d);
         heap.var_regs = vec![VarReg::UNBOUND];
         assert!(unify(&mut heap, 0, 10, 31).is_none());
@@ -3276,11 +3327,12 @@ mod tests {
     /// variable is bound, so the substitution holds only the arg.
     #[test]
     fn head_arg_jump_meets_goal_ref_jump() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let f = SymbolDB::set_const("f");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let f = prog.symbols().set_const("f");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p(f([a|A]), A)
@@ -3320,7 +3372,7 @@ mod tests {
 
         //If the goal's second argument disagrees with the tail found inside Y
         //the whole thing must fail: p(Y, [c]).
-        let c = SymbolDB::set_const("c");
+        let c = prog.symbols().set_const("c");
         heap.cells[12] = (Con, c);
         heap.var_regs = vec![Addr(14).into()];
         assert!(unify(&mut heap, 0, 8, 31).is_none());
@@ -3333,11 +3385,12 @@ mod tests {
     /// is compared once by binding and once by walking.
     #[test]
     fn goal_var_bound_then_rechecked_through_list() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let f = SymbolDB::set_const("f");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let f = prog.symbols().set_const("f");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p(f(a), [f(a)])
@@ -3380,12 +3433,13 @@ mod tests {
     /// the list's head, the other swallows the remaining tail.
     #[test]
     fn head_comp_inside_partial_list() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let f = SymbolDB::set_const("f");
-        let g = SymbolDB::set_const("g");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let f = prog.symbols().set_const("f");
+        let g = prog.symbols().set_const("g");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p([f(A)|B])
@@ -3428,11 +3482,12 @@ mod tests {
     /// afterwards.
     #[test]
     fn head_set_inside_list_with_tail_arg() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p([{a,b}|A])
@@ -3475,10 +3530,11 @@ mod tests {
     /// Note the two bindings get different rebuild flags, in order.
     #[test]
     fn head_arg_through_ref_then_into_comp() {
-        let a = SymbolDB::set_const("a");
-        let f = SymbolDB::set_const("f");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let f = prog.symbols().set_const("f");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p(A, A, f(A))
@@ -3516,13 +3572,14 @@ mod tests {
     /// container types stacked on top of each other.
     #[test]
     fn head_deeply_mixed_nesting() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let d = SymbolDB::set_const("d");
-        let f = SymbolDB::set_const("f");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let d = prog.symbols().set_const("d");
+        let f = prog.symbols().set_const("f");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p(f([{a,b}, (c,A)]))
@@ -3571,11 +3628,12 @@ mod tests {
     /// on the goal side.
     #[test]
     fn head_arg_bound_to_list_inside_comp() {
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let f = SymbolDB::set_const("f");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let f = prog.symbols().set_const("f");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p(f(A), [A])
@@ -3616,9 +3674,10 @@ mod tests {
     /// genuinely differ.
     #[test]
     fn mismatched_arity_must_not_unify() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p(a)
@@ -3649,9 +3708,10 @@ mod tests {
     /// would fix both.
     #[test]
     fn comp_and_tup_must_not_unify() {
-        let a = SymbolDB::set_const("a");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p(a)
@@ -3675,8 +3735,9 @@ mod tests {
     /// KNOWN FAILURE, same root cause as `comp_and_tup_must_not_unify`.
     #[test]
     fn int_zero_and_empty_list_must_not_unify() {
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         heap.cells = vec![
             // 0: head p(0)
@@ -3713,12 +3774,13 @@ mod tests {
     /// argument and only then hit a mismatch on the second.
     #[test]
     fn failed_unify_must_undo_bindings() {
-        let a = SymbolDB::set_const("a");
-        let b = SymbolDB::set_const("b");
-        let c = SymbolDB::set_const("c");
-        let f = SymbolDB::set_const("f");
-        let p = SymbolDB::set_const("p");
-        let mut heap = QueryHeap::new(&[], None);
+        let prog = ProgramHeap::new();
+        let a = prog.symbols().set_const("a");
+        let b = prog.symbols().set_const("b");
+        let c = prog.symbols().set_const("c");
+        let f = prog.symbols().set_const("f");
+        let p = prog.symbols().set_const("p");
+        let mut heap = QueryHeap::new(&prog, None);
 
         //Head p(f(a), b) vs goal p(X, c) -- exits via the catch-all arm.
         heap.cells = vec![
