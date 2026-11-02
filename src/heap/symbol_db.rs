@@ -110,6 +110,18 @@ impl SymbolDB {
     pub fn last_const() -> usize {
         SYMBOLS.read().unwrap().const_symbols.len()
     }
+
+    pub fn clear() {
+        let mut symbols = SYMBOLS.write().unwrap();
+        *symbols = SymbolDB {
+            const_symbols: KNOWN_SYMBOLS
+                .iter()
+                .map(|&symbol| symbol.to_string().into())
+                .collect(),
+            var_symbol_map: HashMap::new(),
+            strings: Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]
