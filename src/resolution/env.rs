@@ -357,12 +357,15 @@ impl Env {
 
     // ── try choices (dispatch) ──────────────────────────────────────────
 
+    /// `learning` is [`Proof::learning`](crate::resolution::Proof): false for
+    /// a proof that may only resolve against existing clauses, never add one.
     pub(super) fn try_choices(
         &mut self,
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
         config: Config,
+        learning: bool,
     ) -> Option<Vec<Env>> {
         if self.depth > config.max_depth {
             if config.debug {
@@ -380,7 +383,7 @@ impl Env {
             Strategy::Clause { .. } => self.try_clause(
                 heap,
                 hypothesis,
-                hypothesis.len() < config.max_clause,
+                learning && hypothesis.len() < config.max_clause,
                 config.debug,
             ),
             Strategy::Conjunction { .. } => self.try_conj(heap),

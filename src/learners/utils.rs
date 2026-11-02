@@ -120,18 +120,22 @@ pub(super) fn count_coverage(
     predicate_table: &PredicateTable,
     max_depth: usize,
 ) -> (Coverage, usize) {
+    // Learning is off on the proofs below, not here. `protect_h_preds` is
+    // false because these clauses are already ground -- their invented
+    // predicates were given constants before they got here, so there is
+    // nothing left to protect.
     let config = Config {
         max_depth,
-        max_clause: 0,
         debug: false,
         protect_h_preds: false,
+        ..Config::default()
     };
 
     let mut coverage = Coverage::from_len(pos_goals.len());
 
     for (i, &goal) in pos_goals.iter().enumerate() {
         let mut query_heap = QueryHeap::new(heap, None);
-        let mut proof = Proof::new(&query_heap, &[goal]);
+        let mut proof = Proof::without_learning(&query_heap, &[goal]);
         proof.add_test_clauses(clauses);
         if proof.prove(&mut query_heap, predicate_table, config) {
             coverage.set(i);
@@ -222,14 +226,26 @@ pub(super) fn collect_used_pred(
     }
 }
 
-/// Count how many predicate clauses are used hypothesis
-pub(super) fn count_pred_clauses(
-    h: &Box<[Clause]>,
+/// How much program a hypothesis drags in through the invented predicates its
+/// bodies call: `(clauses, body literals)`.
+///
+/// Both counts come from one walk of the transitive closure, because they
+/// describe the same clause set and computing them separately would mean
+/// chasing the same `pred_symbols` edges twice. Neither count includes `h`'s
+/// own clauses -- the caller adds those, since it already has them.
+///
+/// Returning the literal count as well as the clause count is what lets
+/// [`HProfile`](super::sub_h_unification) rank two equally-sized candidates by
+/// how much work proving them costs; see
+/// [`Config::sort_by_literals`](crate::Config::sort_by_literals).
+pub(super) fn count_pred_clauses_and_literals(
+    h: &[Clause],
     heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     pred_symbols: &HashSet<usize>,
-) -> usize {
-    let mut count = 0;
+) -> (usize, usize) {
+    let mut clauses_count = 0;
+    let mut literals_count = 0;
     let mut pred_set = HashSet::new();
     let mut pred_list = Vec::new();
     for clause in h.iter() {
@@ -246,8 +262,9 @@ pub(super) fn count_pred_clauses(
         else {
             panic!();
         };
-        count += clauses.len();
+        clauses_count += clauses.len();
         for clause in clauses.iter() {
+            literals_count += clause.body().len();
             for literal in clause.body() {
                 if let Some(symbol_arity) = invented_body_pred(heap, *literal, pred_symbols) {
                     if pred_set.insert(symbol_arity) {
@@ -257,7 +274,7 @@ pub(super) fn count_pred_clauses(
             }
         }
     }
-    count
+    (clauses_count, literals_count)
 }
 
 /// Plotkin's program reduction (Algorithm 3).
@@ -271,11 +288,10 @@ pub(super) fn reduce(
     config: Config,
     verbose: bool,
 ) -> Vec<Clause> {
+    // Learning is off on the proofs below, not here.
     let config = Config {
-        max_depth: config.max_depth,
-        max_clause: 0,
         debug: false,
-        protect_h_preds: config.protect_h_preds,
+        ..config
     };
 
     // New reduction method
@@ -301,7 +317,7 @@ pub(super) fn reduce(
         // Check if all positive examples are still provable without clause i
         let redundant = pos_goals.iter().all(|&goal| {
             let mut query_heap = QueryHeap::new(heap, None);
-            let mut proof = Proof::new(&query_heap, &[goal]);
+            let mut proof = Proof::without_learning(&query_heap, &[goal]);
             proof.add_test_clauses(&hypothesis);
             proof.prove(&mut query_heap, predicate_table, config)
         });

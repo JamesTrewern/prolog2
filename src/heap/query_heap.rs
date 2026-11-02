@@ -5,6 +5,7 @@ use super::{
     VarBind::{self, *},
     VarReg, Walk,
 };
+use smallvec::SmallVec;
 use std::{
     collections::HashMap,
     ops::{Index, IndexMut, Range, RangeFrom},
@@ -200,9 +201,9 @@ impl<'a> QueryHeap<'a> {
         }
     }
 
-    /// If true passed contrains, false if failed contraints
     pub fn check_constraints(&self, cons: &[usize]) -> bool {
-        let derefs: Vec<VarBind> = cons.iter().map(|var_id| self.var_deref(*var_id)).collect();
+        let derefs: SmallVec<[VarBind; 8]> =
+            cons.iter().map(|var_id| self.var_deref(*var_id)).collect();
         for i in 0..cons.len() {
             for j in (i + 1)..cons.len() {
                 match (derefs[i], derefs[j]) {
@@ -597,6 +598,129 @@ mod dup_term_tests {
             heap[first + 2],
             heap[second + 2],
             "X in p(X) and X in q(X) must copy to the same variable"
+        );
+    }
+}
+
+#[cfg(test)]
+mod check_constraints_tests {
+    use super::super::{
+        test_prog, Heap, QueryHeap,
+        Tag::*,
+        VarBind::{Addr, VarId},
+        VarReg,
+    };
+
+    /// A heap with `n` unbound variable registers and nothing else.
+    fn heap_with_vars(n: usize) -> QueryHeap<'static> {
+        let mut heap = QueryHeap::new(test_prog(), None);
+        for _ in 0..n {
+            heap.new_var(VarReg::UNBOUND);
+        }
+        heap
+    }
+
+    #[test]
+    fn distinct_unbound_variables_pass() {
+        let heap = heap_with_vars(3);
+        assert!(heap.check_constraints(&[0, 1, 2]));
+    }
+
+    /// Two members aliased onto one representative are the same variable, so
+    /// the set must fail. This is the arm that catches an invented predicate
+    /// being unified with the target.
+    #[test]
+    fn two_members_aliased_to_one_representative_fail() {
+        let mut heap = heap_with_vars(3);
+        heap.bind(1, VarId(0));
+        assert!(
+            !heap.check_constraints(&[0, 1]),
+            "var 1 derefs to var 0, so the two are one variable"
+        );
+        assert!(
+            !heap.check_constraints(&[1, 2, 0]),
+            "position in the set must not matter"
+        );
+    }
+
+    /// An alias chain longer than one hop still collapses.
+    #[test]
+    fn an_alias_chain_collapses() {
+        let mut heap = heap_with_vars(3);
+        heap.bind(2, VarId(1));
+        heap.bind(1, VarId(0));
+        assert!(!heap.check_constraints(&[0, 2]));
+    }
+
+    #[test]
+    fn members_bound_to_distinct_constants_pass() {
+        let mut heap = heap_with_vars(2);
+        let a = heap.symbols().set_const("a");
+        let b = heap.symbols().set_const("b");
+        let addr_a = heap.heap_push((Con, a));
+        let addr_b = heap.heap_push((Con, b));
+        heap.bind(0, Addr(addr_a));
+        heap.bind(1, Addr(addr_b));
+        assert!(heap.check_constraints(&[0, 1]));
+    }
+
+    /// Distinct addresses holding structurally equal terms still clash --
+    /// the `term_equal` arm. Comparing addresses alone would pass this.
+    #[test]
+    fn structurally_equal_terms_at_different_addresses_fail() {
+        let mut heap = heap_with_vars(2);
+        let p = heap.symbols().set_const("p");
+        let a = heap.symbols().set_const("a");
+        let first = heap.heap_push((Comp, 2));
+        heap.heap_push((Con, p));
+        heap.heap_push((Con, a));
+        let second = heap.heap_push((Comp, 2));
+        heap.heap_push((Con, p));
+        heap.heap_push((Con, a));
+        assert_ne!(first, second, "the fixture must use two distinct addresses");
+
+        heap.bind(0, Addr(first));
+        heap.bind(1, Addr(second));
+        assert!(
+            !heap.check_constraints(&[0, 1]),
+            "p(a) and p(a) are the same term however many copies are on the heap"
+        );
+    }
+
+    /// One member bound and one not can never clash: an unbound variable
+    /// derefs to a `VarId`, a bound one to an `Addr`.
+    #[test]
+    fn a_bound_and_an_unbound_member_pass() {
+        let mut heap = heap_with_vars(2);
+        let a = heap.symbols().set_const("a");
+        let addr = heap.heap_push((Con, a));
+        heap.bind(0, Addr(addr));
+        assert!(heap.check_constraints(&[0, 1]));
+    }
+
+    /// Degenerate sets hold vacuously -- there is no pair to violate.
+    #[test]
+    fn empty_and_singleton_sets_pass() {
+        let heap = heap_with_vars(1);
+        assert!(heap.check_constraints(&[]));
+        assert!(heap.check_constraints(&[0]));
+    }
+
+    /// Beyond the `SmallVec` inline capacity of 8 the deref list spills to
+    /// the heap; the answer must not change.
+    #[test]
+    fn a_set_wider_than_the_inline_capacity_is_still_correct() {
+        let mut heap = heap_with_vars(12);
+        let wide: Vec<usize> = (0..12).collect();
+        assert!(
+            heap.check_constraints(&wide),
+            "twelve distinct unbound variables satisfy mutual inequality"
+        );
+
+        heap.bind(11, VarId(0));
+        assert!(
+            !heap.check_constraints(&wide),
+            "a clash between the first and last members must be found past the spill"
         );
     }
 }

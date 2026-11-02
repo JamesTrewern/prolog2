@@ -29,15 +29,13 @@ use crate::{
 };
 use rayon::prelude::*;
 
-/// Learning disabled, so a negative is tested against the candidate rather
-/// than extended into a new hypothesis. `max_depth` is kept to bound
+/// Config for a test proof. Learning is turned off on the [`Proof`] itself,
+/// not here; this only silences the debug trace. `max_depth` is kept to bound
 /// recursive candidates.
 fn test_config(config: Config) -> Config {
     Config {
-        max_depth: config.max_depth,
-        max_clause: 0,
         debug: false,
-        protect_h_preds: config.protect_h_preds,
+        ..config
     }
 }
 
@@ -61,7 +59,7 @@ pub(super) fn clauses_entail_negative(
 
     neg_goals.into_par_iter().any(|&goal| {
         let mut query_heap = QueryHeap::new(heap, None);
-        let mut proof = Proof::new(&query_heap, &[goal]);
+        let mut proof = Proof::without_learning(&query_heap, &[goal]);
         proof.add_test_clauses(clauses);
         proof.prove(&mut query_heap, predicate_table, config)
     })
@@ -312,7 +310,7 @@ pub(super) fn specialise_candidate(
         .par_iter_mut()
         .zip(neg_goals.par_iter())
         .any(|(branch, &goal)| {
-            let mut inner = Proof::new(branch, &[goal]);
+            let mut inner = Proof::without_learning(branch, &[goal]);
             inner.add_test_clauses(&grounded);
             inner.prove(branch, predicate_table, config)
         });

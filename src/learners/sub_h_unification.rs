@@ -5,7 +5,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use super::{specialise::clauses_entail_negative, utils::count_coverage};
 use crate::{
     heap::{Heap, ProgramHeap, QueryHeap},
-    learners::utils::{count_pred_clauses, Coverage},
+    learners::utils::{count_pred_clauses_and_literals, Coverage},
     program::{Clause, PredicateTable},
     Config,
 };
@@ -59,10 +59,12 @@ pub(super) fn least_sub_h(
         return None;
     }
 
-    // Sort by coverage count and clause count
-    h_profiles.sort_by_key(|h_profile| (pos_goals.len() - h_profile.n_covered, h_profile.h.len()));
+    // Sort by coverage count, then clause count, then -- if configured --
+    // literal count.
+    h_profiles
+        .sort_by_key(|h_profile| h_profile.sort_key(pos_goals.len(), config.sort_by_literals));
     // Filter any profiles whose coverage is a subset of another profile
-    filter_coverage_sub_sets(&mut h_profiles);
+    filter_coverage_sub_sets(&mut h_profiles, pos_goals.len(), config.sort_by_literals);
 
     let greedy = greedy_find_coverage_group(&h_profiles);
     let max_k = greedy.len();
@@ -115,13 +117,24 @@ fn find_uncovered(h_profiles: &Vec<HProfile>, n_pos_examples: usize) -> Option<V
 }
 
 /// If any profiles coverage is a sub set of another remove that profile
-fn filter_coverage_sub_sets(h_profiles: &mut Vec<HProfile>) {
+///
+/// `n_pos_examples` and `by_literals` are only here to rebuild the same
+/// [`HProfile::sort_key`] the caller sorted by: the scan below stops at the
+/// first profile sharing `p_i`'s key, which is only sound while that key is
+/// the one that produced the current order.
+fn filter_coverage_sub_sets(
+    h_profiles: &mut Vec<HProfile>,
+    n_pos_examples: usize,
+    by_literals: bool,
+) {
     let mut filtered = 0;
     for i in (0..h_profiles.len()).rev() {
         let p_i = &h_profiles[i];
         for j in 0..i {
             let p_j = &h_profiles[j];
-            if (p_i.n_covered, p_i.n_clauses) == (p_j.n_covered, p_j.n_clauses) {
+            if p_i.sort_key(n_pos_examples, by_literals)
+                == p_j.sort_key(n_pos_examples, by_literals)
+            {
                 break;
             }
             if p_i.coverage.sub_set(&p_j.coverage) {
@@ -299,7 +312,10 @@ struct HProfile {
     h: Box<[Clause]>,
     coverage: Coverage,
     n_covered: usize,
+    /// Clauses in `h` plus those of every invented predicate it calls.
     n_clauses: usize,
+    /// Body literals across that same clause set.
+    n_literals: usize,
 }
 
 impl HProfile {
@@ -312,13 +328,37 @@ impl HProfile {
         pred_symbols: &HashSet<usize>,
     ) -> Self {
         let (coverage, n_covered) = count_coverage(pos_goals, &h, heap, predicate_table, max_depth);
-        let n_clauses = count_pred_clauses(&h, heap, predicate_table, pred_symbols) + h.len();
+        let (pred_clauses, pred_literals) =
+            count_pred_clauses_and_literals(&h, heap, predicate_table, pred_symbols);
+        let n_clauses = pred_clauses + h.len();
+        let n_literals = pred_literals + h.iter().map(|clause| clause.body().len()).sum::<usize>();
         Self {
             h,
             coverage,
             n_covered,
             n_clauses,
+            n_literals,
         }
+    }
+
+    /// The ranking key: most coverage first, then fewest clauses, then --
+    /// when `by_literals` -- fewest body literals.
+    ///
+    /// Coverage is expressed as the number of positives *not* covered so that
+    /// every component sorts ascending.
+    ///
+    /// This exists as one function because two places need the identical key.
+    /// [`least_sub_h`] sorts by it, and [`filter_coverage_sub_sets`] breaks
+    /// its scan when two profiles share it -- an early exit that is only
+    /// sound while it agrees with the order the sort actually produced. The
+    /// two disagreed before: the sort used `h.len()` where the break used
+    /// `n_clauses`, which counts invented predicates' clauses too.
+    fn sort_key(&self, n_pos_examples: usize, by_literals: bool) -> (usize, usize, usize) {
+        (
+            n_pos_examples - self.n_covered,
+            self.n_clauses,
+            if by_literals { self.n_literals } else { 0 },
+        )
     }
 }
 
@@ -333,12 +373,16 @@ mod coverage_group_tests {
         Config,
     };
 
+    /// `max_clause` is left at the default: the proofs these tests drive are
+    /// built with `Proof::without_learning`, so the hypothesis size limit
+    /// never comes into it.
     fn config() -> Config {
         Config {
             max_depth: 10,
-            max_clause: 0,
             debug: false,
             protect_h_preds: false,
+            sort_by_literals: false,
+            ..Config::default()
         }
     }
 
@@ -349,6 +393,18 @@ mod coverage_group_tests {
     /// thing under test -- which combinations get built -- while leaving `h`
     /// a real clause list for the negative check to resolve against.
     fn profile(h: Vec<Clause>, covers: &[usize], n_pos: usize) -> HProfile {
+        let n_literals = h.iter().map(|clause| clause.body().len()).sum();
+        profile_with_literals(h, covers, n_pos, n_literals)
+    }
+
+    /// As [`profile`], but with the literal count set by hand, for the
+    /// tiebreaker tests where the clause lists are deliberately the same size.
+    pub(super) fn profile_with_literals(
+        h: Vec<Clause>,
+        covers: &[usize],
+        n_pos: usize,
+        n_literals: usize,
+    ) -> HProfile {
         let mut coverage = Coverage::from_len(n_pos);
         for &i in covers {
             coverage.set(i);
@@ -359,6 +415,7 @@ mod coverage_group_tests {
             coverage,
             n_covered: covers.len(),
             n_clauses,
+            n_literals,
         }
     }
 
@@ -502,5 +559,61 @@ mod coverage_group_tests {
         let mut sorted: Vec<Vec<usize>> = groups.iter().map(|g| g.to_vec()).collect();
         sorted.sort();
         assert_eq!(sorted, vec![vec![0, 1]]);
+    }
+}
+
+#[cfg(test)]
+mod sort_key_tests {
+    use super::coverage_group_tests::profile_with_literals;
+    use crate::parser::_build_clause;
+
+    use crate::heap::ProgramHeap;
+
+    /// Two candidates with the same coverage and the same clause count are
+    /// ordered by literal count -- but only with the flag set.
+    #[test]
+    fn literals_break_a_tie_only_when_enabled() {
+        let mut prog_heap = ProgramHeap::new();
+        let short = _build_clause(&mut prog_heap, "p(X):-q(X).");
+        let long = _build_clause(&mut prog_heap, "p(X):-q(X),r(X),s(X).");
+
+        let wordy = profile_with_literals(vec![long], &[0], 1, 3);
+        let terse = profile_with_literals(vec![short], &[0], 1, 1);
+
+        assert!(
+            terse.sort_key(1, true) < wordy.sort_key(1, true),
+            "with the flag on, the hypothesis with fewer literals sorts first"
+        );
+        assert_eq!(
+            terse.sort_key(1, false),
+            wordy.sort_key(1, false),
+            "with the flag off the two must still tie, so existing setups rank as before"
+        );
+    }
+
+    /// The tiebreaker is only ever a tiebreaker: it must not let a program
+    /// with fewer literals outrank one that covers more, or one that is
+    /// smaller.
+    #[test]
+    fn literals_never_outweigh_coverage_or_clause_count() {
+        let mut prog_heap = ProgramHeap::new();
+        let clause = _build_clause(&mut prog_heap, "p(X):-q(X).");
+
+        // Covers one of two positives with a single literal.
+        let narrow = profile_with_literals(vec![clause.clone()], &[0], 2, 1);
+        // Covers both, but with far more literals.
+        let broad = profile_with_literals(vec![clause.clone()], &[0, 1], 2, 99);
+        assert!(
+            broad.sort_key(2, true) < narrow.sort_key(2, true),
+            "coverage dominates literal count"
+        );
+
+        // Same coverage, one clause vs two, and the bigger program is terser.
+        let one_clause = profile_with_literals(vec![clause.clone()], &[0], 1, 9);
+        let two_clauses = profile_with_literals(vec![clause.clone(), clause], &[0], 1, 1);
+        assert!(
+            one_clause.sort_key(1, true) < two_clauses.sort_key(1, true),
+            "clause count dominates literal count"
+        );
     }
 }

@@ -17,26 +17,36 @@ pub struct Proof<'a> {
     pointer: usize,
     pub hypothesis: Hypothesis,
     test_clauses: Option<&'a [Clause]>,
+    learning: bool,
 }
 
 impl<'a> Proof<'a> {
     pub fn new(heap: &QueryHeap, goals: &[usize]) -> Self {
-        let hypothesis = Hypothesis::new();
-        let stack = goals
-            .iter()
-            .map(|goal| Env::new(*goal, 0, heap.heap_point()))
-            .collect();
-        Proof {
-            stack,
-            pointer: 0,
-            hypothesis,
-            test_clauses: None,
-        }
+        Self::build(heap, goals, Hypothesis::new(), true)
+    }
+
+    /// A proof that may not extend the hypothesis; see [`Proof::learning`].
+    pub fn without_learning(heap: &QueryHeap, goals: &[usize]) -> Self {
+        Self::build(heap, goals, Hypothesis::new(), false)
     }
 
     /// Create a new proof with an existing hypothesis (for negation-as-failure checks)
     pub fn with_hypothesis(heap: &QueryHeap, goals: &[usize], hypothesis: &Hypothesis) -> Self {
-        let hypothesis = hypothesis.clone();
+        Self::build(heap, goals, hypothesis.clone(), true)
+    }
+
+    /// As [`Self::with_hypothesis`], but the inherited hypothesis may not be
+    /// extended.
+    /// Used ub negation-as-failure and specialisation
+    pub fn with_hypothesis_without_learning(
+        heap: &QueryHeap,
+        goals: &[usize],
+        hypothesis: &Hypothesis,
+    ) -> Self {
+        Self::build(heap, goals, hypothesis.clone(), false)
+    }
+
+    fn build(heap: &QueryHeap, goals: &[usize], hypothesis: Hypothesis, learning: bool) -> Self {
         let stack = goals
             .iter()
             .map(|goal| Env::new(*goal, 0, heap.heap_point()))
@@ -46,6 +56,7 @@ impl<'a> Proof<'a> {
             pointer: 0,
             hypothesis,
             test_clauses: None,
+            learning,
         }
     }
 
@@ -109,6 +120,7 @@ impl<'a> Proof<'a> {
                 &mut self.hypothesis,
                 predicate_table,
                 config,
+                self.learning,
             ) {
                 Some(new_goals) => {
                     self.pointer += 1;
@@ -147,6 +159,60 @@ impl<'a> Proof<'a> {
             heap.unbind(&env.bound_vars);
             env.bound_vars = Box::new([]);
         }
+    }
+}
+
+#[cfg(test)]
+mod learning_switch_tests {
+    use super::Proof;
+    use crate::{app::App, heap::QueryHeap, parser::_build_clause};
+
+    /// A goal that is only provable by learning: `t(a)` has no clause, but
+    /// the meta rule `P(X):-Q(X)` can invent one over the fact `q(a)`.
+    fn app() -> App {
+        App::default()
+            .load_code("q(a). P(X):- Q(X), {P,Q}.")
+            .expect("test program should load")
+            .add_body_predicates(["q/1"])
+            .expect("body predicate should load")
+    }
+
+    #[test]
+    fn a_learning_proof_invents_a_clause_and_a_non_learning_one_does_not() {
+        let mut app = app();
+        let goal = _build_clause(&mut app.prog_heap, "t(a).")[0];
+
+        let mut heap = QueryHeap::new(&app.prog_heap, None);
+        let mut learning = Proof::new(&heap, &[goal]);
+        assert!(
+            learning.prove(&mut heap, &app.predicate_table, app.config),
+            "t(a) should be provable by inventing t(X):-q(X)"
+        );
+        assert_eq!(
+            learning.hypothesis.len(),
+            1,
+            "the proof should have added exactly the one clause it needed"
+        );
+
+        let mut heap = QueryHeap::new(&app.prog_heap, None);
+        let mut testing = Proof::without_learning(&heap, &[goal]);
+        assert!(
+            !testing.prove(&mut heap, &app.predicate_table, app.config),
+            "with learning off there is no clause for t/1, so the goal must fail -- \
+             this is what the six test-proof call sites rely on"
+        );
+        assert!(testing.hypothesis.is_empty());
+    }
+
+    /// The switch is on the proof, not the config: `max_clause` still has
+    /// room, and it is only `learning` that makes the difference above.
+    #[test]
+    fn max_clause_is_not_what_disables_learning() {
+        let app = app();
+        assert!(
+            app.config.max_clause > 0,
+            "the fixture must leave room to learn, or the test above proves nothing"
+        );
     }
 }
 
