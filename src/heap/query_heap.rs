@@ -27,7 +27,7 @@ pub type HeapPoint = (usize, usize);
 /// owned mutable cell buffer for query-time allocations. Supports
 /// branching via an optional parent pointer for backtracking.
 pub struct QueryHeap<'a> {
-        pub(crate) cells: Vec<Cell>,
+    pub(crate) cells: Vec<Cell>,
     /// The program this heap reads symbols from.
     ///
     /// Separate from `prog_cells` because the two are independent: a
@@ -188,7 +188,7 @@ impl<'a> QueryHeap<'a> {
         let mut walk = TermWalk::new(addr);
         while let Some(cell) = walk.next_cell(self) {
             if cell.0 == Var {
-                if let Some(&mapped) = ref_map.get(&addr) {
+                if let Some(&mapped) = ref_map.get(&cell.1) {
                     self.heap_push((Var, mapped));
                 } else {
                     let new_var_id = self.set_var(None);
@@ -421,8 +421,7 @@ impl Index<RangeFrom<usize>> for QueryHeap<'_> {
 #[cfg(test)]
 mod branch_tests {
     use super::super::{
-        test_prog,
-        Heap, QueryHeap,
+        test_prog, Heap, QueryHeap,
         Tag::*,
         VarBind::{Addr, VarId},
     };
