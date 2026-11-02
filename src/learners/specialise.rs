@@ -19,7 +19,7 @@ use std::{
 
 use crate::{
     heap::{
-        Heap, ProgramHeap, QueryHeap, INVENTED_SYMBOL_BASE,
+        Heap, ProgramHeap, QueryHeap, PRED_VAR_PLACEHOLDER_BASE, PRED_VAR_PLACEHOLDER_COUNT,
         Tag::{Con, Var},
         TermWalk, Walk,
     },
@@ -28,14 +28,6 @@ use crate::{
     Config,
 };
 use rayon::prelude::*;
-
-/// Most distinct predicate variables one hypothesis can hold.
-///
-/// The constants standing in for them -- `$inv_0` upwards, which the symbol
-/// table preloads so that minting one never takes the write lock -- occupy
-/// [`INVENTED_SYMBOL_BASE`] onwards, so this must match the table's own
-/// count.
-const MAX_INVENTED: usize = 64;
 
 /// Learning disabled, so a negative is tested against the candidate rather
 /// than extended into a new hypothesis. `max_depth` is kept to bound
@@ -209,11 +201,21 @@ fn ground_hypothesis(heap: &mut QueryHeap, hypothesis: &Hypothesis) -> Vec<Claus
                     while let Some(cell) = walk.next_cell(heap) {
                         if let (Var, var_id) = cell {
                             let next = consts.len();
+                            // Unreachable as the limits currently stand: a
+                            // hypothesis holds at most `max_clause - 1`
+                            // predicate variables and `max_clause` is capped
+                            // at `MAX_PRED_DEFS`, well inside the pool. Here
+                            // so that raising either limit past the pool
+                            // fails loudly rather than reading a placeholder
+                            // id that was never interned.
                             assert!(
-                                next < MAX_INVENTED,
-                                "hypothesis holds more than {MAX_INVENTED} predicate variables"
+                                next < PRED_VAR_PLACEHOLDER_COUNT,
+                                "candidate holds more predicate variables than the \
+                                 {PRED_VAR_PLACEHOLDER_COUNT} preloaded placeholders"
                             );
-                            let symbol = *consts.entry(var_id).or_insert(INVENTED_SYMBOL_BASE + next);
+                            let symbol = *consts
+                                .entry(var_id)
+                                .or_insert(PRED_VAR_PLACEHOLDER_BASE + next);
                             heap.heap_push((Con, symbol));
                         } else {
                             heap.heap_push(cell);

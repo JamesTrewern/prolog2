@@ -16,9 +16,9 @@ use std::{
 /// Symbols interned at construction, at these fixed IDs.
 ///
 /// `maths.rs` depends on the operator and function indices, and
-/// `learners::specialise` on the `$inv_N` block: interning those lazily
-/// would take the write lock once per learning candidate, which at that
-/// volume is itself a bottleneck. The `$` prefix keeps them clear of the
+/// `learners::specialise` on the `$inv_N` placeholder block: interning those
+/// lazily would take the write lock once per learning candidate, which at
+/// that volume is itself a bottleneck. The `$` prefix keeps them clear of the
 /// `pred_N` constants the predicate definition table coins, which name real
 /// predicates and would otherwise collide.
 const KNOWN_SYMBOLS: &[&str] = &[
@@ -43,14 +43,24 @@ const KNOWN_SYMBOLS: &[&str] = &[
     "to_radians", // indices 13-18
 ];
 
-/// Most distinct predicate variables one hypothesis can hold.
+/// How many `$inv_N` placeholder constants are preloaded.
 ///
-/// Mirrors `learners::specialise::MAX_INVENTED`; the `$inv_N` constants are
-/// preloaded here so their IDs are known without interning.
-const MAX_INVENTED: usize = 64;
+/// These are not a budget for predicate invention. They stand in for the
+/// predicate variables of a *single* candidate hypothesis while it is tested
+/// against the negative examples, and are discarded with the rest of that
+/// test's cells; the predicate definition table coins its own unbounded
+/// `pred_N` constants for the predicates that are actually kept.
+///
+/// So the pool only has to cover the predicate variables of one candidate.
+/// That is at most `max_clause - 1`, and `max_clause` is itself refused above
+/// `MAX_PRED_DEFS` (16), making 15 the most that is reachable. The pool is
+/// deliberately larger than that: it costs 64 small allocations once per
+/// program, and leaves room for those two limits to rise.
+pub(crate) const PRED_VAR_PLACEHOLDER_COUNT: usize = 64;
 
-/// ID of the first `$inv_N` constant. The block runs for [`MAX_INVENTED`] IDs.
-pub(crate) const INVENTED_SYMBOL_BASE: usize = KNOWN_SYMBOLS.len();
+/// ID of the first `$inv_N` placeholder. The block runs for
+/// [`PRED_VAR_PLACEHOLDER_COUNT`] consecutive IDs.
+pub(crate) const PRED_VAR_PLACEHOLDER_BASE: usize = KNOWN_SYMBOLS.len();
 
 /// Symbol table for one program.
 ///
@@ -85,7 +95,7 @@ impl SymbolDB {
         let preloaded = KNOWN_SYMBOLS
             .iter()
             .map(|&symbol| Arc::<str>::from(symbol))
-            .chain((0..MAX_INVENTED).map(|i| Arc::<str>::from(format!("$inv_{i}").as_str())));
+            .chain((0..PRED_VAR_PLACEHOLDER_COUNT).map(|i| Arc::<str>::from(format!("$inv_{i}").as_str())));
 
         let mut symbols = Vec::new();
         let mut index = HashMap::new();
