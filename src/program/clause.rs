@@ -175,3 +175,31 @@ impl DerefMut for Clause {
         &mut self.literals
     }
 }
+
+#[cfg(test)]
+mod program_symbol_isolation {
+    use crate::{heap::ProgramHeap, parser::_build_clause};
+
+    /// Two programs name their own clause variables.
+    ///
+    /// This is what a global symbol table actually broke. A program `Arg`
+    /// cell is named through `get_var(address, 0)` -- keyed on the cell's
+    /// address, with 0 standing for "a program heap" -- and every program
+    /// starts at address 0. With one shared map, loading the second clause
+    /// overwrote the first's names, and the first clause then rendered as
+    /// `p(Alpha,Beta):-q(Alpha,Beta)`.
+    ///
+    /// Resolution never consulted those names, so the damage was confined to
+    /// anything that printed a program clause. That is why it goes unnoticed
+    /// in a query and has to be asserted on the rendered clause.
+    #[test]
+    fn two_programs_keep_their_own_clause_var_names() {
+        let mut first = ProgramHeap::new();
+        let clause = _build_clause(&mut first, "p(X,Y):-q(X,Y).");
+
+        let mut second = ProgramHeap::new();
+        let _ = _build_clause(&mut second, "p(Alpha,Beta):-q(Alpha,Beta).");
+
+        assert_eq!(clause.to_string(&first), "p(X,Y):-q(X,Y).");
+    }
+}

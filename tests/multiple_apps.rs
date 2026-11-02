@@ -1,10 +1,16 @@
 //! Two engines in one process keep separate symbol spaces.
 //!
 //! Each [`App`] owns its program heap, and each program heap owns the symbol
-//! table its cells are interpreted against. Before that, symbols lived in a
-//! global static: a second engine appended to the same constant table and the
-//! same string-literal vector, and both wrote variable names under the same
-//! "program heap" key. These tests pin the property down from the outside.
+//! table its cells are interpreted against.
+//!
+//! These guard that isolation; they are not regressions. When the table was a
+//! global static the sharing was largely invisible from out here, because the
+//! constant table only ever grew -- so an id meant the same thing in both
+//! engines -- and each string literal took a fresh index. What it actually
+//! broke was variable naming, which needs the program heap to observe and so
+//! is covered by `program::clause` instead, plus growth that no engine could
+//! reclaim. The value of these is that they are cheap and they fail loudly if
+//! the table ever drifts back toward being shared.
 
 use prolog2::app::App;
 
