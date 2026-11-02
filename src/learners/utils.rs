@@ -108,7 +108,7 @@ pub(super) fn compile_examples(examples: &[String], heap: &mut ProgramHeap) -> V
                 );
             }
 
-            build_clause(literals, None, heap, None)[0]
+            build_clause(literals, None, heap, false)[0]
         })
         .collect()
 }

@@ -1,8 +1,13 @@
 //! Per-program symbol database.
 //!
-//! All constant and variable symbols are interned here. Heap cells store
-//! integer IDs rather than strings; this module provides the mapping in
-//! both directions.
+//! Constants and string literals are interned here. Heap cells store integer
+//! IDs rather than strings; this module provides the mapping in both
+//! directions.
+//!
+//! Variable names are *not* here. A variable is identified by a register id
+//! that means nothing outside the heap that created it, so each heap keeps
+//! its own names -- see [`QueryHeap`](super::QueryHeap) for query variables
+//! and [`ProgramHeap`](super::ProgramHeap) for clause `Arg`s.
 //!
 //! A [`SymbolDB`] is owned by a [`ProgramHeap`](super::ProgramHeap) rather
 //! than living in a global static, so two engines in one process keep
@@ -64,9 +69,9 @@ pub(crate) const PRED_VAR_PLACEHOLDER_BASE: usize = KNOWN_SYMBOLS.len();
 
 /// Symbol table for one program.
 ///
-/// Maps between string representations and numeric IDs so the heap can
-/// work entirely with `usize` values. Constants, variables, and string
-/// literals are stored separately.
+/// Maps between string representations and numeric IDs so the heap can work
+/// entirely with `usize` values. Constants and string literals are stored
+/// separately.
 ///
 /// Every method takes `&self`: the interior locks mean a symbol can be
 /// interned through a shared reference, which is what lets a
@@ -79,7 +84,6 @@ pub(crate) const PRED_VAR_PLACEHOLDER_BASE: usize = KNOWN_SYMBOLS.len();
 pub struct SymbolDB {
     /// Interned constants, and a reverse index so interning is not a scan.
     consts: RwLock<(Vec<Arc<str>>, HashMap<Arc<str>, usize>)>,
-    var_symbol_map: RwLock<HashMap<(usize, usize), Arc<str>>>,
     strings: RwLock<Vec<Arc<str>>>,
 }
 
@@ -106,7 +110,6 @@ impl SymbolDB {
 
         SymbolDB {
             consts: RwLock::new((symbols, index)),
-            var_symbol_map: RwLock::new(HashMap::new()),
             strings: RwLock::new(Vec::new()),
         }
     }
@@ -129,26 +132,6 @@ impl SymbolDB {
         self.consts.read().unwrap().0[id].clone()
     }
 
-    /// Record the source name of a variable.
-    ///
-    /// `key` identifies the variable within this program: a cell address for
-    /// an `Arg` on the program heap, or a variable register ID paired with
-    /// the owning query heap's ID.
-    pub fn set_var(&self, symbol: impl Into<Arc<str>>, var: usize, heap_id: usize) {
-        self.var_symbol_map
-            .write()
-            .unwrap()
-            .insert((var, heap_id), symbol.into());
-    }
-
-    pub fn get_var(&self, var: usize, heap_id: usize) -> Option<Arc<str>> {
-        self.var_symbol_map
-            .read()
-            .unwrap()
-            .get(&(var, heap_id))
-            .cloned()
-    }
-
     pub fn get_string(&self, index: usize) -> Arc<str> {
         self.strings.read().unwrap()[index].clone()
     }
@@ -159,9 +142,4 @@ impl SymbolDB {
         strings.len() - 1
     }
 
-    pub fn _see_var_map(&self) {
-        for (k, v) in &*self.var_symbol_map.read().unwrap() {
-            println!("{k:?}:\t{v}")
-        }
-    }
 }

@@ -609,20 +609,20 @@ impl App {
         let literals = TokenStream::new(tokenise(query)?).parse_goals()?;
 
         let mut query_heap = QueryHeap::new(&self.prog_heap, None);
-        let heap_id = query_heap.id;
-        let goals = build_clause(literals, None, &mut query_heap, Some(heap_id));
+        let goals = build_clause(literals, None, &mut query_heap, true);
         let mut vars = Vec::new();
         for literal in goals.iter() {
             vars.extend(
                 query_heap
                     .term_vars(*literal, false)
                     .iter()
+                    // Every variable in a parsed query was named as it was
+                    // read, so the heap has a name for each.
                     .map(|&var_id| {
                         (
-                            self.prog_heap
-                                .symbols()
-                                .get_var(var_id, query_heap.id)
-                                .unwrap(),
+                            query_heap
+                                .var_name(var_id)
+                                .expect("a parsed query variable is always named"),
                             var_id,
                         )
                     }),

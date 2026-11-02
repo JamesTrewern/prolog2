@@ -10,6 +10,7 @@ use std::{
     fmt::Write,
     mem,
     ops::{Index, IndexMut, Range, RangeFrom},
+    sync::Arc,
 };
 
 use fsize::fsize;
@@ -55,6 +56,24 @@ impl std::fmt::Display for Tag {
 /// A single heap cell: a `(Tag, value)` pair.
 pub type Cell = (Tag, usize);
 
+/// Positional name for an unnamed clause variable: `A`, `B`, ... `Z`, then
+/// `A2` onwards.
+///
+/// Needs no storage, because an `Arg` id is clause-local and so the name is a
+/// pure function of it. Used for `Arg` cells in query space, which have no
+/// parsed name to recover: a clause learned during a proof was built from a
+/// meta rule's template rather than written down by anyone, and a clause
+/// copied out of program space is read through the program heap's own names.
+///
+/// `MAX_ARG` is 64, so the suffix never passes 3.
+pub(crate) fn arg_name(arg_id: usize) -> String {
+    let letter = (b'A' + (arg_id % 26) as u8) as char;
+    match arg_id / 26 {
+        0 => letter.to_string(),
+        n => format!("{letter}{}", n + 1),
+    }
+}
+
 pub const LIS: Cell = (Lis, 0);
 pub const EMPTY_LIS: Cell = (ELis, 0);
 
@@ -76,6 +95,27 @@ pub trait Heap:
     /// a variable needs no extra parameter anywhere -- any code holding a
     /// heap already holds its symbols.
     fn symbols(&self) -> &SymbolDB;
+
+    /// The source name of the `Arg` cell at `addr`, if it has one.
+    ///
+    /// `Arg` ids are clause-local, so a name belongs to an address rather
+    /// than to an id: the same id in two clauses is two different variables.
+    /// Only the program heap records these, from parsing; an `Arg` in query
+    /// space gets a positional name instead (see [`arg_name`]).
+    fn arg_name(&self, _addr: usize) -> Option<Arc<str>> {
+        None
+    }
+
+    /// The source name of variable register `var_id`, if it has one.
+    fn var_name(&self, _var_id: usize) -> Option<Arc<str>> {
+        None
+    }
+
+    /// Record the source name of the `Arg` cell at `addr`.
+    fn set_arg_name(&mut self, _addr: usize, _symbol: Arc<str>) {}
+
+    /// Record the source name of variable register `var_id`.
+    fn set_var_name(&mut self, _var_id: usize, _symbol: Arc<str>) {}
 
     /// Reset Ref cells affected by binding to self references
     /// @binding: List of (usize, usize) tuples representing heap indexes, left -> right
@@ -115,10 +155,6 @@ pub trait Heap:
 
     fn prog_addr(&self, _addr: usize) -> bool {
         true
-    }
-
-    fn get_id(&self, _addr: usize) -> usize {
-        0
     }
 
     fn _set_arg(&mut self, value: usize) -> usize {
@@ -477,13 +513,13 @@ pub trait Heap:
             Comp => self.comp_string(addr, buf),
             Lis => self.list_string(addr, buf),
             ELis => write!(buf, "[]"),
-            Arg => match self.symbols().get_var(*addr, self.get_id(*addr)) {
+            Arg => match self.arg_name(*addr) {
                 Some(symbol) => buf.write_str(&symbol),
-                None => write!(buf, "Arg_{}", self[*addr].1),
+                None => buf.write_str(&arg_name(self[*addr].1)),
             },
             Var => match self.var_deref(self[*addr].1) {
                 Addr(mut ref_addr) => self.term_string_rec(&mut ref_addr, buf),
-                VarId(var_id) => match self.symbols().get_var(var_id, self.get_id(*addr)).to_owned() {
+                VarId(var_id) => match self.var_name(var_id) {
                     Some(symbol) => buf.write_str(&symbol),
                     // Name the *representative*, not the cell. Unifying two
                     // free variables aliases one to the other without binding
@@ -593,7 +629,7 @@ mod tests {
         assert_eq!(heap.term_string(0), "Ref_3");
 
         heap.cells = vec![(Var, 0), (Var, 1), (Var, 2), (Arg, 0)];
-        assert_eq!(heap.term_string(0), "Arg_0");
+        assert_eq!(heap.term_string(0), "A");
 
         heap.cells = vec![(Var, 0), (Var, 1), (Var, 2), (Con, a)];
         assert_eq!(heap.term_string(0), "a");

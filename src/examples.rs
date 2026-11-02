@@ -57,17 +57,17 @@ pub(crate) fn test_solutions(app: App, expected_hypotheses: &[&[&str]]) {
 #[test]
 fn ancestor() {
     const H1: &[&str] = &[
-        "ancestor(Arg_0,Arg_1):-dad(Arg_0,Arg_2),ancestor(Arg_2,Arg_1).",
-        "ancestor(Arg_0,Arg_1):-dad(Arg_0,Arg_1).",
-        "ancestor(Arg_0,Arg_1):-mum(Arg_0,Arg_2),ancestor(Arg_2,Arg_1).",
-        "ancestor(Arg_0,Arg_1):-mum(Arg_0,Arg_1).",
+        "ancestor(A,B):-dad(A,C),ancestor(C,B).",
+        "ancestor(A,B):-dad(A,B).",
+        "ancestor(A,B):-mum(A,C),ancestor(C,B).",
+        "ancestor(A,B):-mum(A,B).",
     ];
 
     const H2: &[&str] = &[
-        "ancestor(Arg_0,Arg_1):-pred_1(Arg_0,Arg_2),ancestor(Arg_2,Arg_1).",
-        "ancestor(Arg_0,Arg_1):-pred_1(Arg_0,Arg_1).",
-        "pred_1(Arg_0,Arg_1):-dad(Arg_0,Arg_1).",
-        "pred_1(Arg_0,Arg_1):-mum(Arg_0,Arg_1).",
+        "ancestor(A,B):-pred_1(A,C),ancestor(C,B).",
+        "ancestor(A,B):-pred_1(A,B).",
+        "pred_1(A,B):-dad(A,B).",
+        "pred_1(A,B):-mum(A,B).",
     ];
 
     let app = App::from_setup_json("examples/ancestor/config.json")
@@ -99,15 +99,15 @@ fn map() {
 #[test]
 fn odd_even() {
     const H1: &[&str] = &[
-        "even(Arg_0):-prev(Arg_0,Arg_1),pred_1(Arg_1).",
-        "pred_1(Arg_0):-prev(Arg_0,Arg_1),even(Arg_1).",
-        "pred_1(Arg_0):-prev(Arg_0,Arg_1),zero(Arg_1).",
+        "even(A):-prev(A,B),pred_1(B).",
+        "pred_1(A):-prev(A,B),even(B).",
+        "pred_1(A):-prev(A,B),zero(B).",
     ];
 
     const H2: &[&str] = &[
-        "even(Arg_0):-prev(Arg_0,Arg_1),pred_1(Arg_1).",
-        "pred_1(Arg_0):-prev(Arg_0,Arg_1),even(Arg_1).",
-        "even(Arg_0):-zero(Arg_0).",
+        "even(A):-prev(A,B),pred_1(B).",
+        "pred_1(A):-prev(A,B),even(B).",
+        "even(A):-zero(A).",
     ];
 
     let app = App::from_setup_json("examples/odd_even/config.json")
@@ -119,9 +119,9 @@ fn odd_even() {
 #[test]
 fn learn_map_double() {
     const H1: &[&str] = &[
-        "map_double([Arg_0|Arg_1],[Arg_2|Arg_3],double):-double(Arg_0,Arg_2),map_double(Arg_1,Arg_3,double).",
-        "double(Arg_0,Arg_1):-add(Arg_0,Arg_0,Arg_1).",
-        "map_double([],[],Arg_0)."
+        "map_double([A|B],[C|D],double):-double(A,C),map_double(B,D,double).",
+        "double(A,B):-add(A,A,B).",
+        "map_double([],[],A)."
     ];
     let app = App::from_setup_json("examples/map/learn_config.json")
         .expect("failed to load config")
@@ -132,16 +132,16 @@ fn learn_map_double() {
 #[test]
 fn trains() {
     const H1: &[&str] = &[
-        "e(Arg_0):-has_car(Arg_0,Arg_1),pred_1(Arg_1).",
-        "pred_1(Arg_0):-closed(Arg_0),short(Arg_0).",
+        "e(A):-has_car(A,B),pred_1(B).",
+        "pred_1(A):-closed(A),short(A).",
     ];
     const H2: &[&str] = &[
-        "e(Arg_0):-pred_1(Arg_0,Arg_1),closed(Arg_1).",
-        "pred_1(Arg_0,Arg_1):-has_car(Arg_0,Arg_1),short(Arg_1).",
+        "e(A):-pred_1(A,B),closed(B).",
+        "pred_1(A,B):-has_car(A,B),short(B).",
     ];
     const H3: &[&str] = &[
-        "e(Arg_0):-pred_1(Arg_0,Arg_1),short(Arg_1).",
-        "pred_1(Arg_0,Arg_1):-has_car(Arg_0,Arg_1),closed(Arg_1).",
+        "e(A):-pred_1(A,B),short(B).",
+        "pred_1(A,B):-has_car(A,B),closed(B).",
     ];
     let app = App::from_setup_json("examples/trains/config.json")
         .expect("failed to load config")
@@ -203,8 +203,8 @@ fn top_prog_trains() {
     assert_eq!(result.lines().count(), 2);
     //This creates a valid hypothesis, but due to race conditions
     //in multi-threading predicate names and ordering of body literals is not deterministic
-    // assert!(result.lines().find(|line| *line == "e(Arg_0):-has_car(Arg_0,Arg_1),pred_1(Arg_1).").is_some());
-    // assert!(result.lines().find(|line| *line == "pred_1(Arg_0):-short(Arg_0),closed(Arg_0).").is_some());
+    // assert!(result.lines().find(|line| *line == "e(A):-has_car(A,B),pred_1(B).").is_some());
+    // assert!(result.lines().find(|line| *line == "pred_1(A):-short(A),closed(A).").is_some());
 }
 
 #[test]

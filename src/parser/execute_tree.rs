@@ -18,7 +18,7 @@ pub(crate) fn build_clause(
     literals: Vec<Term>,
     meta_vars: Option<(Vec<String>, Vec<String>)>,
     heap: &mut impl Heap,
-    query: Option<usize>,
+    query: bool,
 ) -> Clause {
     let mut var_values = HashMap::new();
 
@@ -204,7 +204,7 @@ pub(crate) fn execute_tree(
             }
         };
 
-        let clause = build_clause(literals, meta_vars, heap, None);
+        let clause = build_clause(literals, meta_vars, heap, false);
         let symbol_arity = heap.symbol_arity(clause[0]);
         pred_table
             .add_clause_to_predicate(clause, symbol_arity)
@@ -221,15 +221,15 @@ pub(crate) fn _build_clause(heap: &mut impl Heap, clause: &str) -> Clause {
         .unwrap()
         .unwrap();
     match clause {
-        TreeClause::Fact(term) => build_clause(vec![term], None, heap, None),
-        TreeClause::Rule(terms) => build_clause(terms, None, heap, None),
+        TreeClause::Fact(term) => build_clause(vec![term], None, heap, false),
+        TreeClause::Rule(terms) => build_clause(terms, None, heap, false),
         TreeClause::MetaRule(mut terms) => {
             let vars = extract_meta_rule_vars(&mut terms).unwrap();
-            build_clause(terms, Some(vars), heap, None)
+            build_clause(terms, Some(vars), heap, false)
         }
         TreeClause::MetaFact(head, meta_data) => {
             let meta_vars = extract_var_names_from_set(meta_data).unwrap();
-            build_clause(vec![head], Some((meta_vars.clone(), meta_vars)), heap, None)
+            build_clause(vec![head], Some((meta_vars.clone(), meta_vars)), heap, false)
         }
     }
 }

@@ -8,7 +8,15 @@ use super::{
 use std::{
     collections::HashMap,
     ops::{Index, IndexMut, Range, RangeFrom},
+    sync::Arc,
 };
+
+/// Source names for a heap's variables, keyed by variable register id.
+///
+/// Sparse: only variables that came from parsed source have a name at all.
+/// Everything resolution invents during a proof is unnamed and renders as
+/// `Ref_<id>`, which is the common case by a wide margin.
+pub(crate) type VarNames = HashMap<usize, Arc<str>>;
 
 /// (Heap cells length, Variable registers length)
 pub type HeapPoint = (usize, usize);
@@ -19,8 +27,7 @@ pub type HeapPoint = (usize, usize);
 /// owned mutable cell buffer for query-time allocations. Supports
 /// branching via an optional parent pointer for backtracking.
 pub struct QueryHeap<'a> {
-    pub(crate) id: usize,
-    pub(crate) cells: Vec<Cell>,
+        pub(crate) cells: Vec<Cell>,
     /// The program this heap reads symbols from.
     ///
     /// Separate from `prog_cells` because the two are independent: a
@@ -41,17 +48,32 @@ pub struct QueryHeap<'a> {
     /// [`Self::branch`] rejects it.
     root: Option<&'a [Cell]>,
     pub(crate) var_regs: Vec<VarReg>, //Reference binding registers
+    /// Names of variables this heap created.
+    var_names: VarNames,
+    /// Names of the parent's variables, for a branch that inherited its
+    /// registers.
+    ///
+    /// `Some` only for [`Self::branch_inherit`]. Those branches clone the
+    /// parent's registers, so a parent variable keeps its id in the branch
+    /// and the parent's names apply unchanged; variables the branch goes on
+    /// to create land above `var_regs.len()` and so cannot collide with one.
+    ///
+    /// `None` for [`Self::branch_ground`], whose registers start empty: its
+    /// id 0 is a different variable from the parent's id 0, and inheriting
+    /// names would print a fresh variable under a parent's name.
+    root_var_names: Option<&'a VarNames>,
 }
 
 impl<'a> QueryHeap<'a> {
     pub fn new(prog: &'a ProgramHeap, root: Option<&'a [Cell]>) -> QueryHeap<'a> {
         QueryHeap {
-            id: prog.next_heap_id(),
             cells: Vec::new(),
             prog,
             prog_cells: prog.cells(),
             root,
             var_regs: Vec::new(),
+            var_names: VarNames::new(),
+            root_var_names: None,
         }
     }
 
@@ -63,43 +85,94 @@ impl<'a> QueryHeap<'a> {
     /// the point of the move.
     pub fn detached(prog: &'a ProgramHeap) -> QueryHeap<'a> {
         QueryHeap {
-            id: prog.next_heap_id(),
             cells: Vec::new(),
             prog,
             prog_cells: &[],
             root: None,
             var_regs: Vec::new(),
+            var_names: VarNames::new(),
+            root_var_names: None,
         }
     }
 
-    /// `count` heaps that read this one's cells but write their own.
+    /// `count` heaps that read this one's cells but write their own, with no
+    /// variable registers of their own.
     ///
-    /// Each starts with no variable registers of its own, so **every term a
-    /// branch reads from its parent must be ground**: a `Var` cell would
-    /// dereference against an empty register table. Callers ground what they
-    /// want read first, which is cheaper than copying the parent's registers
-    /// into every branch.
+    /// **Every term a branch reads from this heap must be ground.** A `Var`
+    /// cell would dereference against an empty register table, which panics
+    /// rather than reading a stale binding. Callers ground what they want
+    /// read first, which is cheaper than copying the registers into every
+    /// branch -- so this is the right branch when the work is read-only
+    /// against finished terms, as testing a grounded hypothesis against the
+    /// negative examples is.
     ///
-    /// Nothing has to be undone afterwards. A branch cannot write its
-    /// parent's cells (`IndexMut` refuses them) and binds only registers it
-    /// created, so dropping it leaves the parent exactly as it was.
+    /// Because the registers start empty, the branch's variable ids do not
+    /// correspond to this heap's: its id 0 is a different variable. It
+    /// therefore does not inherit variable names either -- see
+    /// [`Self::branch_inherit`] for the case that does.
     ///
-    /// Borrows `self` for as long as the branches live, so the parent cannot
+    /// Nothing has to be undone afterwards. A branch cannot write this
+    /// heap's cells (`IndexMut` refuses them) and binds only registers it
+    /// created, so dropping it leaves this heap exactly as it was.
+    ///
+    /// Borrows `self` for as long as the branches live, so this heap cannot
     /// allocate while they exist -- which is exactly the invariant their
     /// addresses depend on.
-    pub fn branch<'b>(&'b self, count: usize) -> Vec<QueryHeap<'b>> {
+    pub fn branch_ground<'b>(&'b self, count: usize) -> Vec<QueryHeap<'b>> {
+        self.branches(count, false)
+    }
+
+    /// `count` heaps that inherit this one's bindings and variable names.
+    ///
+    /// Each clones the variable registers, so a branch can read any term
+    /// this heap holds, bound or not, and bind those variables for itself
+    /// without the others or this heap seeing it. That is what a nested
+    /// sub-proof needs: one goal explored several ways, or explored once and
+    /// then discarded.
+    ///
+    /// Cloning the registers keeps the branch's variable ids equal to this
+    /// heap's, so the inherited names stay correct and a variable parsed as
+    /// `X` still prints as `X` inside the branch. New variables the branch
+    /// creates sit above the inherited range and are named, or not, locally.
+    ///
+    /// Costs a register vector per branch, where [`Self::branch_ground`]
+    /// costs nothing; prefer that one when the terms are already ground.
+    ///
+    /// # Panics
+    ///
+    /// Neither branch kind nests -- see [`Self::branches`].
+    pub fn branch_inherit<'b>(&'b self, count: usize) -> Vec<QueryHeap<'b>> {
+        self.branches(count, true)
+    }
+
+    /// Shared construction for the two branch kinds.
+    ///
+    /// # Panics
+    ///
+    /// If this heap is itself a branch. A branch holds exactly one ancestor's
+    /// cells, so a branch of a branch would have two ranges to stitch
+    /// together between the program heap and its own. Lifting this needs the
+    /// `root` field to become a list of ancestors, and until it does, a
+    /// sub-proof that itself wants a sub-proof -- `not(not(G))` -- cannot be
+    /// built on these.
+    fn branches<'b>(&'b self, count: usize, inherit: bool) -> Vec<QueryHeap<'b>> {
         assert!(
             self.root.is_none(),
             "branches do not nest: this heap is already a branch"
         );
         (0..count)
             .map(|_| QueryHeap {
-                id: self.prog.next_heap_id(),
                 cells: Vec::new(),
                 prog: self.prog,
                 prog_cells: self.prog_cells,
                 root: Some(&self.cells),
-                var_regs: Vec::new(),
+                var_regs: if inherit {
+                    self.var_regs.clone()
+                } else {
+                    Vec::new()
+                },
+                var_names: VarNames::new(),
+                root_var_names: inherit.then_some(&self.var_names),
             })
             .collect()
     }
@@ -173,7 +246,7 @@ impl<'a> QueryHeap<'a> {
     }
 
     pub fn var_string(&self, var_id: usize) -> String {
-        match self.symbols().get_var(var_id, self.id) {
+        match self.var_name(var_id) {
             Some(symbol) => symbol.to_string(),
             None => format!("Ref_{var_id}"),
         }
@@ -185,6 +258,32 @@ impl Heap for QueryHeap<'_> {
         self.prog.symbols()
     }
 
+    /// An `Arg` below the program cells is a clause template read from the
+    /// program, so its parsed name comes from there. One in query space was
+    /// built during a proof and has no parsed name; printing falls back to a
+    /// positional one.
+    fn arg_name(&self, addr: usize) -> Option<Arc<str>> {
+        (addr < self.prog_cells.len())
+            .then(|| self.prog.arg_name(addr))
+            .flatten()
+    }
+
+    /// This heap's own names, then an inherited parent's.
+    ///
+    /// The two ranges are disjoint: a branch that inherited names also
+    /// inherited the registers they belong to, so its own variables start
+    /// above them.
+    fn var_name(&self, var_id: usize) -> Option<Arc<str>> {
+        self.var_names
+            .get(&var_id)
+            .or_else(|| self.root_var_names?.get(&var_id))
+            .cloned()
+    }
+
+    fn set_var_name(&mut self, var_id: usize, symbol: Arc<str>) {
+        self.var_names.insert(var_id, symbol);
+    }
+
     fn heap_push(&mut self, cell: Cell) -> usize {
         let i = self.heap_len();
         self.cells.push(cell);
@@ -193,14 +292,6 @@ impl Heap for QueryHeap<'_> {
 
     fn heap_len(&self) -> usize {
         self.prog_cells.len() + self.root.map_or(0, <[Cell]>::len) + self.cells.len()
-    }
-
-    fn get_id(&self, addr: usize) -> usize {
-        if addr < self.prog_cells.len() {
-            0
-        } else {
-            self.id
-        }
     }
 
     fn prog_addr(&self, addr: usize) -> bool {
@@ -324,5 +415,116 @@ impl Index<RangeFrom<usize>> for QueryHeap<'_> {
         );
         index.start -= self.prog_cells.len();
         &self.cells[index]
+    }
+}
+
+#[cfg(test)]
+mod branch_tests {
+    use super::super::{
+        test_prog,
+        Heap, QueryHeap,
+        Tag::*,
+        VarBind::{Addr, VarId},
+    };
+
+    /// A heap with one named, bound variable and one named, unbound one.
+    fn parent(prog: &super::ProgramHeap) -> QueryHeap<'_> {
+        let mut heap = QueryHeap::new(prog, None);
+        let a = heap.symbols().set_const("a");
+        let bound = heap.set_var(None); // var 0, cell 0
+        let unbound = heap.set_var(None); // var 1, cell 1
+        heap.set_var_name(bound, "X".into());
+        heap.set_var_name(unbound, "Y".into());
+        let a_addr = heap.heap_push((Con, a));
+        heap.bind(bound, Addr(a_addr));
+        heap
+    }
+
+    #[test]
+    fn inherit_carries_bindings() {
+        let prog = test_prog();
+        let heap = parent(prog);
+        let branches = heap.branch_inherit(2);
+
+        for branch in &branches {
+            assert_eq!(
+                branch.var_deref(0),
+                Addr(2),
+                "a branch must see what the parent had already bound"
+            );
+            assert_eq!(branch.var_deref(1), VarId(1), "and what it had not");
+        }
+    }
+
+    #[test]
+    fn inherit_carries_var_names() {
+        let prog = test_prog();
+        let heap = parent(prog);
+        let branches = heap.branch_inherit(1);
+
+        assert_eq!(&*branches[0].var_name(0).unwrap(), "X");
+        assert_eq!(&*branches[0].var_name(1).unwrap(), "Y");
+    }
+
+    #[test]
+    fn a_branchs_own_variables_are_named_locally() {
+        let prog = test_prog();
+        let heap = parent(prog);
+        let mut branches = heap.branch_inherit(1);
+        let branch = &mut branches[0];
+
+        // Above the inherited registers, so it cannot collide with X or Y.
+        let fresh = branch.set_var(None);
+        assert_eq!(fresh, 2);
+        branch.set_var_name(fresh, "Z".into());
+
+        assert_eq!(&*branch.var_name(fresh).unwrap(), "Z");
+        assert_eq!(&*branch.var_name(0).unwrap(), "X", "inherited name intact");
+    }
+
+    #[test]
+    fn a_ground_branch_inherits_neither_registers_nor_names() {
+        let prog = test_prog();
+        let heap = parent(prog);
+        let mut branches = heap.branch_ground(1);
+        let branch = &mut branches[0];
+
+        // Its id 0 is a *different* variable from the parent's id 0, so the
+        // parent's name for that id must not apply to it.
+        let fresh = branch.set_var(None);
+        assert_eq!(fresh, 0, "registers start empty");
+        assert_eq!(
+            branch.var_name(0),
+            None,
+            "a ground branch's fresh variable must not pick up the parent's X"
+        );
+        assert_eq!(branch.var_string(0), "Ref_0");
+    }
+
+    #[test]
+    fn a_branch_binding_does_not_reach_the_parent() {
+        let prog = test_prog();
+        let heap = parent(prog);
+        {
+            let mut branches = heap.branch_inherit(2);
+            let target = branches[0].heap_push((Con, 1));
+            branches[0].bind(1, Addr(target));
+            assert_eq!(branches[0].var_deref(1), Addr(target));
+            assert_eq!(
+                branches[1].var_deref(1),
+                VarId(1),
+                "and not its siblings either"
+            );
+        }
+        assert_eq!(heap.var_deref(1), VarId(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "branches do not nest")]
+    fn branches_do_not_nest() {
+        let prog = test_prog();
+        let heap = parent(prog);
+        let branches = heap.branch_inherit(1);
+        let _ = branches[0].branch_ground(1);
     }
 }

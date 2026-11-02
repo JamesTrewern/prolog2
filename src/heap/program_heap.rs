@@ -1,8 +1,9 @@
 //! The static program heap: clause cells plus the program's symbol table.
 
 use std::{
+    collections::HashMap,
     ops::{Deref, Index, IndexMut, Range, RangeFrom},
-    sync::atomic::{AtomicUsize, Ordering::Relaxed},
+    sync::Arc,
 };
 
 use super::{Cell, Heap, SymbolDB, VarBind};
@@ -22,21 +23,22 @@ use super::{Cell, Heap, SymbolDB, VarBind};
 /// methods take `&self` is therefore load-bearing: a goal being parsed into a
 /// query heap must be able to intern constants with only a shared reference
 /// to the program.
+///
+/// Variable names are split between the two. Clause `Arg`s live here, named
+/// by cell address at parse time. Query variables are named by their owning
+/// query heap, because a register id means nothing outside the heap that
+/// issued it -- which is why neither needs a heap identifier to disambiguate
+/// it.
 pub struct ProgramHeap {
     cells: Vec<Cell>,
     symbols: SymbolDB,
-    /// Next ID to hand to a query heap borrowing this program.
+    /// Source names of clause variables, keyed by the address of the `Arg`
+    /// cell.
     ///
-    /// Local to one program, so IDs stay dense and two engines cannot collide
-    /// in the variable-name map. Starts at 1: ID 0 means "a program heap
-    /// address", which [`Heap::get_id`] returns for cells below
-    /// `cells.len()`.
-    ///
-    /// Atomic rather than a `Cell`, because IDs are handed out through the
-    /// shared `&ProgramHeap` that query heaps and their branches hold, and
-    /// because a non-`Sync` field here would make `&ProgramHeap` non-`Send`
-    /// and so stop branches crossing threads.
-    next_heap_id: AtomicUsize,
+    /// Keyed by address rather than by `Arg` id because those ids are
+    /// clause-local: `Arg 0` means a different variable in every clause, so
+    /// only the cell's position identifies it within the program.
+    arg_names: HashMap<usize, Arc<str>>,
 }
 
 impl Default for ProgramHeap {
@@ -51,7 +53,7 @@ impl ProgramHeap {
         ProgramHeap {
             cells: Vec::new(),
             symbols: SymbolDB::new(),
-            next_heap_id: AtomicUsize::new(1),
+            arg_names: HashMap::new(),
         }
     }
 
@@ -61,11 +63,6 @@ impl ProgramHeap {
             cells,
             ..Self::new()
         }
-    }
-
-    /// Hand out the next query heap ID.
-    pub(crate) fn next_heap_id(&self) -> usize {
-        self.next_heap_id.fetch_add(1, Relaxed)
     }
 
     pub(crate) fn cells(&self) -> &[Cell] {
@@ -92,6 +89,14 @@ impl Deref for ProgramHeap {
 impl Heap for ProgramHeap {
     fn symbols(&self) -> &SymbolDB {
         &self.symbols
+    }
+
+    fn arg_name(&self, addr: usize) -> Option<Arc<str>> {
+        self.arg_names.get(&addr).cloned()
+    }
+
+    fn set_arg_name(&mut self, addr: usize, symbol: Arc<str>) {
+        self.arg_names.insert(addr, symbol);
     }
 
     fn heap_push(&mut self, cell: Cell) -> usize {

@@ -307,7 +307,7 @@ pub(super) fn specialise_candidate(
     let point = heap.heap_point();
     let grounded = ground_hypothesis(heap, hypothesis);
 
-    let mut branches = heap.branch(neg_goals.len());
+    let mut branches = heap.branch_ground(neg_goals.len());
     let entailed = branches
         .par_iter_mut()
         .zip(neg_goals.par_iter())
