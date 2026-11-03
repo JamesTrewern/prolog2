@@ -1,6 +1,6 @@
-use std::{cmp::Ordering, collections::HashMap, ops::Deref, ops::Range};
+use std::{collections::HashMap, ops::Deref, ops::Range};
 
-use crate::{predicate_modules::PredicateFunction, utils::FindReturn};
+use crate::predicate_modules::PredicateFunction;
 
 use super::Clause;
 
@@ -121,21 +121,16 @@ impl PredicateTable {
         }
     }
 
-    //Performs a binary search of the ordered predicate table.
-    fn find_predicate(&self, symbol_arity: SymbolArity) -> FindReturn {
-        let mut lb: usize = 0;
-        let mut ub: usize = self.len();
-        let mut mid: usize;
-
-        while ub > lb {
-            mid = (lb + ub) / 2;
-            match symbol_arity.cmp(&self[mid].symbol_arity) {
-                Ordering::Less => ub = mid,
-                Ordering::Equal => return FindReturn::Index(mid),
-                Ordering::Greater => lb = mid + 1,
-            }
-        }
-        FindReturn::InsertPos(lb)
+    /// The entry index for `symbol_arity`, or `Err` with the index at which
+    /// one should be inserted to keep `predicates` sorted.
+    ///
+    /// `Err` carrying the insertion point is exactly what the callers that
+    /// miss want, so the two outcomes stay in one return value. Keys are
+    /// unique, so the "which of several equal elements" ambiguity of
+    /// `binary_search_by_key` cannot arise here.
+    fn find_predicate(&self, symbol_arity: SymbolArity) -> Result<usize, usize> {
+        self.predicates
+            .binary_search_by_key(&symbol_arity, |entry| entry.symbol_arity)
     }
 
     // ── arena bookkeeping ───────────────────────────────────────────────
@@ -246,12 +241,9 @@ impl PredicateTable {
 
     /// The clause range of a predicate, if it has clauses.
     fn clause_range(&self, symbol_arity: SymbolArity) -> Option<Range<usize>> {
-        match self.find_predicate(symbol_arity) {
-            FindReturn::Index(i) => match &self[i].predicate {
-                Predicate::Clauses(range) => Some(range.clone()),
-                Predicate::Function(_) => None,
-            },
-            FindReturn::InsertPos(_) => None,
+        match &self[self.find_predicate(symbol_arity).ok()?].predicate {
+            Predicate::Clauses(range) => Some(range.clone()),
+            Predicate::Function(_) => None,
         }
     }
 
@@ -264,8 +256,8 @@ impl PredicateTable {
         predicate_fn: PredicateFunction,
     ) -> Result<(), &'static str> {
         match self.find_predicate(symbol_arity) {
-            FindReturn::Index(_) => Err("Cannot insert predicate function to clause predicate"),
-            FindReturn::InsertPos(insert_idx) => {
+            Ok(_) => Err("Cannot insert predicate function to clause predicate"),
+            Err(insert_idx) => {
                 self.predicates.insert(
                     insert_idx,
                     PredicateEntry {
@@ -294,11 +286,11 @@ impl PredicateTable {
         let meta_clause_id = clause.meta_data.as_ref().map(|meta_data| meta_data.id);
 
         let (at, clause_idx) = match self.find_predicate(symbol_arity) {
-            FindReturn::Index(idx) => match &self[idx].predicate {
+            Ok(idx) => match &self[idx].predicate {
                 Predicate::Function(_) => return Err("Cannot add clause to function predicate"),
                 Predicate::Clauses(range) => (range.end, range.len()),
             },
-            FindReturn::InsertPos(insert_idx) => {
+            Err(insert_idx) => {
                 let block = self.block_for(symbol_arity.1);
                 let at = self.blocks[block].range.end;
                 self.predicates.insert(
@@ -337,13 +329,12 @@ impl PredicateTable {
 
     //Get predicate by SymbolArity key
     pub fn get_predicate(&self, symbol_arity: SymbolArity) -> Option<PredicateRef<'_>> {
-        match self.find_predicate(symbol_arity) {
-            FindReturn::Index(i) => Some(match &self[i].predicate {
+        Some(
+            match &self[self.find_predicate(symbol_arity).ok()?].predicate {
                 Predicate::Function(f) => PredicateRef::Function(*f),
                 Predicate::Clauses(range) => PredicateRef::Clauses(&self.clauses[range.clone()]),
-            }),
-            FindReturn::InsertPos(_) => None,
-        }
+            },
+        )
     }
 
     /// The clauses of a predicate, or `None` if it is unknown or a function.
@@ -377,7 +368,7 @@ impl PredicateTable {
 
     //Remove predicate by SymbolArity key
     pub fn remove_predicate(&mut self, symbol_arity: SymbolArity) {
-        let FindReturn::Index(predicate_idx) = self.find_predicate(symbol_arity) else {
+        let Ok(predicate_idx) = self.find_predicate(symbol_arity) else {
             return;
         };
         let removed = self.predicates.remove(predicate_idx).predicate;
@@ -399,7 +390,7 @@ impl PredicateTable {
     /// cleared. Both are a rotation within the block, so no other block and
     /// no other arity is disturbed.
     pub fn set_body(&mut self, symbol_arity: SymbolArity, value: bool) -> Result<(), &str> {
-        let FindReturn::Index(idx) = self.find_predicate(symbol_arity) else {
+        let Ok(idx) = self.find_predicate(symbol_arity) else {
             return Ok(()); //Err("Can't set non existing predicate to body"),
         };
         let range = match &self[idx].predicate {
@@ -539,7 +530,6 @@ mod tests {
         heap::{test_prog, Heap, ProgramHeap, QueryHeap},
         predicate_modules::PredReturn,
         program::Hypothesis,
-        utils::FindReturn,
         Config,
     };
 
@@ -600,27 +590,24 @@ mod tests {
             .position(|e| e.symbol_arity == (p, 2))
             .unwrap();
 
-        assert_eq!(pred_table.find_predicate((0, 1)), FindReturn::InsertPos(0));
-        assert_eq!(pred_table.find_predicate((p, 2)), FindReturn::Index(p_idx));
+        assert_eq!(pred_table.find_predicate((0, 1)), Err(0));
+        assert_eq!(pred_table.find_predicate((p, 2)), Ok(p_idx));
 
         // A symbol larger than all entries should go at the end
         assert_eq!(
             pred_table.find_predicate((symbol, 2)),
             if symbol > pred_table.last().unwrap().symbol_arity.0 {
-                FindReturn::InsertPos(pred_table.len())
+                Err(pred_table.len())
             } else {
                 pred_table.find_predicate((symbol, 2))
             }
         );
 
         // Same symbol, different arity should get an insert position
-        assert_eq!(
-            pred_table.find_predicate((p, 1)),
-            FindReturn::InsertPos(p_idx)
-        );
+        assert_eq!(pred_table.find_predicate((p, 1)), Err(p_idx));
 
         let pred_table = PredicateTable::new();
-        assert_eq!(pred_table.find_predicate((50, 2)), FindReturn::InsertPos(0));
+        assert_eq!(pred_table.find_predicate((50, 2)), Err(0));
     }
 
     #[test]

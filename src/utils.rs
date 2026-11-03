@@ -1,12 +1,5 @@
 use std::ops::{Deref, DerefMut};
 
-//Return type for binary search of predicate keys
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum FindReturn {
-    Index(usize),
-    InsertPos(usize),
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct DirGraph8 {
     pub size: usize,

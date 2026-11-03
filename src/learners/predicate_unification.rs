@@ -13,7 +13,7 @@ use crate::{
         VarBind::{Addr, VarId},
     },
     program::{Clause, MetaSub},
-    utils::{DirGraph16, DirGraph8, FindReturn},
+    utils::{DirGraph16, DirGraph8},
 };
 
 /// Most invented predicates one sub hypothesis can define.
@@ -310,8 +310,8 @@ pub(super) struct PredDefTable {
 impl PredDefTable {
     pub(super) fn insert(&mut self, pred_def: PredDef, heap: &mut QueryHeap) {
         match self.binary_search(&pred_def) {
-            FindReturn::InsertPos(insert_pos) => self.add_def(pred_def, insert_pos, heap),
-            FindReturn::Index(i) => {
+            Err(insert_pos) => self.add_def(pred_def, insert_pos, heap),
+            Ok(i) => {
                 let matching_range = self.find_matching_signature_range(&pred_def, i);
                 let insert_pos = matching_range.start;
                 // Attempt to unify with existing pred def
@@ -353,20 +353,18 @@ impl PredDefTable {
         self.pred_defs.insert(insert_pos, pred_def);
     }
 
-    fn binary_search(&self, pred_def: &PredDef) -> FindReturn {
-        let mut lb: usize = 0;
-        let mut ub: usize = self.pred_defs.len();
-        let mut mid: usize;
-
-        while ub > lb {
-            mid = (lb + ub) / 2;
-            match pred_def.cmp(&self.pred_defs[mid]) {
-                Less => ub = mid,
-                Equal => return FindReturn::Index(mid),
-                Greater => lb = mid + 1,
-            }
-        }
-        FindReturn::InsertPos(lb)
+    /// The index of a definition with the same signature as `pred_def`, or
+    /// `Err` with the index at which to insert to keep `pred_defs` sorted.
+    ///
+    /// [`PredDef::cmp`] orders by clause count and meta clause ids only, so
+    /// definitions that differ in their substitutions still compare `Equal`.
+    /// Which of a run of equal definitions `Ok` names is therefore
+    /// unspecified -- which is why the caller widens it with
+    /// [`Self::find_matching_signature_range`] rather than trusting it to be
+    /// the first.
+    fn binary_search(&self, pred_def: &PredDef) -> Result<usize, usize> {
+        self.pred_defs
+            .binary_search_by(|existing| existing.cmp(pred_def))
     }
 
     fn find_matching_signature_range(&self, pred_def: &PredDef, i: usize) -> Range<usize> {
