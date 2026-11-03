@@ -117,6 +117,15 @@ pub trait Heap:
     /// Record the source name of variable register `var_id`.
     fn set_var_name(&mut self, _var_id: usize, _symbol: Arc<str>) {}
 
+    /// Report that a clause needing `count` argument registers has just been
+    /// compiled into this heap.
+    ///
+    /// Only [`ProgramHeap`](super::ProgramHeap) keeps the figure; a query
+    /// heap has no clause templates of its own, so it ignores this. See
+    /// [`ProgramHeap::max_arg`](super::ProgramHeap::max_arg) for what the
+    /// running maximum is used for.
+    fn observe_arg_count(&mut self, _count: usize) {}
+
     /// Reset Ref cells affected by binding to self references
     /// @binding: List of (usize, usize) tuples representing heap indexes, left -> right
     fn unbind(&mut self, binding: &[usize]);

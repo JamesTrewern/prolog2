@@ -31,6 +31,7 @@ pub(crate) fn build_clause(
         for non_meta_var in vars.into_iter().filter(|var| !meta_vars.contains(var)) {
             let v = var_values.len();
             var_values.insert(non_meta_var, v);
+            heap.observe_arg_count(v + 1);
         }
     }
 
@@ -43,6 +44,13 @@ pub(crate) fn build_clause(
         var_values.len() <= MAX_ARG,
         "Clauses can not contain more than {MAX_ARG} variables."
     );
+
+    // Record the width before anything can proof against it. A query's
+    // variables live in the heap's register table proper, not the argument
+    // window, so only a compiled clause counts.
+    if !query {
+        heap.observe_arg_count(var_values.len());
+    }
 
     let meta_vars = meta_vars.map(|vars| {
         (

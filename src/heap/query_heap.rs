@@ -72,7 +72,7 @@ impl<'a> QueryHeap<'a> {
             prog,
             prog_cells: prog.cells(),
             root,
-            var_regs: Vec::new(),
+            var_regs: vec![VarReg::UNBOUND; prog.max_arg()],
             var_names: VarNames::new(),
             root_var_names: None,
         }
@@ -90,7 +90,7 @@ impl<'a> QueryHeap<'a> {
             prog,
             prog_cells: &[],
             root: None,
-            var_regs: Vec::new(),
+            var_regs: vec![VarReg::UNBOUND; prog.max_arg()],
             var_names: VarNames::new(),
             root_var_names: None,
         }
@@ -170,7 +170,10 @@ impl<'a> QueryHeap<'a> {
                 var_regs: if inherit {
                     self.var_regs.clone()
                 } else {
-                    Vec::new()
+                    // Not empty, unlike the cells: a branch proves goals
+                    // against clause templates, so it needs the argument
+                    // window even though it inherits no variables.
+                    vec![VarReg::UNBOUND; self.prog.max_arg()]
                 },
                 var_names: VarNames::new(),
                 root_var_names: inherit.then_some(&self.var_names),
@@ -225,6 +228,14 @@ impl<'a> QueryHeap<'a> {
     pub fn truncate(&mut self, (cells_len, var_regs_len): HeapPoint) {
         self.cells.truncate(cells_len);
         self.var_regs.truncate(var_regs_len);
+    }
+
+    /// The argument registers reserved at the front of [`Self::var_regs`].
+    ///
+    /// Sized from the program, so it covers the widest clause that can be
+    /// resolved against. Variables created during a proof land above it.
+    pub(crate) fn arg_window(&self) -> usize {
+        self.prog.max_arg()
     }
 
     /// Create new variable register and return ID without creating cell

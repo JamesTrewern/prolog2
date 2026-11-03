@@ -146,6 +146,9 @@ fn encode_var(
         None => {
             let arg = var_values.len();
             var_values.insert(symbol.clone(), arg);
+            // Widen the program's argument window before the cell lands, so
+            // the assertion in `ProgramHeap::heap_push` holds as we compile.
+            heap.observe_arg_count(arg + 1);
             let addr = heap.heap_push((Tag::Arg, arg));
             heap.set_arg_name(addr, symbol.into());
         }

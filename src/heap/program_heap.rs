@@ -31,6 +31,21 @@ use super::{Cell, Heap, SymbolDB, VarBind};
 /// it.
 pub struct ProgramHeap {
     cells: Vec<Cell>,
+    /// Argument registers needed by the widest clause compiled into this
+    /// heap -- the number of distinct variables in it, matching
+    /// [`Clause::max_arg_id`](crate::program::Clause).
+    ///
+    /// This bounds the argument registers any proof over this program can
+    /// touch, so a [`QueryHeap`](super::QueryHeap) sizes its argument window
+    /// from it rather than reserving a fixed maximum.
+    ///
+    /// It only grows when source is compiled. Instantiating a meta clause can
+    /// drop arguments but never add them -- `build_arg` re-pushes `(Arg, id)`
+    /// with the id unchanged, substitutes a bound value, or mints a
+    /// *variable* -- so the clauses the learner installs at run time cannot
+    /// raise it. That is what makes the window safe to fix at query time, and
+    /// what the assertion in [`Self::heap_push`] checks.
+    max_arg: usize,
     symbols: SymbolDB,
     /// Source names of clause variables, keyed by the address of the `Arg`
     /// cell.
@@ -52,6 +67,7 @@ impl ProgramHeap {
     pub fn new() -> Self {
         ProgramHeap {
             cells: Vec::new(),
+            max_arg: 0,
             symbols: SymbolDB::new(),
             arg_names: HashMap::new(),
         }
@@ -67,6 +83,11 @@ impl ProgramHeap {
 
     pub(crate) fn cells(&self) -> &[Cell] {
         &self.cells
+    }
+
+    /// Argument registers needed by the widest clause in this program.
+    pub fn max_arg(&self) -> usize {
+        self.max_arg
     }
 
     /// Append cells wholesale. Callers relocating addresses must account for
@@ -100,8 +121,20 @@ impl Heap for ProgramHeap {
     }
 
     fn heap_push(&mut self, cell: Cell) -> usize {
+        debug_assert!(
+            cell.0 != crate::heap::Tag::Arg || cell.1 < self.max_arg,
+            "Arg {} pushed into program space but the program's widest clause needs only \
+             {} argument registers. A query heap's argument window is sized from that \
+             figure, so raising it here would leave live heaps undersized.",
+            cell.1,
+            self.max_arg,
+        );
         self.cells.push(cell);
         self.cells.len() - 1
+    }
+
+    fn observe_arg_count(&mut self, count: usize) {
+        self.max_arg = self.max_arg.max(count);
     }
 
     fn heap_len(&self) -> usize {
