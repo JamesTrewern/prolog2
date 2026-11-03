@@ -13,7 +13,7 @@ use crate::{
 /// table and the current hypothesis. Call [`Proof::prove`] repeatedly to
 /// enumerate solutions via backtracking.
 pub struct Proof<'a> {
-    stack: Vec<Env>,
+    stack: Vec<Env<'a>>,
     pointer: usize,
     pub hypothesis: Hypothesis,
     test_clauses: Option<&'a [Clause]>,
@@ -65,10 +65,14 @@ impl<'a> Proof<'a> {
         self.test_clauses = Some(clauses);
     }
 
+    /// `predicate_table` is borrowed for the proof's whole life, not just
+    /// this call: a goal's [`Choices`](super::choices::Choices) point into
+    /// the table's clause arena rather than copying out of it, and those
+    /// cursors live on the goal stack until the goal is exhausted.
     pub fn prove(
         &mut self,
         heap: &mut QueryHeap,
-        predicate_table: &PredicateTable,
+        predicate_table: &'a PredicateTable,
         config: Config,
     ) -> bool {
         // Handle restart after previous success

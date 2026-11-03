@@ -16,6 +16,7 @@ use crate::{
     },
     resolution::{
         build::{build, re_build_bound_arg_terms},
+        choices::Choices,
         constraints::pre_pass_constraint,
         unification::unify,
     },
@@ -24,10 +25,10 @@ use crate::{
 /// How a goal is resolved: either by unifying with clauses or by calling a
 /// native predicate function.
 #[derive(Debug)]
-pub(crate) enum Strategy {
+pub(crate) enum Strategy<'a> {
     /// Resolution via clause unification (standard SLD + meta-interpretive learning).
     Clause {
-        choices: Vec<Clause>,
+        choices: Choices<'a>,
         /// Whether a hypothesis clause was added on the last successful try.
         new_clause: bool,
         /// Var id of the predicate variable that this env registered as an
@@ -36,7 +37,6 @@ pub(crate) enum Strategy {
         /// than relying on the hypothesis' invented set unwinding in step with
         /// the env stack.
         invent_pred: Option<usize>,
-        total_choice_count: usize,
     },
     /// Resolution via a native predicate function, with optional backtrackable
     /// alternatives produced by [`PredReturn::Choices`].
@@ -60,18 +60,18 @@ pub(crate) enum Strategy {
 /// Shared fields live directly on the struct; the divergent clause-vs-native
 /// state lives inside [`Strategy`].
 #[derive(Debug)]
-pub(super) struct Env {
+pub(super) struct Env<'a> {
     pub(super) goal: usize,
     pub(super) bound_vars: Box<[usize]>,
     pub(super) children: usize,
     pub(super) depth: usize,
     pub(crate) got_choices: bool,
     pub(super) heap_point: HeapPoint,
-    pub(super) strategy: Strategy,
+    pub(super) strategy: Strategy<'a>,
 }
 
-impl Env {
-    pub(super) fn new(goal: usize, depth: usize, heap_point: HeapPoint) -> Self {
+impl<'a> Env<'a> {
+    pub(super) fn new(goal: usize, depth: usize, heap_point: HeapPoint) -> Env<'a> {
         Env {
             goal,
             bound_vars: Box::new([]),
@@ -133,8 +133,8 @@ impl Env {
         &mut self,
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
-        predicate_table: &PredicateTable,
-        test_clauses: Option<&[Clause]>,
+        predicate_table: &'a PredicateTable,
+        test_clauses: Option<&'a [Clause]>,
         protect: bool,
     ) {
         self.got_choices = true;
@@ -192,8 +192,8 @@ impl Env {
         &mut self,
         heap: &QueryHeap,
         hypothesis: &mut Hypothesis,
-        predicate_table: &PredicateTable,
-        test_clauses: Option<&[Clause]>,
+        predicate_table: &'a PredicateTable,
+        test_clauses: Option<&'a [Clause]>,
         arity: usize,
         protect: bool,
     ) {
@@ -206,24 +206,16 @@ impl Env {
         // hypothesis is offered unfiltered: this goal may *be* an invented
         // predicate, so the clauses defining invented predicates are exactly
         // the ones it needs.
-        let mut choices = Vec::new();
-        choices.extend_from_slice(hypothesis);
-
-        if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
-            choices.extend_from_slice(clauses);
-        }
+        let mut choices = Choices::with_hypothesis(hypothesis)
+            .var_pred(predicate_table.get_variable_clauses(arity))
+            .test(test_clauses);
         if !invented {
-            choices.extend_from_slice(predicate_table.get_body_clauses(arity));
+            choices = choices.body_preds(predicate_table.get_body_clauses(arity));
         }
-        if let Some(test_clauses) = test_clauses {
-            choices.extend_from_slice(test_clauses);
-        }
-        let total = choices.len();
         self.strategy = Strategy::Clause {
             choices,
             new_clause: false,
             invent_pred: None,
-            total_choice_count: total,
         };
     }
 
@@ -235,8 +227,8 @@ impl Env {
         &mut self,
         heap: &QueryHeap,
         hypothesis: &mut Hypothesis,
-        predicate_table: &PredicateTable,
-        test_clauses: Option<&[Clause]>,
+        predicate_table: &'a PredicateTable,
+        test_clauses: Option<&'a [Clause]>,
         (symbol, arity): (usize, usize),
         protect: bool,
     ) {
@@ -249,18 +241,15 @@ impl Env {
                 };
             }
             Some(PredicateRef::Clauses(clauses)) => {
-                let mut choices = Vec::new();
-                hypothesis.extend_choices(&mut choices, heap, protect);
-                choices.extend_from_slice(clauses);
-                if let Some(test_clauses) = test_clauses {
-                    choices.extend_from_slice(test_clauses);
-                }
-                let total = choices.len();
+                let choices = if protect {
+                    Choices::with_protected_hypothesis(hypothesis)
+                } else {
+                    Choices::with_hypothesis(hypothesis)
+                };
                 self.strategy = Strategy::Clause {
-                    choices,
+                    choices: choices.known_pred(clauses).test(test_clauses),
                     new_clause: false,
                     invent_pred: None,
-                    total_choice_count: total,
                 };
             }
             None => {
@@ -273,20 +262,12 @@ impl Env {
                 // instead left to the inequality constraints, which do cover
                 // it — the target and the invented predicate appear together
                 // in the constraint set of the clause that introduced them.
-                let mut choices = Vec::new();
-                choices.extend_from_slice(hypothesis);
-                if let Some(clauses) = predicate_table.get_variable_clauses(arity) {
-                    choices.extend_from_slice(clauses);
-                }
-                if let Some(test_clauses) = test_clauses {
-                    choices.extend_from_slice(test_clauses);
-                }
-                let total = choices.len();
                 self.strategy = Strategy::Clause {
-                    choices,
+                    choices: Choices::with_hypothesis(hypothesis)
+                        .var_pred(predicate_table.get_variable_clauses(arity))
+                        .test(test_clauses),
                     new_clause: false,
                     invent_pred: None,
-                    total_choice_count: total,
                 };
             }
         }
@@ -341,7 +322,7 @@ impl Env {
         heap.truncate(self.heap_point);
         self.got_choices = false;
         match &mut self.strategy {
-            Strategy::Clause { choices, .. } => choices.clear(),
+            Strategy::Clause { choices, .. } => *choices = Choices::default(),
             Strategy::Native {
                 called,
                 alternatives,
@@ -363,10 +344,10 @@ impl Env {
         &mut self,
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
-        predicate_table: &PredicateTable,
+        predicate_table: &'a PredicateTable,
         config: Config,
         learning: bool,
-    ) -> Option<Vec<Env>> {
+    ) -> Option<Vec<Env<'a>>> {
         if self.depth > config.max_depth {
             if config.debug {
                 eprintln!(
@@ -399,7 +380,7 @@ impl Env {
         hypothesis: &mut Hypothesis,
         predicate_table: &PredicateTable,
         config: Config,
-    ) -> Option<Vec<Env>> {
+    ) -> Option<Vec<Env<'a>>> {
         let Strategy::Native {
             function,
             alternatives,
@@ -477,7 +458,7 @@ impl Env {
         hypothesis: &mut Hypothesis,
         allow_new_clause: bool,
         debug: bool,
-    ) -> Option<Vec<Env>> {
+    ) -> Option<Vec<Env<'a>>> {
         let mut choices_tried = 0;
 
         // We need mutable access to strategy fields while also reading self.goal
@@ -487,13 +468,12 @@ impl Env {
                 choices,
                 new_clause: _,
                 invent_pred: _,
-                total_choice_count: _,
             } = &mut self.strategy
             else {
                 unreachable!()
             };
 
-            let Some(clause) = choices.pop() else {
+            let Some(clause) = choices.next(hypothesis, heap) else {
                 break;
             };
 
@@ -530,44 +510,11 @@ impl Env {
                     self.depth,
                     heap.term_string(self.goal),
                     clause.to_string(heap),
-                    choices.len()
+                    choices.remaining()
                 );
             }
 
             re_build_bound_arg_terms(heap, &mut substitution);
-
-            // Register an invented predicate BEFORE building goals.
-            //
-            // A meta clause with a variable head resolving a variable goal has
-            // just unified the two predicate variables, so the goal's predicate
-            // variable now names the head of the clause about to be added. That
-            // variable is the invented predicate; it is left unbound rather than
-            // given a fresh constant symbol, and recorded on the hypothesis so
-            // that later goals on it are denied the background facts.
-            //
-            // If it is already recorded, this clause is extending an existing
-            // invented predicate rather than creating a new one, so there is
-            // nothing for undo_try to remove.
-            if clause.meta()
-                && heap.symbol_arity(head).0 == 0
-                && heap.symbol_arity(self.goal).0 == 0
-            {
-                if let Some(var_id) = heap.pred_var(self.goal) {
-                    if hypothesis.add_invented_pred(heap, var_id) {
-                        if let Strategy::Clause { invent_pred, .. } = &mut self.strategy {
-                            *invent_pred = Some(var_id);
-                        }
-                        if debug {
-                            eprintln!(
-                                "[INVENT_PRED|{}] var={} goal={}",
-                                self.depth,
-                                var_id,
-                                heap.term_string(self.goal)
-                            );
-                        }
-                    }
-                }
-            }
 
             // Build new goals
             let new_goals: Vec<usize> = clause
@@ -576,12 +523,17 @@ impl Env {
                 .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
                 .collect();
 
-            // Build hypothesis clause if meta
-            if let Some(meta_data) = &clause.meta_data {
-                if let Strategy::Clause { new_clause, .. } = &mut self.strategy {
-                    *new_clause = true;
-                }
-
+            // Build the hypothesis clause if this is a meta clause -- but
+            // hold it rather than pushing it.
+            //
+            // `clause` may be borrowed *from* the hypothesis, so every read of
+            // it has to finish before the hypothesis is mutated. That costs
+            // nothing: a hypothesis clause is never a meta clause, so neither
+            // mutation below can be reached by one. The compiler cannot see
+            // that, so the writes are deferred to the end of the try instead.
+            let pending_clause = clause.meta_data.map(|meta_data| {
+                // Boxed so the common non-meta case leaves one pointer in
+                // this frame rather than a ~150-byte tuple.
                 let new_clause_literals: Vec<usize> = clause
                     .iter()
                     .map(|literal| build(heap, &mut substitution, clause.meta_vars(), *literal))
@@ -594,11 +546,62 @@ impl Env {
                             unreachable!("All constrained args should have a var id");
                         };
                         constraints.push(var_id);
-                        // constraints.push(unsafe { let VarBind::substitution.get_arg(i).unwrap_unchecked() });
                     }
                 }
 
-                let new_clause = Clause::new(new_clause_literals, None, clause.max_arg_id);
+                Box::new((
+                    Clause::new(new_clause_literals, None, clause.max_arg_id),
+                    constraints,
+                    meta_data,
+                ))
+            });
+
+            // Which predicate variable, if any, this try invents.
+            //
+            // A meta clause with a variable head resolving a variable goal has
+            // just unified the two predicate variables, so the goal's predicate
+            // variable now names the head of the clause about to be added. That
+            // variable is the invented predicate; it is left unbound rather than
+            // given a fresh constant symbol, and recorded on the hypothesis so
+            // that later goals on it are denied the background facts.
+            //
+            // Decided here, while `clause` is still live, and registered below
+            // once it is not. Registering after the `build` calls above rather
+            // than before is behaviour-neutral: `build` reads the heap and the
+            // substitution, never the invented-predicate registry, which is
+            // consulted by `get_choices` for *later* goals.
+            let invent = (clause.meta_data.is_some()
+                && heap.symbol_arity(head).0 == 0
+                && heap.symbol_arity(self.goal).0 == 0)
+                .then(|| heap.pred_var(self.goal))
+                .flatten();
+
+            // `clause` is dead from here, so the hypothesis may be mutated.
+            //
+            // If the invented predicate is already recorded, this clause is
+            // extending an existing one rather than creating a new one, so
+            // there is nothing for undo_try to remove.
+            if let Some(var_id) = invent {
+                if hypothesis.add_invented_pred(heap, var_id) {
+                    if let Strategy::Clause { invent_pred, .. } = &mut self.strategy {
+                        *invent_pred = Some(var_id);
+                    }
+                    if debug {
+                        eprintln!(
+                            "[INVENT_PRED|{}] var={} goal={}",
+                            self.depth,
+                            var_id,
+                            heap.term_string(self.goal)
+                        );
+                    }
+                }
+            }
+
+            if let Some(pending) = pending_clause {
+                let (new_clause, constraints, meta_data) = *pending;
+                if let Strategy::Clause { new_clause, .. } = &mut self.strategy {
+                    *new_clause = true;
+                }
                 if debug {
                     eprintln!(
                         "[ADD_CLAUSE|{}] {} / {}",
@@ -611,7 +614,7 @@ impl Env {
                     new_clause,
                     SmallVec::from_vec(constraints),
                     &substitution.arg_regs,
-                    *meta_data,
+                    meta_data,
                 );
                 if debug {
                     eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
@@ -634,24 +637,17 @@ impl Env {
         }
 
         if debug {
-            let total = match &self.strategy {
-                Strategy::Clause {
-                    total_choice_count, ..
-                } => *total_choice_count,
-                _ => 0,
-            };
             eprintln!(
-                "[NO_MATCH|{}] goal={} tried {} choices, Originally had {} choices",
+                "[NO_MATCH|{}] goal={} tried {} choices",
                 self.depth,
                 heap.term_string(self.goal),
                 choices_tried,
-                total
             );
         }
         None
     }
 
-    fn try_conj(&mut self, heap: &QueryHeap) -> Option<Vec<Env>> {
+    fn try_conj(&mut self, heap: &QueryHeap) -> Option<Vec<Env<'a>>> {
         let Strategy::Conjunction { goals, expanded } = &mut self.strategy else {
             unreachable!()
         };

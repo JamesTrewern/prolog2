@@ -90,26 +90,6 @@ impl Hypothesis {
             .is_some_and(|var_id| self.is_invented_pred(heap, var_id))
     }
 
-    /// Append the hypothesis to a choice set.
-    ///
-    /// With `protect` set, clauses headed by an invented predicate are
-    /// withheld; see [`Self::clause_head_is_invented`]. Callers resolving a
-    /// goal on a *variable* predicate must not use this: such a goal may
-    /// legitimately be the invented predicate itself, and denying it its own
-    /// clauses would make the predicate undefinable.
-    pub fn extend_choices(&self, choices: &mut Vec<Clause>, heap: &impl Heap, protect: bool) {
-        if protect {
-            choices.extend(
-                self.clauses
-                    .iter()
-                    .filter(|clause| !self.clause_head_is_invented(heap, clause))
-                    .cloned(),
-            );
-        } else {
-            choices.extend_from_slice(&self.clauses);
-        }
-    }
-
     /// Undo a previous [`Self::add_invented_pred`].
     pub fn remove_invented_pred(&mut self, var_id: usize) {
         debug_assert_eq!(
@@ -254,22 +234,24 @@ mod invented_pred_tests {
         );
         h.add_invented_pred(&heap, 0);
 
-        let mut protected = Vec::new();
-        h.extend_choices(&mut protected, &heap, true);
+        // `Choices` consults this per clause as its cursor walks the
+        // hypothesis; see `resolution::choices` for the cursor itself.
+        let withheld: Vec<usize> = h
+            .iter()
+            .filter(|clause| h.clause_head_is_invented(&heap, clause))
+            .map(|clause| clause.head())
+            .collect();
         assert_eq!(
-            protected.len(),
-            1,
-            "the invented-headed clause should be withheld"
+            withheld,
+            vec![0],
+            "only the invented-headed clause should be withheld"
         );
-        assert_eq!(protected[0].head(), 3, "the constant-headed clause remains");
-
-        let mut unprotected = Vec::new();
-        h.extend_choices(&mut unprotected, &heap, false);
-        assert_eq!(
-            unprotected.len(),
-            2,
-            "with protection off the whole hypothesis is offered"
-        );
+        let kept: Vec<usize> = h
+            .iter()
+            .filter(|clause| !h.clause_head_is_invented(&heap, clause))
+            .map(|clause| clause.head())
+            .collect();
+        assert_eq!(kept, vec![3], "the constant-headed clause remains");
     }
 
     #[test]
@@ -302,9 +284,11 @@ mod invented_pred_tests {
             h.clause_head_is_invented(&heap, &h[0]),
             "var 1 aliases var 0, which is invented"
         );
-        let mut choices = Vec::new();
-        h.extend_choices(&mut choices, &heap, true);
-        assert!(choices.is_empty(), "the aliased clause must be withheld");
+        assert!(
+            h.iter()
+                .all(|clause| h.clause_head_is_invented(&heap, clause)),
+            "the aliased clause must be recognised, and so withheld"
+        );
     }
 
     #[test]

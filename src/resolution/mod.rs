@@ -6,6 +6,7 @@
 //! term building constructs new terms from substitutions.
 
 mod build;
+mod choices;
 mod constraints;
 #[allow(dead_code)]
 #[allow(unused)]
