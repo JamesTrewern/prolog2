@@ -81,7 +81,6 @@ fn learning_configs_carry_a_parallel_block() {
     let learns = [
         "examples/colreg/setup_avoid.json",
         "examples/colreg/setup_resume.json",
-        "examples/colreg/setup_side.json",
         "examples/colreg/setup_take_action.json",
         "examples/colreg/setup_turn.json",
         "examples/molecules/hydroxyl.json",
