@@ -208,8 +208,29 @@ fn top_prog_trains() {
 }
 
 #[test]
-fn colreg() {
+fn cpa_side() {
+    let mut app =
+        App::from_setup_json("examples/colreg/setup_cpa_side.json").expect("failed to load config");
+    let _result = app.run_parallel();
+}
+
+#[test]
+fn turn() {
     let mut app =
         App::from_setup_json("examples/colreg/setup_turn.json").expect("failed to load config");
+    let _result = app.run_parallel();
+}
+
+#[test]
+fn avoid() {
+    let mut app =
+        App::from_setup_json("examples/colreg/setup_avoid.json").expect("failed to load config");
+    let _result = app.run_parallel();
+}
+
+#[test]
+fn resume() {
+    let mut app =
+        App::from_setup_json("examples/colreg/setup_resume.json").expect("failed to load config");
     let _result = app.run_parallel();
 }

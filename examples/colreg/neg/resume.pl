@@ -1,3 +1,3 @@
-resume(agent3,vessel1_3,no_risk).
-resume(agent7,vessel1_7,no_risk).
-resume(agent8,vessel1_8,medium_veryclose).
+resume(agent_passing1_0,vessel1_passing1_0,no_risk).
+resume(agent_crossing1_0,vessel1_crossing1_0,medium_veryclose).
+resume(agent_crossing1_3,cruiseliner1_crossing1_3,imminent_close).

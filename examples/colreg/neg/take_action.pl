@@ -1,6 +1,6 @@
-take_action(agent0).
-take_action(agent1).
-take_action(agent4).
-take_action(agent7).
-take_action(agent8).
-take_action(agent11).
+take_action(agent_crossing2_0).
+take_action(agent_crossing2_1).
+take_action(agent_headon1_0).
+take_action(agent_passing1_0).
+take_action(agent_crossing1_0).
+take_action(agent_overtaking1_0).

@@ -1,0 +1,9 @@
+cpa_side(agent_crossing2_1,vessel1_crossing2_1,starboard).
+cpa_side(agent_crossing2_2,vessel1_crossing2_2,starboard).
+cpa_side(agent_crossing2_3,cruiseliner1_crossing2_3,starboard).
+cpa_side(agent_headon1_1,vessel1_headon1_1,starboard).
+cpa_side(agent_headon1_2,vessel1_headon1_2,starboard).
+cpa_side(agent_passing1_0,vessel1_passing1_0,port).
+cpa_side(agent_crossing1_1,vessel1_crossing1_1,starboard).
+cpa_side(agent_crossing1_2,vessel1_crossing1_2,starboard).
+cpa_side(agent_crossing1_3,cruiseliner1_crossing1_3,starboard).

@@ -1,9 +1,0 @@
-cpa_side(agent1,vessel1_1,starboard).
-cpa_side(agent2,vessel1_2,starboard).
-cpa_side(agent3,vessel1_3,starboard).
-cpa_side(agent4,vessel1_4,starboard).
-cpa_side(agent5,vessel1_5,starboard).
-cpa_side(agent6,vessel1_6,starboard).
-cpa_side(agent7,vessel1_7,port).
-cpa_side(agent9,vessel1_9,starboard).
-cpa_side(agent10,vessel1_10,starboard).

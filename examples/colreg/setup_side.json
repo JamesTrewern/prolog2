@@ -5,8 +5,8 @@
         "debug": false
     },
     "examples": {
-        "pos": "examples/colreg/pos/side.pl",
-        "neg": "examples/colreg/neg/side.pl"
+        "pos": "examples/colreg/pos/cpa_side.pl",
+        "neg": "examples/colreg/neg/cpa_side.pl"
     },
     "body_predicates": [
         "sector/3",
