@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    specialise::{specialise_candidate, NegativeCache, Verdict},
+    specialise::{negatives_worth_parallelising, specialise_candidate, NegativeCache, Verdict},
     sub_h_unification::{least_sub_h, SearchCtx},
     utils::{
         collect_used_pred, compile_examples, reduce as reduce_hypothesis, union_sub_hypotheses,
@@ -190,10 +190,13 @@ fn build_sub_hypotheses(
     heap: &ProgramHeap,
     config: Config,
 ) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
+    let threads = *CPU_COUNT - 1;
     let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(*CPU_COUNT - 1)
+        .num_threads(threads)
         .build()
         .unwrap();
+    // Decided once, from the pool width against the outer level's width.
+    let parallel_negatives = negatives_worth_parallelising(threads, pos_goals.len());
 
     // One cache for the whole run, shared by every worker. Borrowed rather
     // than cloned: the point is that the workers see each other's verdicts.
@@ -224,6 +227,7 @@ fn build_sub_hypotheses(
                             heap,
                             config,
                             cache,
+                            parallel_negatives,
                         );
                         // Counted before the send so the status line can never
                         // show more results merged than searched.
@@ -382,6 +386,7 @@ fn sub_hypotheses_for_example(
     prog_heap: &ProgramHeap,
     config: Config,
     cache: &NegativeCache,
+    parallel_negatives: bool,
 ) -> ThreadResult {
     let mut query_heap = QueryHeap::new(prog_heap, None);
     let mut dst = QueryHeap::detached(prog_heap);
@@ -404,6 +409,7 @@ fn sub_hypotheses_for_example(
             predicate_table,
             config,
             cache,
+            parallel_negatives,
         ) {
             Verdict::EntailsNegative | Verdict::AlreadyFound => continue,
             Verdict::Keep => {}

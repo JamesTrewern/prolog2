@@ -65,6 +65,14 @@ pub(super) fn clauses_entail_negative(
     })
 }
 
+/// Should the negatives of a single candidate be proved in parallel?
+/// The 1.5x margin sits between the cases that lose and the case that wins.
+/// A hundred-core machine learning from a dozen examples clears it easily,
+/// which is the point: the nesting exists for machines wide enough to use it.
+pub(super) fn negatives_worth_parallelising(threads: usize, positives: usize) -> bool {
+    threads * 2 > positives * 3
+}
+
 /// Verdicts already reached, shared by every worker.
 /// Sharded rather than held behind one lock: at well over a million lookups
 /// a single mutex would serialise the workers it is meant to be saving.
@@ -279,6 +287,7 @@ pub(super) fn specialise_candidate(
     predicate_table: &PredicateTable,
     config: Config,
     cache: &NegativeCache,
+    parallel_negatives: bool,
 ) -> Verdict {
     let key = hypothesis_key(heap, hypothesis);
     if let Some(entailed) = cache.get(key) {
@@ -306,14 +315,20 @@ pub(super) fn specialise_candidate(
     let grounded = ground_hypothesis(heap, hypothesis);
 
     let mut branches = heap.branch_ground(neg_goals.len());
-    let entailed = branches
-        .par_iter_mut()
-        .zip(neg_goals.par_iter())
-        .any(|(branch, &goal)| {
-            let mut inner = Proof::without_learning(branch, &[goal]);
-            inner.add_test_clauses(&grounded);
-            inner.prove(branch, predicate_table, config)
-        });
+    let prove = |(branch, &goal): (&mut QueryHeap, &usize)| {
+        let mut inner = Proof::without_learning(branch, &[goal]);
+        inner.add_test_clauses(&grounded);
+        inner.prove(branch, predicate_table, config)
+    };
+    // Fanning the negatives out costs a spawn, a deque push and epoch
+    // reclamation traffic on *every* candidate, whereas the benefit only
+    // materialises when a thread is actually free to steal the work. The
+    // caller decides; see `negatives_worth_parallelising`.
+    let entailed = if parallel_negatives {
+        branches.par_iter_mut().zip(neg_goals.par_iter()).any(prove)
+    } else {
+        branches.iter_mut().zip(neg_goals.iter()).any(prove)
+    };
 
     drop(branches);
     heap.truncate(point);
@@ -323,5 +338,48 @@ pub(super) fn specialise_candidate(
         Verdict::EntailsNegative
     } else {
         Verdict::Keep
+    }
+}
+
+#[cfg(test)]
+mod parallelism_threshold_tests {
+    use super::negatives_worth_parallelising;
+
+    /// The measured cases: fan out only where there is real headroom.
+    #[test]
+    fn matches_the_measured_crossover() {
+        // 19 threads, the machine the curve was measured on.
+        assert!(
+            negatives_worth_parallelising(19, 10),
+            "take_action: 1.9x headroom, measured 13% faster nested"
+        );
+        assert!(
+            !negatives_worth_parallelising(19, 15),
+            "avoid: 1.3x headroom, measured ~2x worse nested"
+        );
+        assert!(
+            !negatives_worth_parallelising(19, 17),
+            "turn: 1.1x headroom, measured 10% slower nested"
+        );
+    }
+
+    /// A wide machine learning from a handful of examples -- the case the
+    /// nesting exists for.
+    #[test]
+    fn a_wide_pool_always_fans_out() {
+        assert!(negatives_worth_parallelising(128, 15));
+        assert!(negatives_worth_parallelising(256, 20));
+    }
+
+    /// A pool no wider than the outer level has nothing spare to steal with.
+    #[test]
+    fn a_narrow_pool_never_fans_out() {
+        for threads in 1..=8 {
+            assert!(
+                !negatives_worth_parallelising(threads, 10),
+                "{threads} threads against 10 positives has no headroom"
+            );
+        }
+        assert!(!negatives_worth_parallelising(1, 1));
     }
 }
