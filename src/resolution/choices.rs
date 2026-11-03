@@ -311,7 +311,7 @@ mod tests {
             hypothesis.push_clause(
                 Clause::new(vec![head], None, 0),
                 Constraints::new(),
-                &crate::heap::ArgRegs::new_16(),
+                &crate::heap::ArgRegs::new_64(),
                 meta_data,
             );
         }

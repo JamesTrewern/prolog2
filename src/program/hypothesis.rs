@@ -223,13 +223,13 @@ mod invented_pred_tests {
         h.push_clause(
             var_headed,
             Constraints::new(),
-            &ArgRegs::new_16(),
+            &ArgRegs::new_64(),
             meta_data,
         );
         h.push_clause(
             con_headed,
             Constraints::new(),
-            &ArgRegs::new_16(),
+            &ArgRegs::new_64(),
             meta_data,
         );
         h.add_invented_pred(&heap, 0);
@@ -276,7 +276,7 @@ mod invented_pred_tests {
         h.push_clause(
             aliased_head,
             Constraints::new(),
-            &ArgRegs::new_16(),
+            &ArgRegs::new_64(),
             meta_data,
         );
 

@@ -34,7 +34,7 @@ impl DerefMut for Substitution {
 impl Default for Substitution {
     fn default() -> Self {
         Self {
-            arg_regs: ArgRegs::new_16(),
+            arg_regs: ArgRegs::new_64(),
             bound_vars: SmallVec::new(),
             needs_rebuild: SmallVec::new(),
         }
