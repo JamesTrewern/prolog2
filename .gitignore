@@ -6,3 +6,4 @@ profile.json.gz
 flamegraph.svg
 perf.data
 perf*.data
+docs/learning-engine-notes.md

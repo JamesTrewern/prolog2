@@ -357,7 +357,7 @@ mod tests {
     use crate::{
         heap::{Heap, ProgramHeap, Tag},
         parser::execute_tree::execute_tree,
-        program::{Predicate, PredicateTable},
+        program::{PredicateRef, PredicateTable},
     };
 
     use super::super::{build_tree::TokenStream, tokeniser::tokenise};
@@ -374,7 +374,7 @@ mod tests {
 
         execute_tree(facts, &mut heap, &mut pred_table).unwrap();
 
-        if let Predicate::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
+        if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
             let fact = &clauses[0];
             assert_eq!(
                 &heap[fact[0]..fact[0] + 4],
@@ -384,7 +384,7 @@ mod tests {
             panic!()
         }
 
-        if let Predicate::Clauses(clauses) = pred_table.get_predicate((q, 1)).unwrap() {
+        if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((q, 1)).unwrap() {
             let fact = &clauses[0];
             assert_eq!(
                 &heap[fact[0]..fact[0] + 3],
@@ -408,7 +408,7 @@ mod tests {
 
         execute_tree(facts, &mut heap, &mut pred_table).unwrap();
 
-        if let Predicate::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
+        if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
             let rule = &clauses[0];
             assert_eq!(
                 &heap[rule[0]..rule[0] + 4],
@@ -426,7 +426,7 @@ mod tests {
             panic!()
         }
 
-        if let Predicate::Clauses(clauses) = pred_table.get_predicate((q, 1)).unwrap() {
+        if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((q, 1)).unwrap() {
             let rule = &clauses[0];
             assert_eq!(
                 &heap[rule[0]..rule[0] + 3],
@@ -460,7 +460,7 @@ mod tests {
             .unwrap();
         execute_tree(clause, &mut heap, &mut pred_table).unwrap();
 
-        if let Predicate::Clauses(clauses) = pred_table.get_predicate((0, 2)).unwrap() {
+        if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((0, 2)).unwrap() {
             let meta_rule = &clauses[0];
             assert_eq!(
                 &heap[meta_rule[0]..meta_rule[0] + 4],
@@ -496,7 +496,7 @@ mod tests {
 
         execute_tree(clause, &mut heap, &mut pred_table).unwrap();
 
-        if let Predicate::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
+        if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
             let meta_rule = &clauses[0];
             assert_eq!(
                 &heap[meta_rule[0]..meta_rule[0] + 4],
@@ -540,7 +540,7 @@ mod tests {
 
         execute_tree(facts, &mut heap, &mut pred_table).unwrap();
 
-        if let Predicate::Clauses(clauses) = pred_table.get_predicate((edge, 3)).unwrap() {
+        if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((edge, 3)).unwrap() {
             let meta_rule = &clauses[0];
             // All three are meta_vars
             assert!(meta_rule.meta_var(0).unwrap()); // El
@@ -572,7 +572,7 @@ mod tests {
 
         execute_tree(facts, &mut heap, &mut pred_table).unwrap();
 
-        if let Predicate::Clauses(clauses) = pred_table.get_predicate((edge, 3)).unwrap() {
+        if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((edge, 3)).unwrap() {
             let meta_rule = &clauses[0];
             // All three are meta_vars
             assert!(meta_rule.meta_var(0).unwrap()); // El

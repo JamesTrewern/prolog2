@@ -12,7 +12,7 @@ use crate::{
     },
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
-        Hypothesis, {BitFlag64, Clause, MAX_ARG}, {Predicate, PredicateTable},
+        Hypothesis, {BitFlag64, Clause, MAX_ARG}, {PredicateRef, PredicateTable},
     },
     resolution::{
         build::{build, re_build_bound_arg_terms},
@@ -213,7 +213,7 @@ impl Env {
             choices.extend_from_slice(clauses);
         }
         if !invented {
-            choices.extend(predicate_table.get_body_clauses(arity).cloned());
+            choices.extend_from_slice(predicate_table.get_body_clauses(arity));
         }
         if let Some(test_clauses) = test_clauses {
             choices.extend_from_slice(test_clauses);
@@ -241,14 +241,14 @@ impl Env {
         protect: bool,
     ) {
         match predicate_table.get_predicate((symbol, arity)) {
-            Some(Predicate::Function(pred_function)) => {
+            Some(PredicateRef::Function(pred_function)) => {
                 self.strategy = Strategy::Native {
-                    function: *pred_function,
+                    function: pred_function,
                     alternatives: Vec::new(),
                     called: false,
                 };
             }
-            Some(Predicate::Clauses(clauses)) => {
+            Some(PredicateRef::Clauses(clauses)) => {
                 let mut choices = Vec::new();
                 hypothesis.extend_choices(&mut choices, heap, protect);
                 choices.extend_from_slice(clauses);

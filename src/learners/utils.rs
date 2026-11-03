@@ -7,9 +7,7 @@ use std::{
 use crate::{
     heap::{Cell, Heap, ProgramHeap, QueryHeap, Tag::Con},
     parser::{build_clause, tokenise, TokenStream},
-    program::{
-        Clause, {Predicate, PredicateTable},
-    },
+    program::{Clause, PredicateTable},
     resolution::Proof,
     Config,
 };
@@ -214,11 +212,9 @@ pub(super) fn collect_used_pred(
         }
         for (symbol, (arity, collected)) in pred_set.iter_mut() {
             if !*collected {
-                let Predicate::Clauses(clauses) =
-                    predicate_table.get_predicate((*symbol, *arity)).unwrap()
-                else {
-                    panic!();
-                };
+                let clauses = predicate_table
+                    .get_predicate_clauses((*symbol, *arity))
+                    .expect("an invented predicate in a body literal has a definition");
                 hypothesis.extend_from_slice(clauses);
                 *collected = true
             }
@@ -258,10 +254,9 @@ pub(super) fn count_pred_clauses_and_literals(
         }
     }
     while let Some(symbol_arity) = pred_list.pop() {
-        let Predicate::Clauses(clauses) = predicate_table.get_predicate(symbol_arity).unwrap()
-        else {
-            panic!();
-        };
+        let clauses = predicate_table
+            .get_predicate_clauses(symbol_arity)
+            .expect("an invented predicate in a body literal has a definition");
         clauses_count += clauses.len();
         for clause in clauses.iter() {
             literals_count += clause.body().len();

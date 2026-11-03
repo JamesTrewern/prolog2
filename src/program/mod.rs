@@ -24,4 +24,4 @@ pub(crate) use clause::{BitFlag64, Clause, MetaData, MAX_ARG};
 #[cfg(test)]
 pub(crate) use hypothesis::Constraints;
 pub(crate) use meta_sub::MetaSub;
-pub(crate) use predicate_table::Predicate;
+pub use predicate_table::PredicateRef;
