@@ -114,12 +114,14 @@ impl Hypothesis {
         arg_regs: &ArgRegs,
         meta_data: MetaData,
     ) {
+        let max_arg_id = clause.max_arg_id;
         self.clauses.push(clause);
         self.constraints.push(constraints);
         self.meta_subs.push(MetaSub::from_arg_regs(
             arg_regs,
             meta_data.id,
-            meta_data.meta_vars,
+            meta_data.meta_var_threshold,
+            max_arg_id,
         ));
     }
 
@@ -216,7 +218,7 @@ mod invented_pred_tests {
         let (heap, var_headed, con_headed) = heap_with_two_heads(1);
         let mut h = Hypothesis::new();
         let meta_data = MetaData {
-            meta_vars: BitFlag64::default(),
+            meta_var_threshold: 0,
             constrained_vars: BitFlag64::default(),
             id: 0,
         };
@@ -267,7 +269,7 @@ mod invented_pred_tests {
         let aliased_head = Clause::new(vec![0], None, 0);
 
         let meta_data = MetaData {
-            meta_vars: BitFlag64::default(),
+            meta_var_threshold: 0,
             constrained_vars: BitFlag64::default(),
             id: 0,
         };

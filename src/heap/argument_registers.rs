@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::{heap::VarReg, program::BitFlag64, ARG_REGS_DEFAULT_SIZE};
+use crate::{heap::VarReg, ARG_REGS_DEFAULT_SIZE};
 use multiversion::multiversion;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -37,15 +37,6 @@ impl ArgRegs {
         }
     }
 
-    pub fn to_meta_sub(&self, meta_vars: BitFlag64) -> Self {
-        let mut res = self.clone();
-        for (i, reg) in res.iter_mut().enumerate() {
-            if !meta_vars.get(i) {
-                *reg = VarReg::UNBOUND;
-            }
-        }
-        res
-    }
 }
 
 #[multiversion(targets = "simd")] // generates avx512/avx2/sse2/neon clones + runtime dispatch

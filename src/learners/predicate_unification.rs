@@ -471,7 +471,7 @@ mod tests {
 
         let new_clause_literals: Vec<usize> = meta
             .iter()
-            .map(|literal| build(heap, &mut subs, meta.meta_vars(), *literal))
+            .map(|literal| build(heap, &mut subs, meta.meta_threshold(), *literal))
             .collect();
 
         (

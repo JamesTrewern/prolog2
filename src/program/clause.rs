@@ -63,7 +63,18 @@ static META_CLAUSE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct MetaData {
-    pub meta_vars: BitFlag64,
+    /// The lowest arg id that is a meta variable.
+    ///
+    /// Equivalent to the bit set it replaces, because the compiler packs a
+    /// meta rule's *non*-meta variables into the lower ids before encoding
+    /// its literals -- see the pre-ordering in `build_clause`. So the meta
+    /// variables are always the contiguous run
+    /// `meta_var_threshold..max_arg_id`, and one bound says everything the
+    /// bit set did while turning the substitution extraction into a slice
+    /// copy.
+    ///
+    /// Equal to `max_arg_id` when nothing is meta.
+    pub meta_var_threshold: usize,
     pub constrained_vars: BitFlag64,
     pub id: usize,
 }
@@ -83,10 +94,25 @@ impl Clause {
         meta_constrained_vars: Option<(Vec<usize>, Vec<usize>)>,
         max_arg_id: usize,
     ) -> Self {
-        let meta_data = meta_constrained_vars.map(|(mvs, cvs)| MetaData {
-            meta_vars: mvs.into(),
-            constrained_vars: cvs.into(),
-            id: META_CLAUSE_COUNT.fetch_add(1, Relaxed),
+        let meta_data = meta_constrained_vars.map(|(mvs, cvs)| {
+            let meta_var_threshold = mvs.iter().copied().min().unwrap_or(max_arg_id);
+            debug_assert!(
+                {
+                    let mut sorted = mvs.clone();
+                    sorted.sort_unstable();
+                    sorted.dedup();
+                    sorted.iter().copied().eq(meta_var_threshold..max_arg_id)
+                },
+                "meta variables {mvs:?} of a clause with {max_arg_id} variables are not the \
+                 contiguous top run {meta_var_threshold}..{max_arg_id}. A single threshold \
+                 can only stand in for the bit set while the compiler keeps packing \
+                 non-meta variables into the lower ids.",
+            );
+            MetaData {
+                meta_var_threshold,
+                constrained_vars: cvs.into(),
+                id: META_CLAUSE_COUNT.fetch_add(1, Relaxed),
+            }
         });
 
         let literals: SmallVec<[usize; LITERALS_DEFAULT_SIZE]> = SmallVec::from_vec(literals);
@@ -110,8 +136,11 @@ impl Clause {
     }
 
     pub fn meta_var(&self, arg_id: usize) -> Result<bool, &'static str> {
-        if let Some(MetaData { meta_vars, .. }) = self.meta_data {
-            Ok(meta_vars.get(arg_id))
+        if let Some(MetaData {
+            meta_var_threshold, ..
+        }) = self.meta_data
+        {
+            Ok(arg_id >= meta_var_threshold)
         } else {
             return Err("Clause is not a meta clause");
         }
@@ -128,8 +157,12 @@ impl Clause {
         }
     }
 
-    pub fn meta_vars(&self) -> Option<BitFlag64> {
-        self.meta_data.as_ref().map(|meta_data| meta_data.meta_vars)
+    /// The lowest arg id that is a meta variable, or `None` if this is not a
+    /// meta clause. See [`MetaData::meta_var_threshold`].
+    pub fn meta_threshold(&self) -> Option<usize> {
+        self.meta_data
+            .as_ref()
+            .map(|meta_data| meta_data.meta_var_threshold)
     }
 
     pub fn constrained_vars(&self) -> Option<BitFlag64> {
@@ -201,5 +234,76 @@ mod program_symbol_isolation {
         let _ = _build_clause(&mut second, "p(Alpha,Beta):-q(Alpha,Beta).");
 
         assert_eq!(clause.to_string(&first), "p(X,Y):-q(X,Y).");
+    }
+}
+
+/// The compiler's pre-ordering is what lets one threshold stand in for the
+/// old 64-bit flag set, so it is worth pinning against the real parser
+/// rather than against hand-built fixtures.
+#[cfg(test)]
+mod meta_var_threshold {
+    use crate::{heap::ProgramHeap, parser::_build_clause};
+
+    /// Compile `src` and return `(threshold, max_arg_id)`.
+    fn compile(src: &str) -> (usize, usize) {
+        let mut prog = ProgramHeap::new();
+        let clause = _build_clause(&mut prog, src);
+        (
+            clause.meta_threshold().expect("a meta clause"),
+            clause.max_arg_id,
+        )
+    }
+
+    /// `build_clause` inserts the non-meta variables into `var_values` first,
+    /// so they take the low ids and the meta variables are left with the
+    /// contiguous top run. Each case states the arity it expects, because an
+    /// off-by-one here would silently turn a predicate variable into an
+    /// ordinary one.
+    #[test]
+    fn meta_vars_are_the_contiguous_top_run() {
+        // X,Y -> 0,1; P,Q -> 2,3.
+        assert_eq!(compile("P(X,Y):-Q(X,Y),{P,Q}."), (2, 4));
+        // X,Y -> 0,1; P,Q,R -> 2,3,4.
+        assert_eq!(compile("P(X,Y):-Q(X),R(Y),{P,Q,R}."), (2, 5));
+        // Only the head predicate is second order: X,Y -> 0,1; P -> 2.
+        assert_eq!(compile("P(X,Y):-q(X,Y),{P}."), (2, 3));
+        // A body predicate variable is still part of the top run, even though
+        // the head's predicate is an ordinary constant.
+        assert_eq!(compile("p(X):-Q(X),{Q}."), (1, 2));
+    }
+
+    /// Every arg at or above the threshold must answer `meta_var`, and every
+    /// arg below it must not -- the property `build` and `MetaSub` rely on.
+    #[test]
+    fn meta_var_agrees_with_the_threshold_either_side() {
+        let mut prog = ProgramHeap::new();
+        let clause = _build_clause(&mut prog, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let threshold = clause.meta_threshold().unwrap();
+
+        for arg_id in 0..clause.max_arg_id {
+            assert_eq!(
+                clause.meta_var(arg_id).unwrap(),
+                arg_id >= threshold,
+                "arg {arg_id} is on the wrong side of threshold {threshold}"
+            );
+        }
+    }
+
+    /// An ordinary clause has no metadata at all, so it has no threshold and
+    /// `meta_var` refuses rather than answering against a default.
+    ///
+    /// The `unwrap_or(max_arg_id)` fallback in `Clause::new` -- a meta clause
+    /// whose variable set is empty -- is not reachable through the parser,
+    /// since `{}` does not parse. It stays as a total definition of the
+    /// threshold rather than as behaviour under test here.
+    #[test]
+    fn an_ordinary_clause_has_no_threshold() {
+        let mut prog = ProgramHeap::new();
+        let clause = _build_clause(&mut prog, "p(X,Y).");
+        assert!(
+            clause.meta_threshold().is_none(),
+            "an ordinary clause is not a meta clause"
+        );
+        assert!(clause.meta_var(0).is_err());
     }
 }

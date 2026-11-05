@@ -544,7 +544,7 @@ impl<'a> Env<'a> {
                 // this frame rather than a ~150-byte tuple.
                 let new_clause_literals: Vec<usize> = clause
                     .iter()
-                    .map(|literal| build(heap, &mut substitution, clause.meta_vars(), *literal))
+                    .map(|literal| build(heap, &mut substitution, clause.meta_threshold(), *literal))
                     .collect();
 
                 let mut constraints = Vec::with_capacity(16);

@@ -2,7 +2,6 @@
 
 use crate::{
     heap::{Heap, QueryHeap, Tag::*, TermWalk, VarBind::*, Walk},
-    program::BitFlag64,
     resolution::Substitution,
 };
 
@@ -26,7 +25,7 @@ pub(super) fn re_build_bound_arg_terms(heap: &mut QueryHeap, substitution: &mut 
 pub(crate) fn build(
     heap: &mut impl Heap,
     substitution: &mut Substitution,
-    meta_vars: Option<BitFlag64>,
+    meta_threshold: Option<usize>,
     src_addr: usize,
 ) -> usize {
     let new_addr = heap.heap_len();
@@ -34,7 +33,7 @@ pub(crate) fn build(
 
     while let Some(cell) = walk.next_cell(heap) {
         if cell.0 == Arg {
-            build_arg(heap, substitution, meta_vars, cell.1);
+            build_arg(heap, substitution, meta_threshold, cell.1);
         } else {
             heap.heap_push(cell);
         }
@@ -45,13 +44,15 @@ pub(crate) fn build(
 fn build_arg(
     heap: &mut impl Heap,
     substitution: &mut Substitution,
-    meta_vars: Option<BitFlag64>,
+    meta_threshold: Option<usize>,
     arg_id: usize,
 ) {
-    match meta_vars {
-        Some(bit_flags) if !bit_flags.get(arg_id) => _ = heap.heap_push((Arg, arg_id)),
+    match meta_threshold {
+        // Below the threshold: a first-order variable of the template, which
+        // stays an `Arg` so the clause remains a template.
+        Some(threshold) if arg_id < threshold => _ = heap.heap_push((Arg, arg_id)),
         _ => match substitution.get_arg(arg_id) {
-            Some(Addr(bound_addr)) => _ = build(heap, substitution, meta_vars, bound_addr),
+            Some(Addr(bound_addr)) => _ = build(heap, substitution, meta_threshold, bound_addr),
             Some(VarId(var_id)) => _ = heap.heap_push((Var, var_id)),
             None => {
                 let var_id = heap.set_var(None);
@@ -66,7 +67,7 @@ mod tests {
     use super::{build, re_build_bound_arg_terms};
     use crate::{
         heap::{Cell, Heap, ProgramHeap, QueryHeap, Tag::*, VarBind::*, VarReg, EMPTY_LIS, LIS},
-        program::{BitFlag64, MAX_ARG},
+        program::MAX_ARG,
         resolution::{unify, Substitution},
     };
 
@@ -846,10 +847,10 @@ mod tests {
             &prog,
             vec![
                 poison(&prog), // 0
-                (Comp, 3),     // 1: A0(A1, A2) — the metarule head
-                (Arg, 0),      // 2   A0 is the predicate symbol
-                (Arg, 1),      // 3
-                (Arg, 2),      // 4
+                (Comp, 3),     // 1: A2(A0, A1) — the metarule head
+                (Arg, 2),      // 2   A2 is the predicate symbol
+                (Arg, 0),      // 3
+                (Arg, 1),      // 4
                 (Con, p),      // 5: the symbol A0 is bound to
             ],
         );
@@ -857,22 +858,24 @@ mod tests {
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
-        let mut meta_vars = BitFlag64::default();
-        meta_vars.set(0);
+        // Non-meta args are packed into the low ids and the meta args form the
+        // contiguous top run, so `A2` -- the predicate symbol -- is the only
+        // arg at or above the threshold.
+        let meta_threshold = 2;
         let mut sub = Substitution::default();
-        sub.set_arg(0, Addr(5));
+        sub.set_arg(2, Addr(5));
 
-        let literal = build(&mut heap, &mut sub, Some(meta_vars), 1);
+        let literal = build(&mut heap, &mut sub, Some(meta_threshold), 1);
 
-        assert_eq!(heap[q..], [(Comp, 3), (Con, p), (Arg, 1), (Arg, 2)]);
+        assert_eq!(heap[q..], [(Comp, 3), (Con, p), (Arg, 0), (Arg, 1)]);
         assert!(
             heap.contains_args(literal),
             "a learned clause keeps its ordinary variables as Arg cells"
         );
         assert_eq!(
-            (sub.get_arg(1), sub.get_arg(2)),
+            (sub.get_arg(0), sub.get_arg(1)),
             (None, None),
-            "unflagged args must not be recorded against the substitution"
+            "args below the threshold must not be recorded against the substitution"
         );
     }
 
@@ -892,10 +895,10 @@ mod tests {
             &prog,
             vec![
                 poison(&prog), // 0
-                (Comp, 3),     // 1: A0(A1, A2)
-                (Arg, 0),      // 2
-                (Arg, 1),      // 3
-                (Arg, 2),      // 4
+                (Comp, 3),     // 1: A2(A0, A1)
+                (Arg, 2),      // 2
+                (Arg, 0),      // 3
+                (Arg, 1),      // 4
                 (Con, p),      // 5
                 (Con, a),      // 6
             ],
@@ -904,19 +907,21 @@ mod tests {
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
-        let mut meta_vars = BitFlag64::default();
-        meta_vars.set(0);
+        // Non-meta args are packed into the low ids and the meta args form the
+        // contiguous top run, so `A2` -- the predicate symbol -- is the only
+        // arg at or above the threshold.
+        let meta_threshold = 2;
         let mut sub = Substitution::default();
-        sub.set_arg(0, Addr(5));
-        sub.set_arg(1, Addr(6)); // deliberately bound, but not a meta var
-        sub.set_arg(2, VarId(0));
+        sub.set_arg(2, Addr(5));
+        sub.set_arg(0, Addr(6)); // deliberately bound, but below the threshold
+        sub.set_arg(1, VarId(0));
 
-        build(&mut heap, &mut sub, Some(meta_vars), 1);
+        build(&mut heap, &mut sub, Some(meta_threshold), 1);
 
         assert_eq!(
             heap[q..],
-            [(Comp, 3), (Con, p), (Arg, 1), (Arg, 2)],
-            "bindings for unflagged args must be ignored"
+            [(Comp, 3), (Con, p), (Arg, 0), (Arg, 1)],
+            "bindings for args below the threshold must be ignored"
         );
     }
 
@@ -933,24 +938,26 @@ mod tests {
             &prog,
             vec![
                 poison(&prog), // 0
-                (Comp, 3),     // 1: A0(A1, A2)
-                (Arg, 0),      // 2
-                (Arg, 1),      // 3
-                (Arg, 2),      // 4
+                (Comp, 3),     // 1: A2(A0, A1)
+                (Arg, 2),      // 2
+                (Arg, 0),      // 3
+                (Arg, 1),      // 4
             ],
         );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
-        let mut meta_vars = BitFlag64::default();
-        meta_vars.set(0);
+        // Non-meta args are packed into the low ids and the meta args form the
+        // contiguous top run, so `A2` -- the predicate symbol -- is the only
+        // arg at or above the threshold.
+        let meta_threshold = 2;
         let mut sub = Substitution::default();
 
-        build(&mut heap, &mut sub, Some(meta_vars), 1);
+        build(&mut heap, &mut sub, Some(meta_threshold), 1);
 
-        assert_eq!(heap[q..], [(Comp, 3), (Var, 0), (Arg, 1), (Arg, 2)]);
-        assert_eq!(sub.get_arg(0), Some(VarId(0)));
+        assert_eq!(heap[q..], [(Comp, 3), (Var, 0), (Arg, 0), (Arg, 1)]);
+        assert_eq!(sub.get_arg(2), Some(VarId(0)));
     }
 
     /// A meta var bound to a variable rather than an address emits that
@@ -962,10 +969,10 @@ mod tests {
             &prog,
             vec![
                 poison(&prog), // 0
-                (Comp, 3),     // 1: A0(A1, A2)
-                (Arg, 0),      // 2
-                (Arg, 1),      // 3
-                (Arg, 2),      // 4
+                (Comp, 3),     // 1: A2(A0, A1)
+                (Arg, 2),      // 2
+                (Arg, 0),      // 3
+                (Arg, 1),      // 4
             ],
         );
         prog.extend_from_slice(&cells);
@@ -973,14 +980,16 @@ mod tests {
         let q = prog.len();
 
         heap.var_regs = vec![VarReg::UNBOUND; 2];
-        let mut meta_vars = BitFlag64::default();
-        meta_vars.set(0);
+        // Non-meta args are packed into the low ids and the meta args form the
+        // contiguous top run, so `A2` -- the predicate symbol -- is the only
+        // arg at or above the threshold.
+        let meta_threshold = 2;
         let mut sub = Substitution::default();
-        sub.set_arg(0, VarId(1));
+        sub.set_arg(2, VarId(1));
 
-        build(&mut heap, &mut sub, Some(meta_vars), 1);
+        build(&mut heap, &mut sub, Some(meta_threshold), 1);
 
-        assert_eq!(heap[q..], [(Comp, 3), (Var, 1), (Arg, 1), (Arg, 2)]);
+        assert_eq!(heap[q..], [(Comp, 3), (Var, 1), (Arg, 0), (Arg, 1)]);
         assert_eq!(heap.var_regs.len(), 2, "no variable should be invented");
     }
 
@@ -988,7 +997,7 @@ mod tests {
     /// `None`, then the clause literals with `Some(meta_vars)`.
     ///
     /// Metarule `P(X,Y) :- Q(X,Y)` with `P = p` and `Q = q` must yield the goal
-    /// `q(_0, _1)` and the learned clause `p(A1,A2) :- q(A1,A2)`. The ordering
+    /// `q(_0, _1)` and the learned clause `p(A0,A1) :- q(A0,A1)`. The ordering
     /// matters: by the time the second loop runs, the substitution holds
     /// variables for `X` and `Y`, and the learned clause must still ignore them.
     #[test]
@@ -1001,14 +1010,14 @@ mod tests {
             &prog,
             vec![
                 poison(&prog), // 0
-                (Comp, 3),     // 1: head A0(A1, A2)
-                (Arg, 0),      // 2
-                (Arg, 1),      // 3
-                (Arg, 2),      // 4
-                (Comp, 3),     // 5: body A3(A1, A2)
+                (Comp, 3),     // 1: head A2(A0, A1)
+                (Arg, 2),      // 2
+                (Arg, 0),      // 3
+                (Arg, 1),      // 4
+                (Comp, 3),     // 5: body A3(A0, A1)
                 (Arg, 3),      // 6
-                (Arg, 1),      // 7
-                (Arg, 2),      // 8
+                (Arg, 0),      // 7
+                (Arg, 1),      // 8
                 (Con, p),      // 9
                 (Con, q_sym),  // 10
             ],
@@ -1017,18 +1026,18 @@ mod tests {
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
-        let mut meta_vars = BitFlag64::default();
-        meta_vars.set(0); // P
-        meta_vars.set(3); // Q
+        // X and Y are ordinary and so sit below the threshold; P and Q are the
+        // contiguous top run, which is exactly what one threshold expresses.
+        let meta_threshold = 2;
         let mut sub = Substitution::default();
-        sub.set_arg(0, Addr(9));
-        sub.set_arg(3, Addr(10));
+        sub.set_arg(2, Addr(9)); // P
+        sub.set_arg(3, Addr(10)); // Q
 
-        // env.rs: build the body goals first, with meta_vars = None.
+        // env.rs: build the body goals first, with no threshold.
         let goal = build(&mut heap, &mut sub, None, 5);
-        // env.rs: then build the clause literals, with meta_vars = Some(..).
-        let new_head = build(&mut heap, &mut sub, Some(meta_vars), 1);
-        let new_body = build(&mut heap, &mut sub, Some(meta_vars), 5);
+        // env.rs: then build the clause literals, with Some(threshold).
+        let new_head = build(&mut heap, &mut sub, Some(meta_threshold), 1);
+        let new_body = build(&mut heap, &mut sub, Some(meta_threshold), 5);
 
         assert_eq!((goal, new_head, new_body), (q, q + 4, q + 8));
         assert_eq!(
@@ -1039,16 +1048,16 @@ mod tests {
                 (Con, q_sym),
                 (Var, 0),
                 (Var, 1),
-                // learned head: p(A1, A2)
+                // learned head: p(A0, A1)
                 (Comp, 3),
                 (Con, p),
+                (Arg, 0),
                 (Arg, 1),
-                (Arg, 2),
-                // learned body: q(A1, A2)
+                // learned body: q(A0, A1)
                 (Comp, 3),
                 (Con, q_sym),
+                (Arg, 0),
                 (Arg, 1),
-                (Arg, 2),
             ]
         );
         assert!(
@@ -1061,11 +1070,11 @@ mod tests {
         );
     }
 
-    /// The top of the arg range. `MAX_ARG` is 64 and `BitFlag64` covers
-    /// indices 0..=63, so both the flagged and unflagged paths must work at
-    /// the boundary rather than overflowing the shift or the register array.
+    /// The top of the arg range. `MAX_ARG` is 64, so both sides of the
+    /// threshold must work at the boundary rather than overflowing the
+    /// register array or the comparison.
     #[test]
-    fn meta_flags_work_at_the_top_of_the_arg_range() {
+    fn meta_threshold_works_at_the_top_of_the_arg_range() {
         let mut prog = ProgramHeap::new();
         let p = prog.symbols().set_const("p");
 
@@ -1084,20 +1093,21 @@ mod tests {
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
-        let mut meta_vars = BitFlag64::default();
-        meta_vars.set(MAX_ARG - 1);
+        // The single meta variable is the highest arg, which is what a
+        // threshold expresses directly.
+        let meta_threshold = MAX_ARG - 1;
         let mut sub = Substitution::new(MAX_ARG - 1);
         sub.set_arg(MAX_ARG - 1, Addr(5));
 
-        build(&mut heap, &mut sub, Some(meta_vars), 1);
+        build(&mut heap, &mut sub, Some(meta_threshold), 1);
 
         assert_eq!(heap[q..], [(Comp, 3), (Con, p), (Arg, 62), (Arg, 0)]);
     }
 
-    /// The meta mask survives the recursive descent through a bound arg.
+    /// The threshold survives the recursive descent through a bound arg.
     ///
     /// `build_arg` recurses into `build` when a substituted arg holds an
-    /// address, and it forwards `meta_vars` when it does. If it forwarded
+    /// address, and it forwards the threshold when it does. If it forwarded
     /// `None` instead, any `Arg` inside that term would be substituted away
     /// rather than preserved, silently grounding part of the learned clause.
     ///
@@ -1106,7 +1116,7 @@ mod tests {
     /// reachable. The test exists to pin the intent before it becomes so, since
     /// nothing else in the suite distinguishes the two.
     #[test]
-    fn meta_mask_is_forwarded_through_a_bound_arg() {
+    fn meta_threshold_is_forwarded_through_a_bound_arg() {
         let mut prog = ProgramHeap::new();
         let t = prog.symbols().set_const("t");
         let s = prog.symbols().set_const("s");
@@ -1115,33 +1125,34 @@ mod tests {
             &prog,
             vec![
                 poison(&prog), // 0
-                (Comp, 2),     // 1: template t(A0)
+                (Comp, 2),     // 1: template t(A1)
                 (Con, t),      // 2
-                (Arg, 0),      // 3
-                (Comp, 2),     // 4: the term A0 is bound to, s(A1)
+                (Arg, 1),      // 3
+                (Comp, 2),     // 4: the term A1 is bound to, s(A0)
                 (Con, s),      // 5
-                (Arg, 1),      // 6
+                (Arg, 0),      // 6
             ],
         );
         prog.extend_from_slice(&cells);
         let mut heap = QueryHeap::new(&prog, None);
         let q = prog.len();
 
-        let mut meta_vars = BitFlag64::default();
-        meta_vars.set(0); // A0 is a meta var; A1 is an ordinary clause var
+        // A1 is at the threshold and so is a meta var; A0 is below it and is
+        // an ordinary clause var.
+        let meta_threshold = 1;
         let mut sub = Substitution::default();
-        sub.set_arg(0, Addr(4));
+        sub.set_arg(1, Addr(4));
 
-        build(&mut heap, &mut sub, Some(meta_vars), 1);
+        build(&mut heap, &mut sub, Some(meta_threshold), 1);
 
         assert_eq!(
             heap[q..],
-            [(Comp, 2), (Con, t), (Comp, 2), (Con, s), (Arg, 1)]
+            [(Comp, 2), (Con, t), (Comp, 2), (Con, s), (Arg, 0)]
         );
         assert_eq!(
-            sub.get_arg(1),
+            sub.get_arg(0),
             None,
-            "a non-meta arg must not be allocated a variable, however deep it sits"
+            "an arg below the threshold must not be allocated a variable, however deep it sits"
         );
     }
 
@@ -1360,7 +1371,7 @@ mod tests {
         let mut sub = Substitution::default();
 
         let as_goal = build(&mut heap, &mut sub, None, q);
-        let as_template = build(&mut heap, &mut sub, Some(BitFlag64::default()), q);
+        let as_template = build(&mut heap, &mut sub, Some(MAX_ARG), q);
 
         assert_eq!(
             heap[as_goal..],

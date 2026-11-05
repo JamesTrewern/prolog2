@@ -7,7 +7,7 @@ use crate::{
         VarReg,
     },
     program::{
-        PredicateTable, {BitFlag64, Clause},
+        PredicateTable, Clause,
     },
     resolution::{build, Substitution},
     META_SUBS_DEFAULT_SIZE,
@@ -23,16 +23,25 @@ pub struct MetaSub {
 }
 
 impl MetaSub {
-    /// Build MetaSub from argument registers after unification and meta vars bitflags
-    pub fn from_arg_regs(arg_regs: &ArgRegs, meta_clause_id: usize, meta_vars: BitFlag64) -> Self {
-        let subs = arg_regs
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, reg)| if meta_vars.get(i) { Some(*reg) } else { None })
-            .collect();
+    /// Read a meta clause's meta-variable bindings back out of the argument
+    /// registers, after unifying its head against a goal.
+    ///
+    /// The meta variables are the contiguous run `threshold..max_arg_id`, so
+    /// this is a slice copy rather than a filter over a bit set.
+    pub fn from_arg_regs(
+        arg_regs: &ArgRegs,
+        meta_clause_id: usize,
+        threshold: usize,
+        max_arg_id: usize,
+    ) -> Self {
+        debug_assert!(
+            max_arg_id <= arg_regs.len(),
+            "a clause with {max_arg_id} variables cannot be read out of {} argument registers",
+            arg_regs.len(),
+        );
         Self {
             meta_clause_id,
-            subs,
+            subs: SmallVec::from_slice(&arg_regs[threshold..max_arg_id]),
         }
     }
 
@@ -73,12 +82,12 @@ impl MetaSub {
     /// not cosmetic, since without them an unbound `Arg` falls through to
     /// `Heap::set_var`, which the program heap refuses.
     pub fn build_clause_from_meta(&self, heap: &mut impl Heap, meta_clause: &Clause) -> Clause {
-        let meta_vars = meta_clause
-            .meta_vars()
+        let threshold = meta_clause
+            .meta_threshold()
             .expect("a MetaSub's clause is always a meta clause");
 
         let mut substitution = Substitution::new(meta_clause.max_arg_id);
-        for (arg_id, sub) in meta_vars.iter().zip(self.subs.iter()) {
+        for (arg_id, sub) in (threshold..meta_clause.max_arg_id).zip(self.subs.iter()) {
             let binding = sub
                 .get_bind()
                 .expect("MetaSub subs are always populated from bound arg registers");
@@ -92,7 +101,7 @@ impl MetaSub {
 
         let literals: Vec<usize> = meta_clause
             .iter()
-            .map(|&literal| build(heap, &mut substitution, Some(meta_vars), literal))
+            .map(|&literal| build(heap, &mut substitution, Some(threshold), literal))
             .collect();
 
         Clause::new(literals, None, meta_clause.max_arg_id)

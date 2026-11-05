@@ -911,8 +911,11 @@ mod tests {
         let mut table = PredicateTable::new();
         let z = prog.symbols().set_const("meta_idx_z");
 
-        let first = Clause::new(vec![1], Some((vec![0], vec![0])), 0);
-        let second = Clause::new(vec![2], Some((vec![0], vec![0])), 0);
+        // Arity 1, because arg 0 is declared a meta variable: a clause that
+        // claims zero variables cannot have one. This test only cares that the
+        // meta clause *ids* survive an arena shift, not about the vars.
+        let first = Clause::new(vec![1], Some((vec![0], vec![0])), 1);
+        let second = Clause::new(vec![2], Some((vec![0], vec![0])), 1);
         let (id1, id2) = (first.meta_data.unwrap().id, second.meta_data.unwrap().id);
 
         table.add_clause_to_predicate(first, (0, 2)).unwrap();

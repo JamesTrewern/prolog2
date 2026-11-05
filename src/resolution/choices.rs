@@ -302,7 +302,7 @@ mod tests {
         heap.var_regs = vec![VarReg::UNBOUND];
 
         let meta_data = MetaData {
-            meta_vars: BitFlag64::default(),
+            meta_var_threshold: 0,
             constrained_vars: BitFlag64::default(),
             id: 0,
         };
