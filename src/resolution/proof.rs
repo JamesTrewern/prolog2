@@ -161,7 +161,7 @@ impl<'a> Proof<'a> {
     pub fn undo_all(&mut self, heap: &mut QueryHeap) {
         for env in self.stack.iter_mut() {
             heap.unbind(&env.bound_vars);
-            env.bound_vars = Box::new([]);
+            env.bound_vars.clear();
         }
     }
 }

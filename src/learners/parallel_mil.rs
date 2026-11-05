@@ -531,6 +531,7 @@ fn top_prog_to_string(top_program: Vec<Clause>, heap: &impl Heap) -> String {
 
 #[cfg(test)]
 mod extraction_tests {
+    use smallvec::smallvec;
     use super::*;
     use crate::heap::test_prog;
     use crate::heap::{
@@ -627,7 +628,7 @@ mod extraction_tests {
         let v2 = proof_heap.new_var(VarReg::UNBOUND);
         let meta_sub = MetaSub {
             meta_clause_id: 7,
-            subs: vec![VarReg::from_var(v1), VarReg::from_var(v2)],
+            subs: smallvec![VarReg::from_var(v1), VarReg::from_var(v2)],
         };
 
         let mut dst = QueryHeap::detached(&prog);
@@ -659,7 +660,7 @@ mod extraction_tests {
         let clause = Clause::new(vec![head_addr], None, 0);
         let meta_sub = MetaSub {
             meta_clause_id: 0,
-            subs: vec![],
+            subs: smallvec![],
         };
 
         let proof = proof_with_hypothesis(&proof_heap, vec![clause], vec![meta_sub]);
@@ -690,7 +691,7 @@ mod extraction_tests {
         let clause = Clause::new(vec![head_addr], None, 0);
         let meta_sub = MetaSub {
             meta_clause_id: 0,
-            subs: vec![VarReg::from_var(arg_var)],
+            subs: smallvec![VarReg::from_var(arg_var)],
         };
 
         let proof = proof_with_hypothesis(&proof_heap, vec![clause], vec![meta_sub]);
@@ -735,7 +736,7 @@ mod extraction_tests {
         let clause = Clause::new(vec![head_addr], None, 0);
         let meta_sub = MetaSub {
             meta_clause_id: 0,
-            subs: vec![VarReg::from_var(pred_var)],
+            subs: smallvec![VarReg::from_var(pred_var)],
         };
 
         let mut dst = QueryHeap::detached(&prog);
@@ -760,6 +761,7 @@ mod extraction_tests {
 
 #[cfg(test)]
 mod merge_tests {
+    use smallvec::smallvec;
     use super::*;
     use crate::heap::test_prog;
     use crate::heap::Tag::{Comp, Con};
@@ -774,7 +776,6 @@ mod merge_tests {
         let total = results.len();
         merge_thread_results(results, heap, total, &AtomicUsize::new(total))
     }
-    use smallvec::smallvec;
 
     /// A fresh, 0-indexed thread-local heap to build a test's clauses and
     /// predicate definitions against.
@@ -802,7 +803,7 @@ mod merge_tests {
 
         let meta_sub = MetaSub {
             meta_clause_id: 0,
-            subs: vec![VarReg::from_var(pred_var)],
+            subs: smallvec![VarReg::from_var(pred_var)],
         };
         let pred_def = PredDef::new(smallvec![meta_sub]);
 
@@ -837,7 +838,7 @@ mod merge_tests {
             heap.heap_push((Var, pred_var));
             let meta_sub = MetaSub {
                 meta_clause_id,
-                subs: vec![VarReg::from_var(pred_var)],
+                subs: smallvec![VarReg::from_var(pred_var)],
             };
             let pred_def = PredDef::new(smallvec![meta_sub]);
             (Vec::new(), vec![pred_def], parts(heap))

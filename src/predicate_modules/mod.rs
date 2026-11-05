@@ -42,6 +42,7 @@ pub use sets::SETS;
 pub use strings::STRINGS;
 
 use crate::{
+    Bindings,
     heap::{
         Heap, QueryHeap,
         VarBind::{self, Addr},
@@ -76,7 +77,7 @@ pub enum PredReturn {
     ///
     /// - First field: `(source_addr, target_addr)` heap bindings.
     /// - Second field: heap addresses of additional sub-goals to schedule (may be empty).
-    Success(SmallVec<[usize; 5]>, Vec<usize>),
+    Success(Bindings, Vec<usize>),
     /// Multiple alternative results — each tried on backtracking, like clause choices.
     ///
     /// Each element is a `(bindings, sub_goals)` pair, identical in meaning to

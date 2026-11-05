@@ -1,5 +1,5 @@
 //! Clause representation and metadata.
-use crate::heap::Heap;
+use crate::{heap::Heap, LITERALS_DEFAULT_SIZE};
 use smallvec::SmallVec;
 use std::{
     ops::{Deref, DerefMut},
@@ -72,7 +72,7 @@ pub struct MetaData {
 /// about which variables are second-order (meta) and which are constrained.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Clause {
-    pub literals: SmallVec<[usize; 5]>,
+    pub literals: SmallVec<[usize; LITERALS_DEFAULT_SIZE]>,
     pub max_arg_id: usize,
     pub meta_data: Option<MetaData>,
 }
@@ -89,7 +89,7 @@ impl Clause {
             id: META_CLAUSE_COUNT.fetch_add(1, Relaxed),
         });
 
-        let literals: SmallVec<[usize; 5]> = SmallVec::from_vec(literals);
+        let literals: SmallVec<[usize; LITERALS_DEFAULT_SIZE]> = SmallVec::from_vec(literals);
         Clause {
             literals,
             max_arg_id,

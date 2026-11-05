@@ -1,9 +1,12 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::heap::{
-    ArgRegs,
-    VarBind::{self, *},
-    VarReg,
+use crate::{
+    heap::{
+        ArgRegs,
+        VarBind::{self, *},
+        VarReg,
+    },
+    Bindings, BINDINGS_DEFAULT_SIZE,
 };
 use smallvec::SmallVec;
 
@@ -14,8 +17,10 @@ use smallvec::SmallVec;
 #[derive(Debug, PartialEq)]
 pub struct Substitution {
     pub(crate) arg_regs: ArgRegs,
-    pub(crate) bound_vars: SmallVec<[usize; 5]>, // List of bound variables
-    pub(crate) needs_rebuild: SmallVec<[bool; 5]>, // Are bound variables bound to complex?
+    /// The variables this unification bound, to be undone on backtracking.
+    pub(crate) bound_vars: Bindings,
+    /// Parallel to `bound_vars`: was each bound to a complex term?
+    pub(crate) needs_rebuild: SmallVec<[bool; BINDINGS_DEFAULT_SIZE]>,
 }
 
 impl Deref for Substitution {
@@ -62,9 +67,6 @@ impl Substitution {
         self.arg_regs[arg_id] = binding.into();
     }
 
-    pub fn get_bound_vars(self) -> Box<[usize]> {
-        self.bound_vars.into_boxed_slice()
-    }
 
     pub fn push_bound_var(&mut self, var_id: usize, needs_rebuild: bool, binding: VarBind) {
         self.bound_vars.push(var_id);
@@ -80,3 +82,4 @@ impl Substitution {
         self.arg_regs.find_replace(find, replace);
     }
 }
+

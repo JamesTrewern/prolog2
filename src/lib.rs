@@ -79,6 +79,71 @@
 //! - [`Error::Module`] — a predicate module could not be loaded (e.g. duplicate predicate).
 
 /// Application builder and configuration types.
+// ── inline capacities ────────────────────────────────────────────────────
+//
+// Each of these is the inline length of a `SmallVec` held by a struct that
+// is created often enough for a heap allocation to show up in a profile.
+// They are gathered here because the same literal `5` previously stood for
+// four unrelated things, and because each one is a measured figure rather
+// than a guess: the comments record what was measured, so a future change
+// of workload can be checked against them rather than re-derived.
+//
+// All of them spill correctly when exceeded; the sizes are chosen to cover
+// what occurs, not to impose a limit.
+
+/// Literals in a clause -- its head plus body.
+///
+/// Measured over `colreg/setup_take_action`: 84% of clauses have 3, none had
+/// more than 5.
+pub const LITERALS_DEFAULT_SIZE: usize = 5;
+
+/// Meta-variable bindings recorded by one `MetaSub`.
+///
+/// One per meta variable of the clause's template, so the count is that
+/// template's second-order arity.
+pub const META_SUBS_DEFAULT_SIZE: usize = 4;
+
+/// Clauses defining one invented predicate.
+///
+/// Bounded in principle by `max_clause`, which the learner refuses above
+/// `MAX_PRED_DEFS`.
+pub const PRED_DEF_DEFAULT_SIZE: usize = 4;
+
+/// Argument registers for one clause.
+///
+/// Measured over the same program: the widest clause needed 6, and the
+/// boxed fallback was never taken in 15.4 million unifications.
+pub const ARG_REGS_DEFAULT_SIZE: usize = 8;
+
+/// Constrained variables of one clause.
+///
+/// Measured over `colreg/setup_take_action`: 388 clauses recorded
+/// constraints at all, half of them none, and none more than 4. A cold path
+/// -- sized for the shape of the data rather than for throughput.
+pub const CONSTRAINTS_DEFAULT_SIZE: usize = 4;
+
+/// Variables bound by one unification, to be undone on backtracking.
+///
+/// Measured over the same program: 84% of successful unifications bind
+/// nothing at all, 99% bind at most one, and none bound more than three.
+/// Four leaves a margin above that without spilling.
+///
+/// Deliberately *not* tuned on cycle counts. Sweeping this constant moves
+/// cycles by up to 12% with the instruction count, branch misses and cache
+/// misses all unchanged to within a percent -- an effect that is
+/// reproducible across workloads but that no mechanism here explains, and
+/// that is not monotonic in the resulting `Substitution` size. Picking the
+/// fastest number would be fitting to an unexplained artefact; the figure
+/// above comes from the data.
+pub const BINDINGS_DEFAULT_SIZE: usize = 4;
+
+/// The variables one unification bound, in the order they were bound.
+///
+/// Held inline because unification runs tens of millions of times and almost
+/// always binds nothing: a `Box<[usize]>` here cost an allocation per call
+/// even when empty.
+pub type Bindings = smallvec::SmallVec<[usize; BINDINGS_DEFAULT_SIZE]>;
+
 pub mod app;
 /// Heap memory management: cells, query heaps, and the symbol database.
 pub mod heap;
@@ -376,3 +441,4 @@ mod normalise_tests {
 
 #[cfg(test)]
 mod examples;
+

@@ -6,6 +6,7 @@
 use smallvec::SmallVec;
 
 use crate::{
+    Bindings,
     heap::{
         ArgRegs, Heap, HeapPoint, QueryHeap, SymbolDB, Tag,
         VarBind::{self, Addr, VarId},
@@ -62,7 +63,13 @@ pub(crate) enum Strategy<'a> {
 #[derive(Debug)]
 pub(super) struct Env<'a> {
     pub(super) goal: usize,
-    pub(super) bound_vars: Box<[usize]>,
+    /// The variables this env's successful try bound, undone when it is
+    /// retried or backtracked past.
+    ///
+    /// Inline rather than `Box<[usize]>`: 84% of successful unifications
+    /// bind nothing and 99% bind at most one, so boxing cost an allocation
+    /// per accepted clause to hold almost always nothing.
+    pub(super) bound_vars: Bindings,
     pub(super) children: usize,
     pub(super) depth: usize,
     pub(crate) got_choices: bool,
@@ -74,7 +81,7 @@ impl<'a> Env<'a> {
     pub(super) fn new(goal: usize, depth: usize, heap_point: HeapPoint) -> Env<'a> {
         Env {
             goal,
-            bound_vars: Box::new([]),
+            bound_vars: Bindings::new(),
             children: 0,
             depth,
             got_choices: false,
@@ -402,7 +409,7 @@ impl<'a> Env<'a> {
                     return None;
                 }
                 PredReturn::Success(bound_vars, goals) => {
-                    self.bound_vars = bound_vars.into_boxed_slice();
+                    self.bound_vars = bound_vars;
                     if goals.is_empty() {
                         return Some(Vec::new());
                     }
@@ -428,7 +435,7 @@ impl<'a> Env<'a> {
             unreachable!()
         };
         let (bindings, goals) = alternatives.pop()?;
-        let mut bound_vars = Vec::with_capacity(bindings.len());
+        let mut bound_vars = Bindings::with_capacity(bindings.len());
         for (var_id, binding) in bindings {
             bound_vars.push(var_id);
             heap.bind(var_id, binding);
@@ -436,7 +443,7 @@ impl<'a> Env<'a> {
         // Recorded so `undo_try` unbinds them before the next alternative is
         // tried; without this the second attempt would bind an already-bound
         // variable.
-        self.bound_vars = bound_vars.into_boxed_slice();
+        self.bound_vars = bound_vars;
         if goals.is_empty() {
             Some(Vec::new())
         } else {
@@ -494,7 +501,8 @@ impl<'a> Env<'a> {
 
             for constraints in &hypothesis.constraints {
                 if !heap.check_constraints(constraints) {
-                    heap.unbind(&substitution.get_bound_vars());
+                    // Borrowed; see `undo_substitution`.
+                    heap.unbind(&substitution.bound_vars);
                     continue 'choices;
                 }
             }
@@ -621,7 +629,7 @@ impl<'a> Env<'a> {
                 }
             }
 
-            self.bound_vars = substitution.get_bound_vars();
+            self.bound_vars = substitution.bound_vars;
             self.children = new_goals.len();
             if debug {
                 eprintln!("Bindings: {:?}", self.bound_vars);

@@ -7,6 +7,7 @@ use std::{
 use smallvec::SmallVec;
 
 use crate::{
+    PRED_DEF_DEFAULT_SIZE,
     heap::{
         Heap, QueryHeap,
         Tag::*,
@@ -26,7 +27,7 @@ pub(super) const MAX_PRED_DEFS: usize = 16;
 
 #[derive(Debug)]
 pub(super) struct PredDef {
-    pub meta_subs: SmallVec<[MetaSub; 4]>,
+    pub meta_subs: SmallVec<[MetaSub; PRED_DEF_DEFAULT_SIZE]>,
     meta_clause_ranges: HashMap<usize, (usize, usize)>,
 }
 
@@ -44,7 +45,7 @@ impl DerefMut for PredDef {
 
 impl PredDef {
     /// Take clauses to form new predicate definition (orders clauses)
-    pub(super) fn new(mut meta_subs: SmallVec<[MetaSub; 4]>) -> Self {
+    pub(super) fn new(mut meta_subs: SmallVec<[MetaSub; PRED_DEF_DEFAULT_SIZE]>) -> Self {
         meta_subs.sort_by_key(|meta_sub| meta_sub.meta_clause_id);
         let mut meta_clause_ranges = HashMap::new();
         let mut start = 0;
@@ -200,7 +201,7 @@ impl PredDef {
         meta_subs: &mut Vec<MetaSub>,
         heap: &impl Heap,
     ) -> Vec<Self> {
-        let mut clause_sets: Vec<SmallVec<[(Clause, MetaSub); 4]>> =
+        let mut clause_sets: Vec<SmallVec<[(Clause, MetaSub); PRED_DEF_DEFAULT_SIZE]>> =
             Vec::with_capacity(clauses.len());
         let mut var_preds = Vec::with_capacity(clauses.len());
         let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(clauses.len());
@@ -280,7 +281,7 @@ impl PredDef {
         groups
             .into_iter()
             .map(|group| {
-                let mut meta_subs: SmallVec<[MetaSub; 4]> = SmallVec::new();
+                let mut meta_subs: SmallVec<[MetaSub; PRED_DEF_DEFAULT_SIZE]> = SmallVec::new();
                 for (i, clause_set) in clause_sets.iter_mut().enumerate() {
                     if group & 1 << i != 0 {
                         meta_subs.extend(clause_set.drain(..).map(|(_, msub)| msub));

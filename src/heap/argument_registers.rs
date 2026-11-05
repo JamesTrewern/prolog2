@@ -1,13 +1,13 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::{heap::VarReg, program::BitFlag64};
+use crate::{heap::VarReg, program::BitFlag64, ARG_REGS_DEFAULT_SIZE};
 use multiversion::multiversion;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ArgRegs {
     /// Inline, and the only variant any clause in practice needs: every
     /// clause measured has `max_arg_id < 8`.
-    A8([VarReg; 8]),
+    A8([VarReg; ARG_REGS_DEFAULT_SIZE]),
     /// Boxed fallback at the maximum width, so the enum stays 72 bytes.
     A64(Box<[VarReg; 64]>),
 }
@@ -15,7 +15,7 @@ pub enum ArgRegs {
 impl ArgRegs {
     /// Given the highest argument id, return new arg regs of appropriate size
     pub fn new_from_max_arg(max_arg_id: usize) -> Self {
-        if max_arg_id < 8 {
+        if max_arg_id < ARG_REGS_DEFAULT_SIZE {
             Self::new_8()
         } else {
             Self::new_64()
@@ -23,7 +23,7 @@ impl ArgRegs {
     }
 
     pub const fn new_8() -> Self {
-        ArgRegs::A8([VarReg::UNBOUND; 8])
+        ArgRegs::A8([VarReg::UNBOUND; ARG_REGS_DEFAULT_SIZE])
     }
 
     pub fn new_64() -> Self {
@@ -49,7 +49,7 @@ impl ArgRegs {
 }
 
 #[multiversion(targets = "simd")] // generates avx512/avx2/sse2/neon clones + runtime dispatch
-pub fn find_replace_8(regs: &mut [VarReg; 8], find: VarReg, replace: VarReg) {
+pub fn find_replace_8(regs: &mut [VarReg; ARG_REGS_DEFAULT_SIZE], find: VarReg, replace: VarReg) {
     for r in regs.iter_mut() {
         *r = if r.0 == find.0 { replace } else { *r }; // autovectorizes per-clone
     }

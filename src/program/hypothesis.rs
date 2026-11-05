@@ -6,6 +6,7 @@ use std::{
 use smallvec::SmallVec;
 
 use crate::{
+    CONSTRAINTS_DEFAULT_SIZE,
     heap::{ArgRegs, Heap, VarBind::*},
     program::MetaData,
 };
@@ -13,7 +14,7 @@ use crate::{
 use super::{Clause, MetaSub};
 
 /// Constraint set for existentially quantified variables in a learned clause.
-pub(crate) type Constraints = SmallVec<[usize; 5]>;
+pub(crate) type Constraints = SmallVec<[usize; CONSTRAINTS_DEFAULT_SIZE]>;
 
 static PRED_N: AtomicUsize = AtomicUsize::new(0);
 

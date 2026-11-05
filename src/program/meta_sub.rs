@@ -1,3 +1,5 @@
+use smallvec::SmallVec;
+
 use crate::{
     heap::{
         ArgRegs, Heap, QueryHeap,
@@ -8,12 +10,16 @@ use crate::{
         PredicateTable, {BitFlag64, Clause},
     },
     resolution::{build, Substitution},
+    META_SUBS_DEFAULT_SIZE,
 };
 
 #[derive(Debug, Clone)]
 pub struct MetaSub {
     pub meta_clause_id: usize,
-    pub subs: Vec<VarReg>,
+    /// Inline: one `MetaSub` is recorded for every clause the search adds to
+    /// a hypothesis, so a `Vec` here cost an allocation per candidate clause
+    /// to hold a handful of registers.
+    pub subs: SmallVec<[VarReg; META_SUBS_DEFAULT_SIZE]>,
 }
 
 impl MetaSub {
@@ -136,6 +142,7 @@ impl MetaSub {
 
 #[cfg(test)]
 mod build_clause_tests {
+    
 
     use super::MetaSub;
     use crate::{
@@ -351,7 +358,7 @@ mod tests {
     fn fresh_meta_sub(meta_clause_id: usize, subs: Vec<VarReg>) -> MetaSub {
         MetaSub {
             meta_clause_id,
-            subs,
+            subs: super::SmallVec::from_vec(subs),
         }
     }
 
