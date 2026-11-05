@@ -207,12 +207,12 @@ fn top_prog_trains() {
     // assert!(result.lines().find(|line| *line == "pred_1(A):-short(A),closed(A).").is_some());
 }
 
-// #[test]
-// fn cpa_side() {
-//     let mut app =
-//         App::from_setup_json("examples/colreg/setup_cpa_side.json").expect("failed to load config");
-//     let _result = app.run_parallel();
-// }
+#[test]
+fn cpa_side() {
+    let mut app =
+        App::from_setup_json("examples/colreg/setup_cpa_side.json").expect("failed to load config");
+    let _result = app.run_parallel();
+}
 
 #[test]
 fn turn() {
