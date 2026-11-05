@@ -12,6 +12,6 @@ turn(agent_crossing1_2,moderate).
 turn(agent_crossing1_3,large).
 turn(agent_overtaking1_0,moderate).
 turn(agent_overtaking1_1,moderate).
-turn(agent_overtaking1_2,large).
 turn(agent_overtaking1_2,moderate).
+turn(agent_overtaking1_2,large).
 turn(agent_overtaking1_3,large).
