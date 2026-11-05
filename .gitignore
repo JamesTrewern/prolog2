@@ -3,7 +3,7 @@ results/*
 output.log
 profile.json.gz
 .DS_Store
-flamegraph.svg
-perf.data
+flamegraph*.svg
 perf*.data
+perf*.data.old
 docs/learning-engine-notes.md

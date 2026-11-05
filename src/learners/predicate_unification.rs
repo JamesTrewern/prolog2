@@ -1,7 +1,7 @@
 use std::{
     cmp::Ordering::{self, *},
     collections::{HashMap, HashSet},
-    ops::{Deref, DerefMut, Range},
+    ops::{Deref, DerefMut},
 };
 
 use smallvec::SmallVec;
@@ -181,6 +181,96 @@ impl PredDef {
         true
     }
 
+    /// Canonical content key for bucketing definitions that could unify, or
+    /// `None` for a definition that cannot be keyed yet.
+    ///
+    /// Two definitions [`Self::unify`] would merge are identical except for
+    /// the name of the predicate they define: the incoming one has an unbound
+    /// variable where the table entry has its coined constant. So the key
+    /// hashes everything unification requires to match -- meta clause ids and
+    /// the ground terms at every body position -- and replaces the one part
+    /// allowed to differ, the *head* position (`subs[0]`, always the
+    /// predicate this definition defines), with a fixed `OWN_PRED` marker on
+    /// both sides. Clause order within a definition is free (`unify` searches
+    /// for a pairing), so the per-clause vectors are sorted before the final
+    /// combine, making the key order-insensitive the same way.
+    ///
+    /// `None` is returned when a position *other than* the head is still an
+    /// unbound variable. That only happens for a mutually recursive group
+    /// before grounding, whose in-group body references are additional "own"
+    /// names: those can pair with either an in-group variable or an already
+    /// ground constant on the other side, so no position-local
+    /// classification can promise equal keys for every unifiable pair.
+    /// Such definitions take [`PredDefTable::insert`]'s fallback path (a
+    /// signature-wide scan, as the whole table once was), and are keyed
+    /// normally once `make_const` has grounded them.
+    ///
+    /// The key is only ever compared against keys computed on the same heap
+    /// (or one sharing its symbol table): `term_hash` is content based, so it
+    /// survives `shift_addrs` and `make_const`'s `Var`-to-`Addr` rewrites,
+    /// which is what lets the key computed for an incoming definition be
+    /// reused after grounding. Like any hash, equality of keys is necessary
+    /// but not sufficient for unifiability -- the caller confirms with
+    /// [`Self::unify`].
+    pub(super) fn canonical_key(&self, heap: &impl Heap) -> Option<u64> {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
+        /// Position marker for the predicate a definition itself defines.
+        /// Colliding with a real term hash only widens a bucket (resolved by
+        /// `unify`); it can never split one, which is the direction that
+        /// would lose merges.
+        const OWN_PRED: u64 = u64::MAX;
+
+        let mut clause_keys: SmallVec<[(usize, SmallVec<[u64; 4]>); PRED_DEF_DEFAULT_SIZE]> =
+            SmallVec::new();
+
+        for meta_sub in self.iter() {
+            let mut positions: SmallVec<[u64; 4]> = SmallVec::new();
+            for (i, var_reg) in meta_sub.subs.iter().enumerate() {
+                if i == 0 {
+                    positions.push(OWN_PRED);
+                    continue;
+                }
+                let resolved = match var_reg.get_bind() {
+                    Some(VarId(var_id)) => heap.var_deref(var_id),
+                    Some(bound @ Addr(_)) => bound,
+                    None => return None,
+                };
+                match resolved {
+                    Addr(addr) => {
+                        let mut hasher = DefaultHasher::new();
+                        heap.term_hash(addr, &mut hasher);
+                        positions.push(hasher.finish());
+                    }
+                    // Unbound body position: an in-group reference of a
+                    // mutually recursive definition (anything else would be a
+                    // missing dependency, which `make_const` asserts against).
+                    VarId(_) => return None,
+                }
+            }
+            clause_keys.push((meta_sub.meta_clause_id, positions));
+        }
+
+        clause_keys.sort_unstable();
+
+        let mut hasher = DefaultHasher::new();
+        clause_keys.hash(&mut hasher);
+        Some(hasher.finish())
+    }
+
+    /// Hash of the signature [`Self::cmp`] orders by: clause count and meta
+    /// clause ids. Groups every definition this one could conceivably unify
+    /// with, for the fallback scan in [`PredDefTable::insert`].
+    pub(super) fn signature_key(&self) -> u64 {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        self.meta_subs.len().hash(&mut hasher);
+        for meta_sub in self.iter() {
+            meta_sub.meta_clause_id.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
     pub(super) fn cmp(&self, other: &Self) -> Ordering {
         match self.meta_subs.len().cmp(&other.meta_subs.len()) {
             Equal => {
@@ -306,27 +396,47 @@ pub(super) struct PredDefTable {
     /// interned before the first invented one -- keeps the answer correct
     /// whatever order the symbol table happened to be filled in.
     pred_symbols: HashSet<usize>,
+    /// [`PredDef::canonical_key`] of each grounded definition, mapped to its
+    /// indices in `pred_defs`. Almost always a single index: two definitions
+    /// share a key only on a genuine hash collision or when they differ in
+    /// ways the key deliberately leaves out (set contents, the wiring of a
+    /// mutually recursive group's own heads).
+    buckets: HashMap<u64, SmallVec<[usize; 2]>>,
+    /// [`PredDef::signature_key`] of each definition, mapped to its indices
+    /// in `pred_defs`: every definition a given one could conceivably unify
+    /// with, for incoming definitions `canonical_key` cannot key.
+    signature_index: HashMap<u64, Vec<usize>>,
 }
 
 impl PredDefTable {
+    /// Merge `pred_def` into an existing definition, or ground it and add it.
+    ///
+    /// A keyable definition (see [`PredDef::canonical_key`]) is matched
+    /// against only the definitions in its key's bucket -- normally one or
+    /// none. One that cannot be keyed (a mutually recursive group, still
+    /// carrying unbound in-group references) falls back to scanning every
+    /// definition with the same signature, which is what the whole table used
+    /// to do for every insert.
     pub(super) fn insert(&mut self, pred_def: PredDef, heap: &mut QueryHeap) {
-        match self.binary_search(&pred_def) {
-            Err(insert_pos) => self.add_def(pred_def, insert_pos, heap),
-            Ok(i) => {
-                let matching_range = self.find_matching_signature_range(&pred_def, i);
-                let insert_pos = matching_range.start;
-                // Attempt to unify with existing pred def
-                for i in matching_range {
-                    if self.pred_defs[i].unify(&pred_def, heap) {
-                        // Unification successful
-                        // Pred defs from same hypothesis now updated with bindings
-                        return;
-                    }
-                }
-                //Insert new pred def at start of range
-                self.add_def(pred_def, insert_pos, heap);
+        let key = pred_def.canonical_key(heap);
+        let candidates: &[usize] = match key {
+            Some(key) => self.buckets.get(&key).map(|b| b.as_slice()).unwrap_or(&[]),
+            None => self
+                .signature_index
+                .get(&pred_def.signature_key())
+                .map(|c| c.as_slice())
+                .unwrap_or(&[]),
+        };
+
+        for &i in candidates {
+            if self.pred_defs[i].unify(&pred_def, heap) {
+                // Unification successful
+                // Pred defs from same hypothesis now updated with bindings
+                return;
             }
         }
+
+        self.add_def(pred_def, key, heap);
     }
 
     /// The constants naming the predicates this table defines.
@@ -334,7 +444,7 @@ impl PredDefTable {
         &self.pred_symbols
     }
 
-    fn add_def(&mut self, mut pred_def: PredDef, insert_pos: usize, heap: &mut QueryHeap) {
+    fn add_def(&mut self, mut pred_def: PredDef, key: Option<u64>, heap: &mut QueryHeap) {
         pred_def.make_const(heap, &mut self.next_id);
         self.next_id += 1;
 
@@ -351,34 +461,26 @@ impl PredDefTable {
             }
         }
 
-        self.pred_defs.insert(insert_pos, pred_def);
-    }
+        // The key computed before grounding is still correct after it:
+        // `make_const` only rewrites positions from variable bindings to the
+        // addresses they already dereferenced to, and coins constants for the
+        // head positions, which the key covers with its own marker either
+        // way. A definition that could not be keyed before grounding can be
+        // now, and must be, so that later ground references to its coined
+        // constants find it by key.
+        let key = key.unwrap_or_else(|| {
+            pred_def
+                .canonical_key(heap)
+                .expect("a grounded definition has no unbound positions left to block its key")
+        });
 
-    /// The index of a definition with the same signature as `pred_def`, or
-    /// `Err` with the index at which to insert to keep `pred_defs` sorted.
-    ///
-    /// [`PredDef::cmp`] orders by clause count and meta clause ids only, so
-    /// definitions that differ in their substitutions still compare `Equal`.
-    /// Which of a run of equal definitions `Ok` names is therefore
-    /// unspecified -- which is why the caller widens it with
-    /// [`Self::find_matching_signature_range`] rather than trusting it to be
-    /// the first.
-    fn binary_search(&self, pred_def: &PredDef) -> Result<usize, usize> {
-        self.pred_defs
-            .binary_search_by(|existing| existing.cmp(pred_def))
-    }
-
-    fn find_matching_signature_range(&self, pred_def: &PredDef, i: usize) -> Range<usize> {
-        let mut lb = i;
-
-        while lb > 0 && self.pred_defs[lb - 1].cmp(&pred_def) == Equal {
-            lb -= 1;
-        }
-        let mut ub = i + 1;
-        while ub < self.pred_defs.len() && self.pred_defs[ub].cmp(&pred_def) == Equal {
-            ub += 1;
-        }
-        lb..ub
+        let index = self.pred_defs.len();
+        self.buckets.entry(key).or_default().push(index);
+        self.signature_index
+            .entry(pred_def.signature_key())
+            .or_default()
+            .push(index);
+        self.pred_defs.push(pred_def);
     }
 
     /// Debug aid: print each definition as its meta clause ids and the terms

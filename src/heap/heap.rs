@@ -401,6 +401,46 @@ pub trait Heap:
         }
     }
 
+    /// Feed a content hash of the term at `addr` into `hasher`.
+    ///
+    /// The invariant this provides is one-directional:
+    /// `term_equal(a, b)` implies equal hashes. The converse does not hold
+    /// (hash collisions, and the `Set` case below), so a hash match must
+    /// always be confirmed by [`Self::term_equal`] or unification.
+    ///
+    /// Mirrors [`Self::term_equal`] case by case:
+    ///   - the walk dereferences variables through the registers, so a bound
+    ///     variable hashes as the term it is bound to and an aliased one
+    ///     under its representative;
+    ///   - heap *addresses* are never hashed -- only tags, values, and
+    ///     symbol ids -- so the hash is stable across heap relocation
+    ///     (`shift_addrs`) and agrees between terms cloned onto different
+    ///     heaps, exactly as `term_equal` does;
+    ///   - strings hash by content, since equal text may be interned twice;
+    ///   - sets hash as their tag and length only. `sets_equal` is
+    ///     one-directional ("every element of the first matches some element
+    ///     of the second"), which no element-wise hash can reproduce without
+    ///     breaking the invariant above, so set contents are deliberately
+    ///     left out and a content mismatch is caught by the confirming
+    ///     `term_equal` instead.
+    fn term_hash(&self, addr: usize, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        let mut walk = TermWalk::new(addr);
+        while let Some(cell) = walk.next_cell(self) {
+            match cell {
+                (Set, len) => {
+                    (Set, len).hash(hasher);
+                    consume_subterm(&mut walk, self);
+                }
+                (Stri, index) => {
+                    Stri.hash(hasher);
+                    self.symbols().get_string(index).hash(hasher);
+                }
+                cell => cell.hash(hasher),
+            }
+        }
+    }
+
     ///Debug function for printing formatted string of current heap state
     fn _print_heap(&self) {
         self._print_heap_from(0);
