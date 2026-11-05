@@ -24,7 +24,6 @@ pub use heap::{Cell, Heap, Tag, EMPTY_LIS, LIS};
 pub use program_heap::ProgramHeap;
 pub use query_heap::{HeapPoint, QueryHeap};
 pub use symbol_db::SymbolDB;
-pub(crate) use symbol_db::{PRED_VAR_PLACEHOLDER_BASE, PRED_VAR_PLACEHOLDER_COUNT};
 pub use varbind::{VarBind, VarReg};
 pub use walk::{TermWalk, Walk};
 

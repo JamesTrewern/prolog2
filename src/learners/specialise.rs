@@ -1,29 +1,27 @@
 //! Rejecting candidates that entail a negative example.
 //!
-//! Specialisation is no longer a pass of its own. Each worker applies
-//! [`hypothesis_entails_negative`] to a sub hypothesis the moment the search
-//! finds it, so nothing that proves a negative is ever collected, and
+//! Specialisation is a pass of its own, run after generalisation has merged
+//! and deduplicated the sub hypotheses and their invented predicates'
+//! definitions have been added to the predicate table: [`specialise`] filters
+//! the deduplicated hypotheses against the negatives in parallel, and
 //! [`clauses_entail_negative`] is applied again later to whole *combinations*
 //! of sub hypotheses -- two that are each consistent can together entail a
 //! negative, since a clause from one can resolve against a clause from the
 //! other.
 //!
-//! Both answer the same question and both report it the same way round:
-//! `true` means a negative is provable, so the candidate must go.
+//! Both prove the same question; [`clauses_entail_negative`] reports it the
+//! way round its name says (`true` means a negative is provable, so the
+//! candidate must go), while [`specialise`] returns the hypotheses that
+//! survive.
 
 use std::{
-    collections::HashMap,
-    hash::{Hash, Hasher},
-    sync::RwLock,
+    io::{self, Write},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use crate::{
-    heap::{
-        Heap, ProgramHeap, QueryHeap,
-        Tag::{Con, Var},
-        TermWalk, Walk, PRED_VAR_PLACEHOLDER_BASE, PRED_VAR_PLACEHOLDER_COUNT,
-    },
-    program::{Clause, Hypothesis, PredicateTable},
+    heap::{ProgramHeap, QueryHeap},
+    program::{Clause, PredicateTable},
     resolution::Proof,
     Config,
 };
@@ -65,321 +63,58 @@ pub(super) fn clauses_entail_negative(
     })
 }
 
-/// Should the negatives of a single candidate be proved in parallel?
-/// The 1.5x margin sits between the cases that lose and the case that wins.
-/// A hundred-core machine learning from a dozen examples clears it easily,
-/// which is the point: the nesting exists for machines wide enough to use it.
-pub(super) fn negatives_worth_parallelising(threads: usize, positives: usize) -> bool {
-    threads * 2 > positives * 3
-}
-
-/// Verdicts already reached, shared by every worker.
-/// Sharded rather than held behind one lock: at well over a million lookups
-/// a single mutex would serialise the workers it is meant to be saving.
-pub(super) struct NegativeCache {
-    shards: Vec<RwLock<HashMap<u128, bool>>>,
-    hits: std::sync::atomic::AtomicUsize,
-    misses: std::sync::atomic::AtomicUsize,
-}
-
-const CACHE_SHARDS: usize = 64;
-
-impl NegativeCache {
-    pub(super) fn new() -> Self {
-        Self {
-            shards: (0..CACHE_SHARDS)
-                .map(|_| RwLock::new(HashMap::new()))
-                .collect(),
-            hits: std::sync::atomic::AtomicUsize::new(0),
-            misses: std::sync::atomic::AtomicUsize::new(0),
-        }
-    }
-
-    fn shard(&self, key: u128) -> &RwLock<HashMap<u128, bool>> {
-        &self.shards[(key % CACHE_SHARDS as u128) as usize]
-    }
-
-    /// The verdict already reached for `key`, if any.
-    fn get(&self, key: u128) -> Option<bool> {
-        use std::sync::atomic::Ordering::Relaxed;
-
-        let cached = self.shard(key).read().unwrap().get(&key).copied();
-        if cached.is_some() {
-            self.hits.fetch_add(1, Relaxed);
-        }
-        cached
-    }
-
-    /// Record a verdict reached by running the proofs.
-    ///
-    /// No lock is held while those proofs run, so two workers reaching the
-    /// same unseen hypothesis at once both test it and both store the same
-    /// answer. Doing that work twice is cheaper than holding a shard closed
-    /// for the length of a proof.
-    fn record(&self, key: u128, verdict: bool) {
-        use std::sync::atomic::Ordering::Relaxed;
-        self.misses.fetch_add(1, Relaxed);
-        self.shard(key).write().unwrap().insert(key, verdict);
-    }
-
-    /// `(hits, misses, distinct hypotheses stored)`
-    pub(super) fn stats(&self) -> (usize, usize, usize) {
-        use std::sync::atomic::Ordering::Relaxed;
-        let stored = self.shards.iter().map(|s| s.read().unwrap().len()).sum();
-        (self.hits.load(Relaxed), self.misses.load(Relaxed), stored)
-    }
-}
-
-/// A fingerprint identifying this hypothesis up to renaming of its predicate
-/// variables.
+/// Filter out every hypothesis that proves a negative example.
 ///
-/// Walks the same flattened cells [`ground_hypothesis`] would copy, numbering
-/// predicate variables by first appearance, so two hypotheses that differ
-/// only in which variable ids they happened to be given hash alike. Nothing
-/// is allocated and no term is rendered: at this volume building strings to
-/// compare would cost more than the proofs being saved.
+/// Hypotheses are tested in parallel, one rayon task each; the negatives
+/// *within* a hypothesis run serially, since with thousands of candidates the
+/// pool is already saturated at the outer level and `any` wants to abandon a
+/// candidate's remaining negatives the moment one is proved anyway.
 ///
-/// Two independent hashes are combined into 128 bits. A collision would hand
-/// one hypothesis another's verdict, and at over a million entries 64 bits
-/// leaves more room for that than is comfortable.
-fn hypothesis_key(heap: &QueryHeap, hypothesis: &Hypothesis) -> u128 {
-    use std::collections::hash_map::DefaultHasher;
-
-    let mut low = DefaultHasher::new();
-    let mut high = DefaultHasher::new();
-    0x9E37_79B9_7F4A_7C15u64.hash(&mut high);
-
-    let mut seen: HashMap<usize, usize> = HashMap::new();
-    for clause in hypothesis.iter() {
-        for &literal in clause.iter() {
-            // Separator, so the same cells split differently across literals
-            // cannot collide.
-            u8::MAX.hash(&mut low);
-            u8::MAX.hash(&mut high);
-
-            let mut walk = TermWalk::new(literal);
-            while let Some((tag, value)) = walk.next_cell(heap) {
-                let (tag, value) = if tag == Var {
-                    let next = seen.len();
-                    (u8::MAX, *seen.entry(value).or_insert(next))
-                } else {
-                    (tag as u8, value)
-                };
-                (tag, value).hash(&mut low);
-                (tag, value).hash(&mut high);
-            }
-        }
-    }
-
-    ((low.finish() as u128) << 64) | high.finish() as u128
-}
-
-/// Copy `hypothesis`'s clauses onto `heap`, replacing every predicate
-/// variable with a constant.
+/// Expects each hypothesis's invented predicates to have been grounded to
+/// coined constants and their definitions added to `predicate_table`: the
+/// clauses passed here are only the hypothesis's own top-level clauses, and a
+/// goal on an invented predicate resolves through the table like any other
+/// call. Ground clauses also mean there is nothing a test proof could bind,
+/// so the hypotheses are shared read-only across the workers.
 ///
-/// A predicate variable left as a variable would have to be protected, by
-/// the invented-predicate registry and the constraint set, from resolving
-/// against a background fact and collapsing the invention. Giving it a
-/// constant of its own enforces the same thing structurally -- nothing else
-/// in the program carries that symbol -- so the test proofs need neither
-/// mechanism.
-///
-/// It also leaves the clauses completely ground, which is what lets the
-/// branches below start with no variable registers at all: with no `Var`
-/// cell left to dereference, a branch never consults its parent's.
-///
-/// Appends to `heap`; the caller truncates.
-fn ground_hypothesis(heap: &mut QueryHeap, hypothesis: &Hypothesis) -> Vec<Clause> {
-    let mut consts: HashMap<usize, usize> = HashMap::new();
-
-    hypothesis
-        .iter()
-        .map(|clause| {
-            let literals: Vec<usize> = clause
-                .iter()
-                .map(|&literal| {
-                    let new_addr = heap.heap_len();
-                    let mut walk = TermWalk::new(literal);
-                    // `next_cell` resolves as it goes: a bound variable is
-                    // replaced by the term it names, and an unbound one comes
-                    // back as its representative, so each distinct predicate
-                    // variable is seen under one id however it was aliased.
-                    while let Some(cell) = walk.next_cell(heap) {
-                        if let (Var, var_id) = cell {
-                            let next = consts.len();
-                            // Unreachable as the limits currently stand: a
-                            // hypothesis holds at most `max_clause - 1`
-                            // predicate variables and `max_clause` is capped
-                            // at `MAX_PRED_DEFS`, well inside the pool. Here
-                            // so that raising either limit past the pool
-                            // fails loudly rather than reading a placeholder
-                            // id that was never interned.
-                            assert!(
-                                next < PRED_VAR_PLACEHOLDER_COUNT,
-                                "candidate holds more predicate variables than the \
-                                 {PRED_VAR_PLACEHOLDER_COUNT} preloaded placeholders"
-                            );
-                            let symbol = *consts
-                                .entry(var_id)
-                                .or_insert(PRED_VAR_PLACEHOLDER_BASE + next);
-                            heap.heap_push((Con, symbol));
-                        } else {
-                            heap.heap_push(cell);
-                        }
-                    }
-                    new_addr
-                })
-                .collect();
-            Clause::new(literals, None, clause.max_arg_id)
-        })
-        .collect()
-}
-
-/// What a worker should do with a candidate it has just found.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Verdict {
-    /// Proves a negative example; drop it.
-    EntailsNegative,
-    /// Consistent with the negatives, and the first of its kind: collect it.
-    Keep,
-    /// Consistent, but another worker got to an identical hypothesis first,
-    /// so it has already been collected and this copy is redundant.
-    ///
-    /// Workers searching different positive examples rediscover the same
-    /// hypothesis constantly, and extracting it again would clone its terms
-    /// into the thread's heap and push its invented predicates through the
-    /// definition table for a second time, only for the merge to throw the
-    /// duplicate away at the end.
-    AlreadyFound,
-}
-
-/// Decide what to do with a candidate: test it against the negatives, or
-/// reuse the verdict another worker already reached for the same hypothesis.
-///
-/// Whether a hypothesis entails a negative depends only on the hypothesis and
-/// the negatives, never on which positive example led to it, so a verdict is
-/// shared safely across workers.
-///
-/// Below: does this hypothesis, still mid-search, prove any negative example?
-///
-/// Each negative gets its own [branch](QueryHeap::branch) of the search heap:
-/// a heap that reads the program cells and everything the search has built --
-/// including the hypothesis clause literals, which exist nowhere else -- but
-/// writes only its own cells and its own copy of the variable registers. The
-/// branches are therefore independent, so the negatives run in parallel and
-/// `any` abandons the rest the moment one is proved.
-///
-/// Nothing needs undoing afterwards. A branch cannot touch its parent's cells
-/// (`IndexMut` refuses them) and binds only its copied registers, so dropping
-/// it restores the search heap by construction.
-///
-/// [`Proof::with_hypothesis`] clones the whole hypothesis, so the inner proof
-/// inherits the constraint set and the invented-predicate registry. That
-/// matters here and not in [`clauses_entail_negative`]: the invented
-/// predicates are still unbound variables at this point, and without the
-/// registry a goal on one would resolve against a background fact and
-/// collapse the invention, failing a negative the real hypothesis does not
-/// entail.
-pub(super) fn specialise_candidate(
+/// Survivors are returned in their original order.
+pub(super) fn specialise(
     neg_goals: &[usize],
-    hypothesis: &Hypothesis,
-    heap: &mut QueryHeap,
+    hypotheses: Vec<Box<[Clause]>>,
+    heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     config: Config,
-    cache: &NegativeCache,
-    parallel_negatives: bool,
-) -> Verdict {
-    let key = hypothesis_key(heap, hypothesis);
-    if let Some(entailed) = cache.get(key) {
-        return if entailed {
-            Verdict::EntailsNegative
-        } else {
-            Verdict::AlreadyFound
-        };
-    }
-
-    // No negatives: nothing to prove, but the key was still worth taking --
-    // it is what tells the other workers this one is already collected.
+) -> Vec<Box<[Clause]>> {
     if neg_goals.is_empty() {
-        cache.record(key, false);
-        return Verdict::Keep;
+        return hypotheses;
     }
 
-    // Nothing is left to protect once the predicate variables are constants.
-    let config = Config {
-        protect_h_preds: false,
-        ..test_config(config)
-    };
+    let config = test_config(config);
+    let total = hypotheses.len();
+    let tested = AtomicUsize::new(0);
 
-    let point = heap.heap_point();
-    let grounded = ground_hypothesis(heap, hypothesis);
+    let retained: Vec<Box<[Clause]>> = hypotheses
+        .into_par_iter()
+        .filter(|hypothesis| {
+            let keep = !neg_goals.iter().any(|&goal| {
+                let mut query_heap = QueryHeap::new(heap, None);
+                let mut proof = Proof::without_learning(&query_heap, &[goal]);
+                proof.add_test_clauses(hypothesis);
+                proof.prove(&mut query_heap, predicate_table, config)
+            });
 
-    let mut branches = heap.branch_ground(neg_goals.len());
-    let prove = |(branch, &goal): (&mut QueryHeap, &usize)| {
-        let mut inner = Proof::without_learning(branch, &[goal]);
-        inner.add_test_clauses(&grounded);
-        inner.prove(branch, predicate_table, config)
-    };
-    // Fanning the negatives out costs a spawn, a deque push and epoch
-    // reclamation traffic on *every* candidate, whereas the benefit only
-    // materialises when a thread is actually free to steal the work. The
-    // caller decides; see `negatives_worth_parallelising`.
-    let entailed = if parallel_negatives {
-        branches.par_iter_mut().zip(neg_goals.par_iter()).any(prove)
-    } else {
-        branches.iter_mut().zip(neg_goals.iter()).any(prove)
-    };
+            // Throttled: one line per candidate would spend longer painting
+            // the terminal than proving the negatives.
+            let done = tested.fetch_add(1, Ordering::Relaxed) + 1;
+            if done % 256 == 0 || done == total {
+                eprint!("\rSpecialise: {done}/{total} hypotheses tested  ");
+                let _ = io::stderr().flush();
+            }
 
-    drop(branches);
-    heap.truncate(point);
+            keep
+        })
+        .collect();
 
-    cache.record(key, entailed);
-    if entailed {
-        Verdict::EntailsNegative
-    } else {
-        Verdict::Keep
-    }
-}
-
-#[cfg(test)]
-mod parallelism_threshold_tests {
-    use super::negatives_worth_parallelising;
-
-    /// The measured cases: fan out only where there is real headroom.
-    #[test]
-    fn matches_the_measured_crossover() {
-        // 19 threads, the machine the curve was measured on.
-        assert!(
-            negatives_worth_parallelising(19, 10),
-            "take_action: 1.9x headroom, measured 13% faster nested"
-        );
-        assert!(
-            !negatives_worth_parallelising(19, 15),
-            "avoid: 1.3x headroom, measured ~2x worse nested"
-        );
-        assert!(
-            !negatives_worth_parallelising(19, 17),
-            "turn: 1.1x headroom, measured 10% slower nested"
-        );
-    }
-
-    /// A wide machine learning from a handful of examples -- the case the
-    /// nesting exists for.
-    #[test]
-    fn a_wide_pool_always_fans_out() {
-        assert!(negatives_worth_parallelising(128, 15));
-        assert!(negatives_worth_parallelising(256, 20));
-    }
-
-    /// A pool no wider than the outer level has nothing spare to steal with.
-    #[test]
-    fn a_narrow_pool_never_fans_out() {
-        for threads in 1..=8 {
-            assert!(
-                !negatives_worth_parallelising(threads, 10),
-                "{threads} threads against 10 positives has no headroom"
-            );
-        }
-        assert!(!negatives_worth_parallelising(1, 1));
-    }
+    eprintln!();
+    retained
 }
