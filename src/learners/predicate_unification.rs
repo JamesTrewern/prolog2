@@ -9,9 +9,9 @@ use smallvec::SmallVec;
 use crate::{
     PRED_DEF_DEFAULT_SIZE,
     heap::{
-        Heap, QueryHeap,
+        Heap, QueryHeap, VarReg,
         Tag::*,
-        VarBind::{Addr, VarId},
+        VarBind::{self, Addr, VarId},
     },
     program::{Clause, MetaSub},
     utils::{DirGraph16, DirGraph8},
@@ -181,81 +181,95 @@ impl PredDef {
         true
     }
 
-    /// Canonical content key for bucketing definitions that could unify, or
-    /// `None` for a definition that cannot be keyed yet.
+    /// Per-position canonical content profile, from which
+    /// [`key_from_profile`] derives the bucket keys for definitions that
+    /// could unify; `None` for a definition that cannot be keyed.
     ///
     /// Two definitions [`Self::unify`] would merge are identical except for
-    /// the name of the predicate they define: the incoming one has an unbound
-    /// variable where the table entry has its coined constant. So the key
-    /// hashes everything unification requires to match -- meta clause ids and
-    /// the ground terms at every body position -- and replaces the one part
-    /// allowed to differ, the *head* position (`subs[0]`, always the
-    /// predicate this definition defines), with a fixed `OWN_PRED` marker on
-    /// both sides. Clause order within a definition is free (`unify` searches
-    /// for a pairing), so the per-clause vectors are sorted before the final
-    /// combine, making the key order-insensitive the same way.
+    /// the names of the predicates they define: the incoming one has unbound
+    /// variables where the table entry has its coined constants. So the
+    /// profile keeps everything unification requires to match -- meta clause
+    /// ids and the ground terms' content hashes -- and replaces the parts
+    /// allowed to differ with the [`PosKey::Own`] marker on both sides.
     ///
-    /// `None` is returned when a position *other than* the head is still an
-    /// unbound variable. That only happens for a mutually recursive group
-    /// before grounding, whose in-group body references are additional "own"
-    /// names: those can pair with either an in-group variable or an already
-    /// ground constant on the other side, so no position-local
-    /// classification can promise equal keys for every unifiable pair.
-    /// Such definitions take [`PredDefTable::insert`]'s fallback path (a
-    /// signature-wide scan, as the whole table once was), and are keyed
-    /// normally once `make_const` has grounded them.
+    /// A position resolving to one of the definition's own heads is `Own`:
+    /// before grounding that is an unbound in-group variable (the head of
+    /// this clause, or of a mutually recursive sibling), after grounding the
+    /// constant `make_const` coined for it. Both sides of a unifiable pair
+    /// classify such a position `Own`, so recursive and mutually recursive
+    /// groups key like any other definition.
     ///
-    /// The key is only ever compared against keys computed on the same heap
-    /// (or one sharing its symbol table): `term_hash` is content based, so it
-    /// survives `shift_addrs` and `make_const`'s `Var`-to-`Addr` rewrites,
-    /// which is what lets the key computed for an incoming definition be
-    /// reused after grounding. Like any hash, equality of keys is necessary
-    /// but not sufficient for unifiability -- the caller confirms with
+    /// The one disagreement left is an *already ground* reference to a
+    /// constant that happens to be the candidate entry's own head: the
+    /// incoming side reads it `Ground`, the entry `Own`. The profile keeps
+    /// each ground constant's symbol so [`PredDefTable::insert`] can probe
+    /// alternate keys with those positions flipped to `Own`, which covers
+    /// exactly that case.
+    ///
+    /// `None` is returned only when a position resolves to an unbound
+    /// variable that heads no clause of this definition -- a dependency
+    /// inserted out of order, which `make_const` separately asserts against.
+    /// Such a definition takes the signature-scan fallback.
+    ///
+    /// The profile is only ever compared against profiles computed on the
+    /// same heap (or one sharing its symbol table): `term_hash` is content
+    /// based, so it survives `shift_addrs` and `make_const`'s rewrites, which
+    /// is what lets the key computed for an incoming definition be reused
+    /// after grounding. Like any hash, equality of keys is necessary but not
+    /// sufficient for unifiability -- the caller confirms with
     /// [`Self::unify`].
-    pub(super) fn canonical_key(&self, heap: &impl Heap) -> Option<u64> {
-        use std::hash::{DefaultHasher, Hash, Hasher};
+    pub(super) fn key_profile(&self, heap: &impl Heap) -> Option<KeyProfile> {
+        use std::hash::{DefaultHasher, Hasher};
 
-        /// Position marker for the predicate a definition itself defines.
-        /// Colliding with a real term hash only widens a bucket (resolved by
-        /// `unify`); it can never split one, which is the direction that
-        /// would lose merges.
-        const OWN_PRED: u64 = u64::MAX;
+        let resolve = |var_reg: &VarReg| match var_reg.get_bind() {
+            Some(VarId(var_id)) => Some(heap.var_deref(var_id)),
+            Some(bound @ Addr(_)) => Some(bound),
+            None => None,
+        };
 
-        let mut clause_keys: SmallVec<[(usize, SmallVec<[u64; 4]>); PRED_DEF_DEFAULT_SIZE]> =
-            SmallVec::new();
-
+        // The heads this definition defines, by resolved binding. In-group
+        // references resolve to the *same* binding as the head they name --
+        // the same unbound variable before grounding, the same address after
+        // (`make_const` rewrites them through the shared variable) -- so
+        // plain equality is exact.
+        let mut own: SmallVec<[VarBind; PRED_DEF_DEFAULT_SIZE]> = SmallVec::new();
         for meta_sub in self.iter() {
-            let mut positions: SmallVec<[u64; 4]> = SmallVec::new();
-            for (i, var_reg) in meta_sub.subs.iter().enumerate() {
-                if i == 0 {
-                    positions.push(OWN_PRED);
+            if let Some(head) = meta_sub.subs.first() {
+                own.push(resolve(head)?);
+            }
+        }
+
+        let mut profile: KeyProfile = SmallVec::new();
+        for meta_sub in self.iter() {
+            let mut positions: SmallVec<[PosKey; 4]> = SmallVec::new();
+            for var_reg in meta_sub.subs.iter() {
+                let resolved = resolve(var_reg)?;
+                if own.contains(&resolved) {
+                    positions.push(PosKey::Own);
                     continue;
                 }
-                let resolved = match var_reg.get_bind() {
-                    Some(VarId(var_id)) => heap.var_deref(var_id),
-                    Some(bound @ Addr(_)) => bound,
-                    None => return None,
-                };
                 match resolved {
                     Addr(addr) => {
                         let mut hasher = DefaultHasher::new();
                         heap.term_hash(addr, &mut hasher);
-                        positions.push(hasher.finish());
+                        let symbol = match heap[addr] {
+                            (Con, symbol) => Some(symbol),
+                            _ => None,
+                        };
+                        positions.push(PosKey::Ground {
+                            hash: hasher.finish(),
+                            symbol,
+                        });
                     }
-                    // Unbound body position: an in-group reference of a
-                    // mutually recursive definition (anything else would be a
-                    // missing dependency, which `make_const` asserts against).
+                    // Unbound, and not a head of this definition: a missing
+                    // dependency.
                     VarId(_) => return None,
                 }
             }
-            clause_keys.push((meta_sub.meta_clause_id, positions));
+            profile.push((meta_sub.meta_clause_id, positions));
         }
 
-        clause_keys.sort_unstable();
-
-        let mut hasher = DefaultHasher::new();
-        clause_keys.hash(&mut hasher);
-        Some(hasher.finish())
+        Some(profile)
     }
 
     /// Hash of the signature [`Self::cmp`] orders by: clause count and meta
@@ -383,6 +397,58 @@ impl PredDef {
     }
 }
 
+/// One sub position's contribution to a definition's canonical key.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub(super) enum PosKey {
+    /// Resolves to one of the definition's own heads -- the predicate the
+    /// clause defines, or an in-group reference to a mutually recursive
+    /// sibling. These are the positions unification is allowed to rename, so
+    /// they carry no content.
+    Own,
+    /// Ground: the term's content hash, plus its symbol id when the term is a
+    /// plain constant -- what [`PredDefTable::insert`]'s alternate-key flips
+    /// select on.
+    Ground { hash: u64, symbol: Option<usize> },
+}
+
+/// `(meta_clause_id, position keys)` per clause, in `meta_subs` order.
+pub(super) type KeyProfile = SmallVec<[(usize, SmallVec<[PosKey; 4]>); PRED_DEF_DEFAULT_SIZE]>;
+
+/// Combine a [`KeyProfile`] into a bucket key, with the positions holding the
+/// constants in `flips` reclassified as [`PosKey::Own`].
+///
+/// Clause order within a definition is free ([`PredDef::unify`] searches for
+/// a pairing), so the per-clause vectors are sorted before the final combine,
+/// making the key order-insensitive the same way. Sorting happens after the
+/// flips are applied: the entry being probed for classified those positions
+/// `Own` before *its* sort, and the clause order has to be decided by the
+/// same values on both sides.
+pub(super) fn key_from_profile(profile: &KeyProfile, flips: &[usize]) -> u64 {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
+    let mut clauses: KeyProfile = profile
+        .iter()
+        .map(|(meta_clause_id, positions)| {
+            let positions = positions
+                .iter()
+                .map(|pos| match pos {
+                    PosKey::Ground {
+                        symbol: Some(symbol),
+                        ..
+                    } if flips.contains(symbol) => PosKey::Own,
+                    other => other.clone(),
+                })
+                .collect();
+            (*meta_clause_id, positions)
+        })
+        .collect();
+    clauses.sort_unstable();
+
+    let mut hasher = DefaultHasher::new();
+    clauses.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[derive(Default, Debug)]
 pub(super) struct PredDefTable {
     pub pred_defs: Vec<PredDef>,
@@ -417,8 +483,73 @@ impl PredDefTable {
     /// carrying unbound in-group references) falls back to scanning every
     /// definition with the same signature, which is what the whole table used
     /// to do for every insert.
+    /// Most distinct invented-predicate constants worth enumerating flip
+    /// subsets for: past this, `2^n` probes lose to one signature scan.
+    const MAX_FLIPPABLE: usize = 8;
+
     pub(super) fn insert(&mut self, pred_def: PredDef, heap: &mut QueryHeap) {
-        let key = pred_def.canonical_key(heap);
+        let Some(profile) = pred_def.key_profile(heap) else {
+            // Unkeyable (a dependency inserted out of order): scan everything
+            // with the same signature, as the whole table once was.
+            if self.unify_against(None, &pred_def, heap) {
+                return;
+            }
+            self.add_def(pred_def, None, heap);
+            return;
+        };
+
+        let primary = key_from_profile(&profile, &[]);
+        if self.unify_against(Some(primary), &pred_def, heap) {
+            return;
+        }
+
+        // The profile classifies an already ground reference to an invented
+        // predicate as `Ground`, but the entry this definition should merge
+        // with may have coined that very constant and so classified the
+        // position `Own` (a recursive definition). Probe the alternate keys
+        // with each subset of the referenced invented constants flipped to
+        // `Own`; `unify` confirms as always, so a wrong flip costs one empty
+        // lookup and can never merge wrongly.
+        let mut flippable: SmallVec<[usize; Self::MAX_FLIPPABLE]> = SmallVec::new();
+        for (_, positions) in &profile {
+            for pos in positions {
+                if let PosKey::Ground {
+                    symbol: Some(symbol),
+                    ..
+                } = pos
+                {
+                    if self.pred_symbols.contains(symbol) && !flippable.contains(symbol) {
+                        flippable.push(*symbol);
+                    }
+                }
+            }
+        }
+
+        if flippable.len() <= Self::MAX_FLIPPABLE {
+            for mask in 1u32..(1 << flippable.len()) {
+                let flips: SmallVec<[usize; Self::MAX_FLIPPABLE]> = flippable
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| mask & (1 << i) != 0)
+                    .map(|(_, &symbol)| symbol)
+                    .collect();
+                let key = key_from_profile(&profile, &flips);
+                if key != primary && self.unify_against(Some(key), &pred_def, heap) {
+                    return;
+                }
+            }
+        } else if self.unify_against(None, &pred_def, heap) {
+            // Too many subsets to enumerate: the signature scan covers every
+            // bucket an alternate key could have named.
+            return;
+        }
+
+        self.add_def(pred_def, Some(primary), heap);
+    }
+
+    /// Try to unify `pred_def` onto an existing entry: the ones in `key`'s
+    /// bucket, or with `None` every entry sharing its signature.
+    fn unify_against(&self, key: Option<u64>, pred_def: &PredDef, heap: &mut QueryHeap) -> bool {
         let candidates: &[usize] = match key {
             Some(key) => self.buckets.get(&key).map(|b| b.as_slice()).unwrap_or(&[]),
             None => self
@@ -428,15 +559,11 @@ impl PredDefTable {
                 .unwrap_or(&[]),
         };
 
-        for &i in candidates {
-            if self.pred_defs[i].unify(&pred_def, heap) {
-                // Unification successful
-                // Pred defs from same hypothesis now updated with bindings
-                return;
-            }
-        }
-
-        self.add_def(pred_def, key, heap);
+        candidates
+            .iter()
+            // Pred defs from the same hypothesis are updated with bindings
+            // by a successful unification.
+            .any(|&i| self.pred_defs[i].unify(pred_def, heap))
     }
 
     /// The constants naming the predicates this table defines.
@@ -461,17 +588,18 @@ impl PredDefTable {
             }
         }
 
-        // The key computed before grounding is still correct after it:
-        // `make_const` only rewrites positions from variable bindings to the
-        // addresses they already dereferenced to, and coins constants for the
-        // head positions, which the key covers with its own marker either
-        // way. A definition that could not be keyed before grounding can be
-        // now, and must be, so that later ground references to its coined
-        // constants find it by key.
+        // The primary key computed before grounding is still correct after
+        // it: `make_const` only rewrites positions from variable bindings to
+        // the addresses they already dereferenced to, and the positions it
+        // coins constants for are exactly the ones the profile already
+        // classified `Own`. A definition that could not be keyed before
+        // grounding can be now, and must be, so that later references to its
+        // coined constants find it by key.
         let key = key.unwrap_or_else(|| {
-            pred_def
-                .canonical_key(heap)
-                .expect("a grounded definition has no unbound positions left to block its key")
+            let profile = pred_def
+                .key_profile(heap)
+                .expect("a grounded definition has no unbound positions left to block its key");
+            key_from_profile(&profile, &[])
         });
 
         let index = self.pred_defs.len();
