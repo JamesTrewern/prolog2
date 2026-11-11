@@ -27,8 +27,8 @@ pub(super) const MAX_PRED_DEFS: usize = 16;
 
 #[derive(Debug)]
 pub(super) struct PredDef {
+    /// Sorted by `meta_clause_id`.
     pub meta_subs: SmallVec<[MetaSub; PRED_DEF_DEFAULT_SIZE]>,
-    meta_clause_ranges: HashMap<usize, (usize, usize)>,
 }
 
 impl Deref for PredDef {
@@ -47,23 +47,7 @@ impl PredDef {
     /// Take clauses to form new predicate definition (orders clauses)
     pub(super) fn new(mut meta_subs: SmallVec<[MetaSub; PRED_DEF_DEFAULT_SIZE]>) -> Self {
         meta_subs.sort_by_key(|meta_sub| meta_sub.meta_clause_id);
-        let mut meta_clause_ranges = HashMap::new();
-        let mut start = 0;
-        for i in 1..meta_subs.len() {
-            if meta_subs[i - 1].meta_clause_id != meta_subs[i].meta_clause_id {
-                meta_clause_ranges.insert(meta_subs[i - 1].meta_clause_id, (start, i));
-                start = i;
-            }
-        }
-        meta_clause_ranges.insert(
-            meta_subs.last().unwrap().meta_clause_id,
-            (start, meta_subs.len()),
-        );
-
-        Self {
-            meta_subs,
-            meta_clause_ranges,
-        }
+        Self { meta_subs }
     }
 
     /// Ground every substitution in this definition, coining a fresh constant
@@ -139,17 +123,12 @@ impl PredDef {
         let mut unified = vec![false; self.len()].into_boxed_slice();
         let mut i = 0;
         'outer: while i < other.len() {
-            let (s, e) = *self
-                .meta_clause_ranges
-                .get(&other[i].meta_clause_id)
-                .unwrap();
-
-            // Fresh visit to this position: start the search at the range's
-            // first index. A revisit (backtrack) undoes the previous match
-            // at this position and resumes the search just after it.
+            // Fresh visit to this position: search from the start. A revisit
+            // (backtrack) undoes the previous match at this position and
+            // resumes the search just after it.
             let start = if i == stack.len() {
-                stack.push((s, Vec::new()));
-                s
+                stack.push((0, Vec::new()));
+                0
             } else {
                 let (last_j, bindings) = &stack[i];
                 unified[*last_j] = false;
@@ -158,7 +137,15 @@ impl PredDef {
             };
 
             //Attempt to find clause to unify with
-            for j in start..e {
+            // Clauses are sorted by meta clause id, so skip the lower ids
+            // and stop at the first higher one.
+            let meta_clause_id = other[i].meta_clause_id;
+            for j in start..self.len() {
+                match self[j].meta_clause_id.cmp(&meta_clause_id) {
+                    Less => continue,
+                    Greater => break,
+                    Equal => {}
+                }
                 if unified[j] {
                     continue;
                 }
