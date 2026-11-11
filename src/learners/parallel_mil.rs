@@ -13,7 +13,8 @@ use crate::{
     app::App,
     heap::{
         Cell, Heap, ProgramHeap, QueryHeap,
-        Tag::Var,
+        Tag::{Con, ELis, Flt, Int, Stri, Var},
+        TermWalk, Walk,
         VarBind::{Addr, VarId},
         VarReg,
     },
@@ -266,7 +267,8 @@ fn generalise(
 /// every returned address is already valid in `heap ++ cells`.
 ///
 /// For each message:
-///   - its cells are appended and its addresses shifted to match;
+///   - the terms its substitutions name are interned into the collector heap
+///     (see [`TermIndex`]), so the message's own cells are never appended;
 ///   - its `pred_defs` go through `PredDefTable::insert`, grounding their
 ///     predicate variables;
 ///   - a `Ref` cell still unbound after that is a bug -- panic;
@@ -275,8 +277,8 @@ fn generalise(
 ///     scratch window reset after every message;
 ///   - the hypothesis is dropped if an equal one was already collected.
 ///
-/// Hypotheses are compared order-independently, by content hash confirmed
-/// with an exact check. A duplicate's cells are left in place.
+/// Hypotheses are compared order-independently, by hash confirmed with an
+/// exact check.
 fn merge_thread_results(
     thread_results: impl IntoIterator<Item = ThreadResult>,
     heap: &ProgramHeap,
@@ -284,6 +286,9 @@ fn merge_thread_results(
     searched: &AtomicUsize,
 ) -> (Vec<Cell>, Vec<Vec<MetaSub>>, PredDefTable) {
     let mut acc_heap = QueryHeap::new(heap, None);
+    let mut terms = TermIndex::default();
+    // Rebuilt from each message's `(cells, var_regs)` so its terms can be read.
+    let mut msg_heap = QueryHeap::detached(heap);
     let mut pdt = PredDefTable::default();
     let mut hypotheses: Vec<Vec<MetaSub>> = Vec::new();
     // Hypothesis content hash -> indices into `hypotheses`.
@@ -297,11 +302,18 @@ fn merge_thread_results(
             acc_heap.var_regs.resize(var_regs.len(), VarReg::UNBOUND);
         }
 
-        acc_heap.cells.extend_from_slice(&cells);
+        let var_count = var_regs.len();
+        msg_heap.cells = cells;
+        msg_heap.var_regs = var_regs;
+        terms.start_message();
 
+        // Before the scan below, which grounds any variables these terms hold.
+        for meta_sub in &mut hypothesis {
+            terms.intern_subs(meta_sub, &msg_heap, &mut acc_heap);
+        }
         for mut pred_def in pred_defs {
             for meta_sub in &mut pred_def.meta_subs {
-                meta_sub.shift_addrs(offset as isize);
+                terms.intern_subs(meta_sub, &msg_heap, &mut acc_heap);
             }
             pdt.insert(pred_def, &mut acc_heap);
         }
@@ -318,7 +330,6 @@ fn merge_thread_results(
 
         // A sub still bound to a variable names a predicate grounded above.
         for meta_sub in &mut hypothesis {
-            meta_sub.shift_addrs(offset as isize);
             for sub in &mut meta_sub.subs {
                 if let Some(VarId(var_id)) = sub.get_bind() {
                     match acc_heap.var_deref(var_id) {
@@ -329,30 +340,33 @@ fn merge_thread_results(
             }
         }
 
-        for var_reg in &mut acc_heap.var_regs[..var_regs.len()] {
+        for var_reg in &mut acc_heap.var_regs[..var_count] {
             *var_reg = VarReg::UNBOUND;
         }
 
         // Empty when every clause was lifted into a predicate definition.
         if !hypothesis.is_empty() {
-            // Sort so that clause order does not affect equality.
-            let mut keyed: Vec<(u64, MetaSub)> = hypothesis
-                .into_iter()
-                .map(|meta_sub| (clause_content_key(&meta_sub, &acc_heap), meta_sub))
-                .collect();
-            keyed.sort_unstable_by_key(|(key, _)| *key);
-
+            // Sort so that clause order does not affect equality. Interned
+            // terms have one address each, so addresses stand in for content.
+            hypothesis.sort_unstable_by(|a, b| {
+                a.meta_clause_id
+                    .cmp(&b.meta_clause_id)
+                    .then_with(|| a.subs.iter().map(|sub| sub.0).cmp(b.subs.iter().map(|sub| sub.0)))
+            });
             let mut hasher = DefaultHasher::new();
-            for (key, _) in &keyed {
-                key.hash(&mut hasher);
+            for meta_sub in &hypothesis {
+                meta_sub.meta_clause_id.hash(&mut hasher);
+                for sub in &meta_sub.subs {
+                    sub.0.hash(&mut hasher);
+                }
+                // Separator between clauses.
+                usize::MAX.hash(&mut hasher);
             }
-            let hypothesis: Vec<MetaSub> =
-                keyed.into_iter().map(|(_, meta_sub)| meta_sub).collect();
 
             let bucket = seen.entry(hasher.finish()).or_default();
             let duplicate = bucket
                 .iter()
-                .any(|&i| same_hypothesis(&hypotheses[i as usize], &hypothesis, &acc_heap));
+                .any(|&i| same_hypothesis(&hypotheses[i as usize], &hypothesis));
             if !duplicate {
                 bucket
                     .push(u32::try_from(hypotheses.len()).expect("more than u32::MAX hypotheses"));
@@ -378,37 +392,116 @@ fn merge_thread_results(
     (acc_heap.cells, hypotheses, pdt)
 }
 
-/// Address-independent content hash of one grounded clause.
-fn clause_content_key(meta_sub: &MetaSub, heap: &QueryHeap) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    meta_sub.meta_clause_id.hash(&mut hasher);
-    for sub in &meta_sub.subs {
-        // Separator between subs.
-        usize::MAX.hash(&mut hasher);
-        match sub.get_bind() {
-            Some(Addr(addr)) => heap.term_hash(addr, &mut hasher),
-            bind => unreachable!("collected clauses are ground, got {bind:?}"),
+/// Index of the ground terms on the collector heap, so each distinct term a
+/// worker sends is stored there once.
+///
+/// Keyed by content hash and confirmed with `term_equal`. Constants coined
+/// for invented predicates are not indexed: workers only ever name those
+/// through variables, so no incoming term can equal one.
+#[derive(Default)]
+struct TermIndex {
+    /// `term_hash` -> collector addresses of the terms with that hash.
+    buckets: HashMap<u64, SmallVec<[usize; 1]>>,
+    /// Message address -> collector address, for the current message.
+    memo: SmallVec<[(usize, usize); 8]>,
+    /// Message variable ids mapped to themselves; see [`Self::intern`].
+    var_map: HashMap<usize, usize>,
+}
+
+impl TermIndex {
+    fn start_message(&mut self) {
+        self.memo.clear();
+        self.var_map.clear();
+    }
+
+    /// Rewrite each address in `meta_sub` from `msg_heap` to the collector
+    /// address of an equal term. Variables are left alone.
+    fn intern_subs(&mut self, meta_sub: &mut MetaSub, msg_heap: &QueryHeap, acc_heap: &mut QueryHeap) {
+        for sub in &mut meta_sub.subs {
+            if let Some(Addr(addr)) = sub.get_bind() {
+                *sub = VarReg::from_addr(self.intern(addr, msg_heap, acc_heap));
+            }
         }
     }
-    hasher.finish()
+
+    /// Collector address of a term equal to the one at `addr` on `msg_heap`,
+    /// copying it across only if there is none yet.
+    fn intern(&mut self, addr: usize, msg_heap: &QueryHeap, acc_heap: &mut QueryHeap) -> usize {
+        if let Some(&(_, interned)) = self.memo.iter().find(|(from, _)| *from == addr) {
+            return interned;
+        }
+
+        let start = acc_heap.heap_len();
+        let interned = if term_has_var(addr, msg_heap) {
+            // Not ground until its predicate variables are, so it cannot be
+            // shared: copy it, keeping the message's variable ids, which the
+            // collector's scratch window uses as they are.
+            if self.var_map.is_empty() {
+                self.var_map.extend((0..msg_heap.var_regs.len()).map(|id| (id, id)));
+            }
+            acc_heap.clone_term_from_other(msg_heap, addr, &mut self.var_map);
+            start
+        } else {
+            let mut hasher = DefaultHasher::new();
+            msg_heap.term_hash(addr, &mut hasher);
+            let bucket = self.buckets.entry(hasher.finish()).or_default();
+
+            // Copied first so the comparison is within one heap; a ground
+            // term has no variables for the map to translate.
+            acc_heap.clone_term_from_other(msg_heap, addr, &mut self.var_map);
+            match bucket.iter().find(|&&existing| acc_heap.term_equal(existing, start)) {
+                Some(&existing) => {
+                    let copied = acc_heap.heap_len() - start;
+                    acc_heap.cells.truncate(acc_heap.cells.len() - copied);
+                    existing
+                }
+                None => {
+                    bucket.push(start);
+                    self.index_sub_terms(start, acc_heap);
+                    start
+                }
+            }
+        };
+
+        self.memo.push((addr, interned));
+        interned
+    }
+
+    /// Index the single-cell terms inside the term just copied to `start`, so
+    /// a later message naming one of them alone can reuse its cell.
+    fn index_sub_terms(&mut self, start: usize, acc_heap: &QueryHeap) {
+        for addr in start + 1..acc_heap.heap_len() {
+            if !matches!(acc_heap[addr].0, Con | Int | Flt | Stri | ELis) {
+                continue;
+            }
+            let mut hasher = DefaultHasher::new();
+            acc_heap.term_hash(addr, &mut hasher);
+            let bucket = self.buckets.entry(hasher.finish()).or_default();
+            if !bucket.iter().any(|&existing| acc_heap.term_equal(existing, addr)) {
+                bucket.push(addr);
+            }
+        }
+    }
 }
 
-/// Whether two grounded clauses are structurally equal.
-fn same_clause(a: &MetaSub, b: &MetaSub, heap: &QueryHeap) -> bool {
-    a.meta_clause_id == b.meta_clause_id
-        && a.subs.len() == b.subs.len()
-        && a.subs
-            .iter()
-            .zip(b.subs.iter())
-            .all(|(x, y)| match (x.get_bind(), y.get_bind()) {
-                (Some(Addr(ax)), Some(Addr(ay))) => heap.term_equal(ax, ay),
-                _ => false,
-            })
+/// Whether the term at `addr` contains an unbound variable.
+fn term_has_var(addr: usize, heap: &QueryHeap) -> bool {
+    let mut walk = TermWalk::new(addr);
+    while let Some((tag, _)) = walk.next_cell(heap) {
+        if tag == Var {
+            return true;
+        }
+    }
+    false
 }
 
-/// Whether two hypotheses, each sorted by [`clause_content_key`], are equal.
-fn same_hypothesis(a: &[MetaSub], b: &[MetaSub], heap: &QueryHeap) -> bool {
-    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| same_clause(x, y, heap))
+/// Whether two sorted, grounded hypotheses hold the same clauses, comparing
+/// interned terms by address.
+fn same_hypothesis(a: &[MetaSub], b: &[MetaSub]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(x, y)| x.meta_clause_id == y.meta_clause_id && x.subs == y.subs)
 }
 
 /// Search for hypotheses explaining one positive example, streaming each one
@@ -791,16 +884,9 @@ mod merge_tests {
     }
 
     #[test]
-    fn merge_grounds_a_pred_defs_variable_and_the_orphaned_ref_cell_it_left_behind() {
+    fn merge_grounds_a_pred_defs_variable() {
         let mut heap = thread_heap();
-        // Simulate the now-discarded head clause of an invented predicate:
-        // `PredDef::extract_pred_defs_from_h` removes the `Clause` from the
-        // hypothesis but the literal's cells it already cloned into the
-        // thread's heap are left behind, orphaned.
         let pred_var = heap.new_var(VarReg::UNBOUND);
-        heap.heap_push((Comp, 1));
-        heap.heap_push((Var, pred_var));
-
         let meta_sub = MetaSub {
             meta_clause_id: 0,
             subs: smallvec![VarReg::from_var(pred_var)],
@@ -811,18 +897,12 @@ mod merge_tests {
             merge(vec![(Vec::new(), vec![pred_def], parts(heap))], test_prog());
 
         assert!(hypotheses.is_empty());
-        for (i, cell) in cells.iter().enumerate() {
-            assert_ne!(cell.0, Var, "cell {i} ({cell:?}) should have been grounded");
-        }
-        assert_eq!(cells[0], (Comp, 1));
-        // The orphaned `(Ref, pred_var)` cell (index 1) must have been
-        // grounded to the same constant the pred_def's own binding (which
-        // `make_const` pushed as a fresh cell at index 2) resolves to.
-        assert_eq!(cells[1], cells[2]);
-        assert_eq!(cells[2].0, Con);
+        // The only cell is the constant coined for the predicate.
+        assert_eq!(cells.len(), 1);
+        assert_eq!(cells[0].0, Con);
 
         assert_eq!(pdt.pred_defs.len(), 1);
-        assert_eq!(pdt.pred_defs[0].meta_subs[0].subs[0], VarReg::from_addr(2));
+        assert_eq!(pdt.pred_defs[0].meta_subs[0].subs[0], VarReg::from_addr(0));
     }
 
     #[test]
@@ -926,21 +1006,92 @@ mod merge_tests {
             1,
             "the second message's identical hypothesis should be deduplicated"
         );
-        // The duplicate's cells are still appended (not reclaimed), only the
-        // returned hypothesis list is deduplicated.
-        assert_eq!(cells.len(), 2);
+        // The duplicate's term is found in the index, not copied again.
+        assert_eq!(cells.len(), 1);
+    }
+
+    #[test]
+    fn merge_stores_a_term_named_by_several_messages_once() {
+        let prog = test_prog();
+        let sym_p = prog.symbols().set_const("merge_test_share_p");
+
+        // Different meta clauses, so the hypotheses differ, but the same
+        // constant.
+        let message = |meta_clause_id: usize| {
+            let mut heap = thread_heap();
+            let addr = heap.heap_push((Con, sym_p));
+            let meta_sub = MetaSub {
+                meta_clause_id,
+                subs: smallvec![VarReg::from_addr(addr)],
+            };
+            (vec![meta_sub], Vec::new(), parts(heap))
+        };
+
+        let (cells, hypotheses, _) = merge(vec![message(0), message(1)], test_prog());
+
+        assert_eq!(cells, vec![(Con, sym_p)]);
+        assert_eq!(hypotheses.len(), 2);
+        assert_eq!(hypotheses[0][0].subs[0], hypotheses[1][0].subs[0]);
+    }
+
+    #[test]
+    fn merge_reuses_a_constant_inside_an_earlier_compound_term() {
+        let prog = test_prog();
+        let sym_f = prog.symbols().set_const("merge_test_sub_f");
+        let sym_a = prog.symbols().set_const("merge_test_sub_a");
+
+        // `f(a)`, then `a` on its own.
+        let mut compound = thread_heap();
+        let f_a = compound.heap_push((Comp, 2));
+        compound.heap_push((Con, sym_f));
+        compound.heap_push((Con, sym_a));
+        let first = MetaSub {
+            meta_clause_id: 0,
+            subs: smallvec![VarReg::from_addr(f_a)],
+        };
+
+        let mut constant = thread_heap();
+        let a = constant.heap_push((Con, sym_a));
+        let second = MetaSub {
+            meta_clause_id: 0,
+            subs: smallvec![VarReg::from_addr(a)],
+        };
+
+        let (cells, hypotheses, _) = merge(
+            vec![
+                (vec![first], Vec::new(), parts(compound)),
+                (vec![second], Vec::new(), parts(constant)),
+            ],
+            test_prog(),
+        );
+
+        assert_eq!(cells, vec![(Comp, 2), (Con, sym_f), (Con, sym_a)]);
+        assert_eq!(hypotheses.len(), 2);
+        assert_eq!(
+            hypotheses[1][0].subs[0],
+            VarReg::from_addr(2),
+            "`a` should reuse the argument cell of `f(a)`"
+        );
     }
 
     #[test]
     #[should_panic(expected = "Not all variable predicates given constant terms")]
     fn merge_panics_if_a_ref_cell_survives_grounding() {
-        // A `Ref` cell with no pred_def (and so nothing to ground it) must
-        // trip the same guard `App::run_top_prog` relies on never firing.
+        // A term holding a variable that no pred_def grounds must trip the
+        // same guard `App::run_top_prog` relies on never firing.
+        let prog = test_prog();
+        let sym_f = prog.symbols().set_const("merge_test_stray_f");
         let mut heap = thread_heap();
         let stray_var = heap.new_var(VarReg::UNBOUND);
+        let term = heap.heap_push((Comp, 2));
+        heap.heap_push((Con, sym_f));
         heap.heap_push((Var, stray_var));
+        let meta_sub = MetaSub {
+            meta_clause_id: 0,
+            subs: smallvec![VarReg::from_addr(term)],
+        };
 
-        let _ = merge(vec![(Vec::new(), Vec::new(), parts(heap))], test_prog());
+        let _ = merge(vec![(vec![meta_sub], Vec::new(), parts(heap))], test_prog());
     }
 
     #[test]

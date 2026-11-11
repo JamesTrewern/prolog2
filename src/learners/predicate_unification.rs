@@ -176,8 +176,8 @@ impl PredDef {
     /// the names of the predicates they define: the incoming one has unbound
     /// variables where the table entry has its coined constants. So the
     /// profile keeps everything unification requires to match -- meta clause
-    /// ids and the ground terms' content hashes -- and replaces the parts
-    /// allowed to differ with the [`PosKey::Own`] marker on both sides.
+    /// ids and the ground terms' addresses -- and replaces the parts
+    /// allowed to differ with the [`OWN`] marker on both sides.
     ///
     /// A position resolving to one of the definition's own heads is `Own`:
     /// before grounding that is an unbound in-group variable (the head of
@@ -188,26 +188,22 @@ impl PredDef {
     ///
     /// The one disagreement left is an *already ground* reference to a
     /// constant that happens to be the candidate entry's own head: the
-    /// incoming side reads it `Ground`, the entry `Own`. The profile keeps
-    /// each ground constant's symbol so [`PredDefTable::insert`] can probe
-    /// alternate keys with those positions flipped to `Own`, which covers
-    /// exactly that case.
+    /// incoming side records its address, the entry `OWN`.
+    /// [`PredDefTable::insert`] covers exactly that case by probing
+    /// alternate keys with those addresses flipped to `OWN`.
     ///
     /// `None` is returned only when a position resolves to an unbound
     /// variable that heads no clause of this definition -- a dependency
     /// inserted out of order, which `make_const` separately asserts against.
     /// Such a definition takes the signature-scan fallback.
     ///
-    /// The profile is only ever compared against profiles computed on the
-    /// same heap (or one sharing its symbol table): `term_hash` is content
-    /// based, so it survives `shift_addrs` and `make_const`'s rewrites, which
-    /// is what lets the key computed for an incoming definition be reused
-    /// after grounding. Like any hash, equality of keys is necessary but not
-    /// sufficient for unifiability -- the caller confirms with
-    /// [`Self::unify`].
+    /// Ground terms are keyed by address, so equal terms must share one
+    /// address: the collector interns every term it is sent, and
+    /// `make_const` coins each constant once. Two equal terms at different
+    /// addresses would key apart and never be compared. Like any hash,
+    /// equality of keys is necessary but not sufficient for unifiability --
+    /// the caller confirms with [`Self::unify`].
     pub(super) fn key_profile(&self, heap: &impl Heap) -> Option<KeyProfile> {
-        use std::hash::{DefaultHasher, Hasher};
-
         let resolve = |var_reg: &VarReg| match var_reg.get_bind() {
             Some(VarId(var_id)) => Some(heap.var_deref(var_id)),
             Some(bound @ Addr(_)) => Some(bound),
@@ -228,30 +224,16 @@ impl PredDef {
 
         let mut profile: KeyProfile = SmallVec::new();
         for meta_sub in self.iter() {
-            let mut positions: SmallVec<[PosKey; 4]> = SmallVec::new();
+            let mut positions: SmallVec<[usize; 4]> = SmallVec::new();
             for var_reg in meta_sub.subs.iter() {
                 let resolved = resolve(var_reg)?;
-                if own.contains(&resolved) {
-                    positions.push(PosKey::Own);
-                    continue;
-                }
-                match resolved {
-                    Addr(addr) => {
-                        let mut hasher = DefaultHasher::new();
-                        heap.term_hash(addr, &mut hasher);
-                        let symbol = match heap[addr] {
-                            (Con, symbol) => Some(symbol),
-                            _ => None,
-                        };
-                        positions.push(PosKey::Ground {
-                            hash: hasher.finish(),
-                            symbol,
-                        });
-                    }
+                positions.push(match resolved {
+                    _ if own.contains(&resolved) => OWN,
+                    Addr(addr) => addr,
                     // Unbound, and not a head of this definition: a missing
                     // dependency.
                     VarId(_) => return None,
-                }
+                });
             }
             profile.push((meta_sub.meta_clause_id, positions));
         }
@@ -412,31 +394,23 @@ impl PredDef {
     }
 }
 
-/// One sub position's contribution to a definition's canonical key.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub(super) enum PosKey {
-    /// Resolves to one of the definition's own heads -- the predicate the
-    /// clause defines, or an in-group reference to a mutually recursive
-    /// sibling. These are the positions unification is allowed to rename, so
-    /// they carry no content.
-    Own,
-    /// Ground: the term's content hash, plus its symbol id when the term is a
-    /// plain constant -- what [`PredDefTable::insert`]'s alternate-key flips
-    /// select on.
-    Ground { hash: u64, symbol: Option<usize> },
-}
+/// Key of a position that resolves to one of the definition's own heads --
+/// the predicate the clause defines, or an in-group reference to a mutually
+/// recursive sibling. Unification is allowed to rename these, so they carry
+/// no content. Every other position is keyed by its term's address.
+const OWN: usize = usize::MAX;
 
 /// `(meta_clause_id, position keys)` per clause, in `meta_subs` order.
-pub(super) type KeyProfile = SmallVec<[(usize, SmallVec<[PosKey; 4]>); PRED_DEF_DEFAULT_SIZE]>;
+pub(super) type KeyProfile = SmallVec<[(usize, SmallVec<[usize; 4]>); PRED_DEF_DEFAULT_SIZE]>;
 
-/// Combine a [`KeyProfile`] into a bucket key, with the positions holding the
-/// constants in `flips` reclassified as [`PosKey::Own`].
+/// Combine a [`KeyProfile`] into a bucket key, with the addresses in `flips`
+/// reclassified as [`OWN`].
 ///
 /// Clause order within a definition is free ([`PredDef::unify`] searches for
 /// a pairing), so the per-clause vectors are sorted before the final combine,
 /// making the key order-insensitive the same way. Sorting happens after the
 /// flips are applied: the entry being probed for classified those positions
-/// `Own` before *its* sort, and the clause order has to be decided by the
+/// `OWN` before *its* sort, and the clause order has to be decided by the
 /// same values on both sides.
 pub(super) fn key_from_profile(profile: &KeyProfile, flips: &[usize]) -> u64 {
     use std::hash::{DefaultHasher, Hash, Hasher};
@@ -446,13 +420,7 @@ pub(super) fn key_from_profile(profile: &KeyProfile, flips: &[usize]) -> u64 {
         .map(|(meta_clause_id, positions)| {
             let positions = positions
                 .iter()
-                .map(|pos| match pos {
-                    PosKey::Ground {
-                        symbol: Some(symbol),
-                        ..
-                    } if flips.contains(symbol) => PosKey::Own,
-                    other => other.clone(),
-                })
+                .map(|pos| if flips.contains(pos) { OWN } else { *pos })
                 .collect();
             (*meta_clause_id, positions)
         })
@@ -518,23 +486,22 @@ impl PredDefTable {
             return;
         }
 
-        // The profile classifies an already ground reference to an invented
-        // predicate as `Ground`, but the entry this definition should merge
-        // with may have coined that very constant and so classified the
-        // position `Own` (a recursive definition). Probe the alternate keys
-        // with each subset of the referenced invented constants flipped to
-        // `Own`; `unify` confirms as always, so a wrong flip costs one empty
-        // lookup and can never merge wrongly.
+        // The profile keys an already ground reference to an invented
+        // predicate by address, but the entry this definition should merge
+        // with may have coined that very constant and so keyed the position
+        // `OWN` (a recursive definition). Probe the alternate keys with each
+        // subset of the referenced invented constants flipped to `OWN`;
+        // `unify` confirms as always, so a wrong flip costs one empty lookup
+        // and can never merge wrongly.
         let mut flippable: SmallVec<[usize; Self::MAX_FLIPPABLE]> = SmallVec::new();
         for (_, positions) in &profile {
-            for pos in positions {
-                if let PosKey::Ground {
-                    symbol: Some(symbol),
-                    ..
-                } = pos
-                {
-                    if self.pred_symbols.contains(symbol) && !flippable.contains(symbol) {
-                        flippable.push(*symbol);
+            for &pos in positions {
+                if pos == OWN || flippable.contains(&pos) {
+                    continue;
+                }
+                if let (Con, symbol) = heap[pos] {
+                    if self.pred_symbols.contains(&symbol) {
+                        flippable.push(pos);
                     }
                 }
             }
@@ -546,7 +513,7 @@ impl PredDefTable {
                     .iter()
                     .enumerate()
                     .filter(|(i, _)| mask & (1 << i) != 0)
-                    .map(|(_, &symbol)| symbol)
+                    .map(|(_, &addr)| addr)
                     .collect();
                 let key = key_from_profile(&profile, &flips);
                 if key != primary && self.unify_against(Some(key), &pred_def, heap) {
