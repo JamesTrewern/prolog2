@@ -1,5 +1,8 @@
 // Broad test on example files to prove working state of application
-use crate::app::{App, Solution};
+use crate::{
+    app::{App, Solution},
+    Config,
+};
 
 pub(crate) fn contains_clause(solution: &Solution, clause: &str) -> bool {
     solution
@@ -207,30 +210,41 @@ fn top_prog_trains() {
     // assert!(result.lines().find(|line| *line == "pred_1(A):-short(A),closed(A).").is_some());
 }
 
+const COLREG_CONF: Config = Config {
+    max_depth: 5,
+    max_clause: 3,
+    debug: false,
+    protect_h_preds: true,
+};
+
 #[test]
 fn cpa_side() {
-    let mut app =
-        App::from_setup_json("examples/colreg/setup_cpa_side.json").expect("failed to load config");
+    let mut app = App::from_setup_json("examples/colreg/setup_cpa_side.json")
+        .expect("failed to load config")
+        .config(COLREG_CONF);
     let _result = app.run_parallel();
 }
 
 #[test]
 fn turn() {
-    let mut app =
-        App::from_setup_json("examples/colreg/setup_turn.json").expect("failed to load config");
+    let mut app = App::from_setup_json("examples/colreg/setup_turn.json")
+        .expect("failed to load config")
+        .config(COLREG_CONF);
     let _result = app.run_parallel();
 }
 
 #[test]
 fn avoid() {
-    let mut app =
-        App::from_setup_json("examples/colreg/setup_avoid.json").expect("failed to load config");
+    let mut app = App::from_setup_json("examples/colreg/setup_avoid.json")
+        .expect("failed to load config")
+        .config(COLREG_CONF);
     let _result = app.run_parallel();
 }
 
 #[test]
 fn resume() {
-    let mut app =
-        App::from_setup_json("examples/colreg/setup_resume.json").expect("failed to load config");
+    let mut app = App::from_setup_json("examples/colreg/setup_resume.json")
+        .expect("failed to load config")
+        .config(COLREG_CONF);
     let _result = app.run_parallel();
 }
