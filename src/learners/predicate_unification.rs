@@ -300,6 +300,13 @@ impl PredDef {
         }
     }
 
+    /// Lift the invented-predicate clauses out of a hypothesis into
+    /// dependency-ordered definitions, leaving the rest of the hypothesis
+    /// behind in the two parallel vectors.
+    ///
+    /// `heap` is the heap the clause literals live on and is read only for
+    /// clause structure. The `meta_subs` may live on a different heap;
+    /// nothing here reads through them.
     pub(super) fn extract_pred_defs_from_h(
         clauses: &mut Vec<Clause>,
         meta_subs: &mut Vec<MetaSub>,

@@ -1,5 +1,6 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -31,6 +32,7 @@ use super::{
 };
 
 use lazy_static::lazy_static;
+use smallvec::SmallVec;
 
 lazy_static! {
     static ref CPU_COUNT: usize = num_cpus::get();
@@ -70,8 +72,12 @@ impl App {
         let pos_goals = compile_examples(&examples.pos, &mut self.prog_heap);
         let neg_goals = compile_examples(&examples.neg, &mut self.prog_heap);
 
-        let (cells, sub_hypotheses, pdt) =
-            generalise(&pos_goals, &self.predicate_table, &self.prog_heap, self.config);
+        let (cells, hypotheses, pdt) = generalise(
+            &pos_goals,
+            &self.predicate_table,
+            &self.prog_heap,
+            self.config,
+        );
 
         for (i, cell) in cells.iter().enumerate() {
             if cell.0 == Var {
@@ -97,6 +103,21 @@ impl App {
                     .unwrap();
             }
         }
+
+        // Literals are built only here; until now hypotheses were `MetaSub`s.
+        let sub_hypotheses: Vec<Box<[Clause]>> = hypotheses
+            .into_iter()
+            .map(|meta_subs| {
+                meta_subs
+                    .into_iter()
+                    .map(|meta_sub| {
+                        meta_sub
+                            .build_clause(&mut self.prog_heap, &self.predicate_table)
+                            .expect("every MetaSub's meta clause id comes from the predicate table")
+                    })
+                    .collect()
+            })
+            .collect();
 
         println!(
             "\n=== Generalisation ===\n{} unique sub hypotheses",
@@ -182,10 +203,10 @@ impl App {
     }
 }
 
-/// One extracted sub hypothesis, as sent from a worker to the collector: its
-/// clauses, the predicate definitions extracted out of them, and the
-/// `(cells, var_regs)` of the detached heap they both reference.
-type ThreadResult = (Box<[Clause]>, Vec<PredDef>, (Vec<Cell>, Vec<VarReg>));
+/// One sub hypothesis as sent from a worker: the hypothesis as `MetaSub`s,
+/// the predicate definitions it depends on, and the `(cells, var_regs)` of
+/// the detached heap their terms live on.
+type ThreadResult = (Vec<MetaSub>, Vec<PredDef>, (Vec<Cell>, Vec<VarReg>));
 
 /// Search every positive example in parallel, streaming each sub hypothesis
 /// found back to this thread as it is extracted.
@@ -194,16 +215,12 @@ type ThreadResult = (Box<[Clause]>, Vec<PredDef>, (Vec<Cell>, Vec<VarReg>));
 /// hypothesis is folded into the shared predicate definition table by
 /// [`merge_thread_results`] the moment it arrives, so grounding and
 /// deduplication overlap with the search instead of waiting on it.
-///
-/// Specialisation happens later, as a pass over the deduplicated survivors:
-/// grounding first means each distinct hypothesis is tested against the
-/// negatives exactly once, however many workers rediscovered it.
 fn generalise(
     pos_goals: &[usize],
     predicate_table: &PredicateTable,
     heap: &ProgramHeap,
     config: Config,
-) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
+) -> (Vec<Cell>, Vec<Vec<MetaSub>>, PredDefTable) {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT - 1)
         .build()
@@ -242,46 +259,37 @@ fn generalise(
     result
 }
 
-/// Fold every streamed [`ThreadResult`] into the final program-level heap,
-/// predicate definition table, and deduplicated set of hypotheses.
+/// Fold every streamed [`ThreadResult`] into the collector heap, predicate
+/// definition table, and deduplicated list of hypotheses.
 ///
-/// `heap` is the real, already-populated program heap (`App::prog_heap`
-/// before the caller appends `cells` onto it), so every address this
-/// function returns -- clause literals, `PredDefTable` bindings, and the
-/// returned `cells`' own addresses -- is already a valid absolute index
-/// into the eventual combined `heap ++ cells`.
+/// `heap` is the program heap the returned `cells` will be appended to, so
+/// every returned address is already valid in `heap ++ cells`.
 ///
-/// Each hypothesis is folded in as one "message" against a single accumulator
-/// heap (`acc_heap`):
-///   - its cells are appended, shifted by `acc_heap`'s current length;
-///   - its `pred_defs` are fed through `PredDefTable::insert`, which grounds
-///     its predicate variables (coining a fresh constant or unifying onto an
-///     existing definition);
-///   - any `Ref` cell still unbound after that is a predicate variable
-///     nothing managed to ground, which is a bug -- panic;
-///   - its `var_regs` are *not* relocated: each message numbers its own
-///     variables from 0, so `acc_heap.var_regs` is reused as a 0-based
-///     scratch window (grown as needed, reset to `UNBOUND` after each
-///     message) rather than given a fresh offset range.
+/// For each message:
+///   - its cells are appended and its addresses shifted to match;
+///   - its `pred_defs` go through `PredDefTable::insert`, grounding their
+///     predicate variables;
+///   - a `Ref` cell still unbound after that is a bug -- panic;
+///   - the hypothesis's references to those predicates are rewritten from
+///     variables to the grounded addresses, since `acc_heap.var_regs` is a
+///     scratch window reset after every message;
+///   - the hypothesis is dropped if an equal one was already collected.
 ///
-/// Duplicate hypotheses -- clause sets that print identically once grounded
-/// -- are dropped from the returned list; their now-orphaned cells are left
-/// in place rather than reclaimed. Grounding makes this dedup catch
-/// rediscoveries across workers, not just within one: two workers' copies of
-/// the same hypothesis name the same coined constants by the time their keys
-/// are taken.
+/// Hypotheses are compared order-independently, by content hash confirmed
+/// with an exact check. A duplicate's cells are left in place.
 fn merge_thread_results(
     thread_results: impl IntoIterator<Item = ThreadResult>,
     heap: &ProgramHeap,
     total: usize,
     searched: &AtomicUsize,
-) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
+) -> (Vec<Cell>, Vec<Vec<MetaSub>>, PredDefTable) {
     let mut acc_heap = QueryHeap::new(heap, None);
     let mut pdt = PredDefTable::default();
-    let mut hypotheses = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut hypotheses: Vec<Vec<MetaSub>> = Vec::new();
+    // Hypothesis content hash -> indices into `hypotheses`.
+    let mut seen: HashMap<u64, SmallVec<[u32; 1]>> = HashMap::new();
 
-    for (merged, (clauses, pred_defs, (cells, var_regs))) in
+    for (merged, (mut hypothesis, pred_defs, (cells, var_regs))) in
         thread_results.into_iter().enumerate()
     {
         let offset = acc_heap.heap_len();
@@ -308,21 +316,47 @@ fn merge_thread_results(
             }
         }
 
+        // A sub still bound to a variable names a predicate grounded above.
+        for meta_sub in &mut hypothesis {
+            meta_sub.shift_addrs(offset as isize);
+            for sub in &mut meta_sub.subs {
+                if let Some(VarId(var_id)) = sub.get_bind() {
+                    match acc_heap.var_deref(var_id) {
+                        bound @ Addr(_) => *sub = bound.into(),
+                        VarId(_) => panic!("Not all variable predicates given constant terms"),
+                    }
+                }
+            }
+        }
+
         for var_reg in &mut acc_heap.var_regs[..var_regs.len()] {
             *var_reg = VarReg::UNBOUND;
         }
 
-        // An empty clause set is nothing to collect -- the goal predicate is
-        // a constant, so a real hypothesis always keeps at least its
-        // top-level clause after predicate definition extraction.
-        if !clauses.is_empty() {
-            let mut clauses = clauses.into_vec();
-            for clause in &mut clauses {
-                clause.shift_literals(offset);
+        // Empty when every clause was lifted into a predicate definition.
+        if !hypothesis.is_empty() {
+            // Sort so that clause order does not affect equality.
+            let mut keyed: Vec<(u64, MetaSub)> = hypothesis
+                .into_iter()
+                .map(|meta_sub| (clause_content_key(&meta_sub, &acc_heap), meta_sub))
+                .collect();
+            keyed.sort_unstable_by_key(|(key, _)| *key);
+
+            let mut hasher = DefaultHasher::new();
+            for (key, _) in &keyed {
+                key.hash(&mut hasher);
             }
-            let key = dedup_key(&clauses, &acc_heap);
-            if seen.insert(key) {
-                hypotheses.push(clauses.into_boxed_slice());
+            let hypothesis: Vec<MetaSub> =
+                keyed.into_iter().map(|(_, meta_sub)| meta_sub).collect();
+
+            let bucket = seen.entry(hasher.finish()).or_default();
+            let duplicate = bucket
+                .iter()
+                .any(|&i| same_hypothesis(&hypotheses[i as usize], &hypothesis, &acc_heap));
+            if !duplicate {
+                bucket
+                    .push(u32::try_from(hypotheses.len()).expect("more than u32::MAX hypotheses"));
+                hypotheses.push(hypothesis);
             }
         }
 
@@ -344,32 +378,50 @@ fn merge_thread_results(
     (acc_heap.cells, hypotheses, pdt)
 }
 
-/// Canonical string key for a hypothesis, used by the merge to drop clause
-/// sets that print identically once their invented predicates have been
-/// given constants.
-fn dedup_key(clauses: &[Clause], heap: &impl Heap) -> String {
-    let mut literals: Vec<String> = clauses
-        .iter()
-        .map(|clause| clause.to_string(heap))
-        .collect();
-    literals.sort();
-    literals.concat()
+/// Address-independent content hash of one grounded clause.
+fn clause_content_key(meta_sub: &MetaSub, heap: &QueryHeap) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    meta_sub.meta_clause_id.hash(&mut hasher);
+    for sub in &meta_sub.subs {
+        // Separator between subs.
+        usize::MAX.hash(&mut hasher);
+        match sub.get_bind() {
+            Some(Addr(addr)) => heap.term_hash(addr, &mut hasher),
+            bind => unreachable!("collected clauses are ground, got {bind:?}"),
+        }
+    }
+    hasher.finish()
+}
+
+/// Whether two grounded clauses are structurally equal.
+fn same_clause(a: &MetaSub, b: &MetaSub, heap: &QueryHeap) -> bool {
+    a.meta_clause_id == b.meta_clause_id
+        && a.subs.len() == b.subs.len()
+        && a.subs
+            .iter()
+            .zip(b.subs.iter())
+            .all(|(x, y)| match (x.get_bind(), y.get_bind()) {
+                (Some(Addr(ax)), Some(Addr(ay))) => heap.term_equal(ax, ay),
+                _ => false,
+            })
+}
+
+/// Whether two hypotheses, each sorted by [`clause_content_key`], are equal.
+fn same_hypothesis(a: &[MetaSub], b: &[MetaSub], heap: &QueryHeap) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| same_clause(x, y, heap))
 }
 
 /// Search for hypotheses explaining one positive example, streaming each one
 /// found (across backtracking) through `tx` as it is extracted.
 ///
-/// Each hypothesis is extracted onto a detached heap of its own, so a message
-/// is self-contained and the collector can fold it in with a single shift.
+/// Each hypothesis is extracted onto its own detached heap, so a message is
+/// self-contained.
 ///
-/// No deduplication happens here, deliberately: by this point the invented
-/// predicates have been extracted out of `clauses` and are still unbound
-/// variables, so two hypotheses that differ only in how an invented predicate
-/// is *defined* print identically. Only the collector, after grounding has
-/// baked each definition's coined constant into the clauses, can tell them
-/// apart (see [`merge_thread_results`]).
+/// No deduplication happens here: invented predicates are still unbound
+/// variables, so hypotheses differing only in how one is *defined* look
+/// identical until the collector grounds them.
 ///
-/// A send fails only when the collector has hung up, which it never does
+/// A send fails only if the collector has hung up, which it never does
 /// while producers hold senders, so the result is ignored.
 fn generalise_thread(
     goal: usize,
@@ -384,48 +436,45 @@ fn generalise_thread(
 
     while proof.prove(&mut query_heap, predicate_table, config) {
         let mut dst = QueryHeap::detached(prog_heap);
-        let (clauses, defs) = extract_hypothesis(&proof, &query_heap, &mut dst);
-        let _ = tx.send((clauses, defs, (dst.cells, dst.var_regs)));
+        let (hypothesis, defs) = extract_hypothesis(&proof, &query_heap, &mut dst);
+        let _ = tx.send((hypothesis, defs, (dst.cells, dst.var_regs)));
     }
 }
 
-/// Extract one just-succeeded proof's hypothesis into `dst`, splitting it into
-/// the predicate definitions it invents and the ordinary clauses left over.
+/// Extract a succeeded proof's hypothesis into `dst` as `MetaSub`s, split
+/// into the predicate definitions it invents and the hypothesis that depends
+/// on them.
 ///
-/// `dst` holds one hypothesis's clauses and predicate definitions on a single
-/// heap; [`generalise_thread`] hands each extraction a fresh one so the
-/// message it sends is self-contained. Each call builds its own fresh
-/// `ref_map` either way: two solutions of the same proof must not be treated
-/// as sharing variable identity just because backtracking reused the same
-/// proof-heap var ids for both.
+/// Only the substitutions are cloned; the clause literals are read in place
+/// on the proof heap to find the predicate variables, then discarded.
+///
+/// `ref_map` is fresh per call, since backtracking reuses proof-heap var ids
+/// across solutions, but shared across the hypothesis's clauses so a
+/// predicate variable named by several lands on one `dst` variable.
 fn extract_hypothesis(
     proof: &Proof,
     proof_heap: &QueryHeap,
     dst: &mut QueryHeap,
-) -> (Box<[Clause]>, Vec<PredDef>) {
+) -> (Vec<MetaSub>, Vec<PredDef>) {
     let mut ref_map = HashMap::new();
-    let mut clauses = Vec::with_capacity(proof.hypothesis.len());
-    let mut meta_subs = Vec::with_capacity(proof.hypothesis.len());
 
-    for (clause, meta_sub) in proof
+    debug_assert_eq!(
+        proof.hypothesis.len(),
+        proof.hypothesis.meta_subs.len(),
+        "every hypothesis clause records exactly one meta substitution"
+    );
+
+    // Cloned only so `extract_pred_defs_from_h` can remove the lifted ones.
+    let mut clauses: Vec<Clause> = proof.hypothesis.iter().cloned().collect();
+    let mut meta_subs: Vec<MetaSub> = proof
         .hypothesis
+        .meta_subs
         .iter()
-        .zip(proof.hypothesis.meta_subs.iter())
-    {
-        let new_literals: Vec<usize> = clause
-            .iter()
-            .map(|&lit_addr| {
-                let addr = dst.heap_len();
-                dst.clone_term_from_other(proof_heap, lit_addr, &mut ref_map);
-                addr
-            })
-            .collect();
-        clauses.push(Clause::new(new_literals, None, clause.max_arg_id));
-        meta_subs.push(clone_meta_sub(dst, proof_heap, meta_sub, &mut ref_map));
-    }
+        .map(|meta_sub| clone_meta_sub(dst, proof_heap, meta_sub, &mut ref_map))
+        .collect();
 
-    let pred_defs = PredDef::extract_pred_defs_from_h(&mut clauses, &mut meta_subs, &*dst);
-    (clauses.into_boxed_slice(), pred_defs)
+    let pred_defs = PredDef::extract_pred_defs_from_h(&mut clauses, &mut meta_subs, proof_heap);
+    (meta_subs, pred_defs)
 }
 
 /// Translate one clause's compacted meta-variable substitution from
@@ -497,13 +546,13 @@ fn top_prog_to_string(top_program: Vec<Clause>, heap: &impl Heap) -> String {
 
 #[cfg(test)]
 mod extraction_tests {
-    use smallvec::smallvec;
     use super::*;
     use crate::heap::test_prog;
     use crate::heap::{
         Heap,
         Tag::{Comp, Con},
     };
+    use smallvec::smallvec;
 
     /// Build a `Proof` with no goals (so it never actually resolves anything)
     /// whose `hypothesis` field is pre-populated with `clauses`/`meta_subs`.
@@ -631,57 +680,57 @@ mod extraction_tests {
 
         let proof = proof_with_hypothesis(&proof_heap, vec![clause], vec![meta_sub]);
         let mut dst = QueryHeap::detached(&prog);
-        let (clauses, pred_defs) = extract_hypothesis(&proof, &proof_heap, &mut dst);
+        let (hypothesis, pred_defs) = extract_hypothesis(&proof, &proof_heap, &mut dst);
 
         assert!(pred_defs.is_empty());
-        assert_eq!(clauses.len(), 1);
-        assert_eq!(dst[clauses[0].head()], (Comp, 1));
-        assert_eq!(dst[clauses[0].head() + 1], (Con, sym));
+        assert_eq!(hypothesis.len(), 1);
+        assert_eq!(hypothesis[0].meta_clause_id, 0);
+        // The literal is read in place on the proof heap and discarded, and
+        // this clause's substitution is empty, so nothing lands on `dst`.
+        assert!(dst.cells.is_empty());
     }
 
     #[test]
-    fn extract_hypothesis_shares_variable_identity_between_clause_and_meta_sub() {
+    fn extract_hypothesis_lifts_predicate_variable_headed_clauses() {
         let prog = test_prog();
-        // `pred_var(arg_var).` with `arg_var` also recorded in the clause's
-        // MetaSub -- the clause head is a predicate-variable-headed Comp, so
-        // this should be lifted into a PredDef rather than kept as an
-        // ordinary clause.
+        // `pred_var(arg_var, arg_var).` -- the clause head is a
+        // predicate-variable-headed Comp, so it should be lifted into a
+        // PredDef rather than kept as an ordinary clause, and the repeated
+        // `arg_var` in its MetaSub must land on a single destination
+        // variable (the shared `ref_map`).
         let mut proof_heap = QueryHeap::new(&prog, None);
         let pred_var = proof_heap.new_var(VarReg::UNBOUND);
         let arg_var = proof_heap.new_var(VarReg::UNBOUND);
         let head_addr = proof_heap.heap_len();
-        proof_heap.heap_push((Comp, 2));
+        proof_heap.heap_push((Comp, 3));
         proof_heap.heap_push((Var, pred_var));
+        proof_heap.heap_push((Var, arg_var));
         proof_heap.heap_push((Var, arg_var));
 
         let clause = Clause::new(vec![head_addr], None, 0);
         let meta_sub = MetaSub {
             meta_clause_id: 0,
-            subs: smallvec![VarReg::from_var(arg_var)],
+            subs: smallvec![VarReg::from_var(arg_var), VarReg::from_var(arg_var)],
         };
 
         let proof = proof_with_hypothesis(&proof_heap, vec![clause], vec![meta_sub]);
         let mut dst = QueryHeap::detached(&prog);
-        let (clauses, pred_defs) = extract_hypothesis(&proof, &proof_heap, &mut dst);
+        let (hypothesis, pred_defs) = extract_hypothesis(&proof, &proof_heap, &mut dst);
 
         assert!(
-            clauses.is_empty(),
+            hypothesis.is_empty(),
             "a predicate-variable-headed clause should be lifted into a PredDef"
         );
         assert_eq!(pred_defs.len(), 1);
         assert_eq!(pred_defs[0].meta_subs.len(), 1);
 
-        // The clause's literal was cloned first, so it occupies dst[0..=2].
-        let (comp_tag, comp_arity) = dst[0];
-        assert_eq!((comp_tag, comp_arity), (Comp, 2));
-        let (arg_tag, cloned_arg_var) = dst[2];
-        assert_eq!(arg_tag, Var);
-
+        let subs = &pred_defs[0].meta_subs[0].subs;
+        assert_eq!(subs.len(), 2);
+        assert!(subs[0].var(), "an unbound argument clones to a variable");
         assert_eq!(
-            pred_defs[0].meta_subs[0].subs[0],
-            VarReg::from_var(cloned_arg_var),
-            "the meta sub's argument binding should name the same destination \
-             variable as the clause's own argument occurrence"
+            subs[0], subs[1],
+            "repeated occurrences of one proof variable must share one \
+             destination variable"
         );
     }
 
@@ -727,10 +776,10 @@ mod extraction_tests {
 
 #[cfg(test)]
 mod merge_tests {
-    use smallvec::smallvec;
     use super::*;
     use crate::heap::test_prog;
     use crate::heap::Tag::{Comp, Con};
+    use smallvec::smallvec;
 
     /// [`merge_thread_results`] with the progress-reporting arguments filled
     /// in: these tests supply every message up front, so the number of
@@ -738,7 +787,7 @@ mod merge_tests {
     fn merge(
         results: Vec<ThreadResult>,
         heap: &ProgramHeap,
-    ) -> (Vec<Cell>, Vec<Box<[Clause]>>, PredDefTable) {
+    ) -> (Vec<Cell>, Vec<Vec<MetaSub>>, PredDefTable) {
         let total = results.len();
         merge_thread_results(results, heap, total, &AtomicUsize::new(total))
     }
@@ -774,7 +823,7 @@ mod merge_tests {
         let pred_def = PredDef::new(smallvec![meta_sub]);
 
         let (cells, hypotheses, pdt) =
-            merge(vec![(Box::from([]), vec![pred_def], parts(heap))], test_prog());
+            merge(vec![(Vec::new(), vec![pred_def], parts(heap))], test_prog());
 
         assert!(hypotheses.is_empty());
         for (i, cell) in cells.iter().enumerate() {
@@ -807,7 +856,7 @@ mod merge_tests {
                 subs: smallvec![VarReg::from_var(pred_var)],
             };
             let pred_def = PredDef::new(smallvec![meta_sub]);
-            (Box::from([]) as Box<[Clause]>, vec![pred_def], parts(heap))
+            (Vec::new(), vec![pred_def], parts(heap))
         };
 
         let (cells, hypotheses, pdt) = merge(vec![make_message(0), make_message(1)], test_prog());
@@ -835,31 +884,38 @@ mod merge_tests {
     }
 
     #[test]
-    fn merge_shifts_clause_literal_addresses_between_messages() {
+    fn merge_shifts_substitution_addresses_between_messages() {
         let prog = test_prog();
         let sym_p = prog.symbols().set_const("merge_test_shift_p");
         let sym_q = prog.symbols().set_const("merge_test_shift_q");
 
         let message = |sym: usize| {
             let mut heap = thread_heap();
-            let head = heap.heap_push((Comp, 1));
-            heap.heap_push((Con, sym));
-            let clauses: Box<[Clause]> = Box::from([Clause::new(vec![head], None, 0)]);
-            (clauses, Vec::new(), parts(heap))
+            let addr = heap.heap_push((Con, sym));
+            let meta_sub = MetaSub {
+                meta_clause_id: 0,
+                subs: smallvec![VarReg::from_addr(addr)],
+            };
+            (vec![meta_sub], Vec::new(), parts(heap))
         };
 
         let (cells, hypotheses, _) = merge(vec![message(sym_p), message(sym_q)], test_prog());
 
+        assert_eq!(cells, vec![(Con, sym_p), (Con, sym_q)]);
         assert_eq!(
-            cells,
-            vec![(Comp, 1), (Con, sym_p), (Comp, 1), (Con, sym_q)]
-        );
-        assert_eq!(hypotheses.len(), 2);
-        assert_eq!(hypotheses[0][0].head(), 0, "first message is not shifted");
-        assert_eq!(
-            hypotheses[1][0].head(),
+            hypotheses.len(),
             2,
-            "second message's clause literal should be shifted past the first message's cells"
+            "different constants are different hypotheses"
+        );
+        assert_eq!(
+            hypotheses[0][0].subs[0],
+            VarReg::from_addr(0),
+            "first message is not shifted"
+        );
+        assert_eq!(
+            hypotheses[1][0].subs[0],
+            VarReg::from_addr(1),
+            "second message's substitution should be shifted past the first message's cells"
         );
     }
 
@@ -870,10 +926,12 @@ mod merge_tests {
 
         let message = || {
             let mut heap = thread_heap();
-            let head = heap.heap_push((Comp, 1));
-            heap.heap_push((Con, sym_p));
-            let clauses: Box<[Clause]> = Box::from([Clause::new(vec![head], None, 0)]);
-            (clauses, Vec::new(), parts(heap))
+            let addr = heap.heap_push((Con, sym_p));
+            let meta_sub = MetaSub {
+                meta_clause_id: 0,
+                subs: smallvec![VarReg::from_addr(addr)],
+            };
+            (vec![meta_sub], Vec::new(), parts(heap))
         };
 
         let (cells, hypotheses, _) = merge(vec![message(), message()], test_prog());
@@ -885,7 +943,7 @@ mod merge_tests {
         );
         // The duplicate's cells are still appended (not reclaimed), only the
         // returned hypothesis list is deduplicated.
-        assert_eq!(cells.len(), 4);
+        assert_eq!(cells.len(), 2);
     }
 
     #[test]
@@ -897,6 +955,21 @@ mod merge_tests {
         let stray_var = heap.new_var(VarReg::UNBOUND);
         heap.heap_push((Var, stray_var));
 
-        let _ = merge(vec![(Box::from([]), Vec::new(), parts(heap))], test_prog());
+        let _ = merge(vec![(Vec::new(), Vec::new(), parts(heap))], test_prog());
+    }
+
+    #[test]
+    #[should_panic(expected = "Not all variable predicates given constant terms")]
+    fn merge_panics_if_a_hypothesis_stays_unbound() {
+        // A hypothesis variable still unbound after the definition inserts
+        // names an invented predicate that nothing defined.
+        let mut heap = thread_heap();
+        let stray_var = heap.new_var(VarReg::UNBOUND);
+        let meta_sub = MetaSub {
+            meta_clause_id: 0,
+            subs: smallvec![VarReg::from_var(stray_var)],
+        };
+
+        let _ = merge(vec![(vec![meta_sub], Vec::new(), parts(heap))], test_prog());
     }
 }
