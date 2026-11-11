@@ -13,7 +13,7 @@ use crate::{
         Tag::*,
         VarBind::{self, Addr, VarId},
     },
-    program::{Clause, MetaSub},
+    program::{MetaSub, PredicateTable},
     utils::{DirGraph16, DirGraph8},
 };
 
@@ -287,41 +287,62 @@ impl PredDef {
         }
     }
 
-    /// Lift the invented-predicate clauses out of a hypothesis into
-    /// dependency-ordered definitions, leaving the rest of the hypothesis
-    /// behind in the two parallel vectors.
+    /// Lift the clauses that define an invented predicate out of a
+    /// hypothesis into dependency-ordered definitions, leaving the rest of
+    /// the hypothesis behind in `meta_subs`.
     ///
-    /// `heap` is the heap the clause literals live on and is read only for
-    /// clause structure. The `meta_subs` may live on a different heap;
-    /// nothing here reads through them.
+    /// Works from the substitutions alone: each meta clause records which of
+    /// its meta variables are in predicate positions, so a clause defines an
+    /// invented predicate when its head predicate is still a variable, and
+    /// depends on the body predicates that are. `heap` is the heap the
+    /// substitutions' variables live on.
     pub(super) fn extract_pred_defs_from_h(
-        clauses: &mut Vec<Clause>,
         meta_subs: &mut Vec<MetaSub>,
+        predicate_table: &PredicateTable,
         heap: &impl Heap,
     ) -> Vec<Self> {
-        let mut clause_sets: Vec<SmallVec<[(Clause, MetaSub); PRED_DEF_DEFAULT_SIZE]>> =
-            Vec::with_capacity(clauses.len());
-        let mut var_preds = Vec::with_capacity(clauses.len());
-        let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(clauses.len());
-
-        for idx in (0..clauses.len()).rev() {
-            if let (Var, var_id) = heap.get_deref_cell(clauses[idx].head() + 1) {
-                let clause = clauses.remove(idx);
-                let meta_sub = meta_subs.remove(idx);
-                match var_preds.iter().position(|var_pred| *var_pred == var_id) {
-                    Some(def_index) => {
-                        extract_body_var_preds(&mut dependencies[def_index], &clause, heap);
-                        clause_sets[def_index].push((clause, meta_sub));
-                    }
-                    None => {
-                        var_preds.push(var_id);
-                        let mut body_var_preds = HashSet::new();
-                        extract_body_var_preds(&mut body_var_preds, &clause, heap);
-                        dependencies.push(body_var_preds);
-                        clause_sets.push(SmallVec::from_elem((clause, meta_sub), 1));
-                    }
-                }
+        /// The predicate variable a substitution names, if it still names one.
+        fn pred_var(meta_sub: &MetaSub, sub_idx: usize, heap: &impl Heap) -> Option<usize> {
+            match meta_sub.subs.get(sub_idx)?.get_bind()? {
+                VarId(var_id) => match heap.var_deref(var_id) {
+                    VarId(var_id) => Some(var_id),
+                    Addr(_) => None,
+                },
+                Addr(_) => None,
             }
+        }
+
+        let mut clause_sets: Vec<SmallVec<[MetaSub; PRED_DEF_DEFAULT_SIZE]>> =
+            Vec::with_capacity(meta_subs.len());
+        let mut var_preds = Vec::with_capacity(meta_subs.len());
+        let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(meta_subs.len());
+
+        for idx in (0..meta_subs.len()).rev() {
+            let Some(meta_clause) = predicate_table.get_meta_clause(meta_subs[idx].meta_clause_id)
+            else {
+                continue;
+            };
+            let Some(var_id) = meta_clause
+                .head_pred_sub_index()
+                .and_then(|head_idx| pred_var(&meta_subs[idx], head_idx, heap))
+            else {
+                continue;
+            };
+
+            let body_var_preds = meta_clause
+                .body_pred_sub_indices()
+                .filter_map(|sub_idx| pred_var(&meta_subs[idx], sub_idx, heap));
+            let def_index = match var_preds.iter().position(|var_pred| *var_pred == var_id) {
+                Some(def_index) => def_index,
+                None => {
+                    var_preds.push(var_id);
+                    dependencies.push(HashSet::new());
+                    clause_sets.push(SmallVec::new());
+                    var_preds.len() - 1
+                }
+            };
+            dependencies[def_index].extend(body_var_preds);
+            clause_sets[def_index].push(meta_subs.remove(idx));
         }
 
         // Each clause set is one invented predicate, so there are never more
@@ -382,7 +403,7 @@ impl PredDef {
                 let mut meta_subs: SmallVec<[MetaSub; PRED_DEF_DEFAULT_SIZE]> = SmallVec::new();
                 for (i, clause_set) in clause_sets.iter_mut().enumerate() {
                     if group & 1 << i != 0 {
-                        meta_subs.extend(clause_set.drain(..).map(|(_, msub)| msub));
+                        meta_subs.extend(clause_set.drain(..));
                     }
                 }
                 PredDef::new(meta_subs)
@@ -634,20 +655,12 @@ impl PredDefTable {
     #[cfg(test)]
     pub(super) fn extract_pred_defs_from_h(
         &mut self,
-        clauses: &mut Vec<Clause>,
         meta_subs: &mut Vec<MetaSub>,
+        predicate_table: &PredicateTable,
         heap: &mut QueryHeap,
     ) {
-        for pred_def in PredDef::extract_pred_defs_from_h(clauses, meta_subs, heap) {
+        for pred_def in PredDef::extract_pred_defs_from_h(meta_subs, predicate_table, heap) {
             self.insert(pred_def, heap);
-        }
-    }
-}
-
-fn extract_body_var_preds(pred_set: &mut HashSet<usize>, clause: &Clause, heap: &impl Heap) {
-    for literal in clause.body() {
-        if let (Var, var_id) = heap.get_deref_cell(literal + 1) {
-            pred_set.insert(var_id);
         }
     }
 }
@@ -663,9 +676,7 @@ mod tests {
         },
         learners::predicate_unification::{PredDef, PredDefTable},
         parser::_build_clause,
-        program::{
-            Clause, {Constraints, Hypothesis},
-        },
+        program::{Clause, Constraints, Hypothesis, PredicateTable},
         resolution::{build, Substitution},
     };
 
@@ -681,6 +692,18 @@ mod tests {
         }
 
         res
+    }
+
+    /// A predicate table holding `rules`, for looking meta clauses up by id.
+    fn table_of(prog: &ProgramHeap, rules: &[&Clause]) -> PredicateTable {
+        let mut table = PredicateTable::new();
+        for rule in rules {
+            let symbol_arity = prog.symbol_arity(rule.head());
+            table
+                .add_clause_to_predicate((*rule).clone(), symbol_arity)
+                .unwrap();
+        }
+        table
     }
 
     fn instantiate_meta_rule(
@@ -779,6 +802,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         let mut heap = QueryHeap::new(&prog_heap, None);
         let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
@@ -802,8 +826,8 @@ mod tests {
         );
 
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
 
         assert_eq!(
             pdt.pred_defs.len(),
@@ -822,6 +846,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         let mut heap = QueryHeap::new(&prog_heap, None);
         let [p, q, r, s] = get_const_ids(&prog_heap, ["p", "q", "r", "s"]);
@@ -846,8 +871,8 @@ mod tests {
         );
 
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
 
         assert_eq!(pdt.pred_defs.len(), 2);
         assert_ne!(heap.var_deref(0), heap.var_deref(1));
@@ -863,6 +888,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         let mut heap = QueryHeap::new(&prog_heap, None);
         let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
@@ -889,8 +915,8 @@ mod tests {
         );
 
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
 
         assert_eq!(
             pdt.pred_defs.len(),
@@ -929,6 +955,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         let mut heap = QueryHeap::new(&prog_heap, None);
         let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
@@ -944,7 +971,7 @@ mod tests {
             &mut heap,
         );
 
-        let defs = PredDef::extract_pred_defs_from_h(&mut h.clauses, &mut h.meta_subs, &heap);
+        let defs = PredDef::extract_pred_defs_from_h(&mut h.meta_subs, &table, &heap);
 
         assert_eq!(
             definition_heads(&defs),
@@ -969,6 +996,7 @@ mod tests {
         let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta_rules = [(&meta0, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         let mut heap = QueryHeap::new(&prog_heap, None);
         let [p] = get_const_ids(&prog_heap, ["p"]);
@@ -984,7 +1012,7 @@ mod tests {
             &mut heap,
         );
 
-        let defs = PredDef::extract_pred_defs_from_h(&mut h.clauses, &mut h.meta_subs, &heap);
+        let defs = PredDef::extract_pred_defs_from_h(&mut h.meta_subs, &table, &heap);
 
         assert_eq!(
             definition_heads(&defs),
@@ -1009,6 +1037,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         let mut heap = QueryHeap::new(&prog_heap, None);
         let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
@@ -1031,7 +1060,7 @@ mod tests {
             &mut heap,
         );
 
-        let defs = PredDef::extract_pred_defs_from_h(&mut h.clauses, &mut h.meta_subs, &heap);
+        let defs = PredDef::extract_pred_defs_from_h(&mut h.meta_subs, &table, &heap);
 
         assert_eq!(defs.len(), 9, "nine invented predicates, nine definitions");
         assert_eq!(
@@ -1049,6 +1078,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         let mut heap = QueryHeap::new(&prog_heap, None);
         let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
@@ -1072,7 +1102,7 @@ mod tests {
         );
 
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h.clauses, &mut h.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h.meta_subs, &table, &mut heap);
 
         assert_eq!(pdt.pred_defs.len(), 9);
         assert_eq!(pdt.pred_symbols().len(), 9, "one constant per definition");
@@ -1094,6 +1124,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         let mut heap = QueryHeap::new(&prog_heap, None);
         let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
@@ -1110,7 +1141,7 @@ mod tests {
         );
 
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h.clauses, &mut h.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h.meta_subs, &table, &mut heap);
 
         // Both variables are now ground, and to *different* predicates: Var_0
         // is the caller, Var_1 the callee.
@@ -1145,6 +1176,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
@@ -1172,8 +1204,8 @@ mod tests {
         let mut pdt = PredDefTable::default();
 
         //Seperate out pred defs
-        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
 
         pdt._print_defs(&heap);
 
@@ -1195,6 +1227,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
@@ -1223,8 +1256,8 @@ mod tests {
 
         let mut pdt = PredDefTable::default();
 
-        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
 
         pdt._print_defs(&heap);
 
@@ -1246,6 +1279,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
@@ -1273,8 +1307,8 @@ mod tests {
         );
 
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
         pdt._print_defs(&heap);
 
         assert_eq!(heap.var_deref(0), heap.var_deref(2));
@@ -1297,6 +1331,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
@@ -1324,8 +1359,8 @@ mod tests {
 
         // Build Pred Def table
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
         pdt._print_defs(&heap);
 
         print_hypothesis(&h1, 1, &heap);
@@ -1349,6 +1384,7 @@ mod tests {
         let mut prog_heap = ProgramHeap::new();
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta_rules = [(&meta0, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
@@ -1375,8 +1411,8 @@ mod tests {
 
         // Build Pred Def table
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
         pdt._print_defs(&heap);
 
         print_hypothesis(&h1, 1, &heap);
@@ -1412,6 +1448,7 @@ mod tests {
         let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &meta_rules.map(|(rule, _)| rule));
 
         //Build hypotheses
         let mut heap = QueryHeap::new(&prog_heap, None);
@@ -1442,8 +1479,8 @@ mod tests {
 
         // Build Pred Def table
         let mut pdt = PredDefTable::default();
-        pdt.extract_pred_defs_from_h(&mut h1.clauses, &mut h1.meta_subs, &mut heap);
-        pdt.extract_pred_defs_from_h(&mut h2.clauses, &mut h2.meta_subs, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
         pdt._print_defs(&heap);
 
         print_hypothesis(&h1, 1, &heap);

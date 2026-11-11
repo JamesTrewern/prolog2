@@ -220,6 +220,8 @@ mod invented_pred_tests {
         let meta_data = MetaData {
             meta_var_threshold: 0,
             constrained_vars: BitFlag64::default(),
+            pred_vars: BitFlag64::default(),
+            head_pred: false,
             id: 0,
         };
 
@@ -271,6 +273,8 @@ mod invented_pred_tests {
         let meta_data = MetaData {
             meta_var_threshold: 0,
             constrained_vars: BitFlag64::default(),
+            pred_vars: BitFlag64::default(),
+            head_pred: false,
             id: 0,
         };
 

@@ -436,7 +436,8 @@ fn generalise_thread(
 
     while proof.prove(&mut query_heap, predicate_table, config) {
         let mut dst = QueryHeap::detached(prog_heap);
-        let (hypothesis, defs) = extract_hypothesis(&proof, &query_heap, &mut dst);
+        let (hypothesis, defs) =
+            extract_hypothesis(&proof, &query_heap, &mut dst, predicate_table);
         let _ = tx.send((hypothesis, defs, (dst.cells, dst.var_regs)));
     }
 }
@@ -445,8 +446,7 @@ fn generalise_thread(
 /// into the predicate definitions it invents and the hypothesis that depends
 /// on them.
 ///
-/// Only the substitutions are cloned; the clause literals are read in place
-/// on the proof heap to find the predicate variables, then discarded.
+/// Only the substitutions are cloned; the clauses themselves are never read.
 ///
 /// `ref_map` is fresh per call, since backtracking reuses proof-heap var ids
 /// across solutions, but shared across the hypothesis's clauses so a
@@ -455,17 +455,10 @@ fn extract_hypothesis(
     proof: &Proof,
     proof_heap: &QueryHeap,
     dst: &mut QueryHeap,
+    predicate_table: &PredicateTable,
 ) -> (Vec<MetaSub>, Vec<PredDef>) {
     let mut ref_map = HashMap::new();
 
-    debug_assert_eq!(
-        proof.hypothesis.len(),
-        proof.hypothesis.meta_subs.len(),
-        "every hypothesis clause records exactly one meta substitution"
-    );
-
-    // Cloned only so `extract_pred_defs_from_h` can remove the lifted ones.
-    let mut clauses: Vec<Clause> = proof.hypothesis.iter().cloned().collect();
     let mut meta_subs: Vec<MetaSub> = proof
         .hypothesis
         .meta_subs
@@ -473,7 +466,7 @@ fn extract_hypothesis(
         .map(|meta_sub| clone_meta_sub(dst, proof_heap, meta_sub, &mut ref_map))
         .collect();
 
-    let pred_defs = PredDef::extract_pred_defs_from_h(&mut clauses, &mut meta_subs, proof_heap);
+    let pred_defs = PredDef::extract_pred_defs_from_h(&mut meta_subs, predicate_table, dst);
     (meta_subs, pred_defs)
 }
 
@@ -550,23 +543,29 @@ mod extraction_tests {
     use crate::heap::test_prog;
     use crate::heap::{
         Heap,
-        Tag::{Comp, Con},
+        Tag::Con,
     };
     use smallvec::smallvec;
 
     /// Build a `Proof` with no goals (so it never actually resolves anything)
-    /// whose `hypothesis` field is pre-populated with `clauses`/`meta_subs`.
-    /// Good enough to exercise [`extract_hypothesis`], which only ever reads
-    /// `proof.hypothesis`.
-    fn proof_with_hypothesis<'a>(
-        proof_heap: &QueryHeap,
-        clauses: Vec<Clause>,
-        meta_subs: Vec<MetaSub>,
-    ) -> Proof<'a> {
+    /// whose hypothesis holds `meta_subs`. Good enough to exercise
+    /// [`extract_hypothesis`], which only ever reads those.
+    fn proof_with_hypothesis<'a>(proof_heap: &QueryHeap, meta_subs: Vec<MetaSub>) -> Proof<'a> {
         let mut proof = Proof::new(proof_heap, &[]);
-        proof.hypothesis.clauses = clauses;
         proof.hypothesis.meta_subs = meta_subs;
         proof
+    }
+
+    /// A program heap holding the meta rule `P(X,Y):-Q(X,Y)`, the table to
+    /// look it up in, and its id. Its substitutions are `[P, Q]`.
+    fn prog_with_meta_rule() -> (ProgramHeap, PredicateTable, usize) {
+        let mut prog = ProgramHeap::new();
+        let meta = crate::parser::_build_clause(&mut prog, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let id = meta.meta_data.unwrap().id;
+        let mut table = PredicateTable::new();
+        let symbol_arity = prog.symbol_arity(meta.head());
+        table.add_clause_to_predicate(meta, symbol_arity).unwrap();
+        (prog, table, id)
     }
 
     #[test]
@@ -660,62 +659,54 @@ mod extraction_tests {
     }
 
     #[test]
-    fn extract_hypothesis_leaves_ordinary_clauses_untouched_by_pred_def_extraction() {
-        let prog = test_prog();
-        // A fact headed by a *constant* predicate `p` (`(Comp, 1), (Con, p)`,
-        // i.e. a 0-ary predicate: a Comp's arity counts the functor cell
-        // itself). `PredDef::extract_pred_defs_from_h` only lifts clauses
-        // whose functor cell is a predicate *variable*, so this must be left
-        // as an ordinary clause.
+    fn extract_hypothesis_keeps_constant_headed_clauses() {
+        // `p(X,Y):-q(X,Y)` and `p(X,Y):-Var(X,Y)`: neither head is a
+        // predicate variable, so neither is lifted -- not even the second,
+        // whose only predicate variable is in its body.
+        let (prog, table, meta_clause_id) = prog_with_meta_rule();
         let mut proof_heap = QueryHeap::new(&prog, None);
-        let sym = prog.symbols().set_const("p");
-        let head_addr = proof_heap.heap_len();
-        proof_heap.heap_push((Comp, 1));
-        proof_heap.heap_push((Con, sym));
-        let clause = Clause::new(vec![head_addr], None, 0);
-        let meta_sub = MetaSub {
-            meta_clause_id: 0,
-            subs: smallvec![],
-        };
+        let p = proof_heap.heap_push((Con, prog.symbols().set_const("p")));
+        let q = proof_heap.heap_push((Con, prog.symbols().set_const("q")));
+        let body_var = proof_heap.new_var(VarReg::UNBOUND);
+        let meta_subs = vec![
+            MetaSub {
+                meta_clause_id,
+                subs: smallvec![VarReg::from_addr(p), VarReg::from_addr(q)],
+            },
+            MetaSub {
+                meta_clause_id,
+                subs: smallvec![VarReg::from_addr(p), VarReg::from_var(body_var)],
+            },
+        ];
 
-        let proof = proof_with_hypothesis(&proof_heap, vec![clause], vec![meta_sub]);
+        let proof = proof_with_hypothesis(&proof_heap, meta_subs);
         let mut dst = QueryHeap::detached(&prog);
-        let (hypothesis, pred_defs) = extract_hypothesis(&proof, &proof_heap, &mut dst);
+        let (hypothesis, pred_defs) = extract_hypothesis(&proof, &proof_heap, &mut dst, &table);
 
         assert!(pred_defs.is_empty());
-        assert_eq!(hypothesis.len(), 1);
-        assert_eq!(hypothesis[0].meta_clause_id, 0);
-        // The literal is read in place on the proof heap and discarded, and
-        // this clause's substitution is empty, so nothing lands on `dst`.
-        assert!(dst.cells.is_empty());
+        assert_eq!(hypothesis.len(), 2);
+        assert_eq!(hypothesis[0].meta_clause_id, meta_clause_id);
+        // Only the three constant substitution terms land on `dst`.
+        assert_eq!(dst.cells.len(), 3);
     }
 
     #[test]
     fn extract_hypothesis_lifts_predicate_variable_headed_clauses() {
-        let prog = test_prog();
-        // `pred_var(arg_var, arg_var).` -- the clause head is a
-        // predicate-variable-headed Comp, so it should be lifted into a
-        // PredDef rather than kept as an ordinary clause, and the repeated
-        // `arg_var` in its MetaSub must land on a single destination
-        // variable (the shared `ref_map`).
+        // `Var(X,Y):-Var(X,Y)` -- the head predicate is a variable, so the
+        // clause is lifted into a PredDef, and the variable repeated in its
+        // MetaSub must land on a single destination variable (the shared
+        // `ref_map`).
+        let (prog, table, meta_clause_id) = prog_with_meta_rule();
         let mut proof_heap = QueryHeap::new(&prog, None);
         let pred_var = proof_heap.new_var(VarReg::UNBOUND);
-        let arg_var = proof_heap.new_var(VarReg::UNBOUND);
-        let head_addr = proof_heap.heap_len();
-        proof_heap.heap_push((Comp, 3));
-        proof_heap.heap_push((Var, pred_var));
-        proof_heap.heap_push((Var, arg_var));
-        proof_heap.heap_push((Var, arg_var));
-
-        let clause = Clause::new(vec![head_addr], None, 0);
         let meta_sub = MetaSub {
-            meta_clause_id: 0,
-            subs: smallvec![VarReg::from_var(arg_var), VarReg::from_var(arg_var)],
+            meta_clause_id,
+            subs: smallvec![VarReg::from_var(pred_var), VarReg::from_var(pred_var)],
         };
 
-        let proof = proof_with_hypothesis(&proof_heap, vec![clause], vec![meta_sub]);
+        let proof = proof_with_hypothesis(&proof_heap, vec![meta_sub]);
         let mut dst = QueryHeap::detached(&prog);
-        let (hypothesis, pred_defs) = extract_hypothesis(&proof, &proof_heap, &mut dst);
+        let (hypothesis, pred_defs) = extract_hypothesis(&proof, &proof_heap, &mut dst, &table);
 
         assert!(
             hypothesis.is_empty(),
@@ -726,7 +717,7 @@ mod extraction_tests {
 
         let subs = &pred_defs[0].meta_subs[0].subs;
         assert_eq!(subs.len(), 2);
-        assert!(subs[0].var(), "an unbound argument clones to a variable");
+        assert!(subs[0].var(), "an unbound predicate clones to a variable");
         assert_eq!(
             subs[0], subs[1],
             "repeated occurrences of one proof variable must share one \
@@ -736,32 +727,26 @@ mod extraction_tests {
 
     #[test]
     fn extract_hypothesis_uses_a_fresh_ref_map_each_call() {
-        let prog = test_prog();
         // Two "solutions" of the same proof can legitimately reuse the same
         // proof-heap var id (backtracking resets and reassigns registers).
         // Each call to `extract_hypothesis` must still land on a distinct
-        // destination variable rather than aliasing the two solutions. Use a
-        // predicate-variable-headed clause so the shared identity shows up on
-        // the extracted `PredDef`'s meta sub.
+        // destination variable rather than aliasing the two solutions.
+        let (prog, table, meta_clause_id) = prog_with_meta_rule();
         let mut proof_heap = QueryHeap::new(&prog, None);
         let pred_var = proof_heap.new_var(VarReg::UNBOUND);
-        let head_addr = proof_heap.heap_len();
-        proof_heap.heap_push((Comp, 1));
-        proof_heap.heap_push((Var, pred_var));
-        let clause = Clause::new(vec![head_addr], None, 0);
+        let q = proof_heap.heap_push((Con, prog.symbols().set_const("q")));
         let meta_sub = MetaSub {
-            meta_clause_id: 0,
-            subs: smallvec![VarReg::from_var(pred_var)],
+            meta_clause_id,
+            subs: smallvec![VarReg::from_var(pred_var), VarReg::from_addr(q)],
         };
 
         let mut dst = QueryHeap::detached(&prog);
 
-        let proof1 =
-            proof_with_hypothesis(&proof_heap, vec![clause.clone()], vec![meta_sub.clone()]);
-        let (_, pred_defs1) = extract_hypothesis(&proof1, &proof_heap, &mut dst);
+        let proof1 = proof_with_hypothesis(&proof_heap, vec![meta_sub.clone()]);
+        let (_, pred_defs1) = extract_hypothesis(&proof1, &proof_heap, &mut dst, &table);
 
-        let proof2 = proof_with_hypothesis(&proof_heap, vec![clause], vec![meta_sub]);
-        let (_, pred_defs2) = extract_hypothesis(&proof2, &proof_heap, &mut dst);
+        let proof2 = proof_with_hypothesis(&proof_heap, vec![meta_sub]);
+        let (_, pred_defs2) = extract_hypothesis(&proof2, &proof_heap, &mut dst, &table);
 
         let var1 = pred_defs1[0].meta_subs[0].subs[0];
         let var2 = pred_defs2[0].meta_subs[0].subs[0];

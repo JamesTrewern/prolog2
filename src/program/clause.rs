@@ -1,5 +1,8 @@
 //! Clause representation and metadata.
-use crate::{heap::Heap, LITERALS_DEFAULT_SIZE};
+use crate::{
+    heap::{Heap, Tag},
+    LITERALS_DEFAULT_SIZE,
+};
 use smallvec::SmallVec;
 use std::{
     ops::{Deref, DerefMut},
@@ -76,6 +79,13 @@ pub struct MetaData {
     /// Equal to `max_arg_id` when nothing is meta.
     pub meta_var_threshold: usize,
     pub constrained_vars: BitFlag64,
+    /// Arg ids of the meta variables in a predicate position: the functor of
+    /// a literal. Set by [`Clause::with_pred_vars`].
+    pub pred_vars: BitFlag64,
+    /// Whether the head's functor is one of them. Not derivable from
+    /// `pred_vars`: a constant-headed rule with a meta-variable body functor
+    /// also has its first predicate variable at the threshold.
+    pub head_pred: bool,
     pub id: usize,
 }
 
@@ -111,6 +121,8 @@ impl Clause {
             MetaData {
                 meta_var_threshold,
                 constrained_vars: cvs.into(),
+                pred_vars: BitFlag64::default(),
+                head_pred: false,
                 id: META_CLAUSE_COUNT.fetch_add(1, Relaxed),
             }
         });
@@ -121,6 +133,57 @@ impl Clause {
             max_arg_id,
             meta_data,
         }
+    }
+
+    /// Record which meta variables are literal functors, read from the
+    /// encoded literals on `heap`. A no-op for a clause that is not meta.
+    pub fn with_pred_vars(mut self, heap: &impl Heap) -> Self {
+        let Some(meta_data) = &mut self.meta_data else {
+            return self;
+        };
+        let threshold = meta_data.meta_var_threshold;
+        for (i, &addr) in self.literals.iter().enumerate() {
+            // A literal with no arguments is its own functor.
+            let functor = if heap[addr].0 == Tag::Comp { addr + 1 } else { addr };
+            if let (Tag::Arg, arg_id) = heap[functor] {
+                if arg_id >= threshold {
+                    meta_data.pred_vars.set(arg_id);
+                    if i == 0 {
+                        debug_assert_eq!(
+                            arg_id, threshold,
+                            "the head functor is encoded first, so it is the lowest meta variable"
+                        );
+                        meta_data.head_pred = true;
+                    }
+                }
+            }
+        }
+        self
+    }
+
+    /// Index into a `MetaSub`'s `subs` of the predicate this clause defines,
+    /// or `None` if its head functor is a constant. Always 0 when there is
+    /// one: the head functor is the lowest meta variable.
+    pub fn head_pred_sub_index(&self) -> Option<usize> {
+        self.meta_data
+            .as_ref()
+            .and_then(|meta_data| meta_data.head_pred.then_some(0))
+    }
+
+    /// Indices into a `MetaSub`'s `subs` of the predicates this clause calls.
+    pub fn body_pred_sub_indices(&self) -> impl Iterator<Item = usize> + '_ {
+        let (threshold, pred_vars, head_pred) = match &self.meta_data {
+            Some(meta_data) => (
+                meta_data.meta_var_threshold,
+                meta_data.pred_vars,
+                meta_data.head_pred,
+            ),
+            None => (self.max_arg_id, BitFlag64::default(), false),
+        };
+        (threshold..self.max_arg_id)
+            .filter(move |&arg_id| pred_vars.get(arg_id))
+            .map(move |arg_id| arg_id - threshold)
+            .skip(usize::from(head_pred))
     }
 
     pub fn head(&self) -> usize {

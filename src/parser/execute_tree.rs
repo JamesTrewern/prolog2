@@ -65,7 +65,7 @@ pub(crate) fn build_clause(
         )
     });
 
-    Clause::new(literals, meta_vars, var_values.len())
+    Clause::new(literals, meta_vars, var_values.len()).with_pred_vars(heap)
 }
 
 fn malformed(detail: impl Into<String>) -> ParserError {
