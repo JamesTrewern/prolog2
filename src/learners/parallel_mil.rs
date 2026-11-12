@@ -209,6 +209,13 @@ impl App {
 /// the detached heap their terms live on.
 type ThreadResult = (Vec<MetaSub>, Vec<PredDef>, (Vec<Cell>, Vec<VarReg>));
 
+/// Most sub hypotheses that can wait for the collector at once.
+///
+/// A worker that finds the channel full blocks until the collector catches
+/// up, so a search that outruns the merge slows down instead of queueing
+/// messages without limit.
+const CHANNEL_CAPACITY: usize = 4096;
+
 /// Search every positive example in parallel, streaming each sub hypothesis
 /// found back to this thread as it is extracted.
 ///
@@ -227,7 +234,7 @@ fn generalise(
         .build()
         .unwrap();
 
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = mpsc::sync_channel(CHANNEL_CAPACITY);
     let total = pos_goals.len();
     let completed = Arc::new(AtomicUsize::new(0));
     // The merge loop reports on the producers as well as itself, so it needs
@@ -521,7 +528,7 @@ fn generalise_thread(
     predicate_table: &PredicateTable,
     prog_heap: &ProgramHeap,
     config: Config,
-    tx: &mpsc::Sender<ThreadResult>,
+    tx: &mpsc::SyncSender<ThreadResult>,
 ) {
     let mut query_heap = QueryHeap::new(prog_heap, None);
 
