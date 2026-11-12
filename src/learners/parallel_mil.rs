@@ -39,6 +39,8 @@ lazy_static! {
     static ref CPU_COUNT: usize = num_cpus::get();
 }
 
+type SmallH = SmallVec<[MetaSub; 1]>;
+
 impl App {
     pub fn run_parallel(&mut self) -> Option<Vec<String>> {
         let Some(mut examples) = self.examples.clone() else {
@@ -209,7 +211,7 @@ impl App {
 /// One sub hypothesis as sent from a worker: the hypothesis as `MetaSub`s,
 /// the predicate definitions it depends on, and the `(cells, var_regs)` of
 /// the detached heap their terms live on.
-type ThreadResult = (Vec<MetaSub>, Vec<PredDef>, (Vec<Cell>, Vec<VarReg>));
+type ThreadResult = (SmallH, Vec<PredDef>, (Vec<Cell>, Vec<VarReg>));
 
 /// Most sub hypotheses that can wait for the collector at once.
 ///
@@ -230,7 +232,7 @@ fn generalise(
     predicate_table: &PredicateTable,
     heap: &ProgramHeap,
     config: Config,
-) -> (Vec<Cell>, Vec<Vec<MetaSub>>, PredDefTable) {
+) -> (Vec<Cell>, Vec<SmallH>, PredDefTable) {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT - 1)
         .build()
@@ -293,13 +295,13 @@ fn merge_thread_results(
     heap: &ProgramHeap,
     total: usize,
     searched: &AtomicUsize,
-) -> (Vec<Cell>, Vec<Vec<MetaSub>>, PredDefTable) {
+) -> (Vec<Cell>, Vec<SmallH>, PredDefTable) {
     let mut acc_heap = QueryHeap::new(heap, None);
     let mut terms = TermIndex::default();
     // Rebuilt from each message's `(cells, var_regs)` so its terms can be read.
     let mut msg_heap = QueryHeap::detached(heap);
     let mut pdt = PredDefTable::default();
-    let mut hypotheses: Vec<Vec<MetaSub>> = Vec::new();
+    let mut hypotheses: Vec<SmallH> = Vec::new();
     // Hypothesis content hash -> indices into `hypotheses`.
     let mut seen: HashMap<u64, SmallVec<[u32; 1]>> = HashMap::new();
 
@@ -572,7 +574,7 @@ fn extract_hypothesis(
     proof_heap: &QueryHeap,
     dst: &mut QueryHeap,
     predicate_table: &PredicateTable,
-) -> (Vec<MetaSub>, Vec<PredDef>) {
+) -> (SmallH, Vec<PredDef>) {
     let mut ref_map = HashMap::new();
 
     let mut meta_subs: Vec<MetaSub> = proof
@@ -583,7 +585,8 @@ fn extract_hypothesis(
         .collect();
 
     let pred_defs = PredDef::extract_pred_defs_from_h(&mut meta_subs, predicate_table, dst);
-    (meta_subs, pred_defs)
+    // Collected, not `into()`: converting a `Vec` keeps its heap buffer.
+    (meta_subs.into_iter().collect(), pred_defs)
 }
 
 /// Translate one clause's compacted meta-variable substitution from
@@ -885,7 +888,7 @@ mod merge_tests {
     fn merge(
         results: Vec<ThreadResult>,
         heap: &ProgramHeap,
-    ) -> (Vec<Cell>, Vec<Vec<MetaSub>>, PredDefTable) {
+    ) -> (Vec<Cell>, Vec<SmallH>, PredDefTable) {
         let total = results.len();
         merge_thread_results(results, heap, total, &AtomicUsize::new(total))
     }
@@ -913,8 +916,10 @@ mod merge_tests {
         };
         let pred_def = PredDef::new(smallvec![meta_sub]);
 
-        let (cells, hypotheses, pdt) =
-            merge(vec![(Vec::new(), vec![pred_def], parts(heap))], test_prog());
+        let (cells, hypotheses, pdt) = merge(
+            vec![(SmallVec::new(), vec![pred_def], parts(heap))],
+            test_prog(),
+        );
 
         assert!(hypotheses.is_empty());
         // The only cell is the constant coined for the predicate.
@@ -941,7 +946,7 @@ mod merge_tests {
                 subs: smallvec![VarReg::from_var(pred_var)],
             };
             let pred_def = PredDef::new(smallvec![meta_sub]);
-            (Vec::new(), vec![pred_def], parts(heap))
+            (SmallVec::new(), vec![pred_def], parts(heap))
         };
 
         let (cells, hypotheses, pdt) = merge(vec![make_message(0), make_message(1)], test_prog());
@@ -981,7 +986,7 @@ mod merge_tests {
                 meta_clause_id: 0,
                 subs: smallvec![VarReg::from_addr(addr)],
             };
-            (vec![meta_sub], Vec::new(), parts(heap))
+            (smallvec![meta_sub], Vec::new(), parts(heap))
         };
 
         let (cells, hypotheses, _) = merge(vec![message(sym_p), message(sym_q)], test_prog());
@@ -1016,7 +1021,7 @@ mod merge_tests {
                 meta_clause_id: 0,
                 subs: smallvec![VarReg::from_addr(addr)],
             };
-            (vec![meta_sub], Vec::new(), parts(heap))
+            (smallvec![meta_sub], Vec::new(), parts(heap))
         };
 
         let (cells, hypotheses, _) = merge(vec![message(), message()], test_prog());
@@ -1044,7 +1049,7 @@ mod merge_tests {
                 meta_clause_id,
                 subs: smallvec![VarReg::from_addr(addr)],
             };
-            (vec![meta_sub], Vec::new(), parts(heap))
+            (smallvec![meta_sub], Vec::new(), parts(heap))
         };
 
         let (cells, hypotheses, _) = merge(vec![message(0), message(1)], test_prog());
@@ -1079,8 +1084,8 @@ mod merge_tests {
 
         let (cells, hypotheses, _) = merge(
             vec![
-                (vec![first], Vec::new(), parts(compound)),
-                (vec![second], Vec::new(), parts(constant)),
+                (smallvec![first], Vec::new(), parts(compound)),
+                (smallvec![second], Vec::new(), parts(constant)),
             ],
             test_prog(),
         );
@@ -1111,7 +1116,7 @@ mod merge_tests {
             subs: smallvec![VarReg::from_addr(term)],
         };
 
-        let _ = merge(vec![(vec![meta_sub], Vec::new(), parts(heap))], test_prog());
+        let _ = merge(vec![(smallvec![meta_sub], Vec::new(), parts(heap))], test_prog());
     }
 
     #[test]
@@ -1126,6 +1131,6 @@ mod merge_tests {
             subs: smallvec![VarReg::from_var(stray_var)],
         };
 
-        let _ = merge(vec![(vec![meta_sub], Vec::new(), parts(heap))], test_prog());
+        let _ = merge(vec![(smallvec![meta_sub], Vec::new(), parts(heap))], test_prog());
     }
 }
