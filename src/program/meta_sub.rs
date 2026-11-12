@@ -206,11 +206,15 @@ impl PackedMetaSubs {
         group: impl IntoIterator<Item = &'a T>,
     ) {
         for meta_sub in group {
+            let subs = meta_sub.subs();
+            reserve_slowly(&mut self.words, 1 + subs.len());
             self.words.push(meta_sub.meta_clause_id());
-            self.words.extend(meta_sub.subs().map(|sub| sub.0));
+            self.words.extend(subs.map(|sub| sub.0));
+            reserve_slowly(&mut self.clause_ends, 1);
             self.clause_ends
                 .push(u32::try_from(self.words.len()).expect("more than u32::MAX packed words"));
         }
+        reserve_slowly(&mut self.group_ends, 1);
         self.group_ends.push(
             u32::try_from(self.clause_ends.len()).expect("more than u32::MAX packed clauses"),
         );
@@ -239,6 +243,23 @@ impl PackedMetaSubs {
 
     pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = MetaSubGroup<'_>> {
         (0..self.len()).map(|index| self.get(index))
+    }
+}
+
+/// Make room for `additional` more elements. A `Vec` doubles when full,
+/// leaving up to half of a large one unused; past [`DOUBLE_BELOW`] elements
+/// this grows it by an eighth.
+fn reserve_slowly<T>(vec: &mut Vec<T>, additional: usize) {
+    /// Capacity up to which a `Vec` is left to double.
+    const DOUBLE_BELOW: usize = 1 << 20;
+
+    if vec.capacity() - vec.len() >= additional {
+        return;
+    }
+    if vec.capacity() < DOUBLE_BELOW {
+        vec.reserve(additional);
+    } else {
+        vec.reserve_exact(additional.max(vec.capacity() / 8));
     }
 }
 
@@ -303,6 +324,23 @@ mod packed_tests {
                 assert!(clause.subs().eq(meta_sub.subs()));
             }
         }
+    }
+
+    #[test]
+    fn a_large_vec_grows_by_an_eighth() {
+        let mut small: Vec<u32> = Vec::with_capacity(4);
+        small.extend([0; 4]);
+        super::reserve_slowly(&mut small, 1);
+        assert!(small.capacity() >= 8, "a small Vec still doubles");
+
+        let mut large: Vec<u32> = Vec::with_capacity(1 << 20);
+        large.resize(1 << 20, 0);
+        super::reserve_slowly(&mut large, 1);
+        assert_eq!(large.capacity(), (1 << 20) + (1 << 17));
+
+        // Room already there: nothing changes.
+        super::reserve_slowly(&mut large, 1);
+        assert_eq!(large.capacity(), (1 << 20) + (1 << 17));
     }
 
     #[test]

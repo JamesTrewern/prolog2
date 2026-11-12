@@ -32,6 +32,7 @@ num_cpus = "1.17.0"
 smallvec = "1.13"
 multiversion = "0.8.0"
 num-traits = "0.2.19"
+hashbrown = "0.17.1"
 
 [profile.test]
 debug-assertions = true

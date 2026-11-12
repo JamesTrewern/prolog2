@@ -32,6 +32,7 @@ use super::{
     },
 };
 
+use hashbrown::HashTable;
 use lazy_static::lazy_static;
 use smallvec::SmallVec;
 
@@ -305,7 +306,7 @@ fn merge_thread_results(
     let mut pdt = PredDefTable::default();
     let mut hypotheses = PackedMetaSubs::default();
     // Hypothesis content hash -> indices into `hypotheses`.
-    let mut seen: HashMap<u64, SmallVec<[u32; 1]>> = HashMap::new();
+    let mut seen: HashTable<u32> = HashTable::new();
 
     for (merged, (mut hypothesis, pred_defs, (cells, var_regs))) in
         thread_results.into_iter().enumerate()
@@ -369,24 +370,20 @@ fn merge_thread_results(
                         .cmp(b.subs.iter().map(|sub| sub.0))
                 })
             });
-            let mut hasher = DefaultHasher::new();
-            for meta_sub in &hypothesis {
-                meta_sub.meta_clause_id.hash(&mut hasher);
-                for sub in &meta_sub.subs {
-                    sub.0.hash(&mut hasher);
-                }
-                // Separator between clauses.
-                usize::MAX.hash(&mut hasher);
-            }
-
-            let bucket = seen.entry(hasher.finish()).or_default();
-            let duplicate = bucket
-                .iter()
-                .any(|&i| same_hypothesis(hypotheses.get(i as usize), &hypothesis));
+            let hash = hypothesis_hash(hypothesis.iter());
+            let duplicate = seen
+                .find(hash, |&i| {
+                    same_hypothesis(hypotheses.get(i as usize), &hypothesis)
+                })
+                .is_some();
             if !duplicate {
-                bucket
-                    .push(u32::try_from(hypotheses.len()).expect("more than u32::MAX hypotheses"));
+                let index = u32::try_from(hypotheses.len()).expect("more than u32::MAX hypotheses");
                 hypotheses.push(&hypothesis);
+                // Only indices are kept, so a growing table rehashes each
+                // hypothesis from the store.
+                seen.insert_unique(hash, index, |&i| {
+                    hypothesis_hash(hypotheses.get(i as usize).iter())
+                });
             }
         }
 
@@ -521,6 +518,23 @@ fn term_has_var(addr: usize, heap: &QueryHeap) -> bool {
         }
     }
     false
+}
+
+/// Content hash of a sorted, grounded hypothesis; the same for the stored
+/// form and the incoming one.
+fn hypothesis_hash<'a, T: MetaSubTrait + ?Sized + 'a>(
+    clauses: impl Iterator<Item = &'a T>,
+) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    for meta_sub in clauses {
+        meta_sub.meta_clause_id().hash(&mut hasher);
+        for sub in meta_sub.subs() {
+            sub.0.hash(&mut hasher);
+        }
+        // Separator between clauses.
+        usize::MAX.hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 /// Whether two sorted, grounded hypotheses hold the same clauses, comparing
