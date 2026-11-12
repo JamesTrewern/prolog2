@@ -880,9 +880,18 @@ mod extraction_tests {
 #[cfg(test)]
 mod merge_tests {
     use super::*;
-    use crate::heap::test_prog;
     use crate::heap::Tag::{Comp, Con};
     use smallvec::smallvec;
+
+    /// A program of the calling test's own. Merging invents symbols, after
+    /// which no constant may be interned, so these tests cannot use the
+    /// program the rest of the test binary shares.
+    fn test_prog() -> &'static ProgramHeap {
+        thread_local! {
+            static PROG: &'static ProgramHeap = Box::leak(Box::new(ProgramHeap::new()));
+        }
+        PROG.with(|prog| *prog)
+    }
 
     /// [`merge_thread_results`] with the progress-reporting arguments filled
     /// in: these tests supply every message up front, so the number of

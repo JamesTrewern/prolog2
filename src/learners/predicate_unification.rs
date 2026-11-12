@@ -70,7 +70,7 @@ impl PredDef {
     /// the one it depends on, which the debug assertion below reports rather
     /// than papering over by coining a constant for a predicate that already
     /// has one.
-    pub(super) fn make_const(&mut self, heap: &mut impl Heap, next_id: &mut usize) {
+    pub(super) fn make_const(&mut self, heap: &mut impl Heap) {
         // Heads first, across every clause. A mutually recursive group is
         // collected into a single definition, so one clause's body predicate
         // may be the head of a *later* clause in this same definition; coining
@@ -85,9 +85,8 @@ impl PredDef {
                     // definition, or by unification against the table.
                     bound @ Addr(_) => *head = bound.into(),
                     VarId(var_id) => {
-                        let pred_symbol = heap.symbols().set_const(format!("pred_{next_id}"));
+                        let pred_symbol = heap.symbols().next_inv();
                         let addr = heap.heap_push((Con, pred_symbol));
-                        *next_id += 1;
                         heap.bind(var_id, Addr(addr));
                         *head = Addr(addr).into();
                     }
@@ -481,7 +480,6 @@ pub(super) fn key_from_profile(profile: &KeyProfile, flips: &[usize]) -> u64 {
 pub(super) struct PredDefTable {
     /// Every definition, grounded, one group each.
     pred_defs: PackedMetaSubs,
-    pub next_id: usize,
     /// Symbol ids of the constants coined to name the predicates defined
     /// here, recorded as each definition is inserted.
     ///
@@ -613,8 +611,7 @@ impl PredDefTable {
     }
 
     fn add_def(&mut self, mut pred_def: PredDef, key: Option<u64>, heap: &mut QueryHeap) {
-        pred_def.make_const(heap, &mut self.next_id);
-        self.next_id += 1;
+        pred_def.make_const(heap);
 
         // Read the head constants back rather than having `make_const` report
         // them: a definition whose head was already coined -- by an earlier

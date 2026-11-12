@@ -15,7 +15,10 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, RwLock,
+    },
 };
 
 /// Symbols interned at construction, at these fixed IDs.
@@ -43,6 +46,9 @@ const KNOWN_SYMBOLS: &[&str] = &[
     "to_radians", // indices 13-18
 ];
 
+/// Start of an invented symbol's name; its number follows.
+const INVENTED_PREFIX: &str = "pred_";
+
 /// Symbol table for one program.
 ///
 /// Maps between string representations and numeric IDs so the heap can work
@@ -61,6 +67,12 @@ pub struct SymbolDB {
     /// Interned constants, and a reverse index so interning is not a scan.
     consts: RwLock<(Vec<Arc<str>>, HashMap<Arc<str>, usize>)>,
     strings: RwLock<Vec<Arc<str>>>,
+    /// Id the next invented symbol takes, or 0 before the first is invented.
+    ///
+    /// 0 can stand for "none" because the preloaded symbols hold the low ids.
+    /// Invented ids start at the number of interned constants, so no
+    /// constant may be interned after the first invention.
+    next_inv: AtomicUsize,
 }
 
 impl Default for SymbolDB {
@@ -86,6 +98,7 @@ impl SymbolDB {
         SymbolDB {
             consts: RwLock::new((symbols, index)),
             strings: RwLock::new(Vec::new()),
+            next_inv: AtomicUsize::new(0),
         }
     }
 
@@ -98,13 +111,45 @@ impl SymbolDB {
         let (symbols, index) = &mut *self.consts.write().unwrap();
         // Re-check: another thread may have interned it between the two locks.
         *index.entry(symbol.clone()).or_insert_with(|| {
+            debug_assert_eq!(
+                self.next_inv.load(Ordering::Relaxed),
+                0,
+                "interning {symbol:?} after a symbol was invented would reuse an invented id"
+            );
             symbols.push(symbol);
             symbols.len() - 1
         })
     }
 
+    /// The id of a new invented symbol.
+    ///
+    /// An invented symbol has no stored name: its id is past the interned
+    /// constants, and [`Self::get_const`] writes its name out on request.
+    pub fn next_inv(&self) -> usize {
+        let mut current = self.next_inv.load(Ordering::Relaxed);
+        loop {
+            let id = match current {
+                0 => self.consts.read().unwrap().0.len(),
+                id => id,
+            };
+            match self.next_inv.compare_exchange_weak(
+                current,
+                id + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return id,
+                Err(changed) => current = changed,
+            }
+        }
+    }
+
     pub fn get_const(&self, id: usize) -> Arc<str> {
-        self.consts.read().unwrap().0[id].clone()
+        let symbols = &self.consts.read().unwrap().0;
+        match symbols.get(id) {
+            Some(symbol) => symbol.clone(),
+            None => format!("{INVENTED_PREFIX}{}", id - symbols.len()).into(),
+        }
     }
 
     pub fn get_string(&self, index: usize) -> Arc<str> {
@@ -115,5 +160,49 @@ impl SymbolDB {
         let mut strings = self.strings.write().unwrap();
         strings.push(value.into());
         strings.len() - 1
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SymbolDB;
+
+    #[test]
+    fn invented_ids_follow_the_interned_constants() {
+        let symbols = SymbolDB::new();
+        let last = symbols.set_const("invented_ids_last_constant");
+
+        assert_eq!(symbols.next_inv(), last + 1);
+        assert_eq!(symbols.next_inv(), last + 2);
+        assert_eq!(symbols.next_inv(), last + 3);
+    }
+
+    #[test]
+    fn an_invented_symbol_is_named_by_its_number() {
+        let symbols = SymbolDB::new();
+        let first = symbols.next_inv();
+        let second = symbols.next_inv();
+
+        assert_eq!(&*symbols.get_const(first), "pred_0");
+        assert_eq!(&*symbols.get_const(second), "pred_1");
+    }
+
+    #[test]
+    fn an_interned_constant_can_still_be_looked_up_after_inventing() {
+        let symbols = SymbolDB::new();
+        let id = symbols.set_const("looked_up_after_inventing");
+        symbols.next_inv();
+
+        assert_eq!(symbols.set_const("looked_up_after_inventing"), id);
+        assert_eq!(&*symbols.get_const(id), "looked_up_after_inventing");
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "would reuse an invented id")]
+    fn interning_a_new_constant_after_inventing_is_refused() {
+        let symbols = SymbolDB::new();
+        symbols.next_inv();
+        symbols.set_const("interned_after_inventing");
     }
 }
