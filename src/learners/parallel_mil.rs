@@ -14,9 +14,9 @@ use crate::{
     heap::{
         Cell, Heap, ProgramHeap, QueryHeap,
         Tag::{Con, ELis, Flt, Int, Stri, Var},
-        TermWalk, Walk,
+        TermWalk,
         VarBind::{Addr, VarId},
-        VarReg,
+        VarReg, Walk,
     },
     learners::predicate_unification::{PredDef, PredDefTable, MAX_PRED_DEFS},
     program::{Clause, MetaSub, PredicateTable},
@@ -93,17 +93,19 @@ impl App {
         // predicate rather than a background one.
         let pred_symbols = pdt.pred_symbols().clone();
 
+        // Added as one batch: one insert per clause rescans the whole table.
+        // Most definitions have one or two clauses.
+        let mut pred_def_clauses = Vec::with_capacity(pdt.pred_defs.len() * 2);
         for pred_def in pdt.pred_defs {
             for meta_sub in pred_def.meta_subs {
                 let clause = meta_sub
                     .build_clause(&mut self.prog_heap, &self.predicate_table)
                     .expect("every MetaSub's meta clause id comes from the predicate table");
                 let symbol_arity = self.prog_heap.symbol_arity(clause.head());
-                self.predicate_table
-                    .add_clause_to_predicate(clause, symbol_arity)
-                    .unwrap();
+                pred_def_clauses.push((symbol_arity, clause));
             }
         }
+        self.predicate_table.add_clauses(pred_def_clauses).unwrap();
 
         // Literals are built only here; until now hypotheses were `MetaSub`s.
         let sub_hypotheses: Vec<Box<[Clause]>> = hypotheses
@@ -356,9 +358,12 @@ fn merge_thread_results(
             // Sort so that clause order does not affect equality. Interned
             // terms have one address each, so addresses stand in for content.
             hypothesis.sort_unstable_by(|a, b| {
-                a.meta_clause_id
-                    .cmp(&b.meta_clause_id)
-                    .then_with(|| a.subs.iter().map(|sub| sub.0).cmp(b.subs.iter().map(|sub| sub.0)))
+                a.meta_clause_id.cmp(&b.meta_clause_id).then_with(|| {
+                    a.subs
+                        .iter()
+                        .map(|sub| sub.0)
+                        .cmp(b.subs.iter().map(|sub| sub.0))
+                })
             });
             let mut hasher = DefaultHasher::new();
             for meta_sub in &hypothesis {
@@ -423,7 +428,12 @@ impl TermIndex {
 
     /// Rewrite each address in `meta_sub` from `msg_heap` to the collector
     /// address of an equal term. Variables are left alone.
-    fn intern_subs(&mut self, meta_sub: &mut MetaSub, msg_heap: &QueryHeap, acc_heap: &mut QueryHeap) {
+    fn intern_subs(
+        &mut self,
+        meta_sub: &mut MetaSub,
+        msg_heap: &QueryHeap,
+        acc_heap: &mut QueryHeap,
+    ) {
         for sub in &mut meta_sub.subs {
             if let Some(Addr(addr)) = sub.get_bind() {
                 *sub = VarReg::from_addr(self.intern(addr, msg_heap, acc_heap));
@@ -444,7 +454,8 @@ impl TermIndex {
             // shared: copy it, keeping the message's variable ids, which the
             // collector's scratch window uses as they are.
             if self.var_map.is_empty() {
-                self.var_map.extend((0..msg_heap.var_regs.len()).map(|id| (id, id)));
+                self.var_map
+                    .extend((0..msg_heap.var_regs.len()).map(|id| (id, id)));
             }
             acc_heap.clone_term_from_other(msg_heap, addr, &mut self.var_map);
             start
@@ -456,7 +467,10 @@ impl TermIndex {
             // Copied first so the comparison is within one heap; a ground
             // term has no variables for the map to translate.
             acc_heap.clone_term_from_other(msg_heap, addr, &mut self.var_map);
-            match bucket.iter().find(|&&existing| acc_heap.term_equal(existing, start)) {
+            match bucket
+                .iter()
+                .find(|&&existing| acc_heap.term_equal(existing, start))
+            {
                 Some(&existing) => {
                     let copied = acc_heap.heap_len() - start;
                     acc_heap.cells.truncate(acc_heap.cells.len() - copied);
@@ -484,7 +498,10 @@ impl TermIndex {
             let mut hasher = DefaultHasher::new();
             acc_heap.term_hash(addr, &mut hasher);
             let bucket = self.buckets.entry(hasher.finish()).or_default();
-            if !bucket.iter().any(|&existing| acc_heap.term_equal(existing, addr)) {
+            if !bucket
+                .iter()
+                .any(|&existing| acc_heap.term_equal(existing, addr))
+            {
                 bucket.push(addr);
             }
         }
@@ -536,8 +553,7 @@ fn generalise_thread(
 
     while proof.prove(&mut query_heap, predicate_table, config) {
         let mut dst = QueryHeap::detached(prog_heap);
-        let (hypothesis, defs) =
-            extract_hypothesis(&proof, &query_heap, &mut dst, predicate_table);
+        let (hypothesis, defs) = extract_hypothesis(&proof, &query_heap, &mut dst, predicate_table);
         let _ = tx.send((hypothesis, defs, (dst.cells, dst.var_regs)));
     }
 }
@@ -641,10 +657,7 @@ fn top_prog_to_string(top_program: Vec<Clause>, heap: &impl Heap) -> String {
 mod extraction_tests {
     use super::*;
     use crate::heap::test_prog;
-    use crate::heap::{
-        Heap,
-        Tag::Con,
-    };
+    use crate::heap::{Heap, Tag::Con};
     use smallvec::smallvec;
 
     /// Build a `Proof` with no goals (so it never actually resolves anything)

@@ -314,6 +314,118 @@ impl PredicateTable {
         Ok(())
     }
 
+    /// Adds a batch of clauses, laying the table out exactly as calling
+    /// [`Self::add_clause_to_predicate`] on each in turn would.
+    ///
+    /// That call rescans every entry per clause, so adding many new
+    /// predicates one at a time is quadratic. Here the ranges are shifted
+    /// once: a new predicate's clauses go at the end of its arity block, so
+    /// an existing range moves by the clauses added to lower arities.
+    ///
+    /// Nothing is added if any clause names a function predicate.
+    pub fn add_clauses(&mut self, batch: Vec<(SymbolArity, Clause)>) -> Result<(), &'static str> {
+        let mut new = Vec::with_capacity(batch.len());
+        let mut existing = Vec::new();
+        for (symbol_arity, clause) in batch {
+            match self.find_predicate(symbol_arity) {
+                Ok(idx) if matches!(self[idx].predicate, Predicate::Function(_)) => {
+                    return Err("Cannot add clause to function predicate")
+                }
+                Ok(_) => existing.push((symbol_arity, clause)),
+                Err(_) => new.push((symbol_arity, clause)),
+            }
+        }
+        // Growing an existing run inserts mid-block, which the batch path
+        // does not handle.
+        for (symbol_arity, clause) in existing {
+            self.add_clause_to_predicate(clause, symbol_arity)?;
+        }
+        if new.is_empty() {
+            return Ok(());
+        }
+
+        // Group by arity, then by predicate in order of first appearance.
+        let mut first = HashMap::new();
+        for (i, (symbol_arity, _)) in new.iter().enumerate() {
+            first.entry(*symbol_arity).or_insert(i);
+        }
+        new.sort_by_cached_key(|(symbol_arity, _)| (symbol_arity.1, first[symbol_arity]));
+
+        // Each new predicate with its clause count, and each arity with its.
+        let mut runs: Vec<(SymbolArity, usize)> = Vec::new();
+        let mut counts: Vec<(usize, usize)> = Vec::new();
+        for (symbol_arity, clause) in &new {
+            if runs.last().map(|run| run.0) != Some(*symbol_arity) {
+                runs.push((*symbol_arity, 0));
+            }
+            if counts.last().map(|count| count.0) != Some(symbol_arity.1) {
+                counts.push((symbol_arity.1, 0));
+            }
+            let run_len = &mut runs.last_mut().unwrap().1;
+            if let Some(meta_data) = &clause.meta_data {
+                self.meta_clause_index
+                    .insert(meta_data.id, (*symbol_arity, *run_len));
+            }
+            *run_len += 1;
+            counts.last_mut().unwrap().1 += 1;
+        }
+
+        // Highest arity first, so each block's end is still where it was.
+        for &(arity, count) in counts.iter().rev() {
+            let block = self.block_for(arity);
+            let at = self.blocks[block].range.end;
+            let clauses = new.split_off(new.len() - count);
+            self.clauses
+                .splice(at..at, clauses.into_iter().map(|(_, clause)| clause));
+        }
+
+        // Move each block up by the clauses added below it, and grow it by
+        // its own.
+        let mut shift = 0;
+        let mut shifts = Vec::with_capacity(self.blocks.len());
+        for block in &mut self.blocks {
+            let count = counts
+                .binary_search_by_key(&block.arity, |count| count.0)
+                .map_or(0, |i| counts[i].1);
+            block.range.start += shift;
+            block.body_end += shift;
+            block.range.end += shift + count;
+            shifts.push(shift);
+            shift += count;
+        }
+        for entry in &mut self.predicates {
+            if let Predicate::Clauses(range) = &mut entry.predicate {
+                let block = self
+                    .blocks
+                    .binary_search_by_key(&entry.symbol_arity.1, |block| block.arity)
+                    .expect("a clause predicate always has a block for its arity");
+                range.start += shifts[block];
+                range.end += shifts[block];
+            }
+        }
+
+        // The new clauses fill the last `count` slots of their block.
+        let mut counts = counts.into_iter().peekable();
+        let mut at = 0;
+        let mut arity = None;
+        for (symbol_arity, len) in runs {
+            if arity != Some(symbol_arity.1) {
+                arity = Some(symbol_arity.1);
+                let (_, count) = counts.next().unwrap();
+                let block = self.find_block(symbol_arity.1).unwrap();
+                at = self.blocks[block].range.end - count;
+            }
+            self.predicates.push(PredicateEntry {
+                symbol_arity,
+                predicate: Predicate::Clauses(at..at + len),
+            });
+            at += len;
+        }
+        self.predicates
+            .sort_unstable_by_key(|entry| entry.symbol_arity);
+        Ok(())
+    }
+
     // ── lookup ──────────────────────────────────────────────────────────
 
     /// Look up a meta clause by its `MetaData::id`.
@@ -577,6 +689,125 @@ mod tests {
         table.assert_layout();
 
         (table, p, q, pred_func)
+    }
+
+    /// `add_clauses` must leave the same table as one insert per clause.
+    fn assert_bulk_matches_single(
+        base: &[((usize, usize), Vec<usize>)],
+        body: &[(usize, usize)],
+        batch: &[((usize, usize), Vec<usize>)],
+    ) {
+        let build = || {
+            let mut table = PredicateTable::new();
+            for (sa, literals) in base {
+                table
+                    .add_clause_to_predicate(clause(literals.clone()), *sa)
+                    .unwrap();
+            }
+            for sa in body {
+                table.set_body(*sa, true).unwrap();
+            }
+            table
+        };
+
+        let mut single = build();
+        for (sa, literals) in batch {
+            single
+                .add_clause_to_predicate(clause(literals.clone()), *sa)
+                .unwrap();
+        }
+
+        let mut bulk = build();
+        bulk.add_clauses(
+            batch
+                .iter()
+                .map(|(sa, literals)| (*sa, clause(literals.clone())))
+                .collect(),
+        )
+        .unwrap();
+
+        bulk.assert_layout();
+        assert_eq!(bulk, single);
+    }
+
+    #[test]
+    fn add_clauses_matches_single_inserts_across_arities() {
+        assert_bulk_matches_single(
+            &[
+                ((1, 1), vec![1]),
+                ((2, 2), vec![2]),
+                ((3, 2), vec![3]),
+                ((4, 4), vec![4]),
+            ],
+            &[(2, 2)],
+            &[
+                ((10, 2), vec![10]),
+                ((11, 1), vec![11]),
+                ((12, 4), vec![12]),
+                ((13, 2), vec![13]),
+                ((14, 1), vec![14]),
+            ],
+        );
+    }
+
+    #[test]
+    fn add_clauses_opens_blocks_for_new_arities() {
+        assert_bulk_matches_single(
+            &[((1, 2), vec![1]), ((2, 4), vec![2])],
+            &[],
+            &[
+                ((10, 3), vec![10]),
+                ((11, 5), vec![11]),
+                ((12, 1), vec![12]),
+                ((13, 3), vec![13]),
+            ],
+        );
+        assert_bulk_matches_single(&[], &[], &[((10, 2), vec![10]), ((11, 1), vec![11])]);
+    }
+
+    #[test]
+    fn add_clauses_keeps_a_predicates_scattered_clauses_together() {
+        // Two mutually recursive predicates whose clauses interleave.
+        assert_bulk_matches_single(
+            &[((1, 2), vec![1])],
+            &[],
+            &[
+                ((10, 2), vec![10]),
+                ((11, 2), vec![11]),
+                ((10, 2), vec![12]),
+                ((11, 2), vec![13]),
+                ((10, 2), vec![14]),
+            ],
+        );
+    }
+
+    #[test]
+    fn add_clauses_extends_predicates_already_in_the_table() {
+        assert_bulk_matches_single(
+            &[((1, 2), vec![1]), ((2, 2), vec![2]), ((3, 3), vec![3])],
+            &[(1, 2)],
+            &[
+                ((10, 2), vec![10]),
+                ((1, 2), vec![11]),
+                ((2, 2), vec![12]),
+                ((10, 2), vec![13]),
+                ((3, 3), vec![14]),
+            ],
+        );
+    }
+
+    #[test]
+    fn add_clauses_to_a_function_predicate_adds_nothing() {
+        let (mut table, _p, _q, pred_func) = setup();
+        let (before, _, _, _) = setup();
+
+        let result = table.add_clauses(vec![
+            ((900, 2), clause(vec![1])),
+            ((pred_func, 2), clause(vec![2])),
+        ]);
+
+        assert!(result.is_err());
+        assert_eq!(table, before);
     }
 
     #[test]
