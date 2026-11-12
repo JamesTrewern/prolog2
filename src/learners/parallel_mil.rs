@@ -19,7 +19,7 @@ use crate::{
         VarReg, Walk,
     },
     learners::predicate_unification::{PredDef, PredDefTable, MAX_PRED_DEFS},
-    program::{Clause, MetaSub, PredicateTable},
+    program::{Clause, MetaSub, MetaSubGroup, MetaSubTrait, PackedMetaSubs, PredicateTable},
     resolution::Proof,
     Config,
 };
@@ -97,9 +97,9 @@ impl App {
 
         // Added as one batch: one insert per clause rescans the whole table.
         // Most definitions have one or two clauses.
-        let mut pred_def_clauses = Vec::with_capacity(pdt.pred_defs.len() * 2);
-        for pred_def in pdt.pred_defs {
-            for meta_sub in pred_def.meta_subs {
+        let mut pred_def_clauses = Vec::with_capacity(pdt.len() * 2);
+        for pred_def in pdt.iter() {
+            for meta_sub in pred_def.iter() {
                 let clause = meta_sub
                     .build_clause(&mut self.prog_heap, &self.predicate_table)
                     .expect("every MetaSub's meta clause id comes from the predicate table");
@@ -108,13 +108,14 @@ impl App {
             }
         }
         self.predicate_table.add_clauses(pred_def_clauses).unwrap();
+        drop(pdt);
 
         // Literals are built only here; until now hypotheses were `MetaSub`s.
         let sub_hypotheses: Vec<Box<[Clause]>> = hypotheses
-            .into_iter()
+            .iter()
             .map(|meta_subs| {
                 meta_subs
-                    .into_iter()
+                    .iter()
                     .map(|meta_sub| {
                         meta_sub
                             .build_clause(&mut self.prog_heap, &self.predicate_table)
@@ -123,6 +124,7 @@ impl App {
                     .collect()
             })
             .collect();
+        drop(hypotheses);
 
         println!(
             "\n=== Generalisation ===\n{} unique sub hypotheses",
@@ -232,7 +234,7 @@ fn generalise(
     predicate_table: &PredicateTable,
     heap: &ProgramHeap,
     config: Config,
-) -> (Vec<Cell>, Vec<SmallH>, PredDefTable) {
+) -> (Vec<Cell>, PackedMetaSubs, PredDefTable) {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT - 1)
         .build()
@@ -295,13 +297,13 @@ fn merge_thread_results(
     heap: &ProgramHeap,
     total: usize,
     searched: &AtomicUsize,
-) -> (Vec<Cell>, Vec<SmallH>, PredDefTable) {
+) -> (Vec<Cell>, PackedMetaSubs, PredDefTable) {
     let mut acc_heap = QueryHeap::new(heap, None);
     let mut terms = TermIndex::default();
     // Rebuilt from each message's `(cells, var_regs)` so its terms can be read.
     let mut msg_heap = QueryHeap::detached(heap);
     let mut pdt = PredDefTable::default();
-    let mut hypotheses: Vec<SmallH> = Vec::new();
+    let mut hypotheses = PackedMetaSubs::default();
     // Hypothesis content hash -> indices into `hypotheses`.
     let mut seen: HashMap<u64, SmallVec<[u32; 1]>> = HashMap::new();
 
@@ -380,11 +382,11 @@ fn merge_thread_results(
             let bucket = seen.entry(hasher.finish()).or_default();
             let duplicate = bucket
                 .iter()
-                .any(|&i| same_hypothesis(&hypotheses[i as usize], &hypothesis));
+                .any(|&i| same_hypothesis(hypotheses.get(i as usize), &hypothesis));
             if !duplicate {
                 bucket
                     .push(u32::try_from(hypotheses.len()).expect("more than u32::MAX hypotheses"));
-                hypotheses.push(hypothesis);
+                hypotheses.push(&hypothesis);
             }
         }
 
@@ -397,7 +399,7 @@ fn merge_thread_results(
                 searched.load(Ordering::Relaxed),
                 merged + 1,
                 hypotheses.len(),
-                pdt.pred_defs.len()
+                pdt.len()
             );
             let _ = io::stderr().flush();
         }
@@ -523,11 +525,11 @@ fn term_has_var(addr: usize, heap: &QueryHeap) -> bool {
 
 /// Whether two sorted, grounded hypotheses hold the same clauses, comparing
 /// interned terms by address.
-fn same_hypothesis(a: &[MetaSub], b: &[MetaSub]) -> bool {
-    a.len() == b.len()
-        && a.iter()
-            .zip(b)
-            .all(|(x, y)| x.meta_clause_id == y.meta_clause_id && x.subs == y.subs)
+fn same_hypothesis(stored: MetaSubGroup, new: &[MetaSub]) -> bool {
+    stored.len() == new.len()
+        && stored.iter().zip(new).all(|(x, y)| {
+            x.meta_clause_id() == y.meta_clause_id && x.subs().eq(y.subs.iter().copied())
+        })
 }
 
 /// Search for hypotheses explaining one positive example, streaming each one
@@ -888,7 +890,7 @@ mod merge_tests {
     fn merge(
         results: Vec<ThreadResult>,
         heap: &ProgramHeap,
-    ) -> (Vec<Cell>, Vec<SmallH>, PredDefTable) {
+    ) -> (Vec<Cell>, PackedMetaSubs, PredDefTable) {
         let total = results.len();
         merge_thread_results(results, heap, total, &AtomicUsize::new(total))
     }
@@ -921,13 +923,13 @@ mod merge_tests {
             test_prog(),
         );
 
-        assert!(hypotheses.is_empty());
+        assert_eq!(hypotheses.len(), 0);
         // The only cell is the constant coined for the predicate.
         assert_eq!(cells.len(), 1);
         assert_eq!(cells[0].0, Con);
 
-        assert_eq!(pdt.pred_defs.len(), 1);
-        assert_eq!(pdt.pred_defs[0].meta_subs[0].subs[0], VarReg::from_addr(0));
+        assert_eq!(pdt.len(), 1);
+        assert_eq!(pdt.get(0).get(0).subs().nth(0).unwrap(), VarReg::from_addr(0));
     }
 
     #[test]
@@ -951,9 +953,9 @@ mod merge_tests {
 
         let (cells, hypotheses, pdt) = merge(vec![make_message(0), make_message(1)], test_prog());
 
-        assert!(hypotheses.is_empty());
+        assert_eq!(hypotheses.len(), 0);
         assert_eq!(
-            pdt.pred_defs.len(),
+            pdt.len(),
             2,
             "distinct meta_clause_ids should not unify together"
         );
@@ -962,11 +964,11 @@ mod merge_tests {
         }
 
         // Each message coined its own fresh constant; they must not alias.
-        let (first_const_addr, _) = pdt.pred_defs[0].meta_subs[0].subs[0]
+        let (first_const_addr, _) = pdt.get(0).get(0).subs().nth(0).unwrap()
             .get_bind()
             .and_then(|b| if let Addr(a) = b { Some((a, ())) } else { None })
             .expect("first pred_def's binding should be a resolved address");
-        let (second_const_addr, _) = pdt.pred_defs[1].meta_subs[0].subs[0]
+        let (second_const_addr, _) = pdt.get(1).get(0).subs().nth(0).unwrap()
             .get_bind()
             .and_then(|b| if let Addr(a) = b { Some((a, ())) } else { None })
             .expect("second pred_def's binding should be a resolved address");
@@ -998,12 +1000,12 @@ mod merge_tests {
             "different constants are different hypotheses"
         );
         assert_eq!(
-            hypotheses[0][0].subs[0],
+            hypotheses.get(0).get(0).subs().nth(0).unwrap(),
             VarReg::from_addr(0),
             "first message is not shifted"
         );
         assert_eq!(
-            hypotheses[1][0].subs[0],
+            hypotheses.get(1).get(0).subs().nth(0).unwrap(),
             VarReg::from_addr(1),
             "second message's substitution should be shifted past the first message's cells"
         );
@@ -1056,7 +1058,7 @@ mod merge_tests {
 
         assert_eq!(cells, vec![(Con, sym_p)]);
         assert_eq!(hypotheses.len(), 2);
-        assert_eq!(hypotheses[0][0].subs[0], hypotheses[1][0].subs[0]);
+        assert_eq!(hypotheses.get(0).get(0).subs().nth(0).unwrap(), hypotheses.get(1).get(0).subs().nth(0).unwrap());
     }
 
     #[test]
@@ -1093,7 +1095,7 @@ mod merge_tests {
         assert_eq!(cells, vec![(Comp, 2), (Con, sym_f), (Con, sym_a)]);
         assert_eq!(hypotheses.len(), 2);
         assert_eq!(
-            hypotheses[1][0].subs[0],
+            hypotheses.get(1).get(0).subs().nth(0).unwrap(),
             VarReg::from_addr(2),
             "`a` should reuse the argument cell of `f(a)`"
         );

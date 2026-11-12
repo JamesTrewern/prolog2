@@ -53,6 +53,16 @@ impl MetaSub {
             }
         }
     }
+}
+
+/// A clause as a meta clause id and the bindings of its meta variables.
+///
+/// Implemented by the owned [`MetaSub`] and by a packed `[usize]` holding
+/// `[meta_clause_id, subs...]`, so a stored clause is read in place.
+pub(crate) trait MetaSubTrait {
+    fn meta_clause_id(&self) -> usize;
+
+    fn subs(&self) -> impl ExactSizeIterator<Item = VarReg> + '_;
 
     /// Build the first-order clause this substitution stands for.
     ///
@@ -61,12 +71,12 @@ impl MetaSub {
     /// template is recovered from `predicate_table` by id. Returns `None` if
     /// the id names no clause in the table, which means the substitution has
     /// outlived its template.
-    pub fn build_clause(
+    fn build_clause(
         &self,
         heap: &mut impl Heap,
         predicate_table: &PredicateTable,
     ) -> Option<Clause> {
-        let meta_clause = predicate_table.get_meta_clause(self.meta_clause_id)?;
+        let meta_clause = predicate_table.get_meta_clause(self.meta_clause_id())?;
         Some(self.build_clause_from_meta(heap, meta_clause))
     }
 
@@ -81,20 +91,20 @@ impl MetaSub {
     /// That is what passing the meta-variable flags to [`build`] buys -- it is
     /// not cosmetic, since without them an unbound `Arg` falls through to
     /// `Heap::set_var`, which the program heap refuses.
-    pub fn build_clause_from_meta(&self, heap: &mut impl Heap, meta_clause: &Clause) -> Clause {
+    fn build_clause_from_meta(&self, heap: &mut impl Heap, meta_clause: &Clause) -> Clause {
         let threshold = meta_clause
             .meta_threshold()
             .expect("a MetaSub's clause is always a meta clause");
 
         let mut substitution = Substitution::new(meta_clause.max_arg_id);
-        for (arg_id, sub) in (threshold..meta_clause.max_arg_id).zip(self.subs.iter()) {
+        for (arg_id, sub) in (threshold..meta_clause.max_arg_id).zip(self.subs()) {
             let binding = sub
                 .get_bind()
                 .expect("MetaSub subs are always populated from bound arg registers");
             debug_assert!(
                 matches!(binding, Addr(_)),
                 "meta var {arg_id} of meta clause {} is still a variable;                  building it would write a dangling Ref into the program heap",
-                self.meta_clause_id
+                self.meta_clause_id()
             );
             substitution.set_arg(arg_id, binding);
         }
@@ -107,10 +117,16 @@ impl MetaSub {
         Clause::new(literals, None, meta_clause.max_arg_id)
     }
 
-    pub fn unify(&self, other: &Self, heap: &mut QueryHeap) -> Option<Vec<usize>> {
-        let mut binding = Vec::with_capacity(self.subs.len());
-        for (msub1, msub2) in self.subs.iter().zip(other.subs.iter()) {
-            if *msub1 == *msub2 {
+    /// Unify the two substitutions position by position, returning the
+    /// variables bound, or `None` (with nothing left bound) if they differ.
+    fn unify<O: MetaSubTrait + ?Sized>(
+        &self,
+        other: &O,
+        heap: &mut QueryHeap,
+    ) -> Option<Vec<usize>> {
+        let mut binding = Vec::with_capacity(self.subs().len());
+        for (msub1, msub2) in self.subs().zip(other.subs()) {
+            if msub1 == msub2 {
                 continue;
             }
             let b1 = if msub1.var() {
@@ -149,11 +165,162 @@ impl MetaSub {
     }
 }
 
+impl MetaSubTrait for MetaSub {
+    fn meta_clause_id(&self) -> usize {
+        self.meta_clause_id
+    }
+
+    fn subs(&self) -> impl ExactSizeIterator<Item = VarReg> + '_ {
+        self.subs.iter().copied()
+    }
+}
+
+impl MetaSubTrait for [usize] {
+    fn meta_clause_id(&self) -> usize {
+        self[0]
+    }
+
+    fn subs(&self) -> impl ExactSizeIterator<Item = VarReg> + '_ {
+        self[1..].iter().map(|&word| VarReg(word))
+    }
+}
+
+/// Groups of clauses packed back to back, each clause stored as
+/// `[meta_clause_id, subs...]`.
+///
+/// A group is whatever the owner makes it: a predicate definition, a
+/// hypothesis. Append-only.
+#[derive(Debug, Default)]
+pub(crate) struct PackedMetaSubs {
+    words: Vec<usize>,
+    /// End of each clause in `words`.
+    clause_ends: Vec<u32>,
+    /// End of each group in `clause_ends`.
+    group_ends: Vec<u32>,
+}
+
+impl PackedMetaSubs {
+    /// Append `group` as one group.
+    pub(crate) fn push<'a, T: MetaSubTrait + ?Sized + 'a>(
+        &mut self,
+        group: impl IntoIterator<Item = &'a T>,
+    ) {
+        for meta_sub in group {
+            self.words.push(meta_sub.meta_clause_id());
+            self.words.extend(meta_sub.subs().map(|sub| sub.0));
+            self.clause_ends
+                .push(u32::try_from(self.words.len()).expect("more than u32::MAX packed words"));
+        }
+        self.group_ends.push(
+            u32::try_from(self.clause_ends.len()).expect("more than u32::MAX packed clauses"),
+        );
+    }
+
+    /// Number of groups.
+    pub(crate) fn len(&self) -> usize {
+        self.group_ends.len()
+    }
+
+    pub(crate) fn get(&self, index: usize) -> MetaSubGroup<'_> {
+        let first = match index {
+            0 => 0,
+            _ => self.group_ends[index - 1] as usize,
+        };
+        let start = match first {
+            0 => 0,
+            _ => self.clause_ends[first - 1] as usize,
+        };
+        MetaSubGroup {
+            words: &self.words,
+            ends: &self.clause_ends[first..self.group_ends[index] as usize],
+            start,
+        }
+    }
+
+    pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = MetaSubGroup<'_>> {
+        (0..self.len()).map(|index| self.get(index))
+    }
+}
+
+/// One group of a [`PackedMetaSubs`], read in place.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MetaSubGroup<'a> {
+    words: &'a [usize],
+    /// End of each of this group's clauses in `words`.
+    ends: &'a [u32],
+    /// Start of the first clause in `words`.
+    start: usize,
+}
+
+impl<'a> MetaSubGroup<'a> {
+    /// Number of clauses.
+    pub(crate) fn len(&self) -> usize {
+        self.ends.len()
+    }
+
+    pub(crate) fn get(&self, index: usize) -> &'a [usize] {
+        let start = match index {
+            0 => self.start,
+            _ => self.ends[index - 1] as usize,
+        };
+        &self.words[start..self.ends[index] as usize]
+    }
+
+    pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = &'a [usize]> + '_ {
+        (0..self.len()).map(|index| self.get(index))
+    }
+}
+
+#[cfg(test)]
+mod packed_tests {
+    use super::{MetaSub, MetaSubTrait, PackedMetaSubs};
+    use crate::heap::VarReg;
+
+    fn meta_sub(meta_clause_id: usize, subs: &[usize]) -> MetaSub {
+        MetaSub {
+            meta_clause_id,
+            subs: subs.iter().map(|&addr| VarReg::from_addr(addr)).collect(),
+        }
+    }
+
+    #[test]
+    fn groups_read_back_as_pushed() {
+        let groups = vec![
+            vec![meta_sub(3, &[10, 11, 12]), meta_sub(4, &[13])],
+            vec![],
+            vec![meta_sub(5, &[]), meta_sub(6, &[14, 15]), meta_sub(7, &[16, 17, 18, 19])],
+        ];
+        let mut packed = PackedMetaSubs::default();
+        for group in &groups {
+            packed.push(group);
+        }
+
+        assert_eq!(packed.len(), groups.len());
+        for (stored, group) in packed.iter().zip(&groups) {
+            assert_eq!(stored.len(), group.len());
+            for (clause, meta_sub) in stored.iter().zip(group) {
+                assert_eq!(clause.meta_clause_id(), meta_sub.meta_clause_id);
+                assert!(clause.subs().eq(meta_sub.subs()));
+            }
+        }
+    }
+
+    #[test]
+    fn a_packed_clause_can_be_pushed_again() {
+        let mut first = PackedMetaSubs::default();
+        first.push(&[meta_sub(3, &[10, 11])]);
+        let mut second = PackedMetaSubs::default();
+        second.push(first.get(0).iter());
+
+        assert_eq!(second.get(0).get(0), first.get(0).get(0));
+    }
+}
+
 #[cfg(test)]
 mod build_clause_tests {
     
 
-    use super::MetaSub;
+    use super::{MetaSub, MetaSubTrait};
     use crate::{
         heap::{Cell, Heap, ProgramHeap, Tag::*, VarReg},
         parser::_build_clause,
@@ -349,7 +516,7 @@ mod build_clause_tests {
 mod tests {
     use crate::heap::test_prog;
 
-    use super::MetaSub;
+    use super::{MetaSub, MetaSubTrait};
     use crate::heap::ProgramHeap;
     use crate::heap::{
         Heap, QueryHeap,

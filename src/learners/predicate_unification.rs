@@ -13,7 +13,7 @@ use crate::{
         Tag::*,
         VarBind::{self, Addr, VarId},
     },
-    program::{MetaSub, PredicateTable},
+    program::{MetaSub, MetaSubGroup, MetaSubTrait, PackedMetaSubs, PredicateTable},
     utils::{DirGraph16, DirGraph8},
 };
 
@@ -108,164 +108,6 @@ impl PredDef {
                     *var_reg = bound.into();
                 }
             }
-        }
-    }
-
-    /// Attempt to unify two clause definitions
-    /// Self should be constant
-    /// will update variable bindings on heap effecting other variable clause defintions waiting to unify
-    pub(super) fn unify(&self, other: &PredDef, heap: &mut QueryHeap) -> bool {
-        // TODO consider if different meta_rules might result in the same clause
-        if self.cmp(other) != Equal {
-            return false;
-        }
-        let mut stack: Vec<(usize, Vec<usize>)> = Vec::new(); // (last matched index, bindings)
-        let mut unified = vec![false; self.len()].into_boxed_slice();
-        let mut i = 0;
-        'outer: while i < other.len() {
-            // Fresh visit to this position: search from the start. A revisit
-            // (backtrack) undoes the previous match at this position and
-            // resumes the search just after it.
-            let start = if i == stack.len() {
-                stack.push((0, Vec::new()));
-                0
-            } else {
-                let (last_j, bindings) = &stack[i];
-                unified[*last_j] = false;
-                heap.unbind(bindings);
-                last_j + 1
-            };
-
-            //Attempt to find clause to unify with
-            // Clauses are sorted by meta clause id, so skip the lower ids
-            // and stop at the first higher one.
-            let meta_clause_id = other[i].meta_clause_id;
-            for j in start..self.len() {
-                match self[j].meta_clause_id.cmp(&meta_clause_id) {
-                    Less => continue,
-                    Greater => break,
-                    Equal => {}
-                }
-                if unified[j] {
-                    continue;
-                }
-                if let Some(binding) = self[j].unify(&other[i], heap) {
-                    unified[j] = true;
-                    stack[i] = (j, binding);
-                    i += 1;
-                    continue 'outer;
-                }
-            }
-
-            if i == 0 {
-                return false;
-            } else {
-                stack.pop();
-                i -= 1;
-            }
-        }
-
-        true
-    }
-
-    /// Per-position canonical content profile, from which
-    /// [`key_from_profile`] derives the bucket keys for definitions that
-    /// could unify; `None` for a definition that cannot be keyed.
-    ///
-    /// Two definitions [`Self::unify`] would merge are identical except for
-    /// the names of the predicates they define: the incoming one has unbound
-    /// variables where the table entry has its coined constants. So the
-    /// profile keeps everything unification requires to match -- meta clause
-    /// ids and the ground terms' addresses -- and replaces the parts
-    /// allowed to differ with the [`OWN`] marker on both sides.
-    ///
-    /// A position resolving to one of the definition's own heads is `Own`:
-    /// before grounding that is an unbound in-group variable (the head of
-    /// this clause, or of a mutually recursive sibling), after grounding the
-    /// constant `make_const` coined for it. Both sides of a unifiable pair
-    /// classify such a position `Own`, so recursive and mutually recursive
-    /// groups key like any other definition.
-    ///
-    /// The one disagreement left is an *already ground* reference to a
-    /// constant that happens to be the candidate entry's own head: the
-    /// incoming side records its address, the entry `OWN`.
-    /// [`PredDefTable::insert`] covers exactly that case by probing
-    /// alternate keys with those addresses flipped to `OWN`.
-    ///
-    /// `None` is returned only when a position resolves to an unbound
-    /// variable that heads no clause of this definition -- a dependency
-    /// inserted out of order, which `make_const` separately asserts against.
-    /// Such a definition takes the signature-scan fallback.
-    ///
-    /// Ground terms are keyed by address, so equal terms must share one
-    /// address: the collector interns every term it is sent, and
-    /// `make_const` coins each constant once. Two equal terms at different
-    /// addresses would key apart and never be compared. Like any hash,
-    /// equality of keys is necessary but not sufficient for unifiability --
-    /// the caller confirms with [`Self::unify`].
-    pub(super) fn key_profile(&self, heap: &impl Heap) -> Option<KeyProfile> {
-        let resolve = |var_reg: &VarReg| match var_reg.get_bind() {
-            Some(VarId(var_id)) => Some(heap.var_deref(var_id)),
-            Some(bound @ Addr(_)) => Some(bound),
-            None => None,
-        };
-
-        // The heads this definition defines, by resolved binding. In-group
-        // references resolve to the *same* binding as the head they name --
-        // the same unbound variable before grounding, the same address after
-        // (`make_const` rewrites them through the shared variable) -- so
-        // plain equality is exact.
-        let mut own: SmallVec<[VarBind; PRED_DEF_DEFAULT_SIZE]> = SmallVec::new();
-        for meta_sub in self.iter() {
-            if let Some(head) = meta_sub.subs.first() {
-                own.push(resolve(head)?);
-            }
-        }
-
-        let mut profile: KeyProfile = SmallVec::new();
-        for meta_sub in self.iter() {
-            let mut positions: SmallVec<[usize; 4]> = SmallVec::new();
-            for var_reg in meta_sub.subs.iter() {
-                let resolved = resolve(var_reg)?;
-                positions.push(match resolved {
-                    _ if own.contains(&resolved) => OWN,
-                    Addr(addr) => addr,
-                    // Unbound, and not a head of this definition: a missing
-                    // dependency.
-                    VarId(_) => return None,
-                });
-            }
-            profile.push((meta_sub.meta_clause_id, positions));
-        }
-
-        Some(profile)
-    }
-
-    /// Hash of the signature [`Self::cmp`] orders by: clause count and meta
-    /// clause ids. Groups every definition this one could conceivably unify
-    /// with, for the fallback scan in [`PredDefTable::insert`].
-    pub(super) fn signature_key(&self) -> u64 {
-        use std::hash::{DefaultHasher, Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        self.meta_subs.len().hash(&mut hasher);
-        for meta_sub in self.iter() {
-            meta_sub.meta_clause_id.hash(&mut hasher);
-        }
-        hasher.finish()
-    }
-
-    pub(super) fn cmp(&self, other: &Self) -> Ordering {
-        match self.meta_subs.len().cmp(&other.meta_subs.len()) {
-            Equal => {
-                for (msub1, msub2) in self.meta_subs.iter().zip(other.meta_subs.iter()) {
-                    match msub1.meta_clause_id.cmp(&msub2.meta_clause_id) {
-                        Equal => continue,
-                        ordering => return ordering,
-                    }
-                }
-                Equal
-            }
-            ord => ord,
         }
     }
 
@@ -394,6 +236,209 @@ impl PredDef {
     }
 }
 
+/// A predicate definition: clauses sorted by meta clause id.
+///
+/// Implemented by the owned [`PredDef`] a worker sends and by the
+/// [`PredDefRef`] view of one stored in a [`PredDefTable`], so the two are
+/// compared without converting either.
+pub(super) trait PredDefLike {
+    type Sub: MetaSubTrait + ?Sized;
+
+    fn clause_count(&self) -> usize;
+
+    fn clause(&self, index: usize) -> &Self::Sub;
+
+    fn clauses(&self) -> impl Iterator<Item = &Self::Sub> {
+        (0..self.clause_count()).map(|index| self.clause(index))
+    }
+
+    /// Attempt to unify two clause definitions
+    /// Self should be constant
+    /// will update variable bindings on heap effecting other variable clause defintions waiting to unify
+    fn unify<O: PredDefLike>(&self, other: &O, heap: &mut QueryHeap) -> bool {
+        // TODO consider if different meta_rules might result in the same clause
+        if self.signature_cmp(other) != Equal {
+            return false;
+        }
+        let mut stack: Vec<(usize, Vec<usize>)> = Vec::new(); // (last matched index, bindings)
+        let mut unified = vec![false; self.clause_count()].into_boxed_slice();
+        let mut i = 0;
+        'outer: while i < other.clause_count() {
+            // Fresh visit to this position: search from the start. A revisit
+            // (backtrack) undoes the previous match at this position and
+            // resumes the search just after it.
+            let start = if i == stack.len() {
+                stack.push((0, Vec::new()));
+                0
+            } else {
+                let (last_j, bindings) = &stack[i];
+                unified[*last_j] = false;
+                heap.unbind(bindings);
+                last_j + 1
+            };
+
+            //Attempt to find clause to unify with
+            // Clauses are sorted by meta clause id, so skip the lower ids
+            // and stop at the first higher one.
+            let meta_clause_id = other.clause(i).meta_clause_id();
+            for j in start..self.clause_count() {
+                match self.clause(j).meta_clause_id().cmp(&meta_clause_id) {
+                    Less => continue,
+                    Greater => break,
+                    Equal => {}
+                }
+                if unified[j] {
+                    continue;
+                }
+                if let Some(binding) = self.clause(j).unify(other.clause(i), heap) {
+                    unified[j] = true;
+                    stack[i] = (j, binding);
+                    i += 1;
+                    continue 'outer;
+                }
+            }
+
+            if i == 0 {
+                return false;
+            } else {
+                stack.pop();
+                i -= 1;
+            }
+        }
+
+        true
+    }
+
+    /// Per-position canonical content profile, from which
+    /// [`key_from_profile`] derives the bucket keys for definitions that
+    /// could unify; `None` for a definition that cannot be keyed.
+    ///
+    /// Two definitions [`Self::unify`] would merge are identical except for
+    /// the names of the predicates they define: the incoming one has unbound
+    /// variables where the table entry has its coined constants. So the
+    /// profile keeps everything unification requires to match -- meta clause
+    /// ids and the ground terms' addresses -- and replaces the parts
+    /// allowed to differ with the [`OWN`] marker on both sides.
+    ///
+    /// A position resolving to one of the definition's own heads is `Own`:
+    /// before grounding that is an unbound in-group variable (the head of
+    /// this clause, or of a mutually recursive sibling), after grounding the
+    /// constant `make_const` coined for it. Both sides of a unifiable pair
+    /// classify such a position `Own`, so recursive and mutually recursive
+    /// groups key like any other definition.
+    ///
+    /// The one disagreement left is an *already ground* reference to a
+    /// constant that happens to be the candidate entry's own head: the
+    /// incoming side records its address, the entry `OWN`.
+    /// [`PredDefTable::insert`] covers exactly that case by probing
+    /// alternate keys with those addresses flipped to `OWN`.
+    ///
+    /// `None` is returned only when a position resolves to an unbound
+    /// variable that heads no clause of this definition -- a dependency
+    /// inserted out of order, which `make_const` separately asserts against.
+    /// Such a definition takes the signature-scan fallback.
+    ///
+    /// Ground terms are keyed by address, so equal terms must share one
+    /// address: the collector interns every term it is sent, and
+    /// `make_const` coins each constant once. Two equal terms at different
+    /// addresses would key apart and never be compared. Like any hash,
+    /// equality of keys is necessary but not sufficient for unifiability --
+    /// the caller confirms with [`Self::unify`].
+    fn key_profile(&self, heap: &impl Heap) -> Option<KeyProfile> {
+        let resolve = |var_reg: VarReg| match var_reg.get_bind() {
+            Some(VarId(var_id)) => Some(heap.var_deref(var_id)),
+            Some(bound @ Addr(_)) => Some(bound),
+            None => None,
+        };
+
+        // The heads this definition defines, by resolved binding. In-group
+        // references resolve to the *same* binding as the head they name --
+        // the same unbound variable before grounding, the same address after
+        // (`make_const` rewrites them through the shared variable) -- so
+        // plain equality is exact.
+        let mut own: SmallVec<[VarBind; PRED_DEF_DEFAULT_SIZE]> = SmallVec::new();
+        for meta_sub in self.clauses() {
+            if let Some(head) = meta_sub.subs().next() {
+                own.push(resolve(head)?);
+            }
+        }
+
+        let mut profile: KeyProfile = SmallVec::new();
+        for meta_sub in self.clauses() {
+            let mut positions: SmallVec<[usize; 4]> = SmallVec::new();
+            for var_reg in meta_sub.subs() {
+                let resolved = resolve(var_reg)?;
+                positions.push(match resolved {
+                    _ if own.contains(&resolved) => OWN,
+                    Addr(addr) => addr,
+                    // Unbound, and not a head of this definition: a missing
+                    // dependency.
+                    VarId(_) => return None,
+                });
+            }
+            profile.push((meta_sub.meta_clause_id(), positions));
+        }
+
+        Some(profile)
+    }
+
+    /// Hash of the signature [`Self::signature_cmp`] orders by: clause count and meta
+    /// clause ids. Groups every definition this one could conceivably unify
+    /// with, for the fallback scan in [`PredDefTable::insert`].
+    fn signature_key(&self) -> u64 {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        self.clause_count().hash(&mut hasher);
+        for meta_sub in self.clauses() {
+            meta_sub.meta_clause_id().hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// Order by clause count, then by meta clause ids.
+    fn signature_cmp<O: PredDefLike>(&self, other: &O) -> Ordering {
+        match self.clause_count().cmp(&other.clause_count()) {
+            Equal => {
+                for (msub1, msub2) in self.clauses().zip(other.clauses()) {
+                    match msub1.meta_clause_id().cmp(&msub2.meta_clause_id()) {
+                        Equal => continue,
+                        ordering => return ordering,
+                    }
+                }
+                Equal
+            }
+            ord => ord,
+        }
+    }
+}
+
+impl PredDefLike for PredDef {
+    type Sub = MetaSub;
+
+    fn clause_count(&self) -> usize {
+        self.meta_subs.len()
+    }
+
+    fn clause(&self, index: usize) -> &MetaSub {
+        &self.meta_subs[index]
+    }
+}
+
+/// A definition stored in a [`PredDefTable`], read in place.
+pub(super) type PredDefRef<'a> = MetaSubGroup<'a>;
+
+impl PredDefLike for PredDefRef<'_> {
+    type Sub = [usize];
+
+    fn clause_count(&self) -> usize {
+        self.len()
+    }
+
+    fn clause(&self, index: usize) -> &[usize] {
+        self.get(index)
+    }
+}
+
 /// Key of a position that resolves to one of the definition's own heads --
 /// the predicate the clause defines, or an in-group reference to a mutually
 /// recursive sibling. Unification is allowed to rename these, so they carry
@@ -434,7 +479,8 @@ pub(super) fn key_from_profile(profile: &KeyProfile, flips: &[usize]) -> u64 {
 
 #[derive(Default, Debug)]
 pub(super) struct PredDefTable {
-    pub pred_defs: Vec<PredDef>,
+    /// Every definition, grounded, one group each.
+    pred_defs: PackedMetaSubs,
     pub next_id: usize,
     /// Symbol ids of the constants coined to name the predicates defined
     /// here, recorded as each definition is inserted.
@@ -545,7 +591,20 @@ impl PredDefTable {
             .iter()
             // Pred defs from the same hypothesis are updated with bindings
             // by a successful unification.
-            .any(|&i| self.pred_defs[i].unify(pred_def, heap))
+            .any(|&i| self.get(i).unify(pred_def, heap))
+    }
+
+    /// Number of definitions.
+    pub(super) fn len(&self) -> usize {
+        self.pred_defs.len()
+    }
+
+    pub(super) fn get(&self, index: usize) -> PredDefRef<'_> {
+        self.pred_defs.get(index)
+    }
+
+    pub(super) fn iter(&self) -> impl ExactSizeIterator<Item = PredDefRef<'_>> {
+        self.pred_defs.iter()
     }
 
     /// The constants naming the predicates this table defines.
@@ -590,7 +649,7 @@ impl PredDefTable {
             .entry(pred_def.signature_key())
             .or_default()
             .push(index);
-        self.pred_defs.push(pred_def);
+        self.pred_defs.push(&pred_def.meta_subs);
     }
 
     /// Debug aid: print each definition as its meta clause ids and the terms
@@ -601,19 +660,18 @@ impl PredDefTable {
     /// templates -- more than a print wants -- so this shows the substitution
     /// itself.
     pub(super) fn _print_defs(&self, heap: &impl Heap) {
-        for (i, pred_def) in self.pred_defs.iter().enumerate() {
+        for (i, pred_def) in self.iter().enumerate() {
             println!("====== Definition {i} ======");
-            for msub in &pred_def.meta_subs {
+            for msub in pred_def.iter() {
                 let subs: Vec<String> = msub
-                    .subs
-                    .iter()
+                    .subs()
                     .map(|sub| match sub.get_bind() {
                         Some(Addr(addr)) => heap.term_string(addr),
                         Some(VarId(var_id)) => format!("Var_{var_id}"),
                         None => "UNBOUND".to_string(),
                     })
                     .collect();
-                println!("meta clause {}: {}", msub.meta_clause_id, subs.join(", "));
+                println!("meta clause {}: {}", msub.meta_clause_id(), subs.join(", "));
             }
             println!("===========================");
         }
@@ -641,9 +699,9 @@ mod tests {
             VarBind::{self, *},
             VarReg,
         },
-        learners::predicate_unification::{PredDef, PredDefTable},
+        learners::predicate_unification::{PredDef, PredDefLike, PredDefTable},
         parser::_build_clause,
-        program::{Clause, Constraints, Hypothesis, PredicateTable},
+        program::{Clause, Constraints, Hypothesis, MetaSubTrait, PredicateTable},
         resolution::{build, Substitution},
     };
 
@@ -751,10 +809,10 @@ mod tests {
     /// escapes mints another `pred_N` and fragments every hypothesis
     /// mentioning it.
     fn assert_table_has_no_duplicates(pdt: &PredDefTable, heap: &mut QueryHeap) {
-        for i in 0..pdt.pred_defs.len() {
-            for j in (i + 1)..pdt.pred_defs.len() {
+        for i in 0..pdt.len() {
+            for j in (i + 1)..pdt.len() {
                 assert!(
-                    !pdt.pred_defs[i].unify(&pdt.pred_defs[j], heap),
+                    !pdt.get(i).unify(&pdt.get(j), heap),
                     "table entries {i} and {j} unify, so one of them is a duplicate"
                 );
             }
@@ -797,7 +855,7 @@ mod tests {
         pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
 
         assert_eq!(
-            pdt.pred_defs.len(),
+            pdt.len(),
             1,
             "both hypotheses invent the same predicate"
         );
@@ -841,7 +899,7 @@ mod tests {
         pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
         pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
 
-        assert_eq!(pdt.pred_defs.len(), 2);
+        assert_eq!(pdt.len(), 2);
         assert_ne!(heap.var_deref(0), heap.var_deref(1));
         assert_table_has_no_duplicates(&pdt, &mut heap);
     }
@@ -886,7 +944,7 @@ mod tests {
         pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
 
         assert_eq!(
-            pdt.pred_defs.len(),
+            pdt.len(),
             1,
             "the same two clauses in the other order are the same definition"
         );
@@ -1071,7 +1129,7 @@ mod tests {
         let mut pdt = PredDefTable::default();
         pdt.extract_pred_defs_from_h(&mut h.meta_subs, &table, &mut heap);
 
-        assert_eq!(pdt.pred_defs.len(), 9);
+        assert_eq!(pdt.len(), 9);
         assert_eq!(pdt.pred_symbols().len(), 9, "one constant per definition");
         for var_id in 0..9 {
             assert!(
@@ -1120,11 +1178,10 @@ mod tests {
         // The body position of Var_0's definition names exactly the constant
         // coined for Var_1's head.
         let var_0_def = pdt
-            .pred_defs
             .iter()
-            .find(|def| matches!(def.meta_subs[0].subs[0].get_bind(), Some(Addr(a)) if heap[a] == heap[var0]))
+            .find(|def| matches!(def.get(0).subs().nth(0).unwrap().get_bind(), Some(Addr(a)) if heap[a] == heap[var0]))
             .expect("Var_0 should have a definition in the table");
-        let Some(Addr(body)) = var_0_def.meta_subs[0].subs[1].get_bind() else {
+        let Some(Addr(body)) = var_0_def.get(0).subs().nth(1).unwrap().get_bind() else {
             panic!("the body predicate should be ground");
         };
         assert_eq!(heap[body], heap[var1]);

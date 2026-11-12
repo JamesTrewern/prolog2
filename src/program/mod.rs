@@ -23,5 +23,5 @@ pub(crate) use clause::{BitFlag64, Clause, MetaData, MAX_ARG};
 // Only the learners' tests build a constraint set directly.
 #[cfg(test)]
 pub(crate) use hypothesis::Constraints;
-pub(crate) use meta_sub::MetaSub;
+pub(crate) use meta_sub::{MetaSub, MetaSubGroup, MetaSubTrait, PackedMetaSubs};
 pub use predicate_table::PredicateRef;
