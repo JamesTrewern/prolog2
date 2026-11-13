@@ -212,7 +212,7 @@ fn top_prog_trains() {
 
 const COLREG_CONF: Config = Config {
     max_depth: 5,
-    max_clause: 3,
+    max_clause: 2,
     debug: false,
     protect_h_preds: true,
 };

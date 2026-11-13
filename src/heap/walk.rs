@@ -135,6 +135,7 @@ pub trait Walk: Sized + DerefMut<Target = JumpStack> {
         Some((addr, cell))
     }
 
+    #[inline(always)]
     fn next_cell_with_addr_arg_deref(
         &mut self,
         heap: &impl Heap,
@@ -237,6 +238,7 @@ impl DualWalk {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn next_cells_with_addrs_arg_deref(
         &mut self,
         heap: &impl Heap,

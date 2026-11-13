@@ -297,3 +297,102 @@ mod tests {
         );
     }
 }
+
+/// A hypothesis clause is resolved from its `MetaSub` against the meta
+/// clause it instantiates, not from the clause that was built for it.
+#[cfg(test)]
+mod hypothesis_resolution_tests {
+    use super::Proof;
+    use crate::{app::App, heap::QueryHeap, parser::_build_clause};
+
+    /// `t/1` has no clauses, so a goal on it is provable only by learning
+    /// one from `P(X):-Q(X)` or by a clause already in the hypothesis.
+    fn app(max_clause: usize) -> App {
+        let mut app = App::default()
+            .load_code("q(a). q(b). r(c). P(X):- Q(X), {P,Q}.")
+            .expect("test program should load")
+            .add_body_predicates(["q/1", "r/1"])
+            .expect("body predicates should load");
+        app.config.max_clause = max_clause;
+        app
+    }
+
+    fn goal(app: &mut App, src: &str) -> usize {
+        _build_clause(&mut app.prog_heap, src)[0]
+    }
+
+    #[test]
+    fn a_learned_clause_resolves_a_later_goal() {
+        // One clause allowed, so `t(b)` cannot learn its own and has to be
+        // proved by the `t(X):-q(X)` learned for `t(a)`.
+        let mut app = app(1);
+        let goals = [goal(&mut app, "t(a)."), goal(&mut app, "t(b).")];
+
+        let mut heap = QueryHeap::new(&app.prog_heap, None);
+        let mut proof = Proof::new(&heap, &goals);
+
+        assert!(proof.prove(&mut heap, &app.predicate_table, app.config));
+        assert_eq!(proof.hypothesis.len(), 1);
+    }
+
+    #[test]
+    fn a_learned_clause_does_not_resolve_a_goal_it_does_not_cover() {
+        // `t(c)` needs `t(X):-r(X)`, a second clause; `t(X):-q(X)` must not
+        // match it.
+        let mut app = app(1);
+        let goals = [goal(&mut app, "t(a)."), goal(&mut app, "t(c).")];
+
+        let mut heap = QueryHeap::new(&app.prog_heap, None);
+        let mut proof = Proof::new(&heap, &goals);
+
+        assert!(!proof.prove(&mut heap, &app.predicate_table, app.config));
+    }
+
+    #[test]
+    fn backtracking_past_a_hypothesis_match_tries_the_next_clause() {
+        // Two clauses allowed. The proof first learns `t(X):-q(X)`, which
+        // matches the head of `t(c)` but fails in its body, so the search
+        // must go on to learn `t(X):-r(X)`.
+        let mut app = app(2);
+        let goals = [goal(&mut app, "t(a)."), goal(&mut app, "t(c).")];
+
+        let mut heap = QueryHeap::new(&app.prog_heap, None);
+        let mut proof = Proof::new(&heap, &goals);
+
+        assert!(proof.prove(&mut heap, &app.predicate_table, app.config));
+        assert_eq!(proof.hypothesis.len(), 2);
+    }
+
+    #[test]
+    fn a_meta_sub_resolves_as_the_clause_built_from_it_does() {
+        let mut app = app(1);
+        let learn = goal(&mut app, "t(a).");
+        let cases = [
+            (goal(&mut app, "t(b)."), true),
+            (goal(&mut app, "t(c)."), false),
+            (goal(&mut app, "u(a)."), false),
+        ];
+
+        let mut heap = QueryHeap::new(&app.prog_heap, None);
+        let mut learning = Proof::new(&heap, &[learn]);
+        assert!(learning.prove(&mut heap, &app.predicate_table, app.config));
+        let hypothesis = learning.hypothesis.clone();
+        // The built clauses, offered the way test clauses still are.
+        let clauses = hypothesis.clauses.clone();
+
+        for (goal, expected) in cases {
+            let mut by_meta_sub =
+                Proof::with_hypothesis_without_learning(&heap, &[goal], &hypothesis);
+            let from_meta_sub = by_meta_sub.prove(&mut heap, &app.predicate_table, app.config);
+            by_meta_sub.undo_all(&mut heap);
+
+            let mut by_clause = Proof::without_learning(&heap, &[goal]);
+            by_clause.add_test_clauses(&clauses);
+            let from_clause = by_clause.prove(&mut heap, &app.predicate_table, app.config);
+            by_clause.undo_all(&mut heap);
+
+            assert_eq!(from_meta_sub, expected);
+            assert_eq!(from_clause, expected);
+        }
+    }
+}

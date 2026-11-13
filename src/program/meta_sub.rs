@@ -15,7 +15,10 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct MetaSub {
-    pub meta_clause_id: usize,
+    /// Where the meta clause sits in the predicate table's clause arena.
+    /// Only good while that table is unchanged; see
+    /// [`MetaSubTrait::template`].
+    pub clause_idx: usize,
     /// Inline: one `MetaSub` is recorded for every clause the search adds to
     /// a hypothesis, so a `Vec` here cost an allocation per candidate clause
     /// to hold a handful of registers.
@@ -30,7 +33,7 @@ impl MetaSub {
     /// this is a slice copy rather than a filter over a bit set.
     pub fn from_arg_regs(
         arg_regs: &ArgRegs,
-        meta_clause_id: usize,
+        clause_idx: usize,
         threshold: usize,
         max_arg_id: usize,
     ) -> Self {
@@ -40,7 +43,7 @@ impl MetaSub {
             arg_regs.len(),
         );
         Self {
-            meta_clause_id,
+            clause_idx,
             subs: SmallVec::from_slice(&arg_regs[threshold..max_arg_id]),
         }
     }
@@ -55,29 +58,43 @@ impl MetaSub {
     }
 }
 
-/// A clause as a meta clause id and the bindings of its meta variables.
+/// A clause as the arena index of a meta clause and the bindings of its
+/// meta variables.
 ///
 /// Implemented by the owned [`MetaSub`] and by a packed `[usize]` holding
-/// `[meta_clause_id, subs...]`, so a stored clause is read in place.
+/// `[clause_idx, subs...]`, so a stored clause is read in place.
 pub(crate) trait MetaSubTrait {
-    fn meta_clause_id(&self) -> usize;
+    fn clause_idx(&self) -> usize;
 
     fn subs(&self) -> impl ExactSizeIterator<Item = VarReg> + '_;
 
-    /// Build the first-order clause this substitution stands for.
+    /// The meta clause this substitution was taken against, read from its
+    /// position in `predicate_table`'s clause arena.
     ///
-    /// A `MetaSub` records only the id of the meta clause it was taken
-    /// against and the bindings of that clause's meta variables, so the
-    /// template is recovered from `predicate_table` by id. Returns `None` if
-    /// the id names no clause in the table, which means the substitution has
-    /// outlived its template.
-    fn build_clause(
-        &self,
-        heap: &mut impl Heap,
-        predicate_table: &PredicateTable,
-    ) -> Option<Clause> {
-        let meta_clause = predicate_table.get_meta_clause(self.meta_clause_id())?;
-        Some(self.build_clause_from_meta(heap, meta_clause))
+    /// Only right while the table is as it was when the index was recorded:
+    /// adding or removing clauses moves the arena. Nothing here can prove
+    /// that, so a debug build checks what it can -- that the clause is a
+    /// meta clause with as many meta variables as there are substitutions --
+    /// which catches most stale indices without storing anything extra.
+    fn template<'t>(&self, predicate_table: &'t PredicateTable) -> &'t Clause {
+        let clause = predicate_table
+            .clause_at(self.clause_idx())
+            .expect("a MetaSub's clause index is inside the clause arena");
+        debug_assert!(
+            clause
+                .meta_threshold()
+                .is_some_and(|threshold| clause.max_arg_id - threshold == self.subs().len()),
+            "the clause at arena index {} is not a meta clause with {} meta variables: \
+             the predicate table was changed while this MetaSub was held",
+            self.clause_idx(),
+            self.subs().len(),
+        );
+        clause
+    }
+
+    /// Build the first-order clause this substitution stands for.
+    fn build_clause(&self, heap: &mut impl Heap, predicate_table: &PredicateTable) -> Clause {
+        self.build_clause_from_meta(heap, self.template(predicate_table))
     }
 
     /// As [`Self::build_clause`], with the meta clause template supplied
@@ -104,7 +121,7 @@ pub(crate) trait MetaSubTrait {
             debug_assert!(
                 matches!(binding, Addr(_)),
                 "meta var {arg_id} of meta clause {} is still a variable;                  building it would write a dangling Ref into the program heap",
-                self.meta_clause_id()
+                self.clause_idx()
             );
             substitution.set_arg(arg_id, binding);
         }
@@ -166,8 +183,8 @@ pub(crate) trait MetaSubTrait {
 }
 
 impl MetaSubTrait for MetaSub {
-    fn meta_clause_id(&self) -> usize {
-        self.meta_clause_id
+    fn clause_idx(&self) -> usize {
+        self.clause_idx
     }
 
     fn subs(&self) -> impl ExactSizeIterator<Item = VarReg> + '_ {
@@ -176,7 +193,7 @@ impl MetaSubTrait for MetaSub {
 }
 
 impl MetaSubTrait for [usize] {
-    fn meta_clause_id(&self) -> usize {
+    fn clause_idx(&self) -> usize {
         self[0]
     }
 
@@ -186,7 +203,7 @@ impl MetaSubTrait for [usize] {
 }
 
 /// Groups of clauses packed back to back, each clause stored as
-/// `[meta_clause_id, subs...]`.
+/// `[clause_idx, subs...]`.
 ///
 /// A group is whatever the owner makes it: a predicate definition, a
 /// hypothesis. Append-only.
@@ -208,7 +225,7 @@ impl PackedMetaSubs {
         for meta_sub in group {
             let subs = meta_sub.subs();
             reserve_slowly(&mut self.words, 1 + subs.len());
-            self.words.push(meta_sub.meta_clause_id());
+            self.words.push(meta_sub.clause_idx());
             self.words.extend(subs.map(|sub| sub.0));
             reserve_slowly(&mut self.clause_ends, 1);
             self.clause_ends
@@ -297,9 +314,9 @@ mod packed_tests {
     use super::{MetaSub, MetaSubTrait, PackedMetaSubs};
     use crate::heap::VarReg;
 
-    fn meta_sub(meta_clause_id: usize, subs: &[usize]) -> MetaSub {
+    fn meta_sub(clause_idx: usize, subs: &[usize]) -> MetaSub {
         MetaSub {
-            meta_clause_id,
+            clause_idx,
             subs: subs.iter().map(|&addr| VarReg::from_addr(addr)).collect(),
         }
     }
@@ -320,7 +337,7 @@ mod packed_tests {
         for (stored, group) in packed.iter().zip(&groups) {
             assert_eq!(stored.len(), group.len());
             for (clause, meta_sub) in stored.iter().zip(group) {
-                assert_eq!(clause.meta_clause_id(), meta_sub.meta_clause_id);
+                assert_eq!(clause.clause_idx(), meta_sub.clause_idx);
                 assert!(clause.subs().eq(meta_sub.subs()));
             }
         }
@@ -391,7 +408,7 @@ mod build_clause_tests {
 
     fn meta_sub_of(meta: &Clause, addrs: &[usize]) -> MetaSub {
         MetaSub {
-            meta_clause_id: meta.meta_data.unwrap().id,
+            clause_idx: meta.meta_data.unwrap().id,
             subs: addrs.iter().map(|&addr| VarReg::from_addr(addr)).collect(),
         }
     }
@@ -490,7 +507,6 @@ mod build_clause_tests {
     fn looked_up_through_the_predicate_table() {
         let (mut prog_heap, meta, [p, q, r]) =
             prog_with_meta("P(X,Y):-Q(X),R(Y),{P,Q,R}.", ["p", "q", "r"]);
-        let meta_sub = meta_sub_of(&meta, &[p, q, r]);
         let meta_id = meta.meta_data.unwrap().id;
 
         let mut predicate_table = PredicateTable::new();
@@ -498,25 +514,78 @@ mod build_clause_tests {
         predicate_table
             .add_clause_to_predicate(meta.clone(), symbol_arity)
             .unwrap();
+        let stored = predicate_table.get_meta_clause(meta_id).unwrap();
+        let meta_sub = MetaSub {
+            clause_idx: predicate_table.index_of(stored).unwrap(),
+            subs: [p, q, r].map(VarReg::from_addr).into_iter().collect(),
+        };
 
-        assert_eq!(predicate_table.get_meta_clause(meta_id), Some(&meta));
-
-        let clause = meta_sub
-            .build_clause(&mut prog_heap, &predicate_table)
-            .expect("the id was just added to the table");
+        let clause = meta_sub.build_clause(&mut prog_heap, &predicate_table);
         assert_eq!(
             literal_cells(&prog_heap, clause.head()),
             vec![con(&prog_heap, "p"), (Arg, 0), (Arg, 1)]
         );
+    }
 
-        // An id the table never saw resolves to nothing rather than to some
-        // other predicate's clause.
-        assert!(predicate_table.get_meta_clause(meta_id + 10_000).is_none());
-        assert!(
-            meta_sub_of(&Clause::new(vec![], Some((vec![], vec![])), 0), &[])
-                .build_clause(&mut prog_heap, &predicate_table)
-                .is_none()
-        );
+    /// A table holding the meta clause `P(X,Y):-Q(X,Y)` under `(0, 2)`, and
+    /// a `MetaSub` recorded against it.
+    fn table_and_recorded_meta_sub(prog_heap: &mut ProgramHeap) -> (PredicateTable, Clause, MetaSub) {
+        let meta = _build_clause(prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let mut predicate_table = PredicateTable::new();
+        predicate_table
+            .add_clause_to_predicate(meta.clone(), (0, 2))
+            .unwrap();
+        let stored = predicate_table
+            .get_meta_clause(meta.meta_data.unwrap().id)
+            .unwrap();
+        let p = prog_heap.symbols().set_const("p");
+        let p = prog_heap.heap_push((Con, p));
+        let meta_sub = MetaSub {
+            clause_idx: predicate_table.index_of(stored).unwrap(),
+            subs: [p, p].map(VarReg::from_addr).into_iter().collect(),
+        };
+        (predicate_table, meta, meta_sub)
+    }
+
+    #[test]
+    fn template_reads_the_meta_clause_by_arena_index() {
+        let mut prog_heap = ProgramHeap::new();
+        let (predicate_table, meta, meta_sub) = table_and_recorded_meta_sub(&mut prog_heap);
+
+        assert_eq!(meta_sub.template(&predicate_table), &meta);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "the predicate table was changed while this MetaSub was held")]
+    fn template_refuses_an_index_that_no_longer_holds_its_meta_clause() {
+        let mut prog_heap = ProgramHeap::new();
+        let (mut predicate_table, _meta, meta_sub) = table_and_recorded_meta_sub(&mut prog_heap);
+
+        // (0, 1) sorts before (0, 2), so this moves the meta clause along.
+        let fact = _build_clause(&mut prog_heap, "a(X).");
+        predicate_table
+            .add_clause_to_predicate(fact, (0, 1))
+            .unwrap();
+
+        meta_sub.template(&predicate_table);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "the predicate table was changed while this MetaSub was held")]
+    fn template_refuses_a_meta_clause_with_a_different_number_of_meta_variables() {
+        let mut prog_heap = ProgramHeap::new();
+        let (mut predicate_table, _meta, meta_sub) = table_and_recorded_meta_sub(&mut prog_heap);
+
+        // Put a three-variable meta clause where the two-variable one was.
+        predicate_table.remove_predicate((0, 2));
+        let wider = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        predicate_table
+            .add_clause_to_predicate(wider, (0, 2))
+            .unwrap();
+
+        meta_sub.template(&predicate_table);
     }
 
     #[test]
@@ -569,9 +638,9 @@ mod tests {
         heap.heap_push((Con, sym))
     }
 
-    fn fresh_meta_sub(meta_clause_id: usize, subs: Vec<VarReg>) -> MetaSub {
+    fn fresh_meta_sub(clause_idx: usize, subs: Vec<VarReg>) -> MetaSub {
         MetaSub {
-            meta_clause_id,
+            clause_idx,
             subs: super::SmallVec::from_vec(subs),
         }
     }

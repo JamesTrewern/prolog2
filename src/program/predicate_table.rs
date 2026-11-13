@@ -439,6 +439,20 @@ impl PredicateTable {
         self.clauses.get(range.start + clause_idx)
     }
 
+    /// Where `clause` sits in the clause arena, or `None` if it is not one
+    /// of this table's clauses. Good until the table is next changed.
+    pub fn index_of(&self, clause: &Clause) -> Option<usize> {
+        let offset = (clause as *const Clause as usize)
+            .checked_sub(self.clauses.as_ptr() as usize)?;
+        let size = std::mem::size_of::<Clause>();
+        (offset % size == 0 && offset / size < self.clauses.len()).then_some(offset / size)
+    }
+
+    /// The clause at an arena position from [`Self::index_of`].
+    pub fn clause_at(&self, index: usize) -> Option<&Clause> {
+        self.clauses.get(index)
+    }
+
     //Get predicate by SymbolArity key
     pub fn get_predicate(&self, symbol_arity: SymbolArity) -> Option<PredicateRef<'_>> {
         Some(
@@ -808,6 +822,20 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(table, before);
+    }
+
+    #[test]
+    fn index_of_finds_each_arena_clause_and_nothing_else() {
+        let (table, p, _q, _pred_func) = setup();
+
+        for (index, stored) in table.clauses.iter().enumerate() {
+            assert_eq!(table.index_of(stored), Some(index));
+            assert_eq!(table.clause_at(index), Some(stored));
+        }
+        // An equal clause that is not the table's own storage.
+        let copy = table.get_predicate_clauses((p, 2)).unwrap()[0].clone();
+        assert_eq!(table.index_of(&copy), None);
+        assert_eq!(table.clause_at(table.clauses.len()), None);
     }
 
     #[test]

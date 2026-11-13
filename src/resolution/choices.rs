@@ -14,7 +14,7 @@
 //! pointers that live inline in the goal's [`Env`](super::env::Env) and copy
 //! nothing.
 
-use crate::{heap::QueryHeap, program::Clause, program::Hypothesis};
+use crate::{program::Clause, program::Hypothesis};
 
 /// The clauses a goal has left to try.
 ///
@@ -138,24 +138,9 @@ impl<'a> Choices<'a> {
             + self.hypothesis
     }
 
-    /// Take the next clause to try, or `None` once every category and the
-    /// hypothesis are spent.
-    ///
-    /// The returned reference borrows the *hypothesis* for `'h`, even when the
-    /// clause actually came from the predicate table's arena: `'a: 'h`, so the
-    /// longer-lived arena borrow coerces down and both sources hand back one
-    /// type. That keeps this a bare pointer -- no enum, no tag, nothing copied
-    /// -- at the cost of the caller finishing with the clause before it
-    /// mutates the hypothesis. See [`Env::try_clause`](super::env::Env), which
-    /// defers both of its writes to the end of a try for exactly this reason.
-    pub(super) fn next<'h>(
-        &mut self,
-        hypothesis: &'h Hypothesis,
-        heap: &QueryHeap,
-    ) -> Option<&'h Clause>
-    where
-        'a: 'h,
-    {
+    /// Take the next program clause to try, or `None` once every category
+    /// is spent. The hypothesis comes after, from [`Self::next_hypothesis`].
+    pub(super) fn next(&mut self) -> Option<&'a Clause> {
         // Pop from the top of the category stack, dropping a category once
         // its slice is empty. One indexed load plus a length test, rather
         // than a discriminant test per category.
@@ -167,24 +152,28 @@ impl<'a> Choices<'a> {
             }
             self.categories_left = top;
         }
-
-        while self.hypothesis > 0 {
-            self.hypothesis -= 1;
-            debug_assert!(
-                self.hypothesis < hypothesis.len(),
-                "the hypothesis shrank below this goal's cursor: index {} of {}. \
-                 Resuming a goal is supposed to restore the hypothesis to the length \
-                 it had when the goal gathered its choices.",
-                self.hypothesis,
-                hypothesis.len()
-            );
-            let clause = &hypothesis[self.hypothesis];
-            if self.protect_hypothesis && hypothesis.clause_head_is_invented(heap, clause) {
-                continue;
-            }
-            return Some(clause);
-        }
         None
+    }
+
+    /// Index of the next hypothesis clause to try, highest first, or `None`
+    /// once they are spent. Only meaningful after [`Self::next`] has run out.
+    ///
+    /// An index rather than a clause: a hypothesis clause is resolved from
+    /// its `MetaSub`, and whether a protected goal may see it can only be
+    /// answered with that substitution in hand, so both are left to
+    /// [`Env`](super::env::Env).
+    pub(super) fn next_hypothesis(&mut self) -> Option<usize> {
+        if self.hypothesis == 0 {
+            return None;
+        }
+        self.hypothesis -= 1;
+        Some(self.hypothesis)
+    }
+
+    /// Whether hypothesis clauses headed by an invented predicate are
+    /// withheld from this goal.
+    pub(super) fn protects_hypothesis(&self) -> bool {
+        self.protect_hypothesis
     }
 }
 
@@ -200,11 +189,15 @@ mod tests {
         Clause::new(vec![literal], None, 0)
     }
 
-    /// The literal of each clause offered, in the order offered.
-    fn drain(mut choices: Choices<'_>, hypothesis: &Hypothesis, heap: &QueryHeap) -> Vec<usize> {
+    /// The literal of each clause offered, in the order offered: program
+    /// clauses, then the hypothesis clauses the cursor indexes.
+    fn drain(mut choices: Choices<'_>, hypothesis: &Hypothesis, _heap: &QueryHeap) -> Vec<usize> {
         let mut out = Vec::new();
-        while let Some(clause) = choices.next(hypothesis, heap) {
+        while let Some(clause) = choices.next() {
             out.push(clause[0]);
+        }
+        while let Some(index) = choices.next_hypothesis() {
+            out.push(hypothesis[index][0]);
         }
         out
     }
@@ -274,65 +267,30 @@ mod tests {
         let mut hypothesis = Hypothesis::new();
         hypothesis.clauses.push(clause(10));
 
-        let mut choices = Choices::with_hypothesis(&hypothesis);
+        let choices = Choices::with_hypothesis(&hypothesis);
         hypothesis.clauses.push(clause(99));
 
-        let mut out = Vec::new();
-        while let Some(clause) = choices.next(&hypothesis, &heap) {
-            out.push(clause[0]);
-        }
-        assert_eq!(out, vec![10], "the clause added after gathering is skipped");
+        assert_eq!(
+            drain(choices, &hypothesis, &heap),
+            vec![10],
+            "the clause added after gathering is skipped"
+        );
     }
 
-    /// With protection on, the cursor skips hypothesis clauses headed by an
-    /// invented predicate -- the filter that used to live in
-    /// `Hypothesis::extend_choices`.
+    /// The cursor only reports protection; `Env::try_hypothesis` does the
+    /// skipping, since it needs the clause's substitution to decide.
     #[test]
-    fn a_protected_cursor_skips_invented_headed_clauses() {
-        use crate::heap::{Heap, ProgramHeap, Tag::*, VarReg};
-        use crate::program::{BitFlag64, Constraints, MetaData};
-
-        // Address 0 holds `Ref_0(a)`, a head on a predicate variable;
-        // address 3 holds `p(a)`, a head on a constant.
-        let prog: &'static ProgramHeap = Box::leak(Box::new(ProgramHeap::new()));
-        let a = prog.symbols().set_const("a");
-        let p = prog.symbols().set_const("p");
-        let mut heap = QueryHeap::new(prog, None);
-        heap.cells = vec![(Comp, 2), (Var, 0), (Con, a), (Comp, 2), (Con, p), (Con, a)];
-        heap.var_regs = vec![VarReg::UNBOUND];
-
-        let meta_data = MetaData {
-            meta_var_threshold: 0,
-            constrained_vars: BitFlag64::default(),
-            pred_vars: BitFlag64::default(),
-            head_pred: false,
-            id: 0,
-        };
+    fn a_protected_cursor_reports_it_and_still_indexes_every_clause() {
+        let prog = test_prog();
+        let heap = QueryHeap::new(prog, None);
         let mut hypothesis = Hypothesis::new();
-        for head in [0, 3] {
-            hypothesis.push_clause(
-                Clause::new(vec![head], None, 0),
-                Constraints::new(),
-                &crate::heap::ArgRegs::new_64(),
-                meta_data,
-            );
-        }
-        hypothesis.add_invented_pred(&heap, 0);
+        hypothesis.clauses.push(clause(10));
+        hypothesis.clauses.push(clause(11));
 
-        assert_eq!(
-            drain(
-                Choices::with_protected_hypothesis(&hypothesis),
-                &hypothesis,
-                &heap
-            ),
-            vec![3],
-            "the invented-headed clause is withheld"
-        );
-        assert_eq!(
-            drain(Choices::with_hypothesis(&hypothesis), &hypothesis, &heap),
-            vec![3, 0],
-            "unprotected, the whole hypothesis is offered, back-to-front"
-        );
+        let protected = Choices::with_protected_hypothesis(&hypothesis);
+        assert!(protected.protects_hypothesis());
+        assert_eq!(drain(protected, &hypothesis, &heap), vec![11, 10]);
+        assert!(!Choices::with_hypothesis(&hypothesis).protects_hypothesis());
     }
 
     #[test]

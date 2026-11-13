@@ -6,22 +6,22 @@
 use smallvec::SmallVec;
 
 use crate::{
-    Bindings,
     heap::{
         ArgRegs, Heap, HeapPoint, QueryHeap, SymbolDB, Tag,
         VarBind::{self, Addr, VarId},
     },
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
-        Hypothesis, {BitFlag64, Clause, MAX_ARG}, {PredicateRef, PredicateTable},
+        Hypothesis, MetaSubTrait, {BitFlag64, Clause, MAX_ARG}, {PredicateRef, PredicateTable},
     },
     resolution::{
         build::{build, re_build_bound_arg_terms},
         choices::Choices,
         constraints::pre_pass_constraint,
-        unification::unify,
+        unification::{unify, unify_from},
+        Substitution,
     },
-    Config,
+    Bindings, Config,
 };
 /// How a goal is resolved: either by unifying with clauses or by calling a
 /// native predicate function.
@@ -371,6 +371,7 @@ impl<'a> Env<'a> {
             Strategy::Clause { .. } => self.try_clause(
                 heap,
                 hypothesis,
+                predicate_table,
                 learning && hypothesis.len() < config.max_clause,
                 config.debug,
             ),
@@ -463,6 +464,7 @@ impl<'a> Env<'a> {
         &mut self,
         heap: &mut QueryHeap,
         hypothesis: &mut Hypothesis,
+        predicate_table: &'a PredicateTable,
         allow_new_clause: bool,
         debug: bool,
     ) -> Option<Vec<Env<'a>>> {
@@ -480,7 +482,7 @@ impl<'a> Env<'a> {
                 unreachable!()
             };
 
-            let Some(clause) = choices.next(hypothesis, heap) else {
+            let Some(clause) = choices.next() else {
                 break;
             };
 
@@ -499,12 +501,8 @@ impl<'a> Env<'a> {
                 continue;
             };
 
-            for constraints in &hypothesis.constraints {
-                if !heap.check_constraints(constraints) {
-                    // Borrowed; see `undo_substitution`.
-                    heap.unbind(&substitution.bound_vars);
-                    continue 'choices;
-                }
+            if !constraints_hold(heap, hypothesis, &substitution) {
+                continue 'choices;
             }
 
             pre_pass_constraint(&mut substitution.arg_regs, clause.constrained_vars(), heap);
@@ -522,29 +520,19 @@ impl<'a> Env<'a> {
                 );
             }
 
-            re_build_bound_arg_terms(heap, &mut substitution);
-
-            // Build new goals
-            let new_goals: Vec<usize> = clause
-                .body()
-                .iter()
-                .map(|&body_literal| build(heap, &mut substitution, None, body_literal))
-                .collect();
+            let new_goals = build_goals(heap, &mut substitution, clause);
 
             // Build the hypothesis clause if this is a meta clause -- but
-            // hold it rather than pushing it.
-            //
-            // `clause` may be borrowed *from* the hypothesis, so every read of
-            // it has to finish before the hypothesis is mutated. That costs
-            // nothing: a hypothesis clause is never a meta clause, so neither
-            // mutation below can be reached by one. The compiler cannot see
-            // that, so the writes are deferred to the end of the try instead.
+            // hold it rather than pushing it, so the invented predicate
+            // below is decided first.
             let pending_clause = clause.meta_data.map(|meta_data| {
                 // Boxed so the common non-meta case leaves one pointer in
                 // this frame rather than a ~150-byte tuple.
                 let new_clause_literals: Vec<usize> = clause
                     .iter()
-                    .map(|literal| build(heap, &mut substitution, clause.meta_threshold(), *literal))
+                    .map(|literal| {
+                        build(heap, &mut substitution, clause.meta_threshold(), *literal)
+                    })
                     .collect();
 
                 let mut constraints = Vec::with_capacity(16);
@@ -557,10 +545,17 @@ impl<'a> Env<'a> {
                     }
                 }
 
+                // A meta clause always comes from the table: test clauses
+                // are built hypothesis clauses, which are never meta.
+                let clause_idx = predicate_table
+                    .index_of(clause)
+                    .expect("a meta clause being instantiated is in the predicate table");
+
                 Box::new((
                     Clause::new(new_clause_literals, None, clause.max_arg_id),
                     constraints,
                     meta_data,
+                    clause_idx,
                 ))
             });
 
@@ -584,8 +579,6 @@ impl<'a> Env<'a> {
                 .then(|| heap.pred_var(self.goal))
                 .flatten();
 
-            // `clause` is dead from here, so the hypothesis may be mutated.
-            //
             // If the invented predicate is already recorded, this clause is
             // extending an existing one rather than creating a new one, so
             // there is nothing for undo_try to remove.
@@ -606,7 +599,7 @@ impl<'a> Env<'a> {
             }
 
             if let Some(pending) = pending_clause {
-                let (new_clause, constraints, meta_data) = *pending;
+                let (new_clause, constraints, meta_data, clause_idx) = *pending;
                 if let Strategy::Clause { new_clause, .. } = &mut self.strategy {
                     *new_clause = true;
                 }
@@ -623,25 +616,19 @@ impl<'a> Env<'a> {
                     SmallVec::from_vec(constraints),
                     &substitution.arg_regs,
                     meta_data,
+                    clause_idx,
                 );
                 if debug {
                     eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
                 }
             }
 
-            self.bound_vars = substitution.bound_vars;
-            self.children = new_goals.len();
-            if debug {
-                eprintln!("Bindings: {:?}", self.bound_vars);
-            }
-            // heap.bind(&self.bound_vars);
+            return Some(self.commit(heap, substitution, new_goals, debug));
+        }
 
-            return Some(
-                new_goals
-                    .into_iter()
-                    .map(|goal| Env::new(goal, self.depth + 1, heap.heap_point()))
-                    .collect(),
-            );
+        // Every program clause is spent; the hypothesis is tried last.
+        if let Some(children) = self.try_hypothesis(heap, hypothesis, predicate_table, debug) {
+            return Some(children);
         }
 
         if debug {
@@ -653,6 +640,98 @@ impl<'a> Env<'a> {
             );
         }
         None
+    }
+
+    /// Try the hypothesis clauses this goal has left.
+    ///
+    /// A hypothesis clause is resolved from its `MetaSub`, not from a built
+    /// clause: the meta clause it instantiates is unified with the goal
+    /// after its meta variables' registers are loaded with the recorded
+    /// bindings, which is the same as unifying the clause those bindings
+    /// stand for.
+    ///
+    /// The template's constraints are not applied and no clause is added:
+    /// both happened when the clause was learned.
+    fn try_hypothesis(
+        &mut self,
+        heap: &mut QueryHeap,
+        hypothesis: &Hypothesis,
+        predicate_table: &'a PredicateTable,
+        debug: bool,
+    ) -> Option<Vec<Env<'a>>> {
+        'hypothesis: loop {
+            let Strategy::Clause { choices, .. } = &mut self.strategy else {
+                unreachable!()
+            };
+            let index = choices.next_hypothesis()?;
+            let protect = choices.protects_hypothesis();
+            debug_assert!(
+                index < hypothesis.len(),
+                "the hypothesis shrank below this goal's cursor: index {index} of {}. \
+                 Resuming a goal is supposed to restore the hypothesis to the length \
+                 it had when the goal gathered its choices.",
+                hypothesis.len()
+            );
+
+            let meta_sub = &hypothesis.meta_subs[index];
+            let template = meta_sub.template(predicate_table);
+            let threshold = template
+                .meta_threshold()
+                .expect("a hypothesis clause instantiates a meta clause");
+
+            if debug {
+                eprintln!("[CALL|H{index}] {}", hypothesis[index].to_string(heap));
+            }
+
+            let mut substitution = Substitution::new(template.max_arg_id);
+            // Copied as recorded: a variable may have been bound since, so
+            // readers of these registers dereference.
+            substitution.arg_regs[threshold..template.max_arg_id].copy_from_slice(&meta_sub.subs);
+
+            let head = template.head();
+            if protect && head_is_invented(heap, hypothesis, &substitution, head) {
+                continue 'hypothesis;
+            }
+
+            let Some(mut substitution) = unify_from(heap, substitution, head, self.goal) else {
+                continue 'hypothesis;
+            };
+
+            if !constraints_hold(heap, hypothesis, &substitution) {
+                continue 'hypothesis;
+            }
+
+            if debug {
+                eprintln!(
+                    "[MATCH|H{index}|{}] {} / {}",
+                    self.depth,
+                    heap.term_string(self.goal),
+                    hypothesis[index].to_string(heap),
+                );
+            }
+
+            let new_goals = build_goals(heap, &mut substitution, template);
+            return Some(self.commit(heap, substitution, new_goals, debug));
+        }
+    }
+
+    /// Keep a successful try's bindings and open a child for each new goal.
+    fn commit(
+        &mut self,
+        heap: &QueryHeap,
+        substitution: Substitution,
+        new_goals: Vec<usize>,
+        debug: bool,
+    ) -> Vec<Env<'a>> {
+        self.bound_vars = substitution.bound_vars;
+        self.children = new_goals.len();
+        if debug {
+            eprintln!("Bindings: {:?}", self.bound_vars);
+        }
+        new_goals
+            .into_iter()
+            .map(|goal| Env::new(goal, self.depth + 1, heap.heap_point()))
+            .collect()
     }
 
     fn try_conj(&mut self, heap: &QueryHeap) -> Option<Vec<Env<'a>>> {
@@ -671,5 +750,149 @@ impl<'a> Env<'a> {
                     .collect(),
             )
         }
+    }
+}
+
+/// Whether the hypothesis' constraints hold under a unification; if not,
+/// its bindings are undone.
+fn constraints_hold(
+    heap: &mut QueryHeap,
+    hypothesis: &Hypothesis,
+    substitution: &Substitution,
+) -> bool {
+    for constraints in &hypothesis.constraints {
+        if !heap.check_constraints(constraints) {
+            // Borrowed; see `undo_substitution`.
+            heap.unbind(&substitution.bound_vars);
+            return false;
+        }
+    }
+    true
+}
+
+/// Build a goal for each body literal of a unified clause.
+fn build_goals(
+    heap: &mut QueryHeap,
+    substitution: &mut Substitution,
+    clause: &Clause,
+) -> Vec<usize> {
+    re_build_bound_arg_terms(heap, substitution);
+    clause
+        .body()
+        .iter()
+        .map(|&body_literal| build(heap, substitution, None, body_literal))
+        .collect()
+}
+
+/// Whether the clause a loaded meta clause stands for is headed by an
+/// invented predicate: its head functor is a meta variable whose register
+/// holds a variable that is still unbound and names one.
+///
+/// `head` is the template's head and `substitution` holds the hypothesis
+/// clause's bindings as recorded, so the register is dereferenced here.
+fn head_is_invented(
+    heap: &QueryHeap,
+    hypothesis: &Hypothesis,
+    substitution: &Substitution,
+    head: usize,
+) -> bool {
+    if heap[head].0 != Tag::Comp {
+        return false;
+    }
+    match heap[head + 1] {
+        (Tag::Arg, arg_id) => matches!(
+            substitution.get_arg(arg_id),
+            Some(VarId(var_id)) if matches!(
+                heap.var_deref(var_id),
+                VarId(rep) if hypothesis.is_invented_pred(heap, rep)
+            )
+        ),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::head_is_invented;
+    use crate::{
+        heap::{
+            test_prog, Heap, QueryHeap,
+            Tag::{Arg, Comp, Con},
+            VarBind::{Addr, VarId},
+            VarReg,
+        },
+        program::Hypothesis,
+        resolution::Substitution,
+    };
+
+    /// A template head `P(X)` with `P` at arg 1, and two query variables.
+    fn template_head(heap: &mut QueryHeap) -> usize {
+        heap.cells = vec![(Comp, 2), (Arg, 1), (Arg, 0)];
+        heap.var_regs = vec![VarReg::UNBOUND, VarReg::UNBOUND];
+        0
+    }
+
+    #[test]
+    fn a_head_bound_to_an_invented_predicate_variable_is_invented() {
+        let mut heap = QueryHeap::new(test_prog(), None);
+        let head = template_head(&mut heap);
+        let mut hypothesis = Hypothesis::new();
+        hypothesis.add_invented_pred(&heap, 0);
+
+        let mut substitution = Substitution::new(2);
+        substitution.set_arg(1, VarId(0));
+        assert!(head_is_invented(&heap, &hypothesis, &substitution, head));
+
+        // Another variable, not invented.
+        substitution.set_arg(1, VarId(1));
+        assert!(!head_is_invented(&heap, &hypothesis, &substitution, head));
+    }
+
+    #[test]
+    fn a_head_register_recorded_before_its_variable_was_bound_is_dereferenced() {
+        let mut heap = QueryHeap::new(test_prog(), None);
+        let head = template_head(&mut heap);
+        let mut hypothesis = Hypothesis::new();
+        hypothesis.add_invented_pred(&heap, 0);
+        let mut substitution = Substitution::new(2);
+        substitution.set_arg(1, VarId(1));
+
+        // Variable 1 now stands for the invented predicate.
+        heap.var_regs[1] = VarId(0).into();
+        assert!(head_is_invented(&heap, &hypothesis, &substitution, head));
+
+        // Bound to a constant since, the predicate is no longer invented.
+        let p = heap.symbols().set_const("env_tests_p");
+        let p_addr = heap.heap_push((Con, p));
+        heap.var_regs[0] = Addr(p_addr).into();
+        assert!(!head_is_invented(&heap, &hypothesis, &substitution, head));
+    }
+
+    #[test]
+    fn a_head_bound_to_a_constant_is_not_invented() {
+        let mut heap = QueryHeap::new(test_prog(), None);
+        let head = template_head(&mut heap);
+        let p = heap.symbols().set_const("env_tests_p");
+        let p_addr = heap.heap_push((Con, p));
+        let mut hypothesis = Hypothesis::new();
+        hypothesis.add_invented_pred(&heap, 0);
+
+        let mut substitution = Substitution::new(2);
+        substitution.set_arg(1, Addr(p_addr));
+        assert!(!head_is_invented(&heap, &hypothesis, &substitution, head));
+    }
+
+    #[test]
+    fn a_constant_headed_template_is_not_invented() {
+        let mut heap = QueryHeap::new(test_prog(), None);
+        let p = heap.symbols().set_const("env_tests_p");
+        heap.cells = vec![(Comp, 2), (Con, p), (Arg, 0)];
+        heap.var_regs = vec![VarReg::UNBOUND];
+        let mut hypothesis = Hypothesis::new();
+        hypothesis.add_invented_pred(&heap, 0);
+
+        let mut substitution = Substitution::new(2);
+        substitution.set_arg(1, VarId(0));
+        assert!(!head_is_invented(&heap, &hypothesis, &substitution, 0));
     }
 }

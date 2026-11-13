@@ -101,15 +101,35 @@ impl App {
         let mut pred_def_clauses = Vec::with_capacity(pdt.len() * 2);
         for pred_def in pdt.iter() {
             for meta_sub in pred_def.iter() {
-                let clause = meta_sub
-                    .build_clause(&mut self.prog_heap, &self.predicate_table)
-                    .expect("every MetaSub's meta clause id comes from the predicate table");
+                let clause = meta_sub.build_clause(&mut self.prog_heap, &self.predicate_table);
                 let symbol_arity = self.prog_heap.symbol_arity(clause.head());
                 pred_def_clauses.push((symbol_arity, clause));
             }
         }
-        self.predicate_table.add_clauses(pred_def_clauses).unwrap();
         drop(pdt);
+
+        // A `MetaSub` names its meta clause by arena position, and adding
+        // the definitions moves the arena. So note which meta clause each
+        // position the hypotheses use holds now, and find them again after.
+        // Building the hypotheses first would avoid this, but then their
+        // clauses and the batch above are in memory together.
+        let mut meta_ids: HashMap<usize, usize> = HashMap::new();
+        for hypothesis in hypotheses.iter() {
+            for meta_sub in hypothesis.iter() {
+                meta_ids.entry(meta_sub.clause_idx()).or_insert_with(|| {
+                    let meta_data = meta_sub.template(&self.predicate_table).meta_data;
+                    meta_data.expect("a template is a meta clause").id
+                });
+            }
+        }
+        self.predicate_table.add_clauses(pred_def_clauses).unwrap();
+        let templates: HashMap<usize, &Clause> = meta_ids
+            .into_iter()
+            .map(|(clause_idx, id)| {
+                let template = self.predicate_table.get_meta_clause(id);
+                (clause_idx, template.expect("adding clauses removes none"))
+            })
+            .collect();
 
         // Literals are built only here; until now hypotheses were `MetaSub`s.
         let sub_hypotheses: Vec<Box<[Clause]>> = hypotheses
@@ -118,9 +138,8 @@ impl App {
                 meta_subs
                     .iter()
                     .map(|meta_sub| {
-                        meta_sub
-                            .build_clause(&mut self.prog_heap, &self.predicate_table)
-                            .expect("every MetaSub's meta clause id comes from the predicate table")
+                        let template = templates[&meta_sub.clause_idx()];
+                        meta_sub.build_clause_from_meta(&mut self.prog_heap, template)
                     })
                     .collect()
             })
@@ -363,7 +382,7 @@ fn merge_thread_results(
             // Sort so that clause order does not affect equality. Interned
             // terms have one address each, so addresses stand in for content.
             hypothesis.sort_unstable_by(|a, b| {
-                a.meta_clause_id.cmp(&b.meta_clause_id).then_with(|| {
+                a.clause_idx.cmp(&b.clause_idx).then_with(|| {
                     a.subs
                         .iter()
                         .map(|sub| sub.0)
@@ -527,7 +546,7 @@ fn hypothesis_hash<'a, T: MetaSubTrait + ?Sized + 'a>(
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
     for meta_sub in clauses {
-        meta_sub.meta_clause_id().hash(&mut hasher);
+        meta_sub.clause_idx().hash(&mut hasher);
         for sub in meta_sub.subs() {
             sub.0.hash(&mut hasher);
         }
@@ -542,7 +561,7 @@ fn hypothesis_hash<'a, T: MetaSubTrait + ?Sized + 'a>(
 fn same_hypothesis(stored: MetaSubGroup, new: &[MetaSub]) -> bool {
     stored.len() == new.len()
         && stored.iter().zip(new).all(|(x, y)| {
-            x.meta_clause_id() == y.meta_clause_id && x.subs().eq(y.subs.iter().copied())
+            x.clause_idx() == y.clause_idx && x.subs().eq(y.subs.iter().copied())
         })
 }
 
@@ -621,7 +640,7 @@ fn clone_meta_sub(
         .map(|&var_reg| clone_var_reg(dst, proof_heap, var_reg, ref_map))
         .collect();
     MetaSub {
-        meta_clause_id: meta_sub.meta_clause_id,
+        clause_idx: meta_sub.clause_idx,
         subs,
     }
 }
@@ -689,7 +708,7 @@ mod extraction_tests {
     }
 
     /// A program heap holding the meta rule `P(X,Y):-Q(X,Y)`, the table to
-    /// look it up in, and its id. Its substitutions are `[P, Q]`.
+    /// look it up in, and its arena index. Its substitutions are `[P, Q]`.
     fn prog_with_meta_rule() -> (ProgramHeap, PredicateTable, usize) {
         let mut prog = ProgramHeap::new();
         let meta = crate::parser::_build_clause(&mut prog, "P(X,Y):-Q(X,Y),{P,Q}.");
@@ -697,7 +716,8 @@ mod extraction_tests {
         let mut table = PredicateTable::new();
         let symbol_arity = prog.symbol_arity(meta.head());
         table.add_clause_to_predicate(meta, symbol_arity).unwrap();
-        (prog, table, id)
+        let clause_idx = table.index_of(table.get_meta_clause(id).unwrap()).unwrap();
+        (prog, table, clause_idx)
     }
 
     #[test]
@@ -767,13 +787,13 @@ mod extraction_tests {
     }
 
     #[test]
-    fn clone_meta_sub_preserves_meta_clause_id_and_translates_subs() {
+    fn clone_meta_sub_preserves_clause_idx_and_translates_subs() {
         let prog = test_prog();
         let mut proof_heap = QueryHeap::new(&prog, None);
         let v1 = proof_heap.new_var(VarReg::UNBOUND);
         let v2 = proof_heap.new_var(VarReg::UNBOUND);
         let meta_sub = MetaSub {
-            meta_clause_id: 7,
+            clause_idx: 7,
             subs: smallvec![VarReg::from_var(v1), VarReg::from_var(v2)],
         };
 
@@ -781,7 +801,7 @@ mod extraction_tests {
         let mut ref_map = HashMap::new();
         let cloned = clone_meta_sub(&mut dst, &proof_heap, &meta_sub, &mut ref_map);
 
-        assert_eq!(cloned.meta_clause_id, 7);
+        assert_eq!(cloned.clause_idx, 7);
         assert_eq!(cloned.subs.len(), 2);
         assert!(cloned.subs[0].var() && cloned.subs[1].var());
         assert_ne!(
@@ -795,18 +815,18 @@ mod extraction_tests {
         // `p(X,Y):-q(X,Y)` and `p(X,Y):-Var(X,Y)`: neither head is a
         // predicate variable, so neither is lifted -- not even the second,
         // whose only predicate variable is in its body.
-        let (prog, table, meta_clause_id) = prog_with_meta_rule();
+        let (prog, table, clause_idx) = prog_with_meta_rule();
         let mut proof_heap = QueryHeap::new(&prog, None);
         let p = proof_heap.heap_push((Con, prog.symbols().set_const("p")));
         let q = proof_heap.heap_push((Con, prog.symbols().set_const("q")));
         let body_var = proof_heap.new_var(VarReg::UNBOUND);
         let meta_subs = vec![
             MetaSub {
-                meta_clause_id,
+                clause_idx,
                 subs: smallvec![VarReg::from_addr(p), VarReg::from_addr(q)],
             },
             MetaSub {
-                meta_clause_id,
+                clause_idx,
                 subs: smallvec![VarReg::from_addr(p), VarReg::from_var(body_var)],
             },
         ];
@@ -817,7 +837,7 @@ mod extraction_tests {
 
         assert!(pred_defs.is_empty());
         assert_eq!(hypothesis.len(), 2);
-        assert_eq!(hypothesis[0].meta_clause_id, meta_clause_id);
+        assert_eq!(hypothesis[0].clause_idx, clause_idx);
         // Only the three constant substitution terms land on `dst`.
         assert_eq!(dst.cells.len(), 3);
     }
@@ -828,11 +848,11 @@ mod extraction_tests {
         // clause is lifted into a PredDef, and the variable repeated in its
         // MetaSub must land on a single destination variable (the shared
         // `ref_map`).
-        let (prog, table, meta_clause_id) = prog_with_meta_rule();
+        let (prog, table, clause_idx) = prog_with_meta_rule();
         let mut proof_heap = QueryHeap::new(&prog, None);
         let pred_var = proof_heap.new_var(VarReg::UNBOUND);
         let meta_sub = MetaSub {
-            meta_clause_id,
+            clause_idx,
             subs: smallvec![VarReg::from_var(pred_var), VarReg::from_var(pred_var)],
         };
 
@@ -863,12 +883,12 @@ mod extraction_tests {
         // proof-heap var id (backtracking resets and reassigns registers).
         // Each call to `extract_hypothesis` must still land on a distinct
         // destination variable rather than aliasing the two solutions.
-        let (prog, table, meta_clause_id) = prog_with_meta_rule();
+        let (prog, table, clause_idx) = prog_with_meta_rule();
         let mut proof_heap = QueryHeap::new(&prog, None);
         let pred_var = proof_heap.new_var(VarReg::UNBOUND);
         let q = proof_heap.heap_push((Con, prog.symbols().set_const("q")));
         let meta_sub = MetaSub {
-            meta_clause_id,
+            clause_idx,
             subs: smallvec![VarReg::from_var(pred_var), VarReg::from_addr(q)],
         };
 
@@ -936,7 +956,7 @@ mod merge_tests {
         let mut heap = thread_heap();
         let pred_var = heap.new_var(VarReg::UNBOUND);
         let meta_sub = MetaSub {
-            meta_clause_id: 0,
+            clause_idx: 0,
             subs: smallvec![VarReg::from_var(pred_var)],
         };
         let pred_def = PredDef::new(smallvec![meta_sub]);
@@ -961,13 +981,13 @@ mod merge_tests {
         // each numbering its own predicate variable from 0 -- exercising
         // that the scratch window gets reset between messages rather than
         // leaking a stale binding from the first message into the second.
-        let make_message = |meta_clause_id: usize| {
+        let make_message = |clause_idx: usize| {
             let mut heap = thread_heap();
             let pred_var = heap.new_var(VarReg::UNBOUND);
             heap.heap_push((Comp, 1));
             heap.heap_push((Var, pred_var));
             let meta_sub = MetaSub {
-                meta_clause_id,
+                clause_idx,
                 subs: smallvec![VarReg::from_var(pred_var)],
             };
             let pred_def = PredDef::new(smallvec![meta_sub]);
@@ -980,7 +1000,7 @@ mod merge_tests {
         assert_eq!(
             pdt.len(),
             2,
-            "distinct meta_clause_ids should not unify together"
+            "distinct clause_idxs should not unify together"
         );
         for (i, cell) in cells.iter().enumerate() {
             assert_ne!(cell.0, Var, "cell {i} ({cell:?}) should have been grounded");
@@ -1008,7 +1028,7 @@ mod merge_tests {
             let mut heap = thread_heap();
             let addr = heap.heap_push((Con, sym));
             let meta_sub = MetaSub {
-                meta_clause_id: 0,
+                clause_idx: 0,
                 subs: smallvec![VarReg::from_addr(addr)],
             };
             (smallvec![meta_sub], Vec::new(), parts(heap))
@@ -1043,7 +1063,7 @@ mod merge_tests {
             let mut heap = thread_heap();
             let addr = heap.heap_push((Con, sym_p));
             let meta_sub = MetaSub {
-                meta_clause_id: 0,
+                clause_idx: 0,
                 subs: smallvec![VarReg::from_addr(addr)],
             };
             (smallvec![meta_sub], Vec::new(), parts(heap))
@@ -1067,11 +1087,11 @@ mod merge_tests {
 
         // Different meta clauses, so the hypotheses differ, but the same
         // constant.
-        let message = |meta_clause_id: usize| {
+        let message = |clause_idx: usize| {
             let mut heap = thread_heap();
             let addr = heap.heap_push((Con, sym_p));
             let meta_sub = MetaSub {
-                meta_clause_id,
+                clause_idx,
                 subs: smallvec![VarReg::from_addr(addr)],
             };
             (smallvec![meta_sub], Vec::new(), parts(heap))
@@ -1096,14 +1116,14 @@ mod merge_tests {
         compound.heap_push((Con, sym_f));
         compound.heap_push((Con, sym_a));
         let first = MetaSub {
-            meta_clause_id: 0,
+            clause_idx: 0,
             subs: smallvec![VarReg::from_addr(f_a)],
         };
 
         let mut constant = thread_heap();
         let a = constant.heap_push((Con, sym_a));
         let second = MetaSub {
-            meta_clause_id: 0,
+            clause_idx: 0,
             subs: smallvec![VarReg::from_addr(a)],
         };
 
@@ -1137,7 +1157,7 @@ mod merge_tests {
         heap.heap_push((Con, sym_f));
         heap.heap_push((Var, stray_var));
         let meta_sub = MetaSub {
-            meta_clause_id: 0,
+            clause_idx: 0,
             subs: smallvec![VarReg::from_addr(term)],
         };
 
@@ -1152,7 +1172,7 @@ mod merge_tests {
         let mut heap = thread_heap();
         let stray_var = heap.new_var(VarReg::UNBOUND);
         let meta_sub = MetaSub {
-            meta_clause_id: 0,
+            clause_idx: 0,
             subs: smallvec![VarReg::from_var(stray_var)],
         };
 

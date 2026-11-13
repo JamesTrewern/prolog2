@@ -27,7 +27,7 @@ pub(super) const MAX_PRED_DEFS: usize = 16;
 
 #[derive(Debug)]
 pub(super) struct PredDef {
-    /// Sorted by `meta_clause_id`.
+    /// Sorted by `clause_idx`.
     pub meta_subs: SmallVec<[MetaSub; PRED_DEF_DEFAULT_SIZE]>,
 }
 
@@ -46,7 +46,7 @@ impl DerefMut for PredDef {
 impl PredDef {
     /// Take clauses to form new predicate definition (orders clauses)
     pub(super) fn new(mut meta_subs: SmallVec<[MetaSub; PRED_DEF_DEFAULT_SIZE]>) -> Self {
-        meta_subs.sort_by_key(|meta_sub| meta_sub.meta_clause_id);
+        meta_subs.sort_by_key(|meta_sub| meta_sub.clause_idx);
         Self { meta_subs }
     }
 
@@ -141,10 +141,7 @@ impl PredDef {
         let mut dependencies: Vec<HashSet<usize>> = Vec::with_capacity(meta_subs.len());
 
         for idx in (0..meta_subs.len()).rev() {
-            let Some(meta_clause) = predicate_table.get_meta_clause(meta_subs[idx].meta_clause_id)
-            else {
-                continue;
-            };
+            let meta_clause = meta_subs[idx].template(predicate_table);
             let Some(var_id) = meta_clause
                 .head_pred_sub_index()
                 .and_then(|head_idx| pred_var(&meta_subs[idx], head_idx, heap))
@@ -279,9 +276,9 @@ pub(super) trait PredDefLike {
             //Attempt to find clause to unify with
             // Clauses are sorted by meta clause id, so skip the lower ids
             // and stop at the first higher one.
-            let meta_clause_id = other.clause(i).meta_clause_id();
+            let clause_idx = other.clause(i).clause_idx();
             for j in start..self.clause_count() {
-                match self.clause(j).meta_clause_id().cmp(&meta_clause_id) {
+                match self.clause(j).clause_idx().cmp(&clause_idx) {
                     Less => continue,
                     Greater => break,
                     Equal => {}
@@ -375,7 +372,7 @@ pub(super) trait PredDefLike {
                     VarId(_) => return None,
                 });
             }
-            profile.push((meta_sub.meta_clause_id(), positions));
+            profile.push((meta_sub.clause_idx(), positions));
         }
 
         Some(profile)
@@ -389,7 +386,7 @@ pub(super) trait PredDefLike {
         let mut hasher = DefaultHasher::new();
         self.clause_count().hash(&mut hasher);
         for meta_sub in self.clauses() {
-            meta_sub.meta_clause_id().hash(&mut hasher);
+            meta_sub.clause_idx().hash(&mut hasher);
         }
         hasher.finish()
     }
@@ -399,7 +396,7 @@ pub(super) trait PredDefLike {
         match self.clause_count().cmp(&other.clause_count()) {
             Equal => {
                 for (msub1, msub2) in self.clauses().zip(other.clauses()) {
-                    match msub1.meta_clause_id().cmp(&msub2.meta_clause_id()) {
+                    match msub1.clause_idx().cmp(&msub2.clause_idx()) {
                         Equal => continue,
                         ordering => return ordering,
                     }
@@ -444,7 +441,7 @@ impl PredDefLike for PredDefRef<'_> {
 /// no content. Every other position is keyed by its term's address.
 const OWN: usize = usize::MAX;
 
-/// `(meta_clause_id, position keys)` per clause, in `meta_subs` order.
+/// `(clause_idx, position keys)` per clause, in `meta_subs` order.
 pub(super) type KeyProfile = SmallVec<[(usize, SmallVec<[usize; 4]>); PRED_DEF_DEFAULT_SIZE]>;
 
 /// Combine a [`KeyProfile`] into a bucket key, with the addresses in `flips`
@@ -461,12 +458,12 @@ pub(super) fn key_from_profile(profile: &KeyProfile, flips: &[usize]) -> u64 {
 
     let mut clauses: KeyProfile = profile
         .iter()
-        .map(|(meta_clause_id, positions)| {
+        .map(|(clause_idx, positions)| {
             let positions = positions
                 .iter()
                 .map(|pos| if flips.contains(pos) { OWN } else { *pos })
                 .collect();
-            (*meta_clause_id, positions)
+            (*clause_idx, positions)
         })
         .collect();
     clauses.sort_unstable();
@@ -668,12 +665,13 @@ impl PredDefTable {
                         None => "UNBOUND".to_string(),
                     })
                     .collect();
-                println!("meta clause {}: {}", msub.meta_clause_id(), subs.join(", "));
+                println!("meta clause {}: {}", msub.clause_idx(), subs.join(", "));
             }
             println!("===========================");
         }
     }
 
+    /// Extract and insert a test hypothesis's definitions.
     #[cfg(test)]
     pub(super) fn extract_pred_defs_from_h(
         &mut self,
@@ -681,9 +679,31 @@ impl PredDefTable {
         predicate_table: &PredicateTable,
         heap: &mut QueryHeap,
     ) {
-        for pred_def in PredDef::extract_pred_defs_from_h(meta_subs, predicate_table, heap) {
+        for pred_def in PredDef::extract_from_test_hypothesis(meta_subs, predicate_table, heap) {
             self.insert(pred_def, heap);
         }
+    }
+}
+
+#[cfg(test)]
+impl PredDef {
+    /// [`Self::extract_pred_defs_from_h`] for a hypothesis the tests built.
+    ///
+    /// They build their hypotheses before their predicate table, so each
+    /// `MetaSub` arrives holding its meta rule's *id*; that is swapped for
+    /// the arena index first.
+    pub(super) fn extract_from_test_hypothesis(
+        meta_subs: &mut Vec<MetaSub>,
+        predicate_table: &PredicateTable,
+        heap: &impl Heap,
+    ) -> Vec<Self> {
+        for meta_sub in meta_subs.iter_mut() {
+            let meta_clause = predicate_table
+                .get_meta_clause(meta_sub.clause_idx)
+                .expect("the test's meta rule is in its table");
+            meta_sub.clause_idx = predicate_table.index_of(meta_clause).unwrap();
+        }
+        Self::extract_pred_defs_from_h(meta_subs, predicate_table, heap)
     }
 }
 
@@ -781,6 +801,11 @@ mod tests {
                 Constraints::default(),
                 &arg_regs,
                 meta_rule.meta_data.unwrap(),
+                // The rule's id for now: the table is built after the
+                // hypotheses, so the test-only
+                // `PredDefTable::extract_pred_defs_from_h` swaps it for the
+                // arena index.
+                meta_rule.meta_data.unwrap().id,
             );
         }
 
@@ -993,7 +1018,7 @@ mod tests {
             &mut heap,
         );
 
-        let defs = PredDef::extract_pred_defs_from_h(&mut h.meta_subs, &table, &heap);
+        let defs = PredDef::extract_from_test_hypothesis(&mut h.meta_subs, &table, &heap);
 
         assert_eq!(
             definition_heads(&defs),
@@ -1034,7 +1059,7 @@ mod tests {
             &mut heap,
         );
 
-        let defs = PredDef::extract_pred_defs_from_h(&mut h.meta_subs, &table, &heap);
+        let defs = PredDef::extract_from_test_hypothesis(&mut h.meta_subs, &table, &heap);
 
         assert_eq!(
             definition_heads(&defs),
@@ -1082,7 +1107,7 @@ mod tests {
             &mut heap,
         );
 
-        let defs = PredDef::extract_pred_defs_from_h(&mut h.meta_subs, &table, &heap);
+        let defs = PredDef::extract_from_test_hypothesis(&mut h.meta_subs, &table, &heap);
 
         assert_eq!(defs.len(), 9, "nine invented predicates, nine definitions");
         assert_eq!(

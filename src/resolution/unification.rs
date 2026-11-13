@@ -9,7 +9,22 @@ pub fn unify(
     addr2: usize,
     max_arg: usize,
 ) -> Option<Substitution> {
-    let mut substitution = Substitution::new(max_arg);
+    unify_from(heap, Substitution::new(max_arg), addr1, addr2)
+}
+
+/// As [`unify`], continuing from `substitution`, whose argument registers
+/// may already be bound.
+///
+/// An `Arg` cell with a bound register is read as the term it is bound to,
+/// so pre-loading a meta clause's meta variables makes it unify as the
+/// clause those bindings stand for. A register may hold a variable that has
+/// been bound since; it is dereferenced when read.
+pub(super) fn unify_from(
+    heap: &mut QueryHeap,
+    mut substitution: Substitution,
+    addr1: usize,
+    addr2: usize,
+) -> Option<Substitution> {
     let mut walk = DualWalk::new(addr1, addr2);
     while let Some((res1, res2)) = walk.next_cells_with_addrs_arg_deref(heap, &substitution) {
         let (addr1, (tag1, value1)) = res1;
@@ -127,7 +142,7 @@ fn occurs(
     //TODO make this quicker perhaps SIMD?
     for (arg_id, arg_reg) in binding.arg_regs.iter().enumerate() {
         if let Some(VarId(var_id_2)) = arg_reg.get_bind() {
-            if var_id == var_id_2 {
+            if matches!(heap.var_deref(var_id_2), VarId(rep) if rep == var_id) {
                 bound_args.push(arg_id);
             }
         }

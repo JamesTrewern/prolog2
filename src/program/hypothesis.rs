@@ -113,13 +113,14 @@ impl Hypothesis {
         constraints: Constraints,
         arg_regs: &ArgRegs,
         meta_data: MetaData,
+        clause_idx: usize,
     ) {
         let max_arg_id = clause.max_arg_id;
         self.clauses.push(clause);
         self.constraints.push(constraints);
         self.meta_subs.push(MetaSub::from_arg_regs(
             arg_regs,
-            meta_data.id,
+            clause_idx,
             meta_data.meta_var_threshold,
             max_arg_id,
         ));
@@ -230,12 +231,14 @@ mod invented_pred_tests {
             Constraints::new(),
             &ArgRegs::new_64(),
             meta_data,
+            0,
         );
         h.push_clause(
             con_headed,
             Constraints::new(),
             &ArgRegs::new_64(),
             meta_data,
+            0,
         );
         h.add_invented_pred(&heap, 0);
 
@@ -285,6 +288,7 @@ mod invented_pred_tests {
             Constraints::new(),
             &ArgRegs::new_64(),
             meta_data,
+            0,
         );
 
         assert!(
