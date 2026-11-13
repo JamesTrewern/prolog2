@@ -811,12 +811,10 @@ impl<'a> Iterator for QuerySession<'a> {
                 })
                 .collect();
             let hypothesis = if self.proof.hypothesis.len() > 0 {
-                let clause_strings: Vec<String> = self
+                let clause_strings = self
                     .proof
                     .hypothesis
-                    .iter()
-                    .map(|c| c.to_string(&self.heap))
-                    .collect();
+                    .clause_strings(&mut self.heap, self.predicate_table);
                 crate::normalise_hypothesis(&clause_strings).join("\n") + "\n"
             } else {
                 String::new()

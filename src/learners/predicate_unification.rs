@@ -852,30 +852,20 @@ mod tests {
                 .enumerate()
                 .map(|(i, bind)| (i + reg_offset, bind.clone()))
                 .collect();
-            let (clause, arg_regs) = instantiate_meta_rule(heap, meta_rule, &bindings);
+            let (_, arg_regs) = instantiate_meta_rule(heap, meta_rule, &bindings);
+            // The rule's id for now: the table is built after the
+            // hypotheses, so the test-only
+            // `PredDefTable::extract_pred_defs_from_h` swaps it for the
+            // arena index.
             h.push_clause(
-                clause,
+                meta_rule,
+                meta_rule.meta_data.unwrap().id,
                 Constraints::default(),
                 &arg_regs,
-                meta_rule.meta_data.unwrap(),
-                // The rule's id for now: the table is built after the
-                // hypotheses, so the test-only
-                // `PredDefTable::extract_pred_defs_from_h` swaps it for the
-                // arena index.
-                meta_rule.meta_data.unwrap().id,
             );
         }
 
         h
-    }
-
-    fn print_hypothesis(clauses: &[Clause], id: usize, heap: &impl Heap) {
-        println!("=====================");
-        println!("Hypothesis {id}");
-        for c in clauses {
-            println!("{}", c.to_string(heap))
-        }
-        println!("=====================");
     }
 
     /// No two entries in the table may unify with each other.
@@ -1561,9 +1551,6 @@ mod tests {
         pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
         pdt._print_defs(&heap);
 
-        print_hypothesis(&h1, 1, &heap);
-        print_hypothesis(&h2, 2, &heap);
-
         assert_ne!(heap.var_deref(0), heap.var_deref(2));
         assert_eq!(heap.var_deref(1), heap.var_deref(3));
     }
@@ -1612,9 +1599,6 @@ mod tests {
         pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
         pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
         pdt._print_defs(&heap);
-
-        print_hypothesis(&h1, 1, &heap);
-        print_hypothesis(&h2, 2, &heap);
 
         let (Addr(addr1), Addr(addr2)) = (heap.var_deref(0), heap.var_deref(2)) else {
             panic!()
@@ -1680,9 +1664,6 @@ mod tests {
         pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
         pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
         pdt._print_defs(&heap);
-
-        print_hypothesis(&h1, 1, &heap);
-        print_hypothesis(&h2, 2, &heap);
 
         let (Addr(addr1), Addr(addr2)) = (heap.var_deref(0), heap.var_deref(3)) else {
             panic!()

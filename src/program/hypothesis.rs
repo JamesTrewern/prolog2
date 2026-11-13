@@ -1,13 +1,10 @@
-use std::{
-    ops::{Deref, DerefMut},
-    sync::atomic::{AtomicUsize, Ordering::Relaxed},
-};
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 use smallvec::SmallVec;
 
 use crate::{
     heap::{ArgRegs, Heap, VarBind::*, VarReg},
-    program::MetaData,
+    resolution::{build, Substitution},
     CONSTRAINTS_DEFAULT_SIZE,
 };
 
@@ -22,9 +19,11 @@ static PRED_N: AtomicUsize = AtomicUsize::new(0);
 ///
 /// During MIL resolution, when a second-order clause matches a goal,
 /// a new first-order clause is invented and added to the hypothesis.
+///
+/// A clause is held as a `MetaSub` -- the meta clause it instantiates and
+/// the bindings of that clause's meta variables -- and never built.
 #[derive(Clone)]
 pub struct Hypothesis {
-    pub clauses: Vec<Clause>,
     pub meta_subs: Vec<MetaSub>,
     pub constraints: Vec<Constraints>,
     /// Var ids of predicate variables that name an invented predicate.
@@ -45,7 +44,6 @@ pub struct Hypothesis {
 impl Hypothesis {
     pub fn new() -> Self {
         Hypothesis {
-            clauses: Vec::new(),
             meta_subs: Vec::new(),
             constraints: Vec::new(),
             invented_preds: Vec::new(),
@@ -78,19 +76,6 @@ impl Hypothesis {
         true
     }
 
-    /// Is this clause headed by an invented predicate?
-    ///
-    /// Used to withhold the clause from goals on known predicates. Such a goal
-    /// unifies its constant functor with the clause's variable head, binding
-    /// the invented predicate to the constant and rewriting every clause the
-    /// invented predicate appears in — including clauses committed long
-    /// before, since the hypothesis holds heap terms sharing that one
-    /// variable, not immutable text.
-    pub fn clause_head_is_invented(&self, heap: &impl Heap, clause: &Clause) -> bool {
-        heap.pred_var(clause.head())
-            .is_some_and(|var_id| self.is_invented_pred(heap, var_id))
-    }
-
     /// Undo a previous [`Self::add_invented_pred`].
     pub fn remove_invented_pred(&mut self, var_id: usize) {
         debug_assert_eq!(
@@ -104,42 +89,48 @@ impl Hypothesis {
     }
 
     pub fn len(&self) -> usize {
-        self.clauses.len()
+        self.meta_subs.len()
     }
 
+    /// Record the clause the registers `arg_regs` make of the meta clause
+    /// `template`, which sits at `clause_idx` in the predicate table.
     pub fn push_clause(
         &mut self,
-        clause: Clause,
+        template: &Clause,
+        clause_idx: usize,
         constraints: Constraints,
         arg_regs: &ArgRegs,
-        meta_data: MetaData,
-        clause_idx: usize,
     ) {
-        let max_arg_id = clause.max_arg_id;
-        self.clauses.push(clause);
+        let threshold = template
+            .meta_threshold()
+            .expect("a hypothesis clause instantiates a meta clause");
         self.constraints.push(constraints);
         self.meta_subs.push(MetaSub::from_arg_regs(
             arg_regs,
             clause_idx,
-            meta_data.meta_var_threshold,
-            max_arg_id,
+            threshold,
+            template.max_arg_id,
         ));
     }
 
-    pub fn pop_clause(&mut self) -> Clause {
+    pub fn pop_clause(&mut self) {
         self.constraints.pop();
         self.meta_subs.pop();
-        self.clauses.pop().unwrap()
     }
 
-    pub fn to_string(&self, heap: &impl Heap) -> String {
-        let mut buffer = String::new();
-        for clause in &self.clauses {
-            buffer += &clause.to_string(heap);
-            buffer += "\n"
-        }
-        buffer.pop();
-        buffer
+    /// The clauses as text, one per line. Each is built onto `heap` to be
+    /// printed, and the heap is then put back as it was.
+    pub fn to_string(&self, heap: &mut impl Heap, predicate_table: &PredicateTable) -> String {
+        HypothesisTrait::to_string(self, heap, predicate_table)
+    }
+
+    /// As [`Self::to_string`], one string per clause.
+    pub fn clause_strings(
+        &self,
+        heap: &mut impl Heap,
+        predicate_table: &PredicateTable,
+    ) -> Vec<String> {
+        HypothesisTrait::clause_strings(self, heap, predicate_table)
     }
 
     pub fn next_pred_id() -> usize {
@@ -154,7 +145,6 @@ impl Hypothesis {
 /// What native predicates are handed by a proof whose hypothesis is not a
 /// [`Hypothesis`].
 static EMPTY: Hypothesis = Hypothesis {
-    clauses: Vec::new(),
     meta_subs: Vec::new(),
     constraints: Vec::new(),
     invented_preds: Vec::new(),
@@ -201,9 +191,38 @@ pub(crate) trait HypothesisTrait {
         &EMPTY
     }
 
-    /// Debug output only.
-    fn to_string(&self, _heap: &impl Heap) -> String {
-        String::new()
+    /// Each clause as text. A clause held as a `MetaSub` is built onto
+    /// `heap` to be printed, and the heap is then put back as it was; for
+    /// reporting and debug output.
+    fn clause_strings(
+        &self,
+        heap: &mut impl Heap,
+        predicate_table: &PredicateTable,
+    ) -> Vec<String> {
+        let heap_point = heap.heap_point();
+        let strings = (0..self.len())
+            .map(|index| {
+                let template = self.template(index, predicate_table);
+                let Some(threshold) = template.meta_threshold() else {
+                    return template.to_string(heap);
+                };
+                let mut substitution = Substitution::new(template.max_arg_id);
+                let meta_regs = &mut substitution.arg_regs[threshold..template.max_arg_id];
+                self.load_subs(index, meta_regs);
+                let literals = template
+                    .iter()
+                    .map(|&literal| build(heap, &mut substitution, Some(threshold), literal))
+                    .collect();
+                Clause::new(literals, None, template.max_arg_id).to_string(heap)
+            })
+            .collect();
+        heap.truncate(heap_point);
+        strings
+    }
+
+    /// [`Self::clause_strings`], one per line.
+    fn to_string(&self, heap: &mut impl Heap, predicate_table: &PredicateTable) -> String {
+        self.clause_strings(heap, predicate_table).join("\n")
     }
 
     // ── learning only ───────────────────────────────────────────────────
@@ -218,11 +237,10 @@ pub(crate) trait HypothesisTrait {
 
     fn push_clause(
         &mut self,
-        _clause: Clause,
+        _template: &Clause,
+        _clause_idx: usize,
         _constraints: Constraints,
         _arg_regs: &ArgRegs,
-        _meta_data: MetaData,
-        _clause_idx: usize,
     ) {
         unreachable!("only a learning hypothesis is added to")
     }
@@ -259,10 +277,6 @@ impl HypothesisTrait for Hypothesis {
         self
     }
 
-    fn to_string(&self, heap: &impl Heap) -> String {
-        Hypothesis::to_string(self, heap)
-    }
-
     fn add_invented_pred(&mut self, heap: &impl Heap, var_id: usize) -> bool {
         Hypothesis::add_invented_pred(self, heap, var_id)
     }
@@ -273,13 +287,12 @@ impl HypothesisTrait for Hypothesis {
 
     fn push_clause(
         &mut self,
-        clause: Clause,
+        template: &Clause,
+        clause_idx: usize,
         constraints: Constraints,
         arg_regs: &ArgRegs,
-        meta_data: MetaData,
-        clause_idx: usize,
     ) {
-        Hypothesis::push_clause(self, clause, constraints, arg_regs, meta_data, clause_idx)
+        Hypothesis::push_clause(self, template, clause_idx, constraints, arg_regs)
     }
 
     fn pop_clause(&mut self) {
@@ -310,10 +323,6 @@ impl HypothesisTrait for &Hypothesis {
 
     fn learned(&self) -> &Hypothesis {
         self
-    }
-
-    fn to_string(&self, heap: &impl Heap) -> String {
-        Hypothesis::to_string(self, heap)
     }
 }
 
@@ -347,160 +356,29 @@ impl HypothesisTrait for &[Clause] {
     fn load_subs(&self, _: usize, _: &mut [VarReg]) {}
 }
 
-impl Deref for Hypothesis {
-    type Target = Vec<Clause>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.clauses
-    }
-}
-
-impl DerefMut for Hypothesis {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.clauses
-    }
-}
-
 #[cfg(test)]
 mod invented_pred_tests {
     use super::*;
-    use crate::{
-        heap::{Heap, ProgramHeap, QueryHeap, Tag::*, VarBind::VarId, VarReg},
-        program::BitFlag64,
-    };
-
-    /// A heap holding two unary clause heads:
-    ///
-    /// * address 0 — `Ref_0(a)`, a head on a predicate *variable*
-    /// * address 3 — `p(a)`, a head on a predicate *constant*
-    ///
-    /// Returns the heap plus the two clauses. `var_count` unbound variable
-    /// registers are created so tests can alias them.
-    fn heap_with_two_heads(var_count: usize) -> (QueryHeap<'static>, Clause, Clause) {
-        let prog: &'static ProgramHeap = Box::leak(Box::new(ProgramHeap::new()));
-        let a = prog.symbols().set_const("a");
-        let p = prog.symbols().set_const("p");
-        let mut heap = QueryHeap::new(prog, None);
-        heap.cells = vec![(Comp, 2), (Var, 0), (Con, a), (Comp, 2), (Con, p), (Con, a)];
-        heap.var_regs = vec![VarReg::UNBOUND; var_count];
-        (
-            heap,
-            Clause::new(vec![0], None, 0),
-            Clause::new(vec![3], None, 0),
-        )
-    }
+    use crate::heap::{test_prog, QueryHeap, VarBind::VarId, VarReg};
 
     #[test]
-    fn only_the_variable_headed_clause_counts_as_invented() {
-        let (heap, var_headed, con_headed) = heap_with_two_heads(1);
-        let mut h = Hypothesis::new();
-        assert!(h.add_invented_pred(&heap, 0));
-
-        assert!(h.clause_head_is_invented(&heap, &var_headed));
-        assert!(!h.clause_head_is_invented(&heap, &con_headed));
-    }
-
-    #[test]
-    fn a_variable_head_that_was_never_invented_is_not_protected() {
-        // A predicate variable only becomes invented by heading a hypothesis
-        // clause. One that never did is an ordinary second-order variable and
-        // must stay visible to goals on known predicates.
-        let (heap, var_headed, _) = heap_with_two_heads(1);
-        let h = Hypothesis::new();
-        assert!(!h.clause_head_is_invented(&heap, &var_headed));
-    }
-
-    #[test]
-    fn protection_withholds_invented_headed_clauses_and_keeps_the_rest() {
-        let (heap, var_headed, con_headed) = heap_with_two_heads(1);
-        let mut h = Hypothesis::new();
-        let meta_data = MetaData {
-            meta_var_threshold: 0,
-            constrained_vars: BitFlag64::default(),
-            pred_vars: BitFlag64::default(),
-            head_pred: false,
-            id: 0,
-        };
-
-        h.push_clause(
-            var_headed,
-            Constraints::new(),
-            &ArgRegs::new_64(),
-            meta_data,
-            0,
-        );
-        h.push_clause(
-            con_headed,
-            Constraints::new(),
-            &ArgRegs::new_64(),
-            meta_data,
-            0,
-        );
-        h.add_invented_pred(&heap, 0);
-
-        // `Choices` consults this per clause as its cursor walks the
-        // hypothesis; see `resolution::choices` for the cursor itself.
-        let withheld: Vec<usize> = h
-            .iter()
-            .filter(|clause| h.clause_head_is_invented(&heap, clause))
-            .map(|clause| clause.head())
-            .collect();
-        assert_eq!(
-            withheld,
-            vec![0],
-            "only the invented-headed clause should be withheld"
-        );
-        let kept: Vec<usize> = h
-            .iter()
-            .filter(|clause| !h.clause_head_is_invented(&heap, clause))
-            .map(|clause| clause.head())
-            .collect();
-        assert_eq!(kept, vec![3], "the constant-headed clause remains");
-    }
-
-    #[test]
-    fn protection_follows_variable_aliases() {
-        // Unifying two predicate variables aliases one to the other. A clause
-        // reached through the alias names the same invented predicate, so
-        // comparing raw ids would let it slip through the filter.
-        let (mut heap, _, _) = heap_with_two_heads(2);
-        // The clause head at address 0 now reads Ref_1, which derefs to var 0.
-        heap.cells[1] = (Var, 1);
+    fn invented_predicates_are_compared_through_aliases() {
+        // Unifying two predicate variables aliases one to the other, so
+        // either id names the invented predicate.
+        let mut heap = QueryHeap::new(test_prog(), None);
+        heap.var_regs = vec![VarReg::UNBOUND; 3];
         heap.var_regs[1] = VarId(0).into();
-        let aliased_head = Clause::new(vec![0], None, 0);
-
-        let meta_data = MetaData {
-            meta_var_threshold: 0,
-            constrained_vars: BitFlag64::default(),
-            pred_vars: BitFlag64::default(),
-            head_pred: false,
-            id: 0,
-        };
 
         let mut h = Hypothesis::new();
-        h.add_invented_pred(&heap, 0);
-        h.push_clause(
-            aliased_head,
-            Constraints::new(),
-            &ArgRegs::new_64(),
-            meta_data,
-            0,
-        );
-
-        assert!(
-            h.clause_head_is_invented(&heap, &h[0]),
-            "var 1 aliases var 0, which is invented"
-        );
-        assert!(
-            h.iter()
-                .all(|clause| h.clause_head_is_invented(&heap, clause)),
-            "the aliased clause must be recognised, and so withheld"
-        );
+        assert!(h.add_invented_pred(&heap, 1));
+        assert!(h.is_invented_pred(&heap, 0));
+        assert!(!h.is_invented_pred(&heap, 2));
     }
 
     #[test]
     fn re_registering_an_aliased_variable_is_a_no_op() {
-        let (mut heap, _, _) = heap_with_two_heads(2);
+        let mut heap = QueryHeap::new(test_prog(), None);
+        heap.var_regs = vec![VarReg::UNBOUND; 2];
         heap.var_regs[1] = VarId(0).into();
 
         let mut h = Hypothesis::new();

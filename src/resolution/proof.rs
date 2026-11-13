@@ -67,7 +67,7 @@ impl<'a, H: HypothesisTrait> Proof<'a, H> {
                     self.hypothesis.len()
                 );
                 eprintln!("[RESTART_HYPOTHESIS]");
-                eprintln!("{}", self.hypothesis.to_string(heap));
+                eprintln!("{}", self.hypothesis.to_string(heap, predicate_table));
             }
 
             self.pointer -= 1;
@@ -185,7 +185,7 @@ mod learning_switch_tests {
             "with learning off there is no clause for t/1, so the goal must fail -- \
              this is what the six test-proof call sites rely on"
         );
-        assert!(testing.hypothesis.is_empty());
+        assert_eq!(testing.hypothesis.len(), 0);
     }
 
     /// The switch is on the proof, not the config: `max_clause` still has
@@ -283,7 +283,13 @@ mod tests {
 #[cfg(test)]
 mod hypothesis_resolution_tests {
     use super::Proof;
-    use crate::{app::App, heap::QueryHeap, parser::_build_clause, program::PackedMetaSubs};
+    use crate::{
+        app::App,
+        heap::QueryHeap,
+        heap::{Heap, VarBind::VarId},
+        parser::_build_clause,
+        program::{Clause, Hypothesis, MetaSubTrait, PackedMetaSubs, PredicateTable},
+    };
 
     /// `t/1` has no clauses, so a goal on it is provable only by learning
     /// one from `P(X):-Q(X)` or by a clause already in the hypothesis.
@@ -299,6 +305,28 @@ mod hypothesis_resolution_tests {
 
     fn goal(app: &mut App, src: &str) -> usize {
         _build_clause(&mut app.prog_heap, src)[0]
+    }
+
+    /// The hypothesis's clauses, built onto `heap`.
+    fn built(
+        hypothesis: &Hypothesis,
+        heap: &mut QueryHeap,
+        predicate_table: &PredicateTable,
+    ) -> Vec<Clause> {
+        hypothesis
+            .meta_subs
+            .iter()
+            .map(|meta_sub| {
+                // `build_clause` wants every predicate bound to a term.
+                let mut meta_sub = meta_sub.clone();
+                for sub in &mut meta_sub.subs {
+                    if let Some(VarId(var_id)) = sub.get_bind() {
+                        *sub = heap.var_deref(var_id).into();
+                    }
+                }
+                meta_sub.build_clause(heap, predicate_table)
+            })
+            .collect()
     }
 
     #[test]
@@ -357,8 +385,7 @@ mod hypothesis_resolution_tests {
         let mut learning = Proof::new(&heap, &[learn]);
         assert!(learning.prove(&mut heap, &app.predicate_table, app.config));
         let hypothesis = learning.hypothesis.clone();
-        // The built clauses, offered the way test clauses still are.
-        let clauses = hypothesis.clauses.clone();
+        let clauses = built(&hypothesis, &mut heap, &app.predicate_table);
 
         for (goal, expected) in cases {
             let mut by_meta_sub = Proof::with_hypothesis(&heap, &[goal], &hypothesis);
@@ -372,6 +399,27 @@ mod hypothesis_resolution_tests {
             assert_eq!(from_meta_sub, expected);
             assert_eq!(from_clause, expected);
         }
+    }
+
+    #[test]
+    fn a_hypothesis_prints_the_clause_built_from_it_and_restores_the_heap() {
+        let mut app = app(1);
+        let learn = goal(&mut app, "t(a).");
+
+        let mut heap = QueryHeap::new(&app.prog_heap, None);
+        let mut proof = Proof::new(&heap, &[learn]);
+        assert!(proof.prove(&mut heap, &app.predicate_table, app.config));
+
+        let before = (heap.cells.clone(), heap.var_regs.clone());
+        let printed = proof.hypothesis.to_string(&mut heap, &app.predicate_table);
+        assert_eq!(before, (heap.cells.clone(), heap.var_regs.clone()));
+
+        let built = built(&proof.hypothesis, &mut heap, &app.predicate_table);
+        assert_eq!(printed, built[0].to_string(&heap));
+        assert!(
+            printed.contains("t(") && printed.contains("q("),
+            "{printed}"
+        );
     }
 
     #[test]

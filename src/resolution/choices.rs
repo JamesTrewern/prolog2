@@ -69,7 +69,7 @@ pub(super) struct Choices<'a> {
     /// Withhold hypothesis clauses headed by an invented predicate.
     ///
     /// Only set for a goal on a predicate the program defines; see
-    /// [`Hypothesis::clause_head_is_invented`].
+    /// `Env::try_hypothesis`.
     protect_hypothesis: bool,
 }
 

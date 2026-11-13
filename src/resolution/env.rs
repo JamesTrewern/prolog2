@@ -12,7 +12,7 @@ use crate::{
     },
     predicate_modules::{PredReturn, PredicateFunction},
     program::{
-        HypothesisTrait, {BitFlag64, Clause, MAX_ARG}, {PredicateRef, PredicateTable},
+        Constraints, HypothesisTrait, {BitFlag64, Clause, MAX_ARG}, {PredicateRef, PredicateTable},
     },
     resolution::{
         build::{build, re_build_bound_arg_terms},
@@ -510,20 +510,19 @@ impl<'a> Env<'a> {
 
             let new_goals = build_goals(heap, &mut substitution, clause);
 
-            // Build the hypothesis clause if this is a meta clause -- but
-            // hold it rather than pushing it, so the invented predicate
-            // below is decided first.
-            let pending_clause = clause.meta_data.map(|meta_data| {
-                // Boxed so the common non-meta case leaves one pointer in
-                // this frame rather than a ~150-byte tuple.
-                let new_clause_literals: Vec<usize> = clause
-                    .iter()
-                    .map(|literal| {
-                        build(heap, &mut substitution, clause.meta_threshold(), *literal)
-                    })
-                    .collect();
+            // What a meta clause adds to the hypothesis -- held rather than
+            // pushed, so the invented predicate below is decided first.
+            let pending_clause = clause.meta_threshold().map(|threshold| {
+                // The clause is recorded as these registers, so each needs a
+                // binding: one the head and body left unbound gets a variable.
+                for arg_id in threshold..clause.max_arg_id {
+                    if substitution.get_arg(arg_id).is_none() {
+                        let var_id = heap.set_var(None);
+                        substitution.set_arg(arg_id, VarId(var_id));
+                    }
+                }
 
-                let mut constraints = Vec::with_capacity(16);
+                let mut constraints = Constraints::new();
                 for i in 0..MAX_ARG {
                     if clause.constrained_var(i) {
                         let Some(VarId(var_id)) = substitution.get_arg(i) else {
@@ -533,18 +532,12 @@ impl<'a> Env<'a> {
                     }
                 }
 
-                // A meta clause always comes from the table: test clauses
-                // are built hypothesis clauses, which are never meta.
+                // A meta clause always comes from the table.
                 let clause_idx = predicate_table
                     .index_of(clause)
                     .expect("a meta clause being instantiated is in the predicate table");
 
-                Box::new((
-                    Clause::new(new_clause_literals, None, clause.max_arg_id),
-                    constraints,
-                    meta_data,
-                    clause_idx,
-                ))
+                (constraints, clause_idx)
             });
 
             // Which predicate variable, if any, this try invents.
@@ -586,28 +579,18 @@ impl<'a> Env<'a> {
                 }
             }
 
-            if let Some(pending) = pending_clause {
-                let (new_clause, constraints, meta_data, clause_idx) = *pending;
+            if let Some((constraints, clause_idx)) = pending_clause {
                 if let Strategy::Clause { new_clause, .. } = &mut self.strategy {
                     *new_clause = true;
                 }
+                hypothesis.push_clause(clause, clause_idx, constraints, &substitution.arg_regs);
                 if debug {
                     eprintln!(
-                        "[ADD_CLAUSE|{}] {} / {}",
+                        "[ADD_CLAUSE|{}] {}\n[HYPOTHESIS]:\n{}",
                         self.depth,
                         heap.term_string(self.goal),
-                        new_clause.to_string(heap)
+                        hypothesis.to_string(heap, predicate_table)
                     );
-                }
-                hypothesis.push_clause(
-                    new_clause,
-                    SmallVec::from_vec(constraints),
-                    &substitution.arg_regs,
-                    meta_data,
-                    clause_idx,
-                );
-                if debug {
-                    eprintln!("[HYPOTHESIS]:\n{}", hypothesis.to_string(heap));
                 }
             }
 
