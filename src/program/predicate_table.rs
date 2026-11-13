@@ -661,7 +661,7 @@ mod tests {
 
     fn pred_fn_placeholder(
         _heap: &mut QueryHeap,
-        _hypothesis: &mut Hypothesis,
+        _hypothesis: &Hypothesis,
         _goal: usize,
         _predicate_table: &PredicateTable,
         _config: Config,

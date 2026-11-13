@@ -6,12 +6,12 @@ use std::{
 use smallvec::SmallVec;
 
 use crate::{
-    CONSTRAINTS_DEFAULT_SIZE,
-    heap::{ArgRegs, Heap, VarBind::*},
+    heap::{ArgRegs, Heap, VarBind::*, VarReg},
     program::MetaData,
+    CONSTRAINTS_DEFAULT_SIZE,
 };
 
-use super::{Clause, MetaSub};
+use super::{Clause, MetaSub, MetaSubTrait, PredicateTable};
 
 /// Constraint set for existentially quantified variables in a learned clause.
 pub(crate) type Constraints = SmallVec<[usize; CONSTRAINTS_DEFAULT_SIZE]>;
@@ -149,6 +149,202 @@ impl Hypothesis {
     pub fn invented_pred_count(&self) -> usize {
         self.invented_preds.len()
     }
+}
+
+/// What native predicates are handed by a proof whose hypothesis is not a
+/// [`Hypothesis`].
+static EMPTY: Hypothesis = Hypothesis {
+    clauses: Vec::new(),
+    meta_subs: Vec::new(),
+    constraints: Vec::new(),
+    invented_preds: Vec::new(),
+};
+
+/// The clauses a [`Proof`](crate::resolution::Proof) resolves goals against
+/// besides the program's own, in whichever form they are held:
+///
+/// * [`Hypothesis`] -- the proof learns: it may add clauses.
+/// * `&Hypothesis` -- read only, for testing a hypothesis that is not
+///   ground and so still needs its constraints and invented predicates.
+/// * `&[&[usize]]` -- ground clauses as packed `MetaSub`s
+///   (`[clause_idx, subs...]`); read only.
+/// * `&[Clause]` -- ground clauses already built; read only.
+///
+/// A clause is resolved through its *template*: the meta clause it
+/// instantiates, with the meta variables' registers loaded from its
+/// substitutions, or the clause itself when it is held built.
+pub(crate) trait HypothesisTrait {
+    /// Whether a proof over this may add clauses to it. The methods below
+    /// the line are only called when it may.
+    const LEARNS: bool = false;
+
+    fn len(&self) -> usize;
+
+    /// The clause that clause `index` is resolved through. A `MetaSub`'s
+    /// index must be good for `predicate_table`.
+    fn template<'t>(&'t self, index: usize, predicate_table: &'t PredicateTable) -> &'t Clause;
+
+    /// Load clause `index`'s substitutions into `meta_regs`, the registers
+    /// of its template's meta variables. Only called for a meta template.
+    fn load_subs(&self, index: usize, meta_regs: &mut [VarReg]);
+
+    fn constraints(&self) -> &[Constraints] {
+        &[]
+    }
+
+    fn is_invented_pred(&self, _heap: &impl Heap, _var_id: usize) -> bool {
+        false
+    }
+
+    /// The hypothesis native predicates see.
+    fn learned(&self) -> &Hypothesis {
+        &EMPTY
+    }
+
+    /// Debug output only.
+    fn to_string(&self, _heap: &impl Heap) -> String {
+        String::new()
+    }
+
+    // ── learning only ───────────────────────────────────────────────────
+
+    fn add_invented_pred(&mut self, _heap: &impl Heap, _var_id: usize) -> bool {
+        unreachable!("only a learning hypothesis invents predicates")
+    }
+
+    fn remove_invented_pred(&mut self, _var_id: usize) {
+        unreachable!("only a learning hypothesis invents predicates")
+    }
+
+    fn push_clause(
+        &mut self,
+        _clause: Clause,
+        _constraints: Constraints,
+        _arg_regs: &ArgRegs,
+        _meta_data: MetaData,
+        _clause_idx: usize,
+    ) {
+        unreachable!("only a learning hypothesis is added to")
+    }
+
+    fn pop_clause(&mut self) {
+        unreachable!("only a learning hypothesis is added to")
+    }
+}
+
+impl HypothesisTrait for Hypothesis {
+    const LEARNS: bool = true;
+
+    fn len(&self) -> usize {
+        self.meta_subs.len()
+    }
+
+    fn template<'t>(&'t self, index: usize, predicate_table: &'t PredicateTable) -> &'t Clause {
+        self.meta_subs[index].template(predicate_table)
+    }
+
+    fn load_subs(&self, index: usize, meta_regs: &mut [VarReg]) {
+        meta_regs.copy_from_slice(&self.meta_subs[index].subs);
+    }
+
+    fn constraints(&self) -> &[Constraints] {
+        &self.constraints
+    }
+
+    fn is_invented_pred(&self, heap: &impl Heap, var_id: usize) -> bool {
+        Hypothesis::is_invented_pred(self, heap, var_id)
+    }
+
+    fn learned(&self) -> &Hypothesis {
+        self
+    }
+
+    fn to_string(&self, heap: &impl Heap) -> String {
+        Hypothesis::to_string(self, heap)
+    }
+
+    fn add_invented_pred(&mut self, heap: &impl Heap, var_id: usize) -> bool {
+        Hypothesis::add_invented_pred(self, heap, var_id)
+    }
+
+    fn remove_invented_pred(&mut self, var_id: usize) {
+        Hypothesis::remove_invented_pred(self, var_id)
+    }
+
+    fn push_clause(
+        &mut self,
+        clause: Clause,
+        constraints: Constraints,
+        arg_regs: &ArgRegs,
+        meta_data: MetaData,
+        clause_idx: usize,
+    ) {
+        Hypothesis::push_clause(self, clause, constraints, arg_regs, meta_data, clause_idx)
+    }
+
+    fn pop_clause(&mut self) {
+        Hypothesis::pop_clause(self);
+    }
+}
+
+impl HypothesisTrait for &Hypothesis {
+    fn len(&self) -> usize {
+        self.meta_subs.len()
+    }
+
+    fn template<'t>(&'t self, index: usize, predicate_table: &'t PredicateTable) -> &'t Clause {
+        self.meta_subs[index].template(predicate_table)
+    }
+
+    fn load_subs(&self, index: usize, meta_regs: &mut [VarReg]) {
+        meta_regs.copy_from_slice(&self.meta_subs[index].subs);
+    }
+
+    fn constraints(&self) -> &[Constraints] {
+        &self.constraints
+    }
+
+    fn is_invented_pred(&self, heap: &impl Heap, var_id: usize) -> bool {
+        Hypothesis::is_invented_pred(self, heap, var_id)
+    }
+
+    fn learned(&self) -> &Hypothesis {
+        self
+    }
+
+    fn to_string(&self, heap: &impl Heap) -> String {
+        Hypothesis::to_string(self, heap)
+    }
+}
+
+impl HypothesisTrait for &[&[usize]] {
+    fn len(&self) -> usize {
+        <[_]>::len(self)
+    }
+
+    fn template<'t>(&'t self, index: usize, predicate_table: &'t PredicateTable) -> &'t Clause {
+        self[index].template(predicate_table)
+    }
+
+    fn load_subs(&self, index: usize, meta_regs: &mut [VarReg]) {
+        let subs = &self[index][1..];
+        debug_assert_eq!(subs.len(), meta_regs.len());
+        for (reg, &sub) in meta_regs.iter_mut().zip(subs) {
+            *reg = VarReg(sub);
+        }
+    }
+}
+
+impl HypothesisTrait for &[Clause] {
+    fn len(&self) -> usize {
+        <[_]>::len(self)
+    }
+
+    fn template<'t>(&'t self, index: usize, _: &'t PredicateTable) -> &'t Clause {
+        &self[index]
+    }
+
+    fn load_subs(&self, _: usize, _: &mut [VarReg]) {}
 }
 
 impl Deref for Hypothesis {

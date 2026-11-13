@@ -58,8 +58,7 @@ pub(super) fn clauses_entail_negative(
 
     neg_goals.into_par_iter().any(|&goal| {
         let mut query_heap = QueryHeap::new(heap, None);
-        let mut proof = Proof::without_learning(&query_heap, &[goal]);
-        proof.add_test_clauses(clauses);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], clauses);
         proof.prove(&mut query_heap, predicate_table, config)
     })
 }
@@ -89,8 +88,7 @@ pub(super) fn specialise(
             let meta_subs = pdt.test_meta_subs(hypotheses.get(index as usize), heap);
             let keep = !neg_goals.iter().any(|&goal| {
                 let mut query_heap = QueryHeap::new(heap, None);
-                let mut proof = Proof::without_learning(&query_heap, &[goal]);
-                proof.add_test_meta_subs(&meta_subs);
+                let mut proof = Proof::with_hypothesis(&query_heap, &[goal], meta_subs.as_slice());
                 proof.prove(&mut query_heap, predicate_table, config)
             });
 

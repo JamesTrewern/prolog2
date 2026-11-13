@@ -133,8 +133,7 @@ pub(super) fn count_coverage(
 
     for (i, &goal) in pos_goals.iter().enumerate() {
         let mut query_heap = QueryHeap::new(heap, None);
-        let mut proof = Proof::without_learning(&query_heap, &[goal]);
-        proof.add_test_clauses(clauses);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], clauses);
         if proof.prove(&mut query_heap, predicate_table, config) {
             coverage.set(i);
         }
@@ -312,8 +311,7 @@ pub(super) fn reduce(
         // Check if all positive examples are still provable without clause i
         let redundant = pos_goals.iter().all(|&goal| {
             let mut query_heap = QueryHeap::new(heap, None);
-            let mut proof = Proof::without_learning(&query_heap, &[goal]);
-            proof.add_test_clauses(&hypothesis);
+            let mut proof = Proof::with_hypothesis(&query_heap, &[goal], hypothesis.as_slice());
             proof.prove(&mut query_heap, predicate_table, config)
         });
 

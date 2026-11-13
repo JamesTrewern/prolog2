@@ -52,7 +52,7 @@ fn number_to_string(heap: &QueryHeap, addr: usize) -> Option<String> {
 /// - `atom_string(+Const, +String)` — check that their texts are identical.
 pub fn atom_string_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -85,7 +85,7 @@ pub fn atom_string_pred(
 /// - `atom_number(+Const, +Number)` — check consistency.
 pub fn atom_number_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -131,7 +131,7 @@ pub fn atom_number_pred(
 /// - `number_string(+Number, +String)` — check consistency.
 pub fn number_string_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -174,7 +174,7 @@ pub fn number_string_pred(
 /// Only `term_string(+Term, -String)` is supported.
 pub fn term_string_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -199,7 +199,7 @@ pub fn term_string_pred(
 /// - `char_code(+Char, +Code)` — check
 pub fn char_code_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -249,7 +249,7 @@ pub fn char_code_pred(
 /// `atom_length/2`: length (in characters) of a constant's name.
 pub fn atom_length_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -260,7 +260,7 @@ pub fn atom_length_pred(
 /// `string_length/2`: length (in characters) of a string.
 pub fn string_length_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -340,7 +340,7 @@ fn concat_impl(
 /// `atom_concat/3`: concatenate or split constants.
 pub fn atom_concat_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -351,7 +351,7 @@ pub fn atom_concat_pred(
 /// `string_concat/3`: concatenate or split strings.
 pub fn string_concat_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -410,7 +410,7 @@ fn downcase_impl(heap: &mut QueryHeap, goal: usize, string_mode: bool) -> PredRe
 /// `upcase_atom/2`: convert a constant to upper case.
 pub fn upcase_atom_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -421,7 +421,7 @@ pub fn upcase_atom_pred(
 /// `downcase_atom/2`: convert a constant to lower case.
 pub fn downcase_atom_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -432,7 +432,7 @@ pub fn downcase_atom_pred(
 /// `upcase_string/2`: convert a string to upper case.
 pub fn upcase_string_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -443,7 +443,7 @@ pub fn upcase_string_pred(
 /// `downcase_string/2`: convert a string to lower case.
 pub fn downcase_string_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -528,7 +528,7 @@ fn chars_impl(
 /// `atom_chars/2`: convert between a constant and a list of single-character constants.
 pub fn atom_chars_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -539,7 +539,7 @@ pub fn atom_chars_pred(
 /// `string_chars/2`: convert between a string and a list of single-character constants.
 pub fn string_chars_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -614,7 +614,7 @@ fn codes_impl(
 /// `atom_codes/2`: convert between a constant and a list of Unicode code points.
 pub fn atom_codes_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -625,7 +625,7 @@ pub fn atom_codes_pred(
 /// `string_codes/2`: convert between a string and a list of Unicode code points.
 pub fn string_codes_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -741,7 +741,7 @@ pub fn string_codes_pred(
 // /// `sub_atom/5`: extract or check a sub-constant.
 // pub fn sub_atom_pred(
 //     heap: &mut QueryHeap,
-//     _: &mut Hypothesis,
+//     _: &Hypothesis,
 //     goal: usize,
 //     _: &PredicateTable,
 //     _: Config,
@@ -752,7 +752,7 @@ pub fn string_codes_pred(
 // /// `sub_string/5`: extract or check a sub-string.
 // pub fn sub_string_pred(
 //     heap: &mut QueryHeap,
-//     _: &mut Hypothesis,
+//     _: &Hypothesis,
 //     goal: usize,
 //     _: &PredicateTable,
 //     _: Config,

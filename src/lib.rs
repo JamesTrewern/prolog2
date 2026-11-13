@@ -42,7 +42,7 @@
 //!
 //! fn my_pred(
 //!     heap: &mut QueryHeap,
-//!     hypothesis: &mut Hypothesis,
+//!     hypothesis: &Hypothesis,
 //!     goal: usize,
 //!     pred_table: &PredicateTable,
 //!     config: Config,

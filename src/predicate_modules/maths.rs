@@ -392,7 +392,7 @@ fn eval_comparison(heap: &QueryHeap, goal: usize) -> Option<(Number, Number)> {
 /// - Fails (rather than panicking) if either side is not a valid arithmetic expression.
 pub fn is_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _pred_table: &PredicateTable,
     _config: Config,
@@ -431,7 +431,7 @@ pub fn is_pred(
 /// `</2`: succeeds if LHS evaluates to a number strictly less than RHS.
 pub fn lt_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -445,7 +445,7 @@ pub fn lt_pred(
 /// `>/2`: succeeds if LHS evaluates to a number strictly greater than RHS.
 pub fn gt_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -459,7 +459,7 @@ pub fn gt_pred(
 /// `=</2`: succeeds if LHS evaluates to a number less than or equal to RHS.
 pub fn le_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -473,7 +473,7 @@ pub fn le_pred(
 /// `>=/2`: succeeds if LHS evaluates to a number greater than or equal to RHS.
 pub fn ge_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -490,7 +490,7 @@ pub fn ge_pred(
 /// ground arithmetic expressions.
 pub fn arith_eq_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -511,7 +511,7 @@ pub fn arith_eq_pred(
 /// (default 10 %) or via the `approx_tolerance_pct` field in `setup.json`.
 pub fn approx_eq_pred(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,

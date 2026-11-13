@@ -16,6 +16,7 @@ mod predicate_table;
 
 // Public: named by every native predicate's signature.
 pub use hypothesis::Hypothesis;
+pub(crate) use hypothesis::HypothesisTrait;
 pub use predicate_table::PredicateTable;
 
 // Internal: the shape of a clause, and the pieces that build and compare one.

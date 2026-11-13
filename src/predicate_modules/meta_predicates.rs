@@ -11,7 +11,7 @@ use super::{PredReturn, PredicateModule};
 /// Negation as failure: succeeds if the inner goal cannot be proven
 pub fn not(
     heap: &mut QueryHeap,
-    hypothesis: &mut Hypothesis,
+    hypothesis: &Hypothesis,
     goal: usize,
     predicate_table: &PredicateTable,
     config: Config,
@@ -27,7 +27,8 @@ pub fn not(
     // and truncate the inner allocations away so nothing dangles when the outer
     // proof later truncates the heap.
     let heap_point = heap.heap_point();
-    let mut inner_proof = Proof::with_hypothesis_without_learning(heap, &[inner_goal], hypothesis);
+    // Borrowed, so the inner proof tests the hypothesis without extending it.
+    let mut inner_proof = Proof::with_hypothesis(heap, &[inner_goal], hypothesis);
 
     if config.debug {
         eprintln!(
@@ -62,7 +63,7 @@ pub fn not(
 ///find_all(+Template,:Goal,-Bag)
 pub fn findall(
     _heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     _goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,

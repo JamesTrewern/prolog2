@@ -43,13 +43,13 @@ pub enum PredReturn {
 
  Arguments:
  - `&mut QueryHeap` — the current proof's working heap
- - `&mut Hypothesis` — the current learned hypothesis (may be extended)
+ - `&Hypothesis` — the current learned hypothesis
  - `usize` — heap address of the goal term being resolved
  - `&PredicateTable` — the program's predicate table
  - `Config` — engine configuration
 ```rust
 pub type PredicateFunction =
-    for<'a> fn(&mut QueryHeap<'a>, &mut Hypothesis, usize, &PredicateTable, Config) -> PredReturn;
+    for<'a> fn(&mut QueryHeap<'a>, &Hypothesis, usize, &PredicateTable, Config) -> PredReturn;
 ```
 
 # PredicateModule

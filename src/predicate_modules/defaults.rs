@@ -14,7 +14,7 @@ use super::{utils::*, PredReturn, PredicateModule};
 /// `==/2`: structural equality without unification.
 pub fn equal(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -25,7 +25,7 @@ pub fn equal(
 /// `=\=/2`: structural inequality without unification.
 pub fn not_equal(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -36,7 +36,7 @@ pub fn not_equal(
 /// `\=/2`: succeeds if the two terms cannot be unified.
 pub fn not_unify(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -51,7 +51,7 @@ pub fn not_unify(
 /// `=../2`: convert between a compound term and a list of its functor + args.
 pub fn univ(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -96,7 +96,7 @@ pub fn univ(
 /// `is_var/1`: succeeds if the argument is an unbound variable.
 pub fn is_var(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -106,7 +106,7 @@ pub fn is_var(
 
 pub fn non_var(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -118,7 +118,7 @@ pub fn non_var(
 /// `is_const/1`: succeeds if the argument is a constant (atom).
 pub fn is_const(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -129,7 +129,7 @@ pub fn is_const(
 /// `is_const/1`: succeeds if the argument is a constant (atom).
 pub fn valid_functor(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -141,7 +141,7 @@ pub fn valid_functor(
 /// `is_int/1`: succeeds if the argument is an integer.
 pub fn is_int(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -152,7 +152,7 @@ pub fn is_int(
 /// `is_float/1`: succeeds if the argument is a float.
 pub fn is_float(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -163,7 +163,7 @@ pub fn is_float(
 /// `is_number/1`: succeeds if the argument is an integer or a float.
 pub fn is_number(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -174,7 +174,7 @@ pub fn is_number(
 /// `is_string/1`: succeeds if the argument is a string literal.
 pub fn is_string(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -185,7 +185,7 @@ pub fn is_string(
 /// `is_compound/1`: succeeds if the argument is a compound term (functor + args).
 pub fn is_atomic(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -196,7 +196,7 @@ pub fn is_atomic(
 /// `is_compound/1`: succeeds if the argument is a compound term (functor + args).
 pub fn is_compound(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -207,7 +207,7 @@ pub fn is_compound(
 /// `is_tup/1`: succeeds if the argument is a tuple.
 pub fn is_tup(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -218,7 +218,7 @@ pub fn is_tup(
 /// `is_set/1`: succeeds if the argument is a set.
 pub fn is_set(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -229,7 +229,7 @@ pub fn is_set(
 /// `is_list/1`: succeeds if the argument is a proper list (including `[]`).
 pub fn is_list(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,

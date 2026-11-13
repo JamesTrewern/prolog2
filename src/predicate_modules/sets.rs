@@ -104,7 +104,7 @@ fn combo_rec(elems: &[usize], k: usize, sub_set: &mut Vec<usize>, result: &mut V
 /// backtracking enumerates the set.
 pub fn set_member_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,
@@ -139,7 +139,7 @@ pub fn set_member_pred(
 /// Fails if `Size` is not an integer or exceeds the size of `Set`.
 pub fn subset_sized(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,
@@ -199,7 +199,7 @@ pub fn subset_sized(
 /// `set_union(+Set1, +Set2, ?Result)` — Result is the union of Set1 and Set2.
 pub fn set_union_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,
@@ -216,7 +216,7 @@ pub fn set_union_pred(
 /// `set_intersection(+Set1, +Set2, ?Result)` — Result is the intersection.
 pub fn set_intersection_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,
@@ -235,7 +235,7 @@ pub fn set_intersection_pred(
 /// elements of Set2.
 pub fn set_difference_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,
@@ -254,7 +254,7 @@ pub fn set_difference_pred(
 /// set but not both.
 pub fn set_symdiff_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,
@@ -279,7 +279,7 @@ pub fn set_symdiff_pred(
 /// `set_size(+Set, ?N)` — N is the number of elements in Set.
 pub fn set_size_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,
@@ -294,7 +294,7 @@ pub fn set_size_pred(
 /// Set itself if Elem is already a member.
 pub fn set_add_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,
@@ -315,7 +315,7 @@ pub fn set_add_pred(
 /// `set_del(+Set, +Elem, ?Result)` — Result is Set without Elem.
 pub fn set_del_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,
@@ -334,7 +334,7 @@ pub fn set_del_pred(
 /// `set_to_list(+Set, ?List)` — List holds the elements of Set.
 pub fn set_to_list_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,
@@ -351,7 +351,7 @@ pub fn set_to_list_pred(
 /// duplicates removed.
 pub fn list_to_set_pred(
     heap: &mut QueryHeap,
-    _hypothesis: &mut Hypothesis,
+    _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
     _config: Config,

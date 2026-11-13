@@ -1506,8 +1506,7 @@ mod tests {
             let meta_subs = pdt.test_meta_subs(hypotheses.get(index), &heap);
             assert_eq!(meta_subs.len(), clauses);
             for (goal, expected) in [p_a_b, p_b_a].into_iter().zip(proves) {
-                let mut proof = Proof::without_learning(&heap, &[goal]);
-                proof.add_test_meta_subs(&meta_subs);
+                let mut proof = Proof::with_hypothesis(&heap, &[goal], meta_subs.as_slice());
                 assert_eq!(proof.prove(&mut heap, &table, config), expected);
                 proof.undo_all(&mut heap);
             }

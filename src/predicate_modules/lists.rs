@@ -25,7 +25,7 @@ use crate::{
 /// Fails for partial or improper lists.
 pub fn length(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,
@@ -62,7 +62,7 @@ pub fn length(
 /// lists, partial lists, or a bound output argument.
 pub fn sort(
     heap: &mut QueryHeap,
-    _: &mut Hypothesis,
+    _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
     _: Config,

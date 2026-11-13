@@ -14,7 +14,7 @@
 //! pointers that live inline in the goal's [`Env`](super::env::Env) and copy
 //! nothing.
 
-use crate::{program::Clause, program::Hypothesis};
+use crate::program::Clause;
 
 /// The clauses a goal has left to try.
 ///
@@ -44,8 +44,7 @@ use crate::{program::Clause, program::Hypothesis};
 const VAR_PRED: usize = 0;
 const KNOWN_PRED: usize = 1;
 const BODY_PREDS: usize = 2;
-const TEST: usize = 3;
-const CATEGORIES: usize = 4;
+const CATEGORIES: usize = 3;
 
 #[derive(Debug)]
 pub(super) struct Choices<'a> {
@@ -72,9 +71,6 @@ pub(super) struct Choices<'a> {
     /// Only set for a goal on a predicate the program defines; see
     /// [`Hypothesis::clause_head_is_invented`].
     protect_hypothesis: bool,
-    /// The caller's test clauses given as packed `MetaSub`s, tried last,
-    /// from the back.
-    test_meta_subs: &'a [&'a [usize]],
 }
 
 impl Default for Choices<'_> {
@@ -84,7 +80,6 @@ impl Default for Choices<'_> {
             categories_left: CATEGORIES,
             hypothesis: 0,
             protect_hypothesis: false,
-            test_meta_subs: &[],
         }
     }
 }
@@ -94,29 +89,21 @@ impl<'a> Choices<'a> {
     ///
     /// For a goal that may *be* an invented predicate, which must see the
     /// clauses defining invented predicates -- they are the ones it needs.
-    pub(super) fn with_hypothesis(hypothesis: &Hypothesis) -> Self {
+    /// `len` is the hypothesis's current length.
+    pub(super) fn with_hypothesis(len: usize) -> Self {
         Self {
-            hypothesis: hypothesis.len(),
+            hypothesis: len,
             ..Self::default()
         }
     }
 
     /// Offer the hypothesis, minus clauses headed by an invented predicate.
-    pub(super) fn with_protected_hypothesis(hypothesis: &Hypothesis) -> Self {
+    /// `len` is its current length.
+    pub(super) fn with_protected_hypothesis(len: usize) -> Self {
         Self {
             protect_hypothesis: true,
-            ..Self::with_hypothesis(hypothesis)
+            ..Self::with_hypothesis(len)
         }
-    }
-
-    pub(super) fn test(mut self, clauses: Option<&'a [Clause]>) -> Self {
-        self.slices[TEST] = clauses.unwrap_or_default();
-        self
-    }
-
-    pub(super) fn test_meta_subs(mut self, meta_subs: Option<&'a [&'a [usize]]>) -> Self {
-        self.test_meta_subs = meta_subs.unwrap_or_default();
-        self
     }
 
     pub(super) fn body_preds(mut self, clauses: &'a [Clause]) -> Self {
@@ -145,7 +132,6 @@ impl<'a> Choices<'a> {
             .map(|clauses| clauses.len())
             .sum::<usize>()
             + self.hypothesis
-            + self.test_meta_subs.len()
     }
 
     /// Take the next program clause to try, or `None` once every category
@@ -180,14 +166,6 @@ impl<'a> Choices<'a> {
         Some(self.hypothesis)
     }
 
-    /// The next test `MetaSub` to try, or `None` once they are spent. Only
-    /// meaningful after [`Self::next_hypothesis`] has run out.
-    pub(super) fn next_test_meta_sub(&mut self) -> Option<&'a [usize]> {
-        let (last, rest) = self.test_meta_subs.split_last()?;
-        self.test_meta_subs = rest;
-        Some(last)
-    }
-
     /// Whether hypothesis clauses headed by an invented predicate are
     /// withheld from this goal.
     pub(super) fn protects_hypothesis(&self) -> bool {
@@ -198,24 +176,21 @@ impl<'a> Choices<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        heap::{test_prog, QueryHeap},
-        program::Clause,
-    };
+    use crate::program::Clause;
 
     fn clause(literal: usize) -> Clause {
         Clause::new(vec![literal], None, 0)
     }
 
-    /// The literal of each clause offered, in the order offered: program
-    /// clauses, then the hypothesis clauses the cursor indexes.
-    fn drain(mut choices: Choices<'_>, hypothesis: &Hypothesis, _heap: &QueryHeap) -> Vec<usize> {
+    /// What is offered, in order: the literal of each program clause, then
+    /// each hypothesis index plus 100.
+    fn drain(mut choices: Choices<'_>) -> Vec<usize> {
         let mut out = Vec::new();
         while let Some(clause) = choices.next() {
             out.push(clause[0]);
         }
         while let Some(index) = choices.next_hypothesis() {
-            out.push(hypothesis[index][0]);
+            out.push(100 + index);
         }
         out
     }
@@ -224,127 +199,64 @@ mod tests {
     /// reverse, and each category back-to-front.
     #[test]
     fn categories_and_slices_are_consumed_in_reverse() {
-        let prog = test_prog();
-        let heap = QueryHeap::new(prog, None);
-        let mut hypothesis = Hypothesis::new();
-        hypothesis.clauses.push(clause(10));
-        hypothesis.clauses.push(clause(11));
-
         let var = [clause(20), clause(21)];
         let body = [clause(30), clause(31)];
-        let test = [clause(40), clause(41)];
 
-        let choices = Choices::with_hypothesis(&hypothesis)
+        let choices = Choices::with_hypothesis(2)
             .var_pred(Some(&var))
-            .body_preds(&body)
-            .test(Some(&test));
+            .body_preds(&body);
 
         assert_eq!(
-            drain(choices, &hypothesis, &heap),
-            vec![41, 40, 31, 30, 21, 20, 11, 10],
-            "test, then body, then meta, then hypothesis -- each back-to-front"
+            drain(choices),
+            vec![31, 30, 21, 20, 101, 100],
+            "body, then meta, then hypothesis -- each back-to-front"
         );
-    }
-
-    #[test]
-    fn test_meta_subs_come_after_the_hypothesis_back_to_front() {
-        let mut hypothesis = Hypothesis::new();
-        hypothesis.clauses.push(clause(10));
-        let test = [clause(40)];
-        let meta_subs: [&[usize]; 2] = [&[7, 1], &[8, 2, 3]];
-
-        let mut choices = Choices::with_hypothesis(&hypothesis)
-            .test(Some(&test))
-            .test_meta_subs(Some(&meta_subs));
-        assert_eq!(choices.remaining(), 4);
-
-        assert_eq!(choices.next().map(|clause| clause[0]), Some(40));
-        assert!(choices.next().is_none());
-        assert_eq!(choices.next_hypothesis(), Some(0));
-        assert_eq!(choices.next_hypothesis(), None);
-        assert_eq!(choices.next_test_meta_sub(), Some(&[8, 2, 3][..]));
-        assert_eq!(choices.next_test_meta_sub(), Some(&[7, 1][..]));
-        assert_eq!(choices.next_test_meta_sub(), None);
     }
 
     /// A known predicate's own clauses sit between the body clauses and the
     /// meta clauses, matching the old insertion order.
     #[test]
     fn a_known_predicate_is_tried_before_the_hypothesis() {
-        let prog = test_prog();
-        let heap = QueryHeap::new(prog, None);
-        let mut hypothesis = Hypothesis::new();
-        hypothesis.clauses.push(clause(10));
-
         let known = [clause(50), clause(51)];
-        let choices = Choices::with_hypothesis(&hypothesis).known_pred(&known);
+        let choices = Choices::with_hypothesis(1).known_pred(&known);
 
-        assert_eq!(drain(choices, &hypothesis, &heap), vec![51, 50, 10]);
+        assert_eq!(drain(choices), vec![51, 50, 100]);
     }
 
     #[test]
     fn empty_categories_and_an_empty_hypothesis_yield_nothing() {
-        let prog = test_prog();
-        let heap = QueryHeap::new(prog, None);
-        let hypothesis = Hypothesis::new();
-
-        let choices = Choices::with_hypothesis(&hypothesis)
+        let choices = Choices::with_hypothesis(0)
             .var_pred(Some(&[]))
-            .body_preds(&[])
-            .test(None);
+            .body_preds(&[]);
 
         assert_eq!(choices.remaining(), 0);
-        assert!(drain(choices, &hypothesis, &heap).is_empty());
+        assert!(drain(choices).is_empty());
     }
 
-    /// Clauses the search adds after a goal gathered its choices are not
-    /// offered to it -- the behaviour the cloned vector gave for free.
+    /// The cursor counts down from the length it was given, so clauses the
+    /// search adds after a goal gathered its choices are not offered to it.
     #[test]
     fn hypothesis_clauses_added_later_are_not_offered() {
-        let prog = test_prog();
-        let heap = QueryHeap::new(prog, None);
-        let mut hypothesis = Hypothesis::new();
-        hypothesis.clauses.push(clause(10));
-
-        let choices = Choices::with_hypothesis(&hypothesis);
-        hypothesis.clauses.push(clause(99));
-
-        assert_eq!(
-            drain(choices, &hypothesis, &heap),
-            vec![10],
-            "the clause added after gathering is skipped"
-        );
+        assert_eq!(drain(Choices::with_hypothesis(1)), vec![100]);
     }
 
     /// The cursor only reports protection; `Env::try_hypothesis` does the
     /// skipping, since it needs the clause's substitution to decide.
     #[test]
     fn a_protected_cursor_reports_it_and_still_indexes_every_clause() {
-        let prog = test_prog();
-        let heap = QueryHeap::new(prog, None);
-        let mut hypothesis = Hypothesis::new();
-        hypothesis.clauses.push(clause(10));
-        hypothesis.clauses.push(clause(11));
-
-        let protected = Choices::with_protected_hypothesis(&hypothesis);
+        let protected = Choices::with_protected_hypothesis(2);
         assert!(protected.protects_hypothesis());
-        assert_eq!(drain(protected, &hypothesis, &heap), vec![11, 10]);
-        assert!(!Choices::with_hypothesis(&hypothesis).protects_hypothesis());
+        assert_eq!(drain(protected), vec![101, 100]);
+        assert!(!Choices::with_hypothesis(2).protects_hypothesis());
     }
 
     #[test]
     fn remaining_counts_every_category() {
-        let prog = test_prog();
-        let _heap = QueryHeap::new(prog, None);
-        let mut hypothesis = Hypothesis::new();
-        hypothesis.clauses.push(clause(10));
-        hypothesis.clauses.push(clause(11));
-
         let var = [clause(20)];
-        let test = [clause(40), clause(41)];
-        let choices = Choices::with_hypothesis(&hypothesis)
+        let body = [clause(40), clause(41)];
+        let choices = Choices::with_hypothesis(2)
             .var_pred(Some(&var))
-            .test(Some(&test));
+            .body_preds(&body);
 
         assert_eq!(choices.remaining(), 5);
     }

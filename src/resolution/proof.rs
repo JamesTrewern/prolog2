@@ -3,51 +3,39 @@
 use super::env::Env;
 use crate::{
     heap::{Heap, QueryHeap},
-    program::{Clause, Hypothesis, PredicateTable},
+    program::{Hypothesis, HypothesisTrait, PredicateTable},
     Config,
 };
 
 /// The proof search engine.
 ///
 /// Maintains a goal stack and iteratively resolves goals against the predicate
-/// table and the current hypothesis. Call [`Proof::prove`] repeatedly to
-/// enumerate solutions via backtracking.
-pub struct Proof<'a> {
+/// table and its hypothesis. Call [`Proof::prove`] repeatedly to enumerate
+/// solutions via backtracking.
+///
+/// `H` is the form the hypothesis is held in, which also decides whether
+/// the proof learns: an owned [`Hypothesis`] may be extended, while a
+/// borrowed one, or a borrowed list of ground clauses, is only tested.
+#[allow(private_bounds)]
+pub struct Proof<'a, H: HypothesisTrait = Hypothesis> {
     stack: Vec<Env<'a>>,
     pointer: usize,
-    pub hypothesis: Hypothesis,
-    test_clauses: Option<&'a [Clause]>,
-    test_meta_subs: Option<&'a [&'a [usize]]>,
-    learning: bool,
+    pub hypothesis: H,
 }
 
 impl<'a> Proof<'a> {
+    /// A learning proof starting from an empty hypothesis.
     pub fn new(heap: &QueryHeap, goals: &[usize]) -> Self {
-        Self::build(heap, goals, Hypothesis::new(), true)
+        Self::with_hypothesis(heap, goals, Hypothesis::new())
     }
+}
 
-    /// A proof that may not extend the hypothesis; see [`Proof::learning`].
-    pub fn without_learning(heap: &QueryHeap, goals: &[usize]) -> Self {
-        Self::build(heap, goals, Hypothesis::new(), false)
-    }
-
-    /// Create a new proof with an existing hypothesis (for negation-as-failure checks)
-    pub fn with_hypothesis(heap: &QueryHeap, goals: &[usize], hypothesis: &Hypothesis) -> Self {
-        Self::build(heap, goals, hypothesis.clone(), true)
-    }
-
-    /// As [`Self::with_hypothesis`], but the inherited hypothesis may not be
-    /// extended.
-    /// Used ub negation-as-failure and specialisation
-    pub fn with_hypothesis_without_learning(
-        heap: &QueryHeap,
-        goals: &[usize],
-        hypothesis: &Hypothesis,
-    ) -> Self {
-        Self::build(heap, goals, hypothesis.clone(), false)
-    }
-
-    fn build(heap: &QueryHeap, goals: &[usize], hypothesis: Hypothesis, learning: bool) -> Self {
+#[allow(private_bounds)]
+impl<'a, H: HypothesisTrait> Proof<'a, H> {
+    /// A proof over `hypothesis`. Passing a [`Hypothesis`] by value lets
+    /// the proof extend it; `&Hypothesis`, `&[&[usize]]` (packed
+    /// `MetaSub`s) and `&[Clause]` are tested without learning.
+    pub fn with_hypothesis(heap: &QueryHeap, goals: &[usize], hypothesis: H) -> Self {
         let stack = goals
             .iter()
             .map(|goal| Env::new(*goal, 0, heap.heap_point()))
@@ -56,23 +44,7 @@ impl<'a> Proof<'a> {
             stack,
             pointer: 0,
             hypothesis,
-            test_clauses: None,
-            test_meta_subs: None,
-            learning,
         }
-    }
-
-    /// Add clauses to be included in choices
-    pub fn add_test_clauses(&mut self, clauses: &'a [Clause]) {
-        self.test_clauses = Some(clauses);
-    }
-
-    /// As [`Self::add_test_clauses`], for clauses held as packed `MetaSub`s
-    /// (`[clause_idx, subs...]`): each is resolved against the meta clause
-    /// it instantiates, so no clause is built. The indices must be good for
-    /// the predicate table passed to [`Self::prove`].
-    pub(crate) fn add_test_meta_subs(&mut self, meta_subs: &'a [&'a [usize]]) {
-        self.test_meta_subs = Some(meta_subs);
     }
 
     /// `predicate_table` is borrowed for the proof's whole life, not just
@@ -95,9 +67,7 @@ impl<'a> Proof<'a> {
                     self.hypothesis.len()
                 );
                 eprintln!("[RESTART_HYPOTHESIS]");
-                for (i, c) in self.hypothesis.iter().enumerate() {
-                    eprintln!("  [{}]: {}", i, c.to_string(heap));
-                }
+                eprintln!("{}", self.hypothesis.to_string(heap));
             }
 
             self.pointer -= 1;
@@ -117,9 +87,7 @@ impl<'a> Proof<'a> {
                 self.stack[self.pointer].get_choices(
                     heap,
                     &mut self.hypothesis,
-                    &predicate_table,
-                    self.test_clauses,
-                    self.test_meta_subs,
+                    predicate_table,
                     config.protect_h_preds,
                 );
                 if config.debug {
@@ -135,7 +103,6 @@ impl<'a> Proof<'a> {
                 &mut self.hypothesis,
                 predicate_table,
                 config,
-                self.learning,
             ) {
                 Some(new_goals) => {
                     self.pointer += 1;
@@ -180,7 +147,7 @@ impl<'a> Proof<'a> {
 #[cfg(test)]
 mod learning_switch_tests {
     use super::Proof;
-    use crate::{app::App, heap::QueryHeap, parser::_build_clause};
+    use crate::{app::App, heap::QueryHeap, parser::_build_clause, program::Hypothesis};
 
     /// A goal that is only provable by learning: `t(a)` has no clause, but
     /// the meta rule `P(X):-Q(X)` can invent one over the fact `q(a)`.
@@ -210,7 +177,9 @@ mod learning_switch_tests {
         );
 
         let mut heap = QueryHeap::new(&app.prog_heap, None);
-        let mut testing = Proof::without_learning(&heap, &[goal]);
+        // Borrowed, so read only.
+        let empty = Hypothesis::new();
+        let mut testing = Proof::with_hypothesis(&heap, &[goal], &empty);
         assert!(
             !testing.prove(&mut heap, &app.predicate_table, app.config),
             "with learning off there is no clause for t/1, so the goal must fail -- \
@@ -392,13 +361,11 @@ mod hypothesis_resolution_tests {
         let clauses = hypothesis.clauses.clone();
 
         for (goal, expected) in cases {
-            let mut by_meta_sub =
-                Proof::with_hypothesis_without_learning(&heap, &[goal], &hypothesis);
+            let mut by_meta_sub = Proof::with_hypothesis(&heap, &[goal], &hypothesis);
             let from_meta_sub = by_meta_sub.prove(&mut heap, &app.predicate_table, app.config);
             by_meta_sub.undo_all(&mut heap);
 
-            let mut by_clause = Proof::without_learning(&heap, &[goal]);
-            by_clause.add_test_clauses(&clauses);
+            let mut by_clause = Proof::with_hypothesis(&heap, &[goal], clauses.as_slice());
             let from_clause = by_clause.prove(&mut heap, &app.predicate_table, app.config);
             by_clause.undo_all(&mut heap);
 
@@ -428,8 +395,7 @@ mod hypothesis_resolution_tests {
         assert_eq!(meta_subs.len(), 1);
 
         for (goal, expected) in cases {
-            let mut proof = Proof::without_learning(&heap, &[goal]);
-            proof.add_test_meta_subs(&meta_subs);
+            let mut proof = Proof::with_hypothesis(&heap, &[goal], meta_subs.as_slice());
             assert_eq!(
                 proof.prove(&mut heap, &app.predicate_table, app.config),
                 expected
@@ -438,7 +404,8 @@ mod hypothesis_resolution_tests {
         }
 
         // Without them the goal has nothing to resolve against.
-        let mut bare = Proof::without_learning(&heap, &[cases[0].0]);
+        let none: &[&[usize]] = &[];
+        let mut bare = Proof::with_hypothesis(&heap, &[cases[0].0], none);
         assert!(!bare.prove(&mut heap, &app.predicate_table, app.config));
     }
 }
