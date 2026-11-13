@@ -266,6 +266,14 @@ impl<'a> QueryHeap<'a> {
 }
 
 impl Heap for QueryHeap<'_> {
+    fn heap_point(&self) -> HeapPoint {
+        QueryHeap::heap_point(self)
+    }
+
+    fn truncate(&mut self, heap_point: HeapPoint) {
+        QueryHeap::truncate(self, heap_point)
+    }
+
     fn symbols(&self) -> &SymbolDB {
         self.prog.symbols()
     }

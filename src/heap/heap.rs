@@ -1,5 +1,5 @@
 use super::{
-    SymbolDB,
+    HeapPoint, SymbolDB,
     Tag::*,
     TermWalk,
     VarBind::{self, *},
@@ -88,6 +88,12 @@ pub trait Heap:
     + Index<Range<usize>, Output = [Cell]>
     + Index<RangeFrom<usize>>
 {
+    /// How much of the heap is in use, for [`Self::truncate`] to return to.
+    fn heap_point(&self) -> HeapPoint;
+
+    /// Drop everything added since `heap_point` was taken.
+    fn truncate(&mut self, heap_point: HeapPoint);
+
     /// The symbol table these cells are interpreted against.
     ///
     /// Every heap can reach one: the program heap owns it, and a query heap

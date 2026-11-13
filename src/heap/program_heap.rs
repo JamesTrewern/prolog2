@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use super::{Cell, Heap, SymbolDB, VarBind};
+use super::{Cell, Heap, HeapPoint, SymbolDB, VarBind};
 
 /// Cells for the loaded program, and the [`SymbolDB`] they are interpreted
 /// against.
@@ -108,6 +108,15 @@ impl Deref for ProgramHeap {
 }
 
 impl Heap for ProgramHeap {
+    /// A program heap has no variable registers, so the second value is 0.
+    fn heap_point(&self) -> HeapPoint {
+        (self.cells.len(), 0)
+    }
+
+    fn truncate(&mut self, (cells_len, _): HeapPoint) {
+        self.cells.truncate(cells_len);
+    }
+
     fn symbols(&self) -> &SymbolDB {
         &self.symbols
     }
