@@ -1,9 +1,8 @@
 //! Rejecting candidates that entail a negative example.
 //!
 //! Specialisation is a pass of its own, run after generalisation has merged
-//! and deduplicated the sub hypotheses and their invented predicates'
-//! definitions have been added to the predicate table: [`specialise`] filters
-//! the deduplicated hypotheses against the negatives in parallel, and
+//! and deduplicated the sub hypotheses: [`specialise`] filters them against
+//! the negatives in parallel, proving from `MetaSub`s, and
 //! [`clauses_entail_negative`] is applied again later to whole *combinations*
 //! of sub hypotheses -- two that are each consistent can together entail a
 //! negative, since a clause from one can resolve against a clause from the
@@ -21,11 +20,13 @@ use std::{
 
 use crate::{
     heap::{ProgramHeap, QueryHeap},
-    program::{Clause, PredicateTable},
+    program::{Clause, PackedMetaSubs, PredicateTable},
     resolution::Proof,
     Config,
 };
 use rayon::prelude::*;
+
+use super::predicate_unification::PredDefTable;
 
 /// Config for a test proof. Learning is turned off on the [`Proof`] itself,
 /// not here; this only silences the debug trace. `max_depth` is kept to bound
@@ -63,50 +64,40 @@ pub(super) fn clauses_entail_negative(
     })
 }
 
-/// Filter out every hypothesis that proves a negative example.
-///
+/// Indices of the hypotheses that prove no negative example, in order.
 /// Hypotheses are tested in parallel, one rayon task each; the negatives
-/// *within* a hypothesis run serially, since with thousands of candidates the
-/// pool is already saturated at the outer level and `any` wants to abandon a
-/// candidate's remaining negatives the moment one is proved anyway.
-///
-/// Expects each hypothesis's invented predicates to have been grounded to
-/// coined constants and their definitions added to `predicate_table`: the
-/// clauses passed here are only the hypothesis's own top-level clauses, and a
-/// goal on an invented predicate resolves through the table like any other
-/// call. Ground clauses also mean there is nothing a test proof could bind,
-/// so the hypotheses are shared read-only across the workers.
-///
-/// Survivors are returned in their original order.
+/// *within* a hypothesis run serially
 pub(super) fn specialise(
     neg_goals: &[usize],
-    hypotheses: Vec<Box<[Clause]>>,
+    hypotheses: &PackedMetaSubs,
+    pdt: &PredDefTable,
     heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     config: Config,
-) -> Vec<Box<[Clause]>> {
+) -> Vec<u32> {
+    let total = u32::try_from(hypotheses.len()).expect("more than u32::MAX hypotheses");
     if neg_goals.is_empty() {
-        return hypotheses;
+        return (0..total).collect();
     }
 
     let config = test_config(config);
-    let total = hypotheses.len();
     let tested = AtomicUsize::new(0);
 
-    let retained: Vec<Box<[Clause]>> = hypotheses
+    let retained: Vec<u32> = (0..total)
         .into_par_iter()
-        .filter(|hypothesis| {
+        .filter(|&index| {
+            let meta_subs = pdt.test_meta_subs(hypotheses.get(index as usize), heap);
             let keep = !neg_goals.iter().any(|&goal| {
                 let mut query_heap = QueryHeap::new(heap, None);
                 let mut proof = Proof::without_learning(&query_heap, &[goal]);
-                proof.add_test_clauses(hypothesis);
+                proof.add_test_meta_subs(&meta_subs);
                 proof.prove(&mut query_heap, predicate_table, config)
             });
 
             // Throttled: one line per candidate would spend longer painting
             // the terminal than proving the negatives.
             let done = tested.fetch_add(1, Ordering::Relaxed) + 1;
-            if done % 256 == 0 || done == total {
+            if done % 256 == 0 || done == total as usize {
                 eprint!("\rSpecialise: {done}/{total} hypotheses tested  ");
                 let _ = io::stderr().flush();
             }

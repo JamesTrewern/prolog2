@@ -72,6 +72,9 @@ pub(super) struct Choices<'a> {
     /// Only set for a goal on a predicate the program defines; see
     /// [`Hypothesis::clause_head_is_invented`].
     protect_hypothesis: bool,
+    /// The caller's test clauses given as packed `MetaSub`s, tried last,
+    /// from the back.
+    test_meta_subs: &'a [&'a [usize]],
 }
 
 impl Default for Choices<'_> {
@@ -81,6 +84,7 @@ impl Default for Choices<'_> {
             categories_left: CATEGORIES,
             hypothesis: 0,
             protect_hypothesis: false,
+            test_meta_subs: &[],
         }
     }
 }
@@ -110,6 +114,11 @@ impl<'a> Choices<'a> {
         self
     }
 
+    pub(super) fn test_meta_subs(mut self, meta_subs: Option<&'a [&'a [usize]]>) -> Self {
+        self.test_meta_subs = meta_subs.unwrap_or_default();
+        self
+    }
+
     pub(super) fn body_preds(mut self, clauses: &'a [Clause]) -> Self {
         self.slices[BODY_PREDS] = clauses;
         self
@@ -136,6 +145,7 @@ impl<'a> Choices<'a> {
             .map(|clauses| clauses.len())
             .sum::<usize>()
             + self.hypothesis
+            + self.test_meta_subs.len()
     }
 
     /// Take the next program clause to try, or `None` once every category
@@ -168,6 +178,14 @@ impl<'a> Choices<'a> {
         }
         self.hypothesis -= 1;
         Some(self.hypothesis)
+    }
+
+    /// The next test `MetaSub` to try, or `None` once they are spent. Only
+    /// meaningful after [`Self::next_hypothesis`] has run out.
+    pub(super) fn next_test_meta_sub(&mut self) -> Option<&'a [usize]> {
+        let (last, rest) = self.test_meta_subs.split_last()?;
+        self.test_meta_subs = rest;
+        Some(last)
     }
 
     /// Whether hypothesis clauses headed by an invented predicate are
@@ -226,6 +244,27 @@ mod tests {
             vec![41, 40, 31, 30, 21, 20, 11, 10],
             "test, then body, then meta, then hypothesis -- each back-to-front"
         );
+    }
+
+    #[test]
+    fn test_meta_subs_come_after_the_hypothesis_back_to_front() {
+        let mut hypothesis = Hypothesis::new();
+        hypothesis.clauses.push(clause(10));
+        let test = [clause(40)];
+        let meta_subs: [&[usize]; 2] = [&[7, 1], &[8, 2, 3]];
+
+        let mut choices = Choices::with_hypothesis(&hypothesis)
+            .test(Some(&test))
+            .test_meta_subs(Some(&meta_subs));
+        assert_eq!(choices.remaining(), 4);
+
+        assert_eq!(choices.next().map(|clause| clause[0]), Some(40));
+        assert!(choices.next().is_none());
+        assert_eq!(choices.next_hypothesis(), Some(0));
+        assert_eq!(choices.next_hypothesis(), None);
+        assert_eq!(choices.next_test_meta_sub(), Some(&[8, 2, 3][..]));
+        assert_eq!(choices.next_test_meta_sub(), Some(&[7, 1][..]));
+        assert_eq!(choices.next_test_meta_sub(), None);
     }
 
     /// A known predicate's own clauses sit between the body clauses and the

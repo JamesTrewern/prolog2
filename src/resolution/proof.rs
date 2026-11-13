@@ -17,6 +17,7 @@ pub struct Proof<'a> {
     pointer: usize,
     pub hypothesis: Hypothesis,
     test_clauses: Option<&'a [Clause]>,
+    test_meta_subs: Option<&'a [&'a [usize]]>,
     learning: bool,
 }
 
@@ -56,6 +57,7 @@ impl<'a> Proof<'a> {
             pointer: 0,
             hypothesis,
             test_clauses: None,
+            test_meta_subs: None,
             learning,
         }
     }
@@ -63,6 +65,14 @@ impl<'a> Proof<'a> {
     /// Add clauses to be included in choices
     pub fn add_test_clauses(&mut self, clauses: &'a [Clause]) {
         self.test_clauses = Some(clauses);
+    }
+
+    /// As [`Self::add_test_clauses`], for clauses held as packed `MetaSub`s
+    /// (`[clause_idx, subs...]`): each is resolved against the meta clause
+    /// it instantiates, so no clause is built. The indices must be good for
+    /// the predicate table passed to [`Self::prove`].
+    pub(crate) fn add_test_meta_subs(&mut self, meta_subs: &'a [&'a [usize]]) {
+        self.test_meta_subs = Some(meta_subs);
     }
 
     /// `predicate_table` is borrowed for the proof's whole life, not just
@@ -109,6 +119,7 @@ impl<'a> Proof<'a> {
                     &mut self.hypothesis,
                     &predicate_table,
                     self.test_clauses,
+                    self.test_meta_subs,
                     config.protect_h_preds,
                 );
                 if config.debug {
@@ -303,7 +314,7 @@ mod tests {
 #[cfg(test)]
 mod hypothesis_resolution_tests {
     use super::Proof;
-    use crate::{app::App, heap::QueryHeap, parser::_build_clause};
+    use crate::{app::App, heap::QueryHeap, parser::_build_clause, program::PackedMetaSubs};
 
     /// `t/1` has no clauses, so a goal on it is provable only by learning
     /// one from `P(X):-Q(X)` or by a clause already in the hypothesis.
@@ -394,5 +405,40 @@ mod hypothesis_resolution_tests {
             assert_eq!(from_meta_sub, expected);
             assert_eq!(from_clause, expected);
         }
+    }
+
+    #[test]
+    fn test_meta_subs_resolve_as_the_hypothesis_they_were_packed_from() {
+        let mut app = app(1);
+        let learn = goal(&mut app, "t(a).");
+        let cases = [
+            (goal(&mut app, "t(b)."), true),
+            (goal(&mut app, "t(c)."), false),
+            (goal(&mut app, "u(a)."), false),
+        ];
+
+        let mut heap = QueryHeap::new(&app.prog_heap, None);
+        let mut learning = Proof::new(&heap, &[learn]);
+        assert!(learning.prove(&mut heap, &app.predicate_table, app.config));
+
+        let mut packed = PackedMetaSubs::default();
+        packed.push(learning.hypothesis.meta_subs.iter());
+        let group = packed.get(0);
+        let meta_subs: Vec<&[usize]> = group.iter().collect();
+        assert_eq!(meta_subs.len(), 1);
+
+        for (goal, expected) in cases {
+            let mut proof = Proof::without_learning(&heap, &[goal]);
+            proof.add_test_meta_subs(&meta_subs);
+            assert_eq!(
+                proof.prove(&mut heap, &app.predicate_table, app.config),
+                expected
+            );
+            proof.undo_all(&mut heap);
+        }
+
+        // Without them the goal has nothing to resolve against.
+        let mut bare = Proof::without_learning(&heap, &[cases[0].0]);
+        assert!(!bare.prove(&mut heap, &app.predicate_table, app.config));
     }
 }

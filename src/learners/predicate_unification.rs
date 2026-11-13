@@ -7,14 +7,15 @@ use std::{
 use smallvec::SmallVec;
 
 use crate::{
-    PRED_DEF_DEFAULT_SIZE,
     heap::{
-        Heap, QueryHeap, VarReg,
+        Heap, QueryHeap,
         Tag::*,
         VarBind::{self, Addr, VarId},
+        VarReg,
     },
     program::{MetaSub, MetaSubGroup, MetaSubTrait, PackedMetaSubs, PredicateTable},
     utils::{DirGraph16, DirGraph8},
+    PRED_DEF_DEFAULT_SIZE,
 };
 
 /// Most invented predicates one sub hypothesis can define.
@@ -477,15 +478,10 @@ pub(super) fn key_from_profile(profile: &KeyProfile, flips: &[usize]) -> u64 {
 pub(super) struct PredDefTable {
     /// Every definition, grounded, one group each.
     pred_defs: PackedMetaSubs,
-    /// Symbol ids of the constants coined to name the predicates defined
-    /// here, recorded as each definition is inserted.
-    ///
-    /// These are what distinguishes an invented predicate from a background
-    /// one. Recognising them by symbol id -- rather than by comparing against
-    /// the id of `pred_0`, which assumes every background predicate was
-    /// interned before the first invented one -- keeps the answer correct
-    /// whatever order the symbol table happened to be filled in.
-    pred_symbols: HashSet<usize>,
+    /// Symbol id of each constant coined to name a predicate defined here,
+    /// mapped to the index of its definition; recorded as each definition
+    /// is inserted.
+    symbol_defs: HashMap<usize, u32>,
     /// [`PredDef::canonical_key`] of each grounded definition, mapped to its
     /// indices in `pred_defs`. Almost always a single index: two definitions
     /// share a key only on a genuine hash collision or when they differ in
@@ -541,7 +537,7 @@ impl PredDefTable {
                     continue;
                 }
                 if let (Con, symbol) = heap[pos] {
-                    if self.pred_symbols.contains(&symbol) {
+                    if self.symbol_defs.contains_key(&symbol) {
                         flippable.push(pos);
                     }
                 }
@@ -603,8 +599,66 @@ impl PredDefTable {
     }
 
     /// The constants naming the predicates this table defines.
-    pub(super) fn pred_symbols(&self) -> &HashSet<usize> {
-        &self.pred_symbols
+    pub(super) fn pred_symbols(&self) -> HashSet<usize> {
+        self.symbol_defs.keys().copied().collect()
+    }
+
+    /// Append to `defs` the index of every definition `meta_subs` call,
+    /// directly or through another definition; each once. `heap` holds the
+    /// terms the substitutions address.
+    pub(super) fn dependencies<'m>(
+        &self,
+        meta_subs: impl Iterator<Item = &'m [usize]>,
+        heap: &impl Heap,
+        defs: &mut SmallVec<[u32; 8]>,
+    ) {
+        let mut next = defs.len();
+        for meta_sub in meta_subs {
+            self.called_defs(meta_sub, heap, defs);
+        }
+        // `defs` doubles as the work list: each one found is scanned in turn.
+        while next < defs.len() {
+            let def = self.get(defs[next] as usize);
+            for meta_sub in def.iter() {
+                self.called_defs(meta_sub, heap, defs);
+            }
+            next += 1;
+        }
+    }
+
+    /// Append the definitions of the invented predicates one clause names.
+    fn called_defs(&self, meta_sub: &[usize], heap: &impl Heap, defs: &mut SmallVec<[u32; 8]>) {
+        for sub in meta_sub.subs() {
+            let Some(Addr(addr)) = sub.get_bind() else {
+                continue;
+            };
+            let (Con, symbol) = heap[addr] else {
+                continue;
+            };
+            if let Some(def) = self.symbol_defs.get(&symbol) {
+                if !defs.contains(def) {
+                    defs.push(*def);
+                }
+            }
+        }
+    }
+
+    /// Everything needed to prove with `hypothesis`: its own clauses, then
+    /// those of every definition it depends on.
+    pub(super) fn test_meta_subs<'a>(
+        &'a self,
+        hypothesis: MetaSubGroup<'a>,
+        heap: &impl Heap,
+    ) -> SmallVec<[&'a [usize]; 8]> {
+        let mut defs = SmallVec::new();
+        self.dependencies(hypothesis.iter(), heap, &mut defs);
+
+        let mut meta_subs: SmallVec<[&'a [usize]; 8]> = hypothesis.iter().collect();
+        for def in defs {
+            let def = self.get(def as usize);
+            meta_subs.extend((0..def.len()).map(|clause| def.get(clause)));
+        }
+        meta_subs
     }
 
     fn add_def(&mut self, mut pred_def: PredDef, key: Option<u64>, heap: &mut QueryHeap) {
@@ -615,10 +669,11 @@ impl PredDefTable {
         // clause of the same mutually recursive group, or by unification
         // against the table -- mints nothing, and its constant still names an
         // invented predicate.
+        let index = u32::try_from(self.pred_defs.len()).expect("more than u32::MAX definitions");
         for meta_sub in &pred_def.meta_subs {
             if let Some(Addr(addr)) = meta_sub.subs.first().and_then(|sub| sub.get_bind()) {
                 if let (Con, symbol) = heap[addr] {
-                    self.pred_symbols.insert(symbol);
+                    self.symbol_defs.insert(symbol, index);
                 }
             }
         }
@@ -718,9 +773,11 @@ mod tests {
         },
         learners::predicate_unification::{PredDef, PredDefLike, PredDefTable},
         parser::_build_clause,
-        program::{Clause, Constraints, Hypothesis, MetaSubTrait, PredicateTable},
-        resolution::{build, Substitution},
+        program::{Clause, Constraints, Hypothesis, MetaSubTrait, PackedMetaSubs, PredicateTable},
+        resolution::{build, Proof, Substitution},
+        Config,
     };
+    use smallvec::SmallVec;
 
     /// Intern `symbols` in `prog`'s table.
     ///
@@ -876,11 +933,7 @@ mod tests {
         pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
         pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
 
-        assert_eq!(
-            pdt.len(),
-            1,
-            "both hypotheses invent the same predicate"
-        );
+        assert_eq!(pdt.len(), 1, "both hypotheses invent the same predicate");
         assert_eq!(heap.var_deref(0), heap.var_deref(1));
         assert_table_has_no_duplicates(&pdt, &mut heap);
     }
@@ -1359,6 +1412,106 @@ mod tests {
 
         assert_eq!(heap.var_deref(0), heap.var_deref(2));
         assert_eq!(heap.var_deref(1), heap.var_deref(3));
+    }
+
+    /// Bind each remaining predicate variable to the constant coined for it,
+    /// as merging does, and pack the hypothesis.
+    fn pack_grounded(h: &mut Hypothesis, heap: &QueryHeap, packed: &mut PackedMetaSubs) {
+        for meta_sub in &mut h.meta_subs {
+            for sub in &mut meta_sub.subs {
+                if let Some(VarId(var_id)) = sub.get_bind() {
+                    let bound = heap.var_deref(var_id);
+                    assert!(
+                        matches!(bound, Addr(_)),
+                        "every invented predicate is defined"
+                    );
+                    *sub = bound.into();
+                }
+            }
+        }
+        packed.push(h.meta_subs.iter());
+    }
+
+    /// Hypothesis 1, which reaches its second definition only through its
+    /// first:
+    ///     p(X,Y):- Var_0(X,Y).
+    ///     Var_0(X,Y):- Var_1(X,Y).
+    ///     Var_1(X,Y):- q(X), r(Y).
+    /// Hypothesis 2:
+    ///     p(X,Y):- Var_2(X,Y).
+    ///     Var_2(X,Y):- r(X), q(Y).
+    #[test]
+    fn a_hypothesis_is_proved_from_its_meta_subs_and_its_definitions() {
+        let mut prog_heap = ProgramHeap::new();
+        let meta0 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
+        let meta1 = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
+        let q_fact = _build_clause(&mut prog_heap, "q(a).");
+        let r_fact = _build_clause(&mut prog_heap, "r(b).");
+        let p_a_b = _build_clause(&mut prog_heap, "p(a,b).")[0];
+        let p_b_a = _build_clause(&mut prog_heap, "p(b,a).")[0];
+        let meta_rules = [(&meta0, 2), (&meta1, 2)];
+        let table = table_of(&prog_heap, &[&meta0, &meta1, &q_fact, &r_fact]);
+
+        let mut heap = QueryHeap::new(&prog_heap, None);
+        let [p, q, r] = get_const_ids(&prog_heap, ["p", "q", "r"]);
+        let [p, q, r] = [p, q, r].map(|con_id| heap.heap_push((Con, con_id)));
+
+        let mut h1 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), VarId(0)]),
+                (0, &[VarId(0), VarId(1)]),
+                (1, &[VarId(1), Addr(q), Addr(r)]),
+            ],
+            &mut heap,
+        );
+        let mut h2 = build_hypothesis(
+            meta_rules,
+            [
+                (0, &[Addr(p), VarId(2)]),
+                (1, &[VarId(2), Addr(r), Addr(q)]),
+            ],
+            &mut heap,
+        );
+
+        let mut pdt = PredDefTable::default();
+        pdt.extract_pred_defs_from_h(&mut h1.meta_subs, &table, &mut heap);
+        pdt.extract_pred_defs_from_h(&mut h2.meta_subs, &table, &mut heap);
+        assert_eq!(pdt.len(), 3);
+
+        let mut hypotheses = PackedMetaSubs::default();
+        pack_grounded(&mut h1, &heap, &mut hypotheses);
+        pack_grounded(&mut h2, &heap, &mut hypotheses);
+
+        let mut defs = SmallVec::new();
+        pdt.dependencies(hypotheses.get(0).iter(), &heap, &mut defs);
+        assert_eq!(
+            defs.len(),
+            2,
+            "the second definition is reached through the first"
+        );
+        // Asking again finds nothing new.
+        pdt.dependencies(hypotheses.get(0).iter(), &heap, &mut defs);
+        assert_eq!(defs.len(), 2);
+
+        let config = Config {
+            max_depth: 10,
+            max_clause: 0,
+            debug: false,
+            protect_h_preds: true,
+        };
+        // Which of `p(a,b)` and `p(b,a)` each hypothesis proves, given
+        // `q(a)` and `r(b)`.
+        for (index, clauses, proves) in [(0, 3, [true, false]), (1, 2, [false, true])] {
+            let meta_subs = pdt.test_meta_subs(hypotheses.get(index), &heap);
+            assert_eq!(meta_subs.len(), clauses);
+            for (goal, expected) in [p_a_b, p_b_a].into_iter().zip(proves) {
+                let mut proof = Proof::without_learning(&heap, &[goal]);
+                proof.add_test_meta_subs(&meta_subs);
+                assert_eq!(proof.prove(&mut heap, &table, config), expected);
+                proof.undo_all(&mut heap);
+            }
+        }
     }
 
     /// Hypothesis 1

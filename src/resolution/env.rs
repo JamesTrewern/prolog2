@@ -142,6 +142,7 @@ impl<'a> Env<'a> {
         hypothesis: &mut Hypothesis,
         predicate_table: &'a PredicateTable,
         test_clauses: Option<&'a [Clause]>,
+        test_meta_subs: Option<&'a [&'a [usize]]>,
         protect: bool,
     ) {
         self.got_choices = true;
@@ -156,6 +157,7 @@ impl<'a> Env<'a> {
                     hypothesis,
                     predicate_table,
                     test_clauses,
+                    test_meta_subs,
                     arity,
                     protect,
                 ),
@@ -164,6 +166,7 @@ impl<'a> Env<'a> {
                     hypothesis,
                     predicate_table,
                     test_clauses,
+                    test_meta_subs,
                     sym_arr,
                     protect,
                 ),
@@ -201,6 +204,7 @@ impl<'a> Env<'a> {
         hypothesis: &mut Hypothesis,
         predicate_table: &'a PredicateTable,
         test_clauses: Option<&'a [Clause]>,
+        test_meta_subs: Option<&'a [&'a [usize]]>,
         arity: usize,
         protect: bool,
     ) {
@@ -215,7 +219,8 @@ impl<'a> Env<'a> {
         // the ones it needs.
         let mut choices = Choices::with_hypothesis(hypothesis)
             .var_pred(predicate_table.get_variable_clauses(arity))
-            .test(test_clauses);
+            .test(test_clauses)
+            .test_meta_subs(test_meta_subs);
         if !invented {
             choices = choices.body_preds(predicate_table.get_body_clauses(arity));
         }
@@ -236,6 +241,7 @@ impl<'a> Env<'a> {
         hypothesis: &mut Hypothesis,
         predicate_table: &'a PredicateTable,
         test_clauses: Option<&'a [Clause]>,
+        test_meta_subs: Option<&'a [&'a [usize]]>,
         (symbol, arity): (usize, usize),
         protect: bool,
     ) {
@@ -254,7 +260,10 @@ impl<'a> Env<'a> {
                     Choices::with_hypothesis(hypothesis)
                 };
                 self.strategy = Strategy::Clause {
-                    choices: choices.known_pred(clauses).test(test_clauses),
+                    choices: choices
+                        .known_pred(clauses)
+                        .test(test_clauses)
+                        .test_meta_subs(test_meta_subs),
                     new_clause: false,
                     invent_pred: None,
                 };
@@ -272,7 +281,8 @@ impl<'a> Env<'a> {
                 self.strategy = Strategy::Clause {
                     choices: Choices::with_hypothesis(hypothesis)
                         .var_pred(predicate_table.get_variable_clauses(arity))
-                        .test(test_clauses),
+                        .test(test_clauses)
+                        .test_meta_subs(test_meta_subs),
                     new_clause: false,
                     invent_pred: None,
                 };
@@ -626,8 +636,12 @@ impl<'a> Env<'a> {
             return Some(self.commit(heap, substitution, new_goals, debug));
         }
 
-        // Every program clause is spent; the hypothesis is tried last.
+        // Every program clause is spent; then the hypothesis, then the test
+        // `MetaSub`s.
         if let Some(children) = self.try_hypothesis(heap, hypothesis, predicate_table, debug) {
+            return Some(children);
+        }
+        if let Some(children) = self.try_test_meta_subs(heap, hypothesis, predicate_table, debug) {
             return Some(children);
         }
 
@@ -643,15 +657,6 @@ impl<'a> Env<'a> {
     }
 
     /// Try the hypothesis clauses this goal has left.
-    ///
-    /// A hypothesis clause is resolved from its `MetaSub`, not from a built
-    /// clause: the meta clause it instantiates is unified with the goal
-    /// after its meta variables' registers are loaded with the recorded
-    /// bindings, which is the same as unifying the clause those bindings
-    /// stand for.
-    ///
-    /// The template's constraints are not applied and no clause is added:
-    /// both happened when the clause was learned.
     fn try_hypothesis(
         &mut self,
         heap: &mut QueryHeap,
@@ -659,7 +664,7 @@ impl<'a> Env<'a> {
         predicate_table: &'a PredicateTable,
         debug: bool,
     ) -> Option<Vec<Env<'a>>> {
-        'hypothesis: loop {
+        loop {
             let Strategy::Clause { choices, .. } = &mut self.strategy else {
                 unreachable!()
             };
@@ -672,47 +677,93 @@ impl<'a> Env<'a> {
                  it had when the goal gathered its choices.",
                 hypothesis.len()
             );
-
-            let meta_sub = &hypothesis.meta_subs[index];
-            let template = meta_sub.template(predicate_table);
-            let threshold = template
-                .meta_threshold()
-                .expect("a hypothesis clause instantiates a meta clause");
-
             if debug {
                 eprintln!("[CALL|H{index}] {}", hypothesis[index].to_string(heap));
             }
 
-            let mut substitution = Substitution::new(template.max_arg_id);
-            // Copied as recorded: a variable may have been bound since, so
-            // readers of these registers dereference.
-            substitution.arg_regs[threshold..template.max_arg_id].copy_from_slice(&meta_sub.subs);
-
-            let head = template.head();
-            if protect && head_is_invented(heap, hypothesis, &substitution, head) {
-                continue 'hypothesis;
+            let meta_sub = &hypothesis.meta_subs[index];
+            let children =
+                self.try_meta_sub(heap, hypothesis, predicate_table, meta_sub, protect, debug);
+            if children.is_some() {
+                return children;
             }
-
-            let Some(mut substitution) = unify_from(heap, substitution, head, self.goal) else {
-                continue 'hypothesis;
-            };
-
-            if !constraints_hold(heap, hypothesis, &substitution) {
-                continue 'hypothesis;
-            }
-
-            if debug {
-                eprintln!(
-                    "[MATCH|H{index}|{}] {} / {}",
-                    self.depth,
-                    heap.term_string(self.goal),
-                    hypothesis[index].to_string(heap),
-                );
-            }
-
-            let new_goals = build_goals(heap, &mut substitution, template);
-            return Some(self.commit(heap, substitution, new_goals, debug));
         }
+    }
+
+    /// Try the test `MetaSub`s this goal has left.
+    fn try_test_meta_subs(
+        &mut self,
+        heap: &mut QueryHeap,
+        hypothesis: &Hypothesis,
+        predicate_table: &'a PredicateTable,
+        debug: bool,
+    ) -> Option<Vec<Env<'a>>> {
+        loop {
+            let Strategy::Clause { choices, .. } = &mut self.strategy else {
+                unreachable!()
+            };
+            let meta_sub = choices.next_test_meta_sub()?;
+            let children =
+                self.try_meta_sub(heap, hypothesis, predicate_table, meta_sub, false, debug);
+            if children.is_some() {
+                return children;
+            }
+        }
+    }
+
+    /// Resolve the goal against the clause a `MetaSub` stands for.
+    ///
+    /// No clause is built: the meta clause it instantiates is unified with
+    /// the goal after its meta variables' registers are loaded with the
+    /// recorded bindings, which is the same as unifying the clause those
+    /// bindings stand for.
+    ///
+    /// The template's constraints are not applied and no clause is added:
+    /// both happened when the clause was learned. With `protect`, a clause
+    /// headed by an invented predicate is refused.
+    fn try_meta_sub<M: MetaSubTrait + ?Sized>(
+        &mut self,
+        heap: &mut QueryHeap,
+        hypothesis: &Hypothesis,
+        predicate_table: &'a PredicateTable,
+        meta_sub: &M,
+        protect: bool,
+        debug: bool,
+    ) -> Option<Vec<Env<'a>>> {
+        let template = meta_sub.template(predicate_table);
+        let threshold = template
+            .meta_threshold()
+            .expect("a MetaSub instantiates a meta clause");
+
+        let mut substitution = Substitution::new(template.max_arg_id);
+        // Loaded as recorded: a variable may have been bound since, so
+        // readers of these registers dereference.
+        let meta_regs = &mut substitution.arg_regs[threshold..template.max_arg_id];
+        for (reg, sub) in meta_regs.iter_mut().zip(meta_sub.subs()) {
+            *reg = sub;
+        }
+
+        let head = template.head();
+        if protect && head_is_invented(heap, hypothesis, &substitution, head) {
+            return None;
+        }
+
+        let mut substitution = unify_from(heap, substitution, head, self.goal)?;
+        if !constraints_hold(heap, hypothesis, &substitution) {
+            return None;
+        }
+
+        if debug {
+            eprintln!(
+                "[MATCH|META_SUB|{}] {} / {}",
+                self.depth,
+                heap.term_string(self.goal),
+                template.to_string(heap),
+            );
+        }
+
+        let new_goals = build_goals(heap, &mut substitution, template);
+        Some(self.commit(heap, substitution, new_goals, debug))
     }
 
     /// Keep a successful try's bindings and open a child for each new goal.

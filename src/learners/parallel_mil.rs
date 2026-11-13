@@ -89,17 +89,52 @@ impl App {
             }
         }
 
-        // TODO consider more effecient method for adding pdt clauses to program
         self.prog_heap.extend_from_slice(&cells);
-        // Capture before the loop below consumes `pdt.pred_defs`. These are
-        // the constants that mark a body literal as calling an invented
+        // The constants that mark a body literal as calling an invented
         // predicate rather than a background one.
-        let pred_symbols = pdt.pred_symbols().clone();
+        let pred_symbols = pdt.pred_symbols();
+
+        println!(
+            "\n=== Generalisation ===\n{} unique sub hypotheses",
+            hypotheses.len(),
+        );
+
+        // Proved from `MetaSub`s: nothing is built or added to the table.
+        let survivors = specialise(
+            &neg_goals,
+            &hypotheses,
+            &pdt,
+            &self.prog_heap,
+            &self.predicate_table,
+            self.config,
+        );
+        println!(
+            "=== Specialisation ===\n{} of {} hypotheses consistent with all {} negatives",
+            survivors.len(),
+            hypotheses.len(),
+            neg_goals.len(),
+        );
+
+        // The later stages still work on built clauses and look invented
+        // predicates up in the table, so build what the survivors need.
+        let mut needed = vec![false; pdt.len()];
+        let mut defs = SmallVec::new();
+        for &index in &survivors {
+            defs.clear();
+            pdt.dependencies(
+                hypotheses.get(index as usize).iter(),
+                &self.prog_heap,
+                &mut defs,
+            );
+            for &def in &defs {
+                needed[def as usize] = true;
+            }
+        }
 
         // Added as one batch: one insert per clause rescans the whole table.
         // Most definitions have one or two clauses.
-        let mut pred_def_clauses = Vec::with_capacity(pdt.len() * 2);
-        for pred_def in pdt.iter() {
+        let mut pred_def_clauses = Vec::new();
+        for (pred_def, _) in pdt.iter().zip(&needed).filter(|(_, needed)| **needed) {
             for meta_sub in pred_def.iter() {
                 let clause = meta_sub.build_clause(&mut self.prog_heap, &self.predicate_table);
                 let symbol_arity = self.prog_heap.symbol_arity(clause.head());
@@ -110,12 +145,12 @@ impl App {
 
         // A `MetaSub` names its meta clause by arena position, and adding
         // the definitions moves the arena. So note which meta clause each
-        // position the hypotheses use holds now, and find them again after.
+        // position the survivors use holds now, and find them again after.
         // Building the hypotheses first would avoid this, but then their
         // clauses and the batch above are in memory together.
         let mut meta_ids: HashMap<usize, usize> = HashMap::new();
-        for hypothesis in hypotheses.iter() {
-            for meta_sub in hypothesis.iter() {
+        for &index in &survivors {
+            for meta_sub in hypotheses.get(index as usize).iter() {
                 meta_ids.entry(meta_sub.clause_idx()).or_insert_with(|| {
                     let meta_data = meta_sub.template(&self.predicate_table).meta_data;
                     meta_data.expect("a template is a meta clause").id
@@ -132,10 +167,11 @@ impl App {
             .collect();
 
         // Literals are built only here; until now hypotheses were `MetaSub`s.
-        let sub_hypotheses: Vec<Box<[Clause]>> = hypotheses
+        let sub_hypotheses: Vec<Box<[Clause]>> = survivors
             .iter()
-            .map(|meta_subs| {
-                meta_subs
+            .map(|&index| {
+                hypotheses
+                    .get(index as usize)
                     .iter()
                     .map(|meta_sub| {
                         let template = templates[&meta_sub.clause_idx()];
@@ -145,28 +181,6 @@ impl App {
             })
             .collect();
         drop(hypotheses);
-
-        println!(
-            "\n=== Generalisation ===\n{} unique sub hypotheses",
-            sub_hypotheses.len(),
-        );
-
-        // The invented predicates' definitions are in the predicate table
-        // now, which is what lets specialisation (and every later stage)
-        // prove goals on them like any other call.
-        let found = sub_hypotheses.len();
-        let sub_hypotheses = specialise(
-            &neg_goals,
-            sub_hypotheses,
-            &self.prog_heap,
-            &self.predicate_table,
-            self.config,
-        );
-        println!(
-            "=== Specialisation ===\n{} of {found} hypotheses consistent with all {} negatives",
-            sub_hypotheses.len(),
-            neg_goals.len(),
-        );
 
         // Build final top program from surviving hypotheses
         let Some(groups) = least_sub_h(
@@ -541,9 +555,7 @@ fn term_has_var(addr: usize, heap: &QueryHeap) -> bool {
 
 /// Content hash of a sorted, grounded hypothesis; the same for the stored
 /// form and the incoming one.
-fn hypothesis_hash<'a, T: MetaSubTrait + ?Sized + 'a>(
-    clauses: impl Iterator<Item = &'a T>,
-) -> u64 {
+fn hypothesis_hash<'a, T: MetaSubTrait + ?Sized + 'a>(clauses: impl Iterator<Item = &'a T>) -> u64 {
     let mut hasher = DefaultHasher::new();
     for meta_sub in clauses {
         meta_sub.clause_idx().hash(&mut hasher);
@@ -560,9 +572,10 @@ fn hypothesis_hash<'a, T: MetaSubTrait + ?Sized + 'a>(
 /// interned terms by address.
 fn same_hypothesis(stored: MetaSubGroup, new: &[MetaSub]) -> bool {
     stored.len() == new.len()
-        && stored.iter().zip(new).all(|(x, y)| {
-            x.clause_idx() == y.clause_idx && x.subs().eq(y.subs.iter().copied())
-        })
+        && stored
+            .iter()
+            .zip(new)
+            .all(|(x, y)| x.clause_idx() == y.clause_idx && x.subs().eq(y.subs.iter().copied()))
 }
 
 /// Search for hypotheses explaining one positive example, streaming each one
@@ -972,7 +985,10 @@ mod merge_tests {
         assert_eq!(cells[0].0, Con);
 
         assert_eq!(pdt.len(), 1);
-        assert_eq!(pdt.get(0).get(0).subs().nth(0).unwrap(), VarReg::from_addr(0));
+        assert_eq!(
+            pdt.get(0).get(0).subs().nth(0).unwrap(),
+            VarReg::from_addr(0)
+        );
     }
 
     #[test]
@@ -1007,11 +1023,21 @@ mod merge_tests {
         }
 
         // Each message coined its own fresh constant; they must not alias.
-        let (first_const_addr, _) = pdt.get(0).get(0).subs().nth(0).unwrap()
+        let (first_const_addr, _) = pdt
+            .get(0)
+            .get(0)
+            .subs()
+            .nth(0)
+            .unwrap()
             .get_bind()
             .and_then(|b| if let Addr(a) = b { Some((a, ())) } else { None })
             .expect("first pred_def's binding should be a resolved address");
-        let (second_const_addr, _) = pdt.get(1).get(0).subs().nth(0).unwrap()
+        let (second_const_addr, _) = pdt
+            .get(1)
+            .get(0)
+            .subs()
+            .nth(0)
+            .unwrap()
             .get_bind()
             .and_then(|b| if let Addr(a) = b { Some((a, ())) } else { None })
             .expect("second pred_def's binding should be a resolved address");
@@ -1101,7 +1127,10 @@ mod merge_tests {
 
         assert_eq!(cells, vec![(Con, sym_p)]);
         assert_eq!(hypotheses.len(), 2);
-        assert_eq!(hypotheses.get(0).get(0).subs().nth(0).unwrap(), hypotheses.get(1).get(0).subs().nth(0).unwrap());
+        assert_eq!(
+            hypotheses.get(0).get(0).subs().nth(0).unwrap(),
+            hypotheses.get(1).get(0).subs().nth(0).unwrap()
+        );
     }
 
     #[test]
@@ -1161,7 +1190,10 @@ mod merge_tests {
             subs: smallvec![VarReg::from_addr(term)],
         };
 
-        let _ = merge(vec![(smallvec![meta_sub], Vec::new(), parts(heap))], test_prog());
+        let _ = merge(
+            vec![(smallvec![meta_sub], Vec::new(), parts(heap))],
+            test_prog(),
+        );
     }
 
     #[test]
@@ -1176,6 +1208,9 @@ mod merge_tests {
             subs: smallvec![VarReg::from_var(stray_var)],
         };
 
-        let _ = merge(vec![(smallvec![meta_sub], Vec::new(), parts(heap))], test_prog());
+        let _ = merge(
+            vec![(smallvec![meta_sub], Vec::new(), parts(heap))],
+            test_prog(),
+        );
     }
 }
