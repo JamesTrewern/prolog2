@@ -7,8 +7,8 @@
 //! them: merging the predicate definitions they invent, then choosing
 //! covering groups that stay consistent together.
 
+mod coverage;
 mod parallel_mil;
 mod predicate_unification;
-mod specialise;
 mod sub_h_unification;
 mod utils;

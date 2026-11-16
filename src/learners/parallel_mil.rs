@@ -27,7 +27,7 @@ use crate::{
 };
 
 use super::{
-    specialise::specialise,
+    coverage::build_profiles,
     sub_h_unification::{least_sub_h, SearchCtx},
     utils::{compile_examples, reduce as reduce_hypothesis},
 };
@@ -90,36 +90,28 @@ impl App {
             hypotheses.len(),
         );
 
-        // Filter any hypotheses which entail a negative
-        let survivors = specialise(
-            &neg_goals,
-            &hypotheses,
-            &pdt,
+        let ctx = SearchCtx::new(
             &self.prog_heap,
             &self.predicate_table,
+            &hypotheses,
+            &pdt,
             self.config,
+            parallel,
         );
+
+        // What each hypothesis proves, keeping those within the negative
+        // noise threshold.
+        let h_profiles = build_profiles(&pos_goals, &neg_goals, ctx);
         println!(
-            "=== Specialisation ===\n{} of {} hypotheses consistent with all {} negatives",
-            survivors.len(),
+            "=== Specialisation ===\n{} of {} hypotheses entail at most {} of the {} negatives",
+            h_profiles.len(),
             hypotheses.len(),
+            parallel.neg_noise,
             neg_goals.len(),
         );
 
         // Attempt to find small sets of sub hypotheses entailing all positives
-        let Some(groups) = least_sub_h(
-            &pos_goals,
-            &neg_goals,
-            survivors,
-            SearchCtx::new(
-                &self.prog_heap,
-                &self.predicate_table,
-                &hypotheses,
-                &pdt,
-                self.config,
-                parallel,
-            ),
-        ) else {
+        let Some(groups) = least_sub_h(&pos_goals, &neg_goals, h_profiles, ctx) else {
             println!("No Valid Hypothesis Found");
             return None;
         };
@@ -891,12 +883,12 @@ mod merge_tests {
         };
         let pred_def = PredDef::new(smallvec![meta_sub]);
 
-        let (cells, hypotheses, pdt) = merge(
+        // The hypothesis is left empty: only the definition is under test.
+        let (cells, _, pdt) = merge(
             vec![(SmallVec::new(), vec![pred_def], parts(heap))],
             test_prog(),
         );
 
-        assert_eq!(hypotheses.len(), 0);
         // The only cell is the constant coined for the predicate.
         assert_eq!(cells.len(), 1);
         assert_eq!(cells[0].0, Con);
@@ -927,9 +919,8 @@ mod merge_tests {
             (SmallVec::new(), vec![pred_def], parts(heap))
         };
 
-        let (cells, hypotheses, pdt) = merge(vec![make_message(0), make_message(1)], test_prog());
+        let (cells, _, pdt) = merge(vec![make_message(0), make_message(1)], test_prog());
 
-        assert_eq!(hypotheses.len(), 0);
         assert_eq!(
             pdt.len(),
             2,
