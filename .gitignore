@@ -7,3 +7,4 @@ flamegraph*.svg
 perf*.data
 perf*.data.old
 docs/learning-engine-notes.md
+noise_report_*.md

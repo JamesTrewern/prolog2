@@ -203,8 +203,12 @@ pub struct ParallelConfig {
     /// Defaults to [`DEFAULT_FINAL_H_COUNT`].
     #[serde(default = "default_final_h_count")]
     pub final_h_count: usize,
-    /// How many negative examples a sub hypothesis, or a combination of
-    /// them, may entail and still be kept. Defaults to 0.
+    /// How many negative examples a sub hypothesis may entail and still be
+    /// considered. Defaults to 0.
+    ///
+    /// A positive that no sub hypothesis within this entails, though some
+    /// sub hypothesis over it does, ends the run with a report on what
+    /// entailing it would take.
     #[serde(default)]
     pub neg_noise: usize,
 }

@@ -8,6 +8,7 @@
 //! covering groups that stay consistent together.
 
 mod coverage;
+mod noise_report;
 mod parallel_mil;
 mod predicate_unification;
 mod sub_h_unification;

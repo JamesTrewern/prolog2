@@ -599,6 +599,11 @@ impl PredDefTable {
         self.pred_defs.iter()
     }
 
+    /// Whether `symbol` was coined to name a predicate defined here.
+    pub(super) fn defines(&self, symbol: usize) -> bool {
+        self.symbol_defs.contains_key(&symbol)
+    }
+
     /// Append to `defs` the index of every definition `meta_subs` call,
     /// directly or through another definition; each once. `heap` holds the
     /// terms the substitutions address.

@@ -6,6 +6,8 @@
 //! its coverage of both example sets is recorded in an [`HProfile`], and it
 //! is kept while it entails no more negatives than
 //! [`ParallelConfig::neg_noise`](crate::ParallelConfig::neg_noise) allows.
+//! [`profile_rest`] profiles the ones that were not kept, for the
+//! [noise report](super::noise_report).
 
 use std::{
     io::{self, Write},
@@ -20,7 +22,7 @@ use crate::{heap::QueryHeap, program::MetaSubTrait, resolution::Proof, Config};
 
 /// A bit per example, set when it is proved. Bits past the number of
 /// examples are set from the start, so full coverage is all ones.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) struct Coverage(pub u128);
 
 impl Deref for Coverage {
@@ -73,6 +75,11 @@ impl Coverage {
     pub(super) fn _none(&self) -> bool {
         self.0 == 0
     }
+
+    /// The examples covered, of the first `len`.
+    pub(super) fn indices(&self, len: usize) -> Vec<usize> {
+        (0..len).filter(|&i| self.get(i)).collect()
+    }
 }
 
 /// One sub hypothesis and what it proves.
@@ -89,26 +96,30 @@ pub(super) struct HProfile {
     pub(super) n_literals: u32,
     /// The positives it proves.
     pub(super) coverage: Coverage,
-    /// The negatives it proves. Only tests read it so far: choosing the
-    /// final program does not yet weigh negatives.
-    #[allow(dead_code)]
+    /// The negatives it proves.
     pub(super) neg_coverage: Coverage,
 }
 
 impl HProfile {
-    /// Profile sub hypothesis `h`, or `None` if it proves more negatives
-    /// than [`ParallelConfig::neg_noise`](crate::ParallelConfig::neg_noise).
+    /// Profile sub hypothesis `h`, or `None` if it proves more than
+    /// `at_most_neg` negatives.
     ///
     /// The examples are proved one after another, from the hypothesis's
     /// `MetaSub`s and those of the definitions it depends on.
-    fn new(h: u32, pos_goals: &[usize], neg_goals: &[usize], ctx: SearchCtx) -> Option<Self> {
+    fn new(
+        h: u32,
+        pos_goals: &[usize],
+        neg_goals: &[usize],
+        ctx: SearchCtx,
+        at_most_neg: usize,
+    ) -> Option<Self> {
         let meta_subs = ctx
             .pdt
             .test_meta_subs(ctx.hypotheses.get(h as usize), ctx.heap);
 
         // Negatives first: a hypothesis over the threshold is dropped
         // without its positives being tried.
-        let neg_coverage = proved(neg_goals, &meta_subs, ctx, ctx.parallel.neg_noise)?;
+        let neg_coverage = proved(neg_goals, &meta_subs, ctx, at_most_neg)?;
         let coverage = proved(pos_goals, &meta_subs, ctx, usize::MAX)?;
 
         let n_literals: usize = meta_subs
@@ -210,17 +221,51 @@ pub(super) fn build_profiles(
     ctx: SearchCtx,
 ) -> Vec<HProfile> {
     let total = u32::try_from(ctx.hypotheses.len()).expect("more than u32::MAX hypotheses");
+    let at_most_neg = ctx.parallel.neg_noise;
+    profile_each(
+        (0..total).into_par_iter(),
+        pos_goals,
+        neg_goals,
+        ctx,
+        at_most_neg,
+    )
+}
+
+/// Profile the sub hypotheses [`build_profiles`] did not keep, however many
+/// negatives they prove. `kept` is its result, still in hypothesis order.
+pub(super) fn profile_rest(
+    kept: &[HProfile],
+    pos_goals: &[usize],
+    neg_goals: &[usize],
+    ctx: SearchCtx,
+) -> Vec<HProfile> {
+    let mut kept = kept.iter().map(|h_profile| h_profile.h).peekable();
+    let rest: Vec<u32> = (0..ctx.hypotheses.len() as u32)
+        .filter(|h| kept.next_if_eq(h).is_none())
+        .collect();
+    profile_each(rest.into_par_iter(), pos_goals, neg_goals, ctx, usize::MAX)
+}
+
+/// The profiles of `hypotheses`, in order, less those proving more than
+/// `at_most_neg` negatives.
+fn profile_each(
+    hypotheses: impl IndexedParallelIterator<Item = u32>,
+    pos_goals: &[usize],
+    neg_goals: &[usize],
+    ctx: SearchCtx,
+    at_most_neg: usize,
+) -> Vec<HProfile> {
+    let total = hypotheses.len();
     let profiled = AtomicUsize::new(0);
 
-    let h_profiles = (0..total)
-        .into_par_iter()
+    let h_profiles = hypotheses
         .filter_map(|h| {
-            let h_profile = HProfile::new(h, pos_goals, neg_goals, ctx);
+            let h_profile = HProfile::new(h, pos_goals, neg_goals, ctx, at_most_neg);
 
             // Throttled: one line per candidate would spend longer painting
             // the terminal than proving the examples.
             let done = profiled.fetch_add(1, Ordering::Relaxed) + 1;
-            if done % 256 == 0 || done == total as usize {
+            if done % 256 == 0 || done == total {
                 eprint!("\rCoverage: {done}/{total} hypotheses profiled  ");
                 let _ = io::stderr().flush();
             }
@@ -284,11 +329,11 @@ pub(super) mod fixture {
         }
     }
 
-    /// A program with the facts `bad(c)` and `good(d)` and the meta rule
-    /// `P(X):-Q(X)`, plus sub hypotheses of one clause each.
+    /// A program of background facts and the meta rule `P(X):-Q(X)`, plus
+    /// sub hypotheses of its instances.
     pub(in crate::learners) struct Fixture {
         pub(in crate::learners) prog_heap: ProgramHeap,
-        predicate_table: PredicateTable,
+        pub(in crate::learners) predicate_table: PredicateTable,
         pub(in crate::learners) hypotheses: PackedMetaSubs,
         pub(in crate::learners) pdt: PredDefTable,
         pub(in crate::learners) neg_goals: Vec<usize>,
@@ -297,9 +342,20 @@ pub(super) mod fixture {
     /// Sub hypothesis `i` is the clause `head(X):-body(X)` for
     /// `clauses[i] = (head, body)`.
     pub(in crate::learners) fn fixture(clauses: &[(&str, &str)], negatives: &[&str]) -> Fixture {
+        let hypotheses: Vec<Vec<(&str, &str)>> = clauses.iter().map(|&c| vec![c]).collect();
+        fixture_with_facts(&["bad(c).", "good(d)."], &hypotheses, negatives)
+    }
+
+    /// As [`fixture`], over the background `facts` given, and with any
+    /// number of clauses to a sub hypothesis.
+    pub(in crate::learners) fn fixture_with_facts(
+        facts: &[&str],
+        clauses: &[Vec<(&str, &str)>],
+        negatives: &[&str],
+    ) -> Fixture {
         let mut prog_heap = ProgramHeap::new();
         let mut predicate_table = PredicateTable::new();
-        for src in ["P(X):-Q(X),{P,Q}.", "bad(c).", "good(d)."] {
+        for src in ["P(X):-Q(X),{P,Q}."].iter().chain(facts) {
             let clause = _build_clause(&mut prog_heap, src);
             let symbol_arity = prog_heap.symbol_arity(clause.head());
             predicate_table
@@ -310,16 +366,21 @@ pub(super) mod fixture {
         let clause_idx = predicate_table.index_of(&rule[0]).unwrap();
 
         let mut hypotheses = PackedMetaSubs::default();
-        for (head, body) in clauses {
-            let subs = [head, body].map(|name| {
-                let symbol = prog_heap.symbols().set_const(*name);
-                VarReg::from_addr(prog_heap.heap_push((Con, symbol)))
-            });
-            let meta_sub = MetaSub {
-                clause_idx,
-                subs: subs.into_iter().collect(),
-            };
-            hypotheses.push([&meta_sub]);
+        for hypothesis in clauses {
+            let meta_subs: Vec<MetaSub> = hypothesis
+                .iter()
+                .map(|(head, body)| {
+                    let subs = [head, body].map(|name| {
+                        let symbol = prog_heap.symbols().set_const(*name);
+                        VarReg::from_addr(prog_heap.heap_push((Con, symbol)))
+                    });
+                    MetaSub {
+                        clause_idx,
+                        subs: subs.into_iter().collect(),
+                    }
+                })
+                .collect();
+            hypotheses.push(&meta_subs);
         }
 
         let negatives: Vec<String> = negatives.iter().map(|goal| goal.to_string()).collect();
