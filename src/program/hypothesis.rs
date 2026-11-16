@@ -158,11 +158,10 @@ static EMPTY: Hypothesis = Hypothesis {
 ///   ground and so still needs its constraints and invented predicates.
 /// * `&[&[usize]]` -- ground clauses as packed `MetaSub`s
 ///   (`[clause_idx, subs...]`); read only.
-/// * `&[Clause]` -- ground clauses already built; read only.
 ///
-/// A clause is resolved through its *template*: the meta clause it
-/// instantiates, with the meta variables' registers loaded from its
-/// substitutions, or the clause itself when it is held built.
+/// Every form holds its clauses as `MetaSub`s. A clause is resolved
+/// through its *template*: the meta clause it instantiates, with the meta
+/// variables' registers loaded from its substitutions.
 pub(crate) trait HypothesisTrait {
     /// Whether a proof over this may add clauses to it. The methods below
     /// the line are only called when it may.
@@ -170,12 +169,12 @@ pub(crate) trait HypothesisTrait {
 
     fn len(&self) -> usize;
 
-    /// The clause that clause `index` is resolved through. A `MetaSub`'s
-    /// index must be good for `predicate_table`.
+    /// The meta clause that clause `index` instantiates. Its index must be
+    /// good for `predicate_table`.
     fn template<'t>(&'t self, index: usize, predicate_table: &'t PredicateTable) -> &'t Clause;
 
     /// Load clause `index`'s substitutions into `meta_regs`, the registers
-    /// of its template's meta variables. Only called for a meta template.
+    /// of its template's meta variables.
     fn load_subs(&self, index: usize, meta_regs: &mut [VarReg]);
 
     fn constraints(&self) -> &[Constraints] {
@@ -191,9 +190,9 @@ pub(crate) trait HypothesisTrait {
         &EMPTY
     }
 
-    /// Each clause as text. A clause held as a `MetaSub` is built onto
-    /// `heap` to be printed, and the heap is then put back as it was; for
-    /// reporting and debug output.
+    /// Each clause as text. A clause is built onto `heap` to be printed,
+    /// and the heap is then put back as it was; for reporting and debug
+    /// output.
     fn clause_strings(
         &self,
         heap: &mut impl Heap,
@@ -203,9 +202,9 @@ pub(crate) trait HypothesisTrait {
         let strings = (0..self.len())
             .map(|index| {
                 let template = self.template(index, predicate_table);
-                let Some(threshold) = template.meta_threshold() else {
-                    return template.to_string(heap);
-                };
+                let threshold = template
+                    .meta_threshold()
+                    .expect("a hypothesis clause instantiates a meta clause");
                 let mut substitution = Substitution::new(template.max_arg_id);
                 let meta_regs = &mut substitution.arg_regs[threshold..template.max_arg_id];
                 self.load_subs(index, meta_regs);
@@ -342,18 +341,6 @@ impl HypothesisTrait for &[&[usize]] {
             *reg = VarReg(sub);
         }
     }
-}
-
-impl HypothesisTrait for &[Clause] {
-    fn len(&self) -> usize {
-        <[_]>::len(self)
-    }
-
-    fn template<'t>(&'t self, index: usize, _: &'t PredicateTable) -> &'t Clause {
-        &self[index]
-    }
-
-    fn load_subs(&self, _: usize, _: &mut [VarReg]) {}
 }
 
 #[cfg(test)]

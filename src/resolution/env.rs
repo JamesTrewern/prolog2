@@ -615,8 +615,8 @@ impl<'a> Env<'a> {
 
     /// Try the hypothesis clauses this goal has left.
     ///
-    /// A clause is resolved through its template -- for a `MetaSub`, the
-    /// meta clause it instantiates, unified with the goal after its meta
+    /// A clause is resolved through its template -- the meta clause it
+    /// instantiates, unified with the goal after its meta
     /// variables' registers are loaded with the recorded bindings, which is
     /// the same as unifying the clause those bindings stand for.
     ///
@@ -649,12 +649,13 @@ impl<'a> Env<'a> {
             }
 
             let mut substitution = Substitution::new(template.max_arg_id);
-            if let Some(threshold) = template.meta_threshold() {
-                // Loaded as recorded: a variable may have been bound since,
-                // so readers of these registers dereference.
-                let meta_regs = &mut substitution.arg_regs[threshold..template.max_arg_id];
-                hypothesis.load_subs(index, meta_regs);
-            }
+            let threshold = template
+                .meta_threshold()
+                .expect("a hypothesis clause instantiates a meta clause");
+            // Loaded as recorded: a variable may have been bound since, so
+            // readers of these registers dereference.
+            let meta_regs = &mut substitution.arg_regs[threshold..template.max_arg_id];
+            hypothesis.load_subs(index, meta_regs);
 
             let head = template.head();
             if protect && head_is_invented(heap, hypothesis, &substitution, head) {

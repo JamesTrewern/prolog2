@@ -1,13 +1,12 @@
 use std::{
-    collections::{HashMap, HashSet},
     io::{self, Write},
-    ops::{Deref, DerefMut, Index},
+    ops::{Deref, DerefMut},
 };
 
 use crate::{
-    heap::{Cell, Heap, ProgramHeap, QueryHeap, Tag::Con},
+    heap::{ProgramHeap, QueryHeap},
     parser::{build_clause, tokenise, TokenStream},
-    program::{Clause, PredicateTable},
+    program::PredicateTable,
     resolution::Proof,
     Config,
 };
@@ -110,18 +109,18 @@ pub(super) fn compile_examples(examples: &[String], heap: &mut ProgramHeap) -> V
         })
         .collect()
 }
-/// Count how many positive examples a set of clauses can prove.
+/// Count how many positive examples a set of ground clauses, as packed
+/// `MetaSub`s, can prove.
 pub(super) fn count_coverage(
     pos_goals: &[usize],
-    clauses: &[Clause],
+    meta_subs: &[&[usize]],
     heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     max_depth: usize,
 ) -> (Coverage, usize) {
-    // Learning is off on the proofs below, not here. `protect_h_preds` is
-    // false because these clauses are already ground -- their invented
-    // predicates were given constants before they got here, so there is
-    // nothing left to protect.
+    // `protect_h_preds` is false because these clauses are ground -- their
+    // invented predicates were given constants before they got here, so
+    // there is nothing left to protect.
     let config = Config {
         max_depth,
         debug: false,
@@ -133,7 +132,7 @@ pub(super) fn count_coverage(
 
     for (i, &goal) in pos_goals.iter().enumerate() {
         let mut query_heap = QueryHeap::new(heap, None);
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], clauses);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], meta_subs);
         if proof.prove(&mut query_heap, predicate_table, config) {
             coverage.set(i);
         }
@@ -142,146 +141,17 @@ pub(super) fn count_coverage(
     (coverage, count)
 }
 
-/// Combine a group's sub hypotheses into one clause list, dropping clauses
-/// that appear in more than one of them.
-pub(super) fn union_sub_hypotheses(
-    sub_hypotheses: Vec<Vec<Clause>>,
-    heap: &impl Heap,
-) -> Vec<Clause> {
-    let mut top_program = Vec::new();
-    let mut seen = HashSet::new();
-    for hypothesis in sub_hypotheses {
-        for clause in hypothesis {
-            let key = clause.to_string(heap);
-            if seen.insert(key) {
-                top_program.push(clause);
-            }
-        }
-    }
-    top_program
-}
-
-/// The `(symbol, arity)` of a body literal naming an invented predicate, or
-/// `None` when it names a background one.
-///
-/// Membership of `pred_symbols` is the test. The previous one -- symbol id
-/// greater than that of `pred_0` -- assumed every background predicate was
-/// interned before the first invented one. Anything that interned `pred_0`
-/// earlier in the same program pushed the background predicates above the
-/// threshold and swept the whole fact base into the output.
-fn invented_body_pred<H>(
-    heap: &H,
-    literal: usize,
-    pred_symbols: &HashSet<usize>,
-) -> Option<(usize, usize)>
-where
-    H: Index<usize, Output = Cell> + ?Sized,
-{
-    // Only a constant can name a predicate here; an `Arg` or `Ref` cell's
-    // value is an argument id or variable id, which would collide with
-    // symbol ids by coincidence.
-    let (Con, symbol) = heap[literal + 1] else {
-        return None;
-    };
-    if !pred_symbols.contains(&symbol) {
-        return None;
-    }
-    // The `Comp` cell counts the functor as well as the arguments.
-    Some((symbol, heap[literal].1 - 1))
-}
-
-pub(super) fn collect_used_pred(
-    hypothesis: &mut Vec<Clause>,
-    heap: &impl Heap,
-    predicate_table: &PredicateTable,
-    pred_symbols: &HashSet<usize>,
-) {
-    let mut pred_set = HashMap::new();
-    loop {
-        let start_len = pred_set.len();
-        for clause in hypothesis.iter() {
-            for literal in clause.body() {
-                if let Some((symbol, arity)) = invented_body_pred(heap, *literal, pred_symbols) {
-                    pred_set.insert(symbol, (arity, false));
-                }
-            }
-        }
-        if start_len == pred_set.len() {
-            break;
-        }
-        for (symbol, (arity, collected)) in pred_set.iter_mut() {
-            if !*collected {
-                let clauses = predicate_table
-                    .get_predicate_clauses((*symbol, *arity))
-                    .expect("an invented predicate in a body literal has a definition");
-                hypothesis.extend_from_slice(clauses);
-                *collected = true
-            }
-        }
-    }
-}
-
-/// How much program a hypothesis drags in through the invented predicates its
-/// bodies call: `(clauses, body literals)`.
-///
-/// Both counts come from one walk of the transitive closure, because they
-/// describe the same clause set and computing them separately would mean
-/// chasing the same `pred_symbols` edges twice. Neither count includes `h`'s
-/// own clauses -- the caller adds those, since it already has them.
-///
-/// Returning the literal count as well as the clause count is what lets
-/// [`HProfile`](super::sub_h_unification) rank two equally-sized candidates by
-/// how much work proving them costs; see
-/// [`Config::sort_by_literals`](crate::Config::sort_by_literals).
-pub(super) fn count_pred_clauses_and_literals(
-    h: &[Clause],
-    heap: &ProgramHeap,
-    predicate_table: &PredicateTable,
-    pred_symbols: &HashSet<usize>,
-) -> (usize, usize) {
-    let mut clauses_count = 0;
-    let mut literals_count = 0;
-    let mut pred_set = HashSet::new();
-    let mut pred_list = Vec::new();
-    for clause in h.iter() {
-        for literal in clause.body() {
-            if let Some(symbol_arity) = invented_body_pred(heap, *literal, pred_symbols) {
-                if pred_set.insert(symbol_arity) {
-                    pred_list.push(symbol_arity);
-                }
-            }
-        }
-    }
-    while let Some(symbol_arity) = pred_list.pop() {
-        let clauses = predicate_table
-            .get_predicate_clauses(symbol_arity)
-            .expect("an invented predicate in a body literal has a definition");
-        clauses_count += clauses.len();
-        for clause in clauses.iter() {
-            literals_count += clause.body().len();
-            for literal in clause.body() {
-                if let Some(symbol_arity) = invented_body_pred(heap, *literal, pred_symbols) {
-                    if pred_set.insert(symbol_arity) {
-                        pred_list.push(symbol_arity);
-                    }
-                }
-            }
-        }
-    }
-    (clauses_count, literals_count)
-}
-
 /// Plotkin's program reduction (Algorithm 3).
 /// Sequentially tries removing each clause; if all positives are still provable
 /// without it, the clause is redundant and permanently removed.
-pub(super) fn reduce(
+pub(super) fn reduce<'m>(
     pos_goals: &[usize],
-    mut hypothesis: Vec<Clause>,
+    mut hypothesis: Vec<&'m [usize]>,
     heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     config: Config,
     verbose: bool,
-) -> Vec<Clause> {
+) -> Vec<&'m [usize]> {
     // Learning is off on the proofs below, not here.
     let config = Config {
         debug: false,

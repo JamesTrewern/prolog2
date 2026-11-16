@@ -1,18 +1,18 @@
-use std::collections::HashSet;
-
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use super::{specialise::clauses_entail_negative, utils::count_coverage};
+use super::{
+    predicate_unification::PredDefTable, specialise::entails_negative, utils::count_coverage,
+};
 use crate::{
     heap::{Heap, ProgramHeap, QueryHeap},
-    learners::utils::{count_pred_clauses_and_literals, Coverage},
-    program::{Clause, PredicateTable},
+    learners::utils::Coverage,
+    program::{MetaSubTrait, PackedMetaSubs, PredicateTable},
     Config, ParallelConfig,
 };
 
 /// The read-only program context every stage of the group search needs.
 ///
-/// These four travel together through [`least_sub_h`],
+/// These travel together through [`least_sub_h`],
 /// [`find_coverage_groups`], [`group_entails_negative`] and
 /// [`HProfile::new`], so they are passed as one value rather than re-listed
 /// at each hop. `Copy`, so handing it on costs nothing.
@@ -20,6 +20,10 @@ use crate::{
 pub(super) struct SearchCtx<'a> {
     pub(super) heap: &'a ProgramHeap,
     pub(super) predicate_table: &'a PredicateTable,
+    /// The sub hypotheses, which the search names by index.
+    pub(super) hypotheses: &'a PackedMetaSubs,
+    /// The definitions of the predicates they invent.
+    pub(super) pdt: &'a PredDefTable,
     pub(super) config: Config,
     pub(super) parallel: ParallelConfig,
 }
@@ -28,26 +32,28 @@ impl<'a> SearchCtx<'a> {
     pub(super) fn new(
         heap: &'a ProgramHeap,
         predicate_table: &'a PredicateTable,
+        hypotheses: &'a PackedMetaSubs,
+        pdt: &'a PredDefTable,
         config: Config,
         parallel: ParallelConfig,
     ) -> Self {
         Self {
             heap,
             predicate_table,
+            hypotheses,
+            pdt,
             config,
             parallel,
         }
     }
 }
 
-/// One candidate program, held as the sub hypotheses it was assembled from
-/// rather than as a flat clause list.
+/// One candidate program, as the indices of the sub hypotheses it was
+/// assembled from.
 ///
-/// Left unflattened so the caller can run
-/// [`union_sub_hypotheses`](super::utils::union_sub_hypotheses) over it:
-/// two sub hypotheses in a group routinely share clauses, and concatenating
-/// them would repeat those.
-pub(super) type SubHGroup = Vec<Vec<Clause>>;
+/// Left unflattened so the caller can take their union: two sub hypotheses
+/// in a group routinely share clauses and definitions.
+pub(super) type SubHGroup = Vec<u32>;
 
 /// Given a set of sub hypotheses build
 /// a hypothesis covering all positives
@@ -56,14 +62,13 @@ pub(super) type SubHGroup = Vec<Vec<Clause>>;
 pub(super) fn least_sub_h(
     pos_goals: &[usize],
     neg_goals: &[usize],
-    hypotheses: Vec<Box<[Clause]>>,
+    hypotheses: Vec<u32>,
     ctx: SearchCtx,
-    pred_symbols: &HashSet<usize>,
 ) -> Option<Vec<SubHGroup>> {
     // Count coverage
     let mut h_profiles: Vec<HProfile> = hypotheses
         .into_par_iter()
-        .map(|h| HProfile::new(h, pos_goals, ctx, pred_symbols))
+        .map(|h| HProfile::new(h, pos_goals, ctx))
         .collect();
 
     //Ensure all positives covered by at least 1 hypothesis
@@ -102,14 +107,14 @@ pub(super) fn least_sub_h(
         // and the caller wants the same number of programs either way.
         h_profiles
             .into_iter()
-            .filter(|profile| profile.n_covered == pos_goals.len())
+            .filter(|profile| profile.n_covered as usize == pos_goals.len())
             .take(ctx.parallel.final_h_count)
-            .map(|profile| vec![profile.h.to_vec()])
+            .map(|profile| vec![profile.h])
             .collect()
     } else {
         find_coverage_groups(&h_profiles, max_k, pos_goals.len(), neg_goals, ctx)
             .into_iter()
-            .map(|indexes| indexes.iter().map(|i| h_profiles[*i].h.to_vec()).collect())
+            .map(|indexes| indexes.iter().map(|i| h_profiles[*i].h).collect())
             .collect()
     };
 
@@ -288,11 +293,11 @@ fn group_entails_negative(
     neg_goals: &[usize],
     ctx: SearchCtx,
 ) -> bool {
-    let combined: Vec<Clause> = group
+    let hypotheses = group
         .iter()
-        .flat_map(|&i| h_profiles[i].h.iter().cloned())
-        .collect();
-    clauses_entail_negative(
+        .map(|&i| ctx.hypotheses.get(h_profiles[i].h as usize));
+    let combined = ctx.pdt.union_meta_subs(hypotheses, ctx.heap);
+    entails_negative(
         neg_goals,
         &combined,
         ctx.heap,
@@ -311,7 +316,7 @@ fn find_next_choice(
     for i in start..h_profiles.len() {
         // Profiles are sorted by descending coverage, so once one is too
         // small every later one is too.
-        if h_profiles[i].n_covered < min_covered {
+        if (h_profiles[i].n_covered as usize) < min_covered {
             break;
         }
         if h_profiles[i].coverage.difference(&prefix_coverage) < min_covered {
@@ -322,40 +327,40 @@ fn find_next_choice(
     None
 }
 
+/// `u32` counts keep this to 32 bytes; there is one per sub hypothesis.
 struct HProfile {
-    h: Box<[Clause]>,
-    coverage: Coverage,
-    n_covered: usize,
+    /// Index of the sub hypothesis in [`SearchCtx::hypotheses`].
+    h: u32,
+    n_covered: u32,
     /// Clauses in `h` plus those of every invented predicate it calls.
-    n_clauses: usize,
+    n_clauses: u32,
     /// Body literals across that same clause set.
-    n_literals: usize,
+    n_literals: u32,
+    coverage: Coverage,
 }
 
 impl HProfile {
-    fn new(
-        h: Box<[Clause]>,
-        pos_goals: &[usize],
-        ctx: SearchCtx,
-        pred_symbols: &HashSet<usize>,
-    ) -> Self {
+    fn new(h: u32, pos_goals: &[usize], ctx: SearchCtx) -> Self {
+        let meta_subs = ctx
+            .pdt
+            .test_meta_subs(ctx.hypotheses.get(h as usize), ctx.heap);
         let (coverage, n_covered) = count_coverage(
             pos_goals,
-            &h,
+            &meta_subs,
             ctx.heap,
             ctx.predicate_table,
             ctx.config.max_depth,
         );
-        let (pred_clauses, pred_literals) =
-            count_pred_clauses_and_literals(&h, ctx.heap, ctx.predicate_table, pred_symbols);
-        let n_clauses = pred_clauses + h.len();
-        let n_literals = pred_literals + h.iter().map(|clause| clause.body().len()).sum::<usize>();
+        let n_literals: usize = meta_subs
+            .iter()
+            .map(|meta_sub| meta_sub.template(ctx.predicate_table).body().len())
+            .sum();
         Self {
             h,
             coverage,
-            n_covered,
-            n_clauses,
-            n_literals,
+            n_covered: n_covered as u32,
+            n_clauses: meta_subs.len() as u32,
+            n_literals: n_literals as u32,
         }
     }
 
@@ -373,9 +378,13 @@ impl HProfile {
     /// `n_clauses`, which counts invented predicates' clauses too.
     fn sort_key(&self, n_pos_examples: usize, by_literals: bool) -> (usize, usize, usize) {
         (
-            n_pos_examples - self.n_covered,
-            self.n_clauses,
-            if by_literals { self.n_literals } else { 0 },
+            n_pos_examples - self.n_covered as usize,
+            self.n_clauses as usize,
+            if by_literals {
+                self.n_literals as usize
+            } else {
+                0
+            },
         )
     }
 }
@@ -383,17 +392,19 @@ impl HProfile {
 #[cfg(test)]
 mod coverage_group_tests {
     use super::{find_coverage_groups, HProfile, SearchCtx};
-    use crate::heap::ProgramHeap;
     use crate::{
-        learners::utils::{compile_examples, Coverage},
+        heap::{Heap, ProgramHeap, Tag::Con, VarReg},
+        learners::{
+            predicate_unification::PredDefTable,
+            utils::{compile_examples, Coverage},
+        },
         parser::_build_clause,
-        program::{Clause, PredicateTable},
+        program::{MetaSub, PackedMetaSubs, PredicateTable},
         Config, ParallelConfig,
     };
 
-    /// `max_clause` is left at the default: the proofs these tests drive are
-    /// built with `Proof::without_learning`, so the hypothesis size limit
-    /// never comes into it.
+    /// `max_clause` is left at the default: the proofs these tests drive do
+    /// not learn, so the hypothesis size limit never comes into it.
     fn config() -> Config {
         Config {
             max_depth: 10,
@@ -407,84 +418,128 @@ mod coverage_group_tests {
     /// which combinations get built, not about where the search stops.
     const MANY_GROUPS: usize = 100;
 
-    /// A [`SearchCtx`] over `prog_heap` returning at most `final_h_count`
-    /// groups.
-    fn ctx<'a>(
-        prog_heap: &'a ProgramHeap,
-        predicate_table: &'a PredicateTable,
-        final_h_count: usize,
-    ) -> SearchCtx<'a> {
-        SearchCtx::new(
-            prog_heap,
-            predicate_table,
-            config(),
-            ParallelConfig {
-                final_h_count,
-                ..ParallelConfig::default()
-            },
-        )
+    /// A program with the facts `bad(c)` and `good(d)` and the meta rule
+    /// `P(X):-Q(X)`, plus sub hypotheses of one clause each.
+    struct Fixture {
+        prog_heap: ProgramHeap,
+        predicate_table: PredicateTable,
+        hypotheses: PackedMetaSubs,
+        pdt: PredDefTable,
+        neg_goals: Vec<usize>,
     }
 
-    /// A profile with hand-set coverage.
+    /// Sub hypothesis `i` is the clause `head(X):-body(X)` for
+    /// `clauses[i] = (head, body)`.
+    fn fixture(clauses: &[(&str, &str)], negatives: &[&str]) -> Fixture {
+        let mut prog_heap = ProgramHeap::new();
+        let mut predicate_table = PredicateTable::new();
+        for src in ["P(X):-Q(X),{P,Q}.", "bad(c).", "good(d)."] {
+            let clause = _build_clause(&mut prog_heap, src);
+            let symbol_arity = prog_heap.symbol_arity(clause.head());
+            predicate_table
+                .add_clause_to_predicate(clause, symbol_arity)
+                .unwrap();
+        }
+        let rule = predicate_table.get_variable_clauses(1).unwrap();
+        let clause_idx = predicate_table.index_of(&rule[0]).unwrap();
+
+        let mut hypotheses = PackedMetaSubs::default();
+        for (head, body) in clauses {
+            let subs = [head, body].map(|name| {
+                let symbol = prog_heap.symbols().set_const(*name);
+                VarReg::from_addr(prog_heap.heap_push((Con, symbol)))
+            });
+            let meta_sub = MetaSub {
+                clause_idx,
+                subs: subs.into_iter().collect(),
+            };
+            hypotheses.push([&meta_sub]);
+        }
+
+        let negatives: Vec<String> = negatives.iter().map(|goal| goal.to_string()).collect();
+        let neg_goals = compile_examples(&negatives, &mut prog_heap);
+        Fixture {
+            prog_heap,
+            predicate_table,
+            hypotheses,
+            pdt: PredDefTable::default(),
+            neg_goals,
+        }
+    }
+
+    impl Fixture {
+        /// A [`SearchCtx`] returning at most `final_h_count` groups.
+        fn ctx(&self, final_h_count: usize) -> SearchCtx<'_> {
+            SearchCtx::new(
+                &self.prog_heap,
+                &self.predicate_table,
+                &self.hypotheses,
+                &self.pdt,
+                config(),
+                ParallelConfig {
+                    final_h_count,
+                    ..ParallelConfig::default()
+                },
+            )
+        }
+
+        fn groups(&self, h_profiles: &[HProfile], final_h_count: usize) -> Vec<Box<[usize]>> {
+            find_coverage_groups(h_profiles, 2, 2, &self.neg_goals, self.ctx(final_h_count))
+        }
+    }
+
+    /// A profile of sub hypothesis `h` with hand-set coverage.
     ///
     /// `find_coverage_groups` only ever reads `coverage`/`n_covered` when
     /// choosing candidates, so fabricating them keeps the fixture to the one
     /// thing under test -- which combinations get built -- while leaving `h`
-    /// a real clause list for the negative check to resolve against.
-    fn profile(h: Vec<Clause>, covers: &[usize], n_pos: usize) -> HProfile {
-        let n_literals = h.iter().map(|clause| clause.body().len()).sum();
-        profile_with_literals(h, covers, n_pos, n_literals)
+    /// a real sub hypothesis for the negative check to resolve against.
+    fn profile(h: u32, covers: &[usize], n_pos: usize) -> HProfile {
+        profile_with_counts(h, covers, n_pos, 1, 1)
     }
 
-    /// As [`profile`], but with the literal count set by hand, for the
-    /// tiebreaker tests where the clause lists are deliberately the same size.
-    pub(super) fn profile_with_literals(
-        h: Vec<Clause>,
+    /// As [`profile`], but with the clause and literal counts set by hand,
+    /// for the tiebreaker tests.
+    pub(super) fn profile_with_counts(
+        h: u32,
         covers: &[usize],
         n_pos: usize,
-        n_literals: usize,
+        n_clauses: u32,
+        n_literals: u32,
     ) -> HProfile {
         let mut coverage = Coverage::from_len(n_pos);
         for &i in covers {
             coverage.set(i);
         }
-        let n_clauses = h.len();
         HProfile {
-            h: h.into_boxed_slice(),
+            h,
             coverage,
-            n_covered: covers.len(),
+            n_covered: covers.len() as u32,
             n_clauses,
             n_literals,
         }
     }
 
+    /// `p(X):-r(X)` with either definition of `r/1`.
+    const RULE_AND_TWO_DEFINITIONS: [(&str, &str); 3] = [("p", "r"), ("r", "bad"), ("r", "good")];
+
+    /// Two positives: profile 0 covers the first, profiles 1 and 2 the
+    /// second, so either pairing is a complete cover.
+    fn one_first_two_second() -> Vec<HProfile> {
+        vec![
+            profile(0, &[0], 2),
+            profile(1, &[1], 2),
+            profile(2, &[1], 2),
+        ]
+    }
+
     /// Two sub hypotheses that are each consistent with the negatives can
     /// still entail one together: `p(X):-r(X)` proves nothing on its own, and
-    /// neither does the fact `r(c)`, but combined they prove `p(c)`.
+    /// neither does `r(X):-bad(X)`, but combined they prove `p(c)`.
     #[test]
     fn a_group_entailing_a_negative_is_rejected_and_the_search_continues() {
-        let mut prog_heap = ProgramHeap::new();
-        let rule = _build_clause(&mut prog_heap, "p(X):-r(X).");
-        let bad_fact = _build_clause(&mut prog_heap, "r(c).");
-        let good_fact = _build_clause(&mut prog_heap, "r(d).");
-        let neg_goals = compile_examples(&["p(c).".to_string()], &mut prog_heap);
-
-        // Two positives: profile 0 covers the first, profiles 1 and 2 the
-        // second, so either pairing is a complete cover.
-        let h_profiles = vec![
-            profile(vec![rule], &[0], 2),
-            profile(vec![bad_fact], &[1], 2),
-            profile(vec![good_fact], &[1], 2),
-        ];
-
-        let predicate_table = PredicateTable::new();
-        let groups = find_coverage_groups(
-            &h_profiles,
-            2,
-            2,
-            &neg_goals,
-            ctx(&prog_heap, &predicate_table, MANY_GROUPS),
-        );
+        let fixture = fixture(&RULE_AND_TWO_DEFINITIONS, &["p(c)."]);
+        let groups = fixture.groups(&one_first_two_second(), MANY_GROUPS);
 
         assert!(
             !groups.iter().any(|group| &**group == [0, 1]),
@@ -501,25 +556,8 @@ mod coverage_group_tests {
     /// being unreachable.
     #[test]
     fn without_negatives_both_covers_are_kept() {
-        let mut prog_heap = ProgramHeap::new();
-        let rule = _build_clause(&mut prog_heap, "p(X):-r(X).");
-        let bad_fact = _build_clause(&mut prog_heap, "r(c).");
-        let good_fact = _build_clause(&mut prog_heap, "r(d).");
-
-        let h_profiles = vec![
-            profile(vec![rule], &[0], 2),
-            profile(vec![bad_fact], &[1], 2),
-            profile(vec![good_fact], &[1], 2),
-        ];
-
-        let predicate_table = PredicateTable::new();
-        let groups = find_coverage_groups(
-            &h_profiles,
-            2,
-            2,
-            &[],
-            ctx(&prog_heap, &predicate_table, MANY_GROUPS),
-        );
+        let fixture = fixture(&RULE_AND_TWO_DEFINITIONS, &[]);
+        let groups = fixture.groups(&one_first_two_second(), MANY_GROUPS);
 
         assert!(groups.iter().any(|group| &**group == [0, 1]));
         assert!(groups.iter().any(|group| &**group == [0, 2]));
@@ -533,27 +571,11 @@ mod coverage_group_tests {
     /// one-profile group could look like a complete cover.
     #[test]
     fn returned_groups_are_complete_covers() {
-        let mut prog_heap = ProgramHeap::new();
-        let a = _build_clause(&mut prog_heap, "a(1).");
-        let b = _build_clause(&mut prog_heap, "b(1).");
-        let c = _build_clause(&mut prog_heap, "c(1).");
-
+        let fixture = fixture(&[("a", "good"), ("b", "good"), ("c", "good")], &[]);
         // No single profile covers both positives, so any one-element group
         // in the output is a bug rather than a legitimate answer.
-        let h_profiles = vec![
-            profile(vec![a], &[0], 2),
-            profile(vec![b], &[1], 2),
-            profile(vec![c], &[1], 2),
-        ];
-
-        let predicate_table = PredicateTable::new();
-        let groups = find_coverage_groups(
-            &h_profiles,
-            2,
-            2,
-            &[],
-            ctx(&prog_heap, &predicate_table, MANY_GROUPS),
-        );
+        let h_profiles = one_first_two_second();
+        let groups = fixture.groups(&h_profiles, MANY_GROUPS);
 
         assert!(!groups.is_empty());
         for group in &groups {
@@ -572,20 +594,9 @@ mod coverage_group_tests {
     /// complete group now costs a proof search against every negative.
     #[test]
     fn groups_are_not_repeated_in_a_different_order() {
-        let mut prog_heap = ProgramHeap::new();
-        let a = _build_clause(&mut prog_heap, "a(1).");
-        let b = _build_clause(&mut prog_heap, "b(1).");
-
-        let h_profiles = vec![profile(vec![a], &[0], 2), profile(vec![b], &[1], 2)];
-
-        let predicate_table = PredicateTable::new();
-        let groups = find_coverage_groups(
-            &h_profiles,
-            2,
-            2,
-            &[],
-            ctx(&prog_heap, &predicate_table, MANY_GROUPS),
-        );
+        let fixture = fixture(&[("a", "good"), ("b", "good")], &[]);
+        let h_profiles = vec![profile(0, &[0], 2), profile(1, &[1], 2)];
+        let groups = fixture.groups(&h_profiles, MANY_GROUPS);
 
         let mut sorted: Vec<Vec<usize>> = groups.iter().map(|g| g.to_vec()).collect();
         sorted.sort();
@@ -599,23 +610,15 @@ mod coverage_group_tests {
     /// observable.
     #[test]
     fn the_search_stops_at_final_h_count() {
-        let mut prog_heap = ProgramHeap::new();
-        let clause = _build_clause(&mut prog_heap, "a(1).");
+        let fixture = fixture(&[("a", "good")], &[]);
         let h_profiles = vec![
-            profile(vec![clause.clone()], &[0], 2),
-            profile(vec![clause.clone()], &[0], 2),
-            profile(vec![clause.clone()], &[1], 2),
-            profile(vec![clause], &[1], 2),
+            profile(0, &[0], 2),
+            profile(0, &[0], 2),
+            profile(0, &[1], 2),
+            profile(0, &[1], 2),
         ];
-        let predicate_table = PredicateTable::new();
 
-        let uncapped = find_coverage_groups(
-            &h_profiles,
-            2,
-            2,
-            &[],
-            ctx(&prog_heap, &predicate_table, MANY_GROUPS),
-        );
+        let uncapped = fixture.groups(&h_profiles, MANY_GROUPS);
         assert!(
             uncapped.len() > 2,
             "fixture must offer more covers than the cap below, got {}",
@@ -623,13 +626,7 @@ mod coverage_group_tests {
         );
 
         for cap in [1, 2] {
-            let capped = find_coverage_groups(
-                &h_profiles,
-                2,
-                2,
-                &[],
-                ctx(&prog_heap, &predicate_table, cap),
-            );
+            let capped = fixture.groups(&h_profiles, cap);
             assert_eq!(capped.len(), cap, "a cap of {cap} must return {cap} groups");
         }
     }
@@ -637,21 +634,14 @@ mod coverage_group_tests {
 
 #[cfg(test)]
 mod sort_key_tests {
-    use super::coverage_group_tests::profile_with_literals;
-    use crate::parser::_build_clause;
-
-    use crate::heap::ProgramHeap;
+    use super::coverage_group_tests::profile_with_counts;
 
     /// Two candidates with the same coverage and the same clause count are
     /// ordered by literal count -- but only with the flag set.
     #[test]
     fn literals_break_a_tie_only_when_enabled() {
-        let mut prog_heap = ProgramHeap::new();
-        let short = _build_clause(&mut prog_heap, "p(X):-q(X).");
-        let long = _build_clause(&mut prog_heap, "p(X):-q(X),r(X),s(X).");
-
-        let wordy = profile_with_literals(vec![long], &[0], 1, 3);
-        let terse = profile_with_literals(vec![short], &[0], 1, 1);
+        let wordy = profile_with_counts(0, &[0], 1, 1, 3);
+        let terse = profile_with_counts(0, &[0], 1, 1, 1);
 
         assert!(
             terse.sort_key(1, true) < wordy.sort_key(1, true),
@@ -669,21 +659,18 @@ mod sort_key_tests {
     /// smaller.
     #[test]
     fn literals_never_outweigh_coverage_or_clause_count() {
-        let mut prog_heap = ProgramHeap::new();
-        let clause = _build_clause(&mut prog_heap, "p(X):-q(X).");
-
         // Covers one of two positives with a single literal.
-        let narrow = profile_with_literals(vec![clause.clone()], &[0], 2, 1);
+        let narrow = profile_with_counts(0, &[0], 2, 1, 1);
         // Covers both, but with far more literals.
-        let broad = profile_with_literals(vec![clause.clone()], &[0, 1], 2, 99);
+        let broad = profile_with_counts(0, &[0, 1], 2, 1, 99);
         assert!(
             broad.sort_key(2, true) < narrow.sort_key(2, true),
             "coverage dominates literal count"
         );
 
         // Same coverage, one clause vs two, and the bigger program is terser.
-        let one_clause = profile_with_literals(vec![clause.clone()], &[0], 1, 9);
-        let two_clauses = profile_with_literals(vec![clause.clone(), clause], &[0], 1, 1);
+        let one_clause = profile_with_counts(0, &[0], 1, 1, 9);
+        let two_clauses = profile_with_counts(0, &[0], 1, 2, 1);
         assert!(
             one_clause.sort_key(1, true) < two_clauses.sort_key(1, true),
             "clause count dominates literal count"

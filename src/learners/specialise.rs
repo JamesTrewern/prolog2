@@ -3,12 +3,12 @@
 //! Specialisation is a pass of its own, run after generalisation has merged
 //! and deduplicated the sub hypotheses: [`specialise`] filters them against
 //! the negatives in parallel, proving from `MetaSub`s, and
-//! [`clauses_entail_negative`] is applied again later to whole *combinations*
+//! [`entails_negative`] is applied again later to whole *combinations*
 //! of sub hypotheses -- two that are each consistent can together entail a
 //! negative, since a clause from one can resolve against a clause from the
 //! other.
 //!
-//! Both prove the same question; [`clauses_entail_negative`] reports it the
+//! Both prove the same question; [`entails_negative`] reports it the
 //! way round its name says (`true` means a negative is provable, so the
 //! candidate must go), while [`specialise`] returns the hypotheses that
 //! survive.
@@ -20,7 +20,7 @@ use std::{
 
 use crate::{
     heap::{ProgramHeap, QueryHeap},
-    program::{Clause, PackedMetaSubs, PredicateTable},
+    program::{PackedMetaSubs, PredicateTable},
     resolution::Proof,
     Config,
 };
@@ -38,18 +38,16 @@ fn test_config(config: Config) -> Config {
     }
 }
 
-/// Does this set of ground clauses prove any negative example?
+/// Do these ground clauses, as packed `MetaSub`s, prove any negative example?
 ///
-/// For candidates whose invented predicates have already been coined as
-/// constants, which can be proved on a heap of their own. `neg_goals` are
-/// addresses of goals compiled onto `heap` by
+/// `neg_goals` are addresses of goals compiled onto `heap` by
 /// [`compile_examples`](super::utils::compile_examples).
 ///
 /// `par_iter().any()` abandons the remaining negatives as soon as one is
 /// proved.
-pub(super) fn clauses_entail_negative(
+pub(super) fn entails_negative(
     neg_goals: &[usize],
-    clauses: &[Clause],
+    meta_subs: &[&[usize]],
     heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     config: Config,
@@ -58,7 +56,7 @@ pub(super) fn clauses_entail_negative(
 
     neg_goals.into_par_iter().any(|&goal| {
         let mut query_heap = QueryHeap::new(heap, None);
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], clauses);
+        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], meta_subs);
         proof.prove(&mut query_heap, predicate_table, config)
     })
 }

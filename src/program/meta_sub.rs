@@ -6,10 +6,7 @@ use crate::{
         VarBind::{Addr, VarId},
         VarReg,
     },
-    program::{
-        PredicateTable, Clause,
-    },
-    resolution::{build, Substitution},
+    program::{Clause, PredicateTable},
     META_SUBS_DEFAULT_SIZE,
 };
 
@@ -90,48 +87,6 @@ pub(crate) trait MetaSubTrait {
             self.subs().len(),
         );
         clause
-    }
-
-    /// Build the first-order clause this substitution stands for.
-    fn build_clause(&self, heap: &mut impl Heap, predicate_table: &PredicateTable) -> Clause {
-        self.build_clause_from_meta(heap, self.template(predicate_table))
-    }
-
-    /// As [`Self::build_clause`], with the meta clause template supplied
-    /// directly.
-    ///
-    /// Mirrors the clause construction in
-    /// `Env::try_choices`, with the substitution
-    /// read back out of `self` instead of the live argument registers. The
-    /// meta variables' bindings are inlined as terms; every other variable
-    /// stays an `Arg` cell, leaving a template a later proof can instantiate.
-    /// That is what passing the meta-variable flags to [`build`] buys -- it is
-    /// not cosmetic, since without them an unbound `Arg` falls through to
-    /// `Heap::set_var`, which the program heap refuses.
-    fn build_clause_from_meta(&self, heap: &mut impl Heap, meta_clause: &Clause) -> Clause {
-        let threshold = meta_clause
-            .meta_threshold()
-            .expect("a MetaSub's clause is always a meta clause");
-
-        let mut substitution = Substitution::new(meta_clause.max_arg_id);
-        for (arg_id, sub) in (threshold..meta_clause.max_arg_id).zip(self.subs()) {
-            let binding = sub
-                .get_bind()
-                .expect("MetaSub subs are always populated from bound arg registers");
-            debug_assert!(
-                matches!(binding, Addr(_)),
-                "meta var {arg_id} of meta clause {} is still a variable;                  building it would write a dangling Ref into the program heap",
-                self.clause_idx()
-            );
-            substitution.set_arg(arg_id, binding);
-        }
-
-        let literals: Vec<usize> = meta_clause
-            .iter()
-            .map(|&literal| build(heap, &mut substitution, Some(threshold), literal))
-            .collect();
-
-        Clause::new(literals, None, meta_clause.max_arg_id)
     }
 
     /// Unify the two substitutions position by position, returning the
@@ -258,6 +213,7 @@ impl PackedMetaSubs {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = MetaSubGroup<'_>> {
         (0..self.len()).map(|index| self.get(index))
     }
@@ -326,7 +282,11 @@ mod packed_tests {
         let groups = vec![
             vec![meta_sub(3, &[10, 11, 12]), meta_sub(4, &[13])],
             vec![],
-            vec![meta_sub(5, &[]), meta_sub(6, &[14, 15]), meta_sub(7, &[16, 17, 18, 19])],
+            vec![
+                meta_sub(5, &[]),
+                meta_sub(6, &[14, 15]),
+                meta_sub(7, &[16, 17, 18, 19]),
+            ],
         ];
         let mut packed = PackedMetaSubs::default();
         for group in &groups {
@@ -372,164 +332,20 @@ mod packed_tests {
 }
 
 #[cfg(test)]
-mod build_clause_tests {
-    
+mod template_tests {
 
     use super::{MetaSub, MetaSubTrait};
     use crate::{
-        heap::{Cell, Heap, ProgramHeap, Tag::*, VarReg},
+        heap::{Heap, ProgramHeap, Tag::*, VarReg},
         parser::_build_clause,
         program::{Clause, PredicateTable},
     };
 
-    // These tests assert on cells rather than `Clause::to_string`. An `Arg`
-    // cell is named through `get_var(addr, heap_id)`, keyed on the cell's
-    // *address*, and a program heap always reports heap_id 0 -- so two tests
-    // sharing a program heap would write names to the same keys and read back
-    // each other's. Each test here builds its own `ProgramHeap`, which now
-    // carries its own table, so that no longer bites; cells remain the sharper
-    // assertion either way, since the distinction this code turns on is `Arg`
-    // vs `Ref` and a rendered string hides it.
-
-    /// A program heap holding one meta clause template, plus the constants
-    /// named in `consts` pushed after it.
-    fn prog_with_meta<const N: usize>(
-        meta_src: &str,
-        consts: [&'static str; N],
-    ) -> (ProgramHeap, Clause, [usize; N]) {
-        let mut prog_heap = ProgramHeap::new();
-        let meta = _build_clause(&mut prog_heap, meta_src);
-        let addrs = consts.map(|name| {
-            let symbol = prog_heap.symbols().set_const(name);
-            prog_heap.heap_push((Con, symbol))
-        });
-        (prog_heap, meta, addrs)
-    }
-
-    fn meta_sub_of(meta: &Clause, addrs: &[usize]) -> MetaSub {
-        MetaSub {
-            clause_idx: meta.meta_data.unwrap().id,
-            subs: addrs.iter().map(|&addr| VarReg::from_addr(addr)).collect(),
-        }
-    }
-
-    /// The functor cell followed by one cell per argument.
-    fn literal_cells(heap: &ProgramHeap, addr: usize) -> Vec<Cell> {
-        heap.str_args(addr)
-            .into_iter()
-            .map(|arg_addr| heap[arg_addr])
-            .collect()
-    }
-
-    /// A `Con` cell naming `name` in `prog`'s table.
-    ///
-    /// Takes the heap because the fixtures below build their own: an id
-    /// interned anywhere else would not denote the same symbol in the heap
-    /// under test.
-    fn con(prog: &ProgramHeap, name: &str) -> Cell {
-        (Con, prog.symbols().set_const(name))
-    }
-
-    #[test]
-    fn every_meta_var_substituted() {
-        // p(X,Y):-q(X),r(Y).
-        let (mut prog_heap, meta, [p, q, r]) =
-            prog_with_meta("P(X,Y):-Q(X),R(Y),{P,Q,R}.", ["p", "q", "r"]);
-        let meta_sub = meta_sub_of(&meta, &[p, q, r]);
-
-        let clause = meta_sub.build_clause_from_meta(&mut prog_heap, &meta);
-
-        assert_eq!(clause.len(), 3);
-        assert_eq!(
-            literal_cells(&prog_heap, clause.head()),
-            vec![con(&prog_heap, "p"), (Arg, 0), (Arg, 1)]
-        );
-        assert_eq!(
-            literal_cells(&prog_heap, clause.body()[0]),
-            vec![con(&prog_heap, "q"), (Arg, 0)]
-        );
-        assert_eq!(
-            literal_cells(&prog_heap, clause.body()[1]),
-            vec![con(&prog_heap, "r"), (Arg, 1)]
-        );
-        assert!(
-            !clause.meta(),
-            "the built clause is first-order; its meta vars are now ground"
-        );
-        assert_eq!(clause.max_arg_id, meta.max_arg_id);
-    }
-
-    #[test]
-    fn first_order_args_stay_arg_cells() {
-        // The built clause is a template a later proof instantiates, so every
-        // position that was not a meta variable must survive as an `Arg` cell
-        // carrying its original arg id -- not a fresh `Ref`, which on the
-        // program heap would dangle into a dead query heap.
-        let (mut prog_heap, meta, [p, q, r]) =
-            prog_with_meta("P(X,Y):-Q(X),R(Y),{P,Q,R}.", ["p", "q", "r"]);
-        let meta_sub = meta_sub_of(&meta, &[p, q, r]);
-
-        let clause = meta_sub.build_clause_from_meta(&mut prog_heap, &meta);
-
-        let head_args = literal_cells(&prog_heap, clause.head());
-        assert_eq!(
-            &head_args[1..],
-            &[(Arg, 0), (Arg, 1)],
-            "X and Y keep the arg ids they had in the template"
-        );
-        assert!(
-            prog_heap.iter().all(|cell| cell.0 != Var),
-            "no Ref cell may reach the program heap"
-        );
-    }
-
-    #[test]
-    fn substitutes_only_the_flagged_positions() {
-        // A meta clause whose head predicate is a meta variable but whose body
-        // predicate is already a constant: only the head functor is replaced,
-        // and the body is copied through untouched.
-        let (mut prog_heap, meta, [p]) = prog_with_meta("P(X,Y):-q(X,Y),{P}.", ["p"]);
-        let meta_sub = meta_sub_of(&meta, &[p]);
-
-        let clause = meta_sub.build_clause_from_meta(&mut prog_heap, &meta);
-
-        assert_eq!(
-            literal_cells(&prog_heap, clause.head()),
-            vec![con(&prog_heap, "p"), (Arg, 0), (Arg, 1)]
-        );
-        assert_eq!(
-            literal_cells(&prog_heap, clause.body()[0]),
-            vec![con(&prog_heap, "q"), (Arg, 0), (Arg, 1)]
-        );
-    }
-
-    #[test]
-    fn looked_up_through_the_predicate_table() {
-        let (mut prog_heap, meta, [p, q, r]) =
-            prog_with_meta("P(X,Y):-Q(X),R(Y),{P,Q,R}.", ["p", "q", "r"]);
-        let meta_id = meta.meta_data.unwrap().id;
-
-        let mut predicate_table = PredicateTable::new();
-        let symbol_arity = prog_heap.symbol_arity(meta.head());
-        predicate_table
-            .add_clause_to_predicate(meta.clone(), symbol_arity)
-            .unwrap();
-        let stored = predicate_table.get_meta_clause(meta_id).unwrap();
-        let meta_sub = MetaSub {
-            clause_idx: predicate_table.index_of(stored).unwrap(),
-            subs: [p, q, r].map(VarReg::from_addr).into_iter().collect(),
-        };
-
-        let clause = meta_sub.build_clause(&mut prog_heap, &predicate_table);
-        assert_eq!(
-            literal_cells(&prog_heap, clause.head()),
-            vec![con(&prog_heap, "p"), (Arg, 0), (Arg, 1)]
-        );
-    }
-
     /// A table holding the meta clause `P(X,Y):-Q(X,Y)` under `(0, 2)`, and
     /// a `MetaSub` recorded against it.
-    fn table_and_recorded_meta_sub(prog_heap: &mut ProgramHeap) -> (PredicateTable, Clause, MetaSub) {
+    fn table_and_recorded_meta_sub(
+        prog_heap: &mut ProgramHeap,
+    ) -> (PredicateTable, Clause, MetaSub) {
         let meta = _build_clause(prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
         let mut predicate_table = PredicateTable::new();
         predicate_table

@@ -594,13 +594,9 @@ impl PredDefTable {
         self.pred_defs.get(index)
     }
 
+    #[cfg(test)]
     pub(super) fn iter(&self) -> impl ExactSizeIterator<Item = PredDefRef<'_>> {
         self.pred_defs.iter()
-    }
-
-    /// The constants naming the predicates this table defines.
-    pub(super) fn pred_symbols(&self) -> HashSet<usize> {
-        self.symbol_defs.keys().copied().collect()
     }
 
     /// Append to `defs` the index of every definition `meta_subs` call,
@@ -650,10 +646,28 @@ impl PredDefTable {
         hypothesis: MetaSubGroup<'a>,
         heap: &impl Heap,
     ) -> SmallVec<[&'a [usize]; 8]> {
-        let mut defs = SmallVec::new();
-        self.dependencies(hypothesis.iter(), heap, &mut defs);
+        self.union_meta_subs([hypothesis], heap)
+    }
 
-        let mut meta_subs: SmallVec<[&'a [usize]; 8]> = hypothesis.iter().collect();
+    /// As [`Self::test_meta_subs`], for several hypotheses taken together:
+    /// a clause or definition that more than one of them has appears once.
+    pub(super) fn union_meta_subs<'a>(
+        &'a self,
+        hypotheses: impl IntoIterator<Item = MetaSubGroup<'a>>,
+        heap: &impl Heap,
+    ) -> SmallVec<[&'a [usize]; 8]> {
+        // Terms are interned, so equal clauses are equal word for word.
+        let mut meta_subs: SmallVec<[&'a [usize]; 8]> = SmallVec::new();
+        for hypothesis in hypotheses {
+            for meta_sub in hypothesis.iter() {
+                if !meta_subs.contains(&meta_sub) {
+                    meta_subs.push(meta_sub);
+                }
+            }
+        }
+
+        let mut defs = SmallVec::new();
+        self.dependencies(meta_subs.iter().copied(), heap, &mut defs);
         for def in defs {
             let def = self.get(def as usize);
             meta_subs.extend((0..def.len()).map(|clause| def.get(clause)));
@@ -709,7 +723,7 @@ impl PredDefTable {
     /// templates -- more than a print wants -- so this shows the substitution
     /// itself.
     pub(super) fn _print_defs(&self, heap: &impl Heap) {
-        for (i, pred_def) in self.iter().enumerate() {
+        for (i, pred_def) in (0..self.len()).map(|i| (i, self.get(i))) {
             println!("====== Definition {i} ======");
             for msub in pred_def.iter() {
                 let subs: Vec<String> = msub
@@ -1195,7 +1209,7 @@ mod tests {
         pdt.extract_pred_defs_from_h(&mut h.meta_subs, &table, &mut heap);
 
         assert_eq!(pdt.len(), 9);
-        assert_eq!(pdt.pred_symbols().len(), 9, "one constant per definition");
+        assert_eq!(pdt.symbol_defs.len(), 9, "one constant per definition");
         for var_id in 0..9 {
             assert!(
                 matches!(heap.var_deref(var_id), Addr(_)),

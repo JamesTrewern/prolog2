@@ -19,7 +19,9 @@ use crate::{
         VarReg, Walk,
     },
     learners::predicate_unification::{PredDef, PredDefTable, MAX_PRED_DEFS},
-    program::{Clause, MetaSub, MetaSubGroup, MetaSubTrait, PackedMetaSubs, PredicateTable},
+    program::{
+        HypothesisTrait, MetaSub, MetaSubGroup, MetaSubTrait, PackedMetaSubs, PredicateTable,
+    },
     resolution::Proof,
     Config,
 };
@@ -27,9 +29,7 @@ use crate::{
 use super::{
     specialise::specialise,
     sub_h_unification::{least_sub_h, SearchCtx},
-    utils::{
-        collect_used_pred, compile_examples, reduce as reduce_hypothesis, union_sub_hypotheses,
-    },
+    utils::{compile_examples, reduce as reduce_hypothesis},
 };
 
 use hashbrown::HashTable;
@@ -47,14 +47,7 @@ impl App {
         let Some(mut examples) = self.examples.clone() else {
             panic!("Can't start top prog without examples");
         };
-        // Called directly as well as through `App::run`, which only reaches
-        // here when `parallel` is set -- so a direct caller that has not set
-        // it gets the defaults rather than a panic.
         let parallel = self.parallel.unwrap_or_default();
-        // Checked once, here, rather than left to fail deep in the search: a
-        // hypothesis can invent at most one predicate per clause, and the
-        // dependency graph that orders their definitions holds
-        // `MAX_PRED_DEFS` nodes.
         assert!(
             self.config.max_clause <= MAX_PRED_DEFS,
             "max_clause is {}, but top program construction supports at most {MAX_PRED_DEFS}: \
@@ -70,9 +63,7 @@ impl App {
         );
         examples.normalise_for_parallel();
 
-        // Built once onto the program heap, then proved over and over by
-        // every stage below. Appending leaves earlier addresses valid, so the
-        // learned clauses added later do not disturb these.
+        // Compiled once onto program heap so all threads can use heap index to same data
         let pos_goals = compile_examples(&examples.pos, &mut self.prog_heap);
         let neg_goals = compile_examples(&examples.neg, &mut self.prog_heap);
 
@@ -83,23 +74,23 @@ impl App {
             self.config,
         );
 
+        // In debug mode double check no var cells left
+        #[cfg(debug_assertions)]
         for (i, cell) in cells.iter().enumerate() {
             if cell.0 == Var {
-                panic!("{cell:?}@{i}\n{:?}", &cells[i - 5..i + 5])
+                let lo = i.saturating_sub(5);
+                let hi = (i + 5).min(cells.len());
+                panic!("{cell:?}@{i}\n{:?}", &cells[lo..hi]);
             }
         }
 
         self.prog_heap.extend_from_slice(&cells);
-        // The constants that mark a body literal as calling an invented
-        // predicate rather than a background one.
-        let pred_symbols = pdt.pred_symbols();
-
         println!(
             "\n=== Generalisation ===\n{} unique sub hypotheses",
             hypotheses.len(),
         );
 
-        // Proved from `MetaSub`s: nothing is built or added to the table.
+        // Filter any hypotheses which entail a negative
         let survivors = specialise(
             &neg_goals,
             &hypotheses,
@@ -115,117 +106,33 @@ impl App {
             neg_goals.len(),
         );
 
-        // The later stages still work on built clauses and look invented
-        // predicates up in the table, so build what the survivors need.
-        let mut needed = vec![false; pdt.len()];
-        let mut defs = SmallVec::new();
-        for &index in &survivors {
-            defs.clear();
-            pdt.dependencies(
-                hypotheses.get(index as usize).iter(),
-                &self.prog_heap,
-                &mut defs,
-            );
-            for &def in &defs {
-                needed[def as usize] = true;
-            }
-        }
-
-        // Added as one batch: one insert per clause rescans the whole table.
-        // Most definitions have one or two clauses.
-        let mut pred_def_clauses = Vec::new();
-        for (pred_def, _) in pdt.iter().zip(&needed).filter(|(_, needed)| **needed) {
-            for meta_sub in pred_def.iter() {
-                let clause = meta_sub.build_clause(&mut self.prog_heap, &self.predicate_table);
-                let symbol_arity = self.prog_heap.symbol_arity(clause.head());
-                pred_def_clauses.push((symbol_arity, clause));
-            }
-        }
-        drop(pdt);
-
-        // A `MetaSub` names its meta clause by arena position, and adding
-        // the definitions moves the arena. So note which meta clause each
-        // position the survivors use holds now, and find them again after.
-        // Building the hypotheses first would avoid this, but then their
-        // clauses and the batch above are in memory together.
-        let mut meta_ids: HashMap<usize, usize> = HashMap::new();
-        for &index in &survivors {
-            for meta_sub in hypotheses.get(index as usize).iter() {
-                meta_ids.entry(meta_sub.clause_idx()).or_insert_with(|| {
-                    let meta_data = meta_sub.template(&self.predicate_table).meta_data;
-                    meta_data.expect("a template is a meta clause").id
-                });
-            }
-        }
-        self.predicate_table.add_clauses(pred_def_clauses).unwrap();
-        let templates: HashMap<usize, &Clause> = meta_ids
-            .into_iter()
-            .map(|(clause_idx, id)| {
-                let template = self.predicate_table.get_meta_clause(id);
-                (clause_idx, template.expect("adding clauses removes none"))
-            })
-            .collect();
-
-        // Literals are built only here; until now hypotheses were `MetaSub`s.
-        let sub_hypotheses: Vec<Box<[Clause]>> = survivors
-            .iter()
-            .map(|&index| {
-                hypotheses
-                    .get(index as usize)
-                    .iter()
-                    .map(|meta_sub| {
-                        let template = templates[&meta_sub.clause_idx()];
-                        meta_sub.build_clause_from_meta(&mut self.prog_heap, template)
-                    })
-                    .collect()
-            })
-            .collect();
-        drop(hypotheses);
-
-        // Build final top program from surviving hypotheses
+        // Attempt to find small sets of sub hypotheses entailing all positives
         let Some(groups) = least_sub_h(
             &pos_goals,
             &neg_goals,
-            sub_hypotheses,
+            survivors,
             SearchCtx::new(
                 &self.prog_heap,
                 &self.predicate_table,
+                &hypotheses,
+                &pdt,
                 self.config,
                 parallel,
             ),
-            &pred_symbols,
         ) else {
             println!("No Valid Hypothesis Found");
             return None;
         };
 
-        let hypotheses: Vec<Vec<Clause>> = groups
-            .into_iter()
-            .map(|group| {
-                let mut hypothesis = union_sub_hypotheses(group, &self.prog_heap);
-                collect_used_pred(
-                    &mut hypothesis,
-                    &self.prog_heap,
-                    &self.predicate_table,
-                    &pred_symbols,
-                );
-                hypothesis
-            })
-            .collect();
-
         let mut buffer = Vec::new();
-        for (i, mut hypothesis) in hypotheses.into_iter().enumerate() {
+        for (i, group) in groups.into_iter().enumerate() {
             println!("Hypothesis {i}");
 
-            //Remove used preds from predicate table for reduction
-            for clause in &hypothesis {
-                for literal in clause.iter() {
-                    let (symbol, arity) = self.prog_heap.symbol_arity(*literal);
-                    if pred_symbols.contains(&symbol) {
-                        self.predicate_table.remove_predicate((symbol, arity));
-                    }
-                }
-            }
+            // The group's clauses and the definitions they depend on.
+            let sub_hypotheses = group.iter().map(|&index| hypotheses.get(index as usize));
+            let mut hypothesis = pdt
+                .union_meta_subs(sub_hypotheses, &self.prog_heap)
+                .into_vec();
 
             if parallel.reduce {
                 hypothesis = reduce_hypothesis(
@@ -238,7 +145,11 @@ impl App {
                 );
             }
 
-            buffer.push(top_prog_to_string(hypothesis, &self.prog_heap));
+            buffer.push(top_prog_to_string(
+                &hypothesis,
+                &self.prog_heap,
+                &self.predicate_table,
+            ));
         }
         Some(buffer)
     }
@@ -247,22 +158,21 @@ impl App {
 /// One sub hypothesis as sent from a worker: the hypothesis as `MetaSub`s,
 /// the predicate definitions it depends on, and the `(cells, var_regs)` of
 /// the detached heap their terms live on.
-type ThreadResult = (SmallH, Vec<PredDef>, (Vec<Cell>, Vec<VarReg>));
+type HypothesisMsg = (SmallH, Vec<PredDef>, (Vec<Cell>, Vec<VarReg>));
 
 /// Most sub hypotheses that can wait for the collector at once.
-///
 /// A worker that finds the channel full blocks until the collector catches
 /// up, so a search that outruns the merge slows down instead of queueing
 /// messages without limit.
 const CHANNEL_CAPACITY: usize = 4096;
 
-/// Search every positive example in parallel, streaming each sub hypothesis
-/// found back to this thread as it is extracted.
+/// Generalise from every positive example in parallel,
+/// returning each hypothesis found by a proof to a collector
+/// in the main thread.
 ///
 /// One worker per positive example (see [`generalise_thread`]). Each
 /// hypothesis is folded into the shared predicate definition table by
-/// [`merge_thread_results`] the moment it arrives, so grounding and
-/// deduplication overlap with the search instead of waiting on it.
+/// [`merge_thread_results`] as it arrives.
 fn generalise(
     pos_goals: &[usize],
     predicate_table: &PredicateTable,
@@ -307,7 +217,7 @@ fn generalise(
     result
 }
 
-/// Fold every streamed [`ThreadResult`] into the collector heap, predicate
+/// Fold every streamed [`HypothesisMsg`] into the collector heap, predicate
 /// definition table, and deduplicated list of hypotheses.
 ///
 /// `heap` is the program heap the returned `cells` will be appended to, so
@@ -327,7 +237,7 @@ fn generalise(
 /// Hypotheses are compared order-independently, by hash confirmed with an
 /// exact check.
 fn merge_thread_results(
-    thread_results: impl IntoIterator<Item = ThreadResult>,
+    thread_results: impl IntoIterator<Item = HypothesisMsg>,
     heap: &ProgramHeap,
     total: usize,
     searched: &AtomicUsize,
@@ -358,6 +268,8 @@ fn merge_thread_results(
         for meta_sub in &mut hypothesis {
             terms.intern_subs(meta_sub, &msg_heap, &mut acc_heap);
         }
+        // Insert Predicate Defintions to the table.
+        // Either uinfies with existing or creates new grounded defintion
         for mut pred_def in pred_defs {
             for meta_sub in &mut pred_def.meta_subs {
                 terms.intern_subs(meta_sub, &msg_heap, &mut acc_heap);
@@ -365,6 +277,7 @@ fn merge_thread_results(
             pdt.insert(pred_def, &mut acc_heap);
         }
 
+        //Inline variable bindings from pred def unification
         for addr in offset..acc_heap.heap_len() {
             if acc_heap[addr].0 == Var {
                 let resolved = acc_heap.get_deref_cell(addr);
@@ -391,33 +304,30 @@ fn merge_thread_results(
             *var_reg = VarReg::UNBOUND;
         }
 
-        // Empty when every clause was lifted into a predicate definition.
-        if !hypothesis.is_empty() {
-            // Sort so that clause order does not affect equality. Interned
-            // terms have one address each, so addresses stand in for content.
-            hypothesis.sort_unstable_by(|a, b| {
-                a.clause_idx.cmp(&b.clause_idx).then_with(|| {
-                    a.subs
-                        .iter()
-                        .map(|sub| sub.0)
-                        .cmp(b.subs.iter().map(|sub| sub.0))
-                })
+        // Sort so that clause order does not affect equality. Interned
+        // terms have one address each, so addresses stand in for content.
+        hypothesis.sort_unstable_by(|a, b| {
+            a.clause_idx.cmp(&b.clause_idx).then_with(|| {
+                a.subs
+                    .iter()
+                    .map(|sub| sub.0)
+                    .cmp(b.subs.iter().map(|sub| sub.0))
+            })
+        });
+        let hash = hypothesis_hash(hypothesis.iter());
+        let duplicate = seen
+            .find(hash, |&i| {
+                same_hypothesis(hypotheses.get(i as usize), &hypothesis)
+            })
+            .is_some();
+        if !duplicate {
+            let index = u32::try_from(hypotheses.len()).expect("more than u32::MAX hypotheses");
+            hypotheses.push(&hypothesis);
+            // Only indices are kept, so a growing table rehashes each
+            // hypothesis from the store.
+            seen.insert_unique(hash, index, |&i| {
+                hypothesis_hash(hypotheses.get(i as usize).iter())
             });
-            let hash = hypothesis_hash(hypothesis.iter());
-            let duplicate = seen
-                .find(hash, |&i| {
-                    same_hypothesis(hypotheses.get(i as usize), &hypothesis)
-                })
-                .is_some();
-            if !duplicate {
-                let index = u32::try_from(hypotheses.len()).expect("more than u32::MAX hypotheses");
-                hypotheses.push(&hypothesis);
-                // Only indices are kept, so a growing table rehashes each
-                // hypothesis from the store.
-                seen.insert_unique(hash, index, |&i| {
-                    hypothesis_hash(hypotheses.get(i as usize).iter())
-                });
-            }
         }
 
         // One message per hypothesis is too many for the status line, so
@@ -595,7 +505,7 @@ fn generalise_thread(
     predicate_table: &PredicateTable,
     prog_heap: &ProgramHeap,
     config: Config,
-    tx: &mpsc::SyncSender<ThreadResult>,
+    tx: &mpsc::SyncSender<HypothesisMsg>,
 ) {
     let mut query_heap = QueryHeap::new(prog_heap, None);
 
@@ -694,10 +604,17 @@ fn clone_var_reg(
     }
 }
 
-fn top_prog_to_string(top_program: Vec<Clause>, heap: &impl Heap) -> String {
+fn top_prog_to_string(
+    top_program: &[&[usize]],
+    heap: &ProgramHeap,
+    predicate_table: &PredicateTable,
+) -> String {
+    // Clauses are built to be printed, on a scratch heap.
+    let mut scratch = QueryHeap::new(heap, None);
     let mut buffer = String::new();
-    for clause in &top_program {
-        buffer += &format!("{}\n", clause.to_string(heap));
+    for clause in top_program.clause_strings(&mut scratch, predicate_table) {
+        buffer += &clause;
+        buffer += "\n";
     }
     println!("\n=== Top Program ({} clauses) ===", top_program.len());
     println!("{buffer}");
@@ -944,7 +861,7 @@ mod merge_tests {
     /// in: these tests supply every message up front, so the number of
     /// examples searched is simply the message count.
     fn merge(
-        results: Vec<ThreadResult>,
+        results: Vec<HypothesisMsg>,
         heap: &ProgramHeap,
     ) -> (Vec<Cell>, PackedMetaSubs, PredDefTable) {
         let total = results.len();

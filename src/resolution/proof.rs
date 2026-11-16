@@ -33,8 +33,8 @@ impl<'a> Proof<'a> {
 #[allow(private_bounds)]
 impl<'a, H: HypothesisTrait> Proof<'a, H> {
     /// A proof over `hypothesis`. Passing a [`Hypothesis`] by value lets
-    /// the proof extend it; `&Hypothesis`, `&[&[usize]]` (packed
-    /// `MetaSub`s) and `&[Clause]` are tested without learning.
+    /// the proof extend it; `&Hypothesis` and `&[&[usize]]` (packed
+    /// `MetaSub`s) are tested without learning.
     pub fn with_hypothesis(heap: &QueryHeap, goals: &[usize], hypothesis: H) -> Self {
         let stack = goals
             .iter()
@@ -283,13 +283,7 @@ mod tests {
 #[cfg(test)]
 mod hypothesis_resolution_tests {
     use super::Proof;
-    use crate::{
-        app::App,
-        heap::QueryHeap,
-        heap::{Heap, VarBind::VarId},
-        parser::_build_clause,
-        program::{Clause, Hypothesis, MetaSubTrait, PackedMetaSubs, PredicateTable},
-    };
+    use crate::{app::App, heap::QueryHeap, parser::_build_clause, program::PackedMetaSubs};
 
     /// `t/1` has no clauses, so a goal on it is provable only by learning
     /// one from `P(X):-Q(X)` or by a clause already in the hypothesis.
@@ -305,28 +299,6 @@ mod hypothesis_resolution_tests {
 
     fn goal(app: &mut App, src: &str) -> usize {
         _build_clause(&mut app.prog_heap, src)[0]
-    }
-
-    /// The hypothesis's clauses, built onto `heap`.
-    fn built(
-        hypothesis: &Hypothesis,
-        heap: &mut QueryHeap,
-        predicate_table: &PredicateTable,
-    ) -> Vec<Clause> {
-        hypothesis
-            .meta_subs
-            .iter()
-            .map(|meta_sub| {
-                // `build_clause` wants every predicate bound to a term.
-                let mut meta_sub = meta_sub.clone();
-                for sub in &mut meta_sub.subs {
-                    if let Some(VarId(var_id)) = sub.get_bind() {
-                        *sub = heap.var_deref(var_id).into();
-                    }
-                }
-                meta_sub.build_clause(heap, predicate_table)
-            })
-            .collect()
     }
 
     #[test]
@@ -372,7 +344,7 @@ mod hypothesis_resolution_tests {
     }
 
     #[test]
-    fn a_meta_sub_resolves_as_the_clause_built_from_it_does() {
+    fn a_borrowed_hypothesis_resolves_goals_without_learning() {
         let mut app = app(1);
         let learn = goal(&mut app, "t(a).");
         let cases = [
@@ -385,24 +357,24 @@ mod hypothesis_resolution_tests {
         let mut learning = Proof::new(&heap, &[learn]);
         assert!(learning.prove(&mut heap, &app.predicate_table, app.config));
         let hypothesis = learning.hypothesis.clone();
-        let clauses = built(&hypothesis, &mut heap, &app.predicate_table);
 
         for (goal, expected) in cases {
-            let mut by_meta_sub = Proof::with_hypothesis(&heap, &[goal], &hypothesis);
-            let from_meta_sub = by_meta_sub.prove(&mut heap, &app.predicate_table, app.config);
-            by_meta_sub.undo_all(&mut heap);
-
-            let mut by_clause = Proof::with_hypothesis(&heap, &[goal], clauses.as_slice());
-            let from_clause = by_clause.prove(&mut heap, &app.predicate_table, app.config);
-            by_clause.undo_all(&mut heap);
-
-            assert_eq!(from_meta_sub, expected);
-            assert_eq!(from_clause, expected);
+            let mut proof = Proof::with_hypothesis(&heap, &[goal], &hypothesis);
+            assert_eq!(
+                proof.prove(&mut heap, &app.predicate_table, app.config),
+                expected
+            );
+            assert_eq!(
+                proof.hypothesis.len(),
+                1,
+                "a borrowed hypothesis is not added to"
+            );
+            proof.undo_all(&mut heap);
         }
     }
 
     #[test]
-    fn a_hypothesis_prints_the_clause_built_from_it_and_restores_the_heap() {
+    fn printing_a_hypothesis_builds_its_clause_and_restores_the_heap() {
         let mut app = app(1);
         let learn = goal(&mut app, "t(a).");
 
@@ -414,10 +386,9 @@ mod hypothesis_resolution_tests {
         let printed = proof.hypothesis.to_string(&mut heap, &app.predicate_table);
         assert_eq!(before, (heap.cells.clone(), heap.var_regs.clone()));
 
-        let built = built(&proof.hypothesis, &mut heap, &app.predicate_table);
-        assert_eq!(printed, built[0].to_string(&heap));
+        assert_eq!(printed.lines().count(), 1);
         assert!(
-            printed.contains("t(") && printed.contains("q("),
+            printed.starts_with("t(") && printed.contains("q("),
             "{printed}"
         );
     }
