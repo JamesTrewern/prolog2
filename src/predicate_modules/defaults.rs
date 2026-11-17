@@ -2,7 +2,7 @@ use crate::{
     heap::{Heap, QueryHeap, Tag::*, VarBind::Addr},
     program::{Hypothesis, PredicateTable, MAX_ARG},
     resolution::unify,
-    Config,
+    ResolutionConfig,
 };
 
 use super::{utils::*, PredReturn, PredicateModule};
@@ -17,7 +17,7 @@ pub fn equal(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     heap.term_equal(goal + 2, goal + 3).into()
 }
@@ -28,7 +28,7 @@ pub fn not_equal(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     (!heap.term_equal(goal + 2, goal + 3)).into()
 }
@@ -39,7 +39,7 @@ pub fn not_unify(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     unify(heap, goal + 2, goal + 3, 63).is_none().into()
 }
@@ -54,7 +54,7 @@ pub fn univ(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let ((comp_tag, comp_value), comp_addr) =
         resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
@@ -99,7 +99,7 @@ pub fn is_var(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     (resolve_to_cell(heap, goal_arg(heap, goal, 0)).0 == Var).into()
 }
@@ -109,7 +109,7 @@ pub fn non_var(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     // goal_arg already derefs, so a Ref cell at this point is always unbound.
     (heap[goal_arg(heap, goal, 0)].0 != Var).into()
@@ -121,7 +121,7 @@ pub fn is_const(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     (heap[goal_arg(heap, goal, 0)].0 == Con).into()
 }
@@ -132,7 +132,7 @@ pub fn valid_functor(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let tag = heap[goal_arg(heap, goal, 0)].0;
     (tag == Con || tag == Var).into()
@@ -144,7 +144,7 @@ pub fn is_int(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     (heap[goal_arg(heap, goal, 0)].0 == Int).into()
 }
@@ -155,7 +155,7 @@ pub fn is_float(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     (heap[goal_arg(heap, goal, 0)].0 == Flt).into()
 }
@@ -166,7 +166,7 @@ pub fn is_number(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     matches!(heap[goal_arg(heap, goal, 0)], (Int, _) | (Flt, _)).into()
 }
@@ -177,7 +177,7 @@ pub fn is_string(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     (heap[goal_arg(heap, goal, 0)].0 == Stri).into()
 }
@@ -188,7 +188,7 @@ pub fn is_atomic(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     (![Comp, Tup, Set, Lis].contains(&resolve_to_cell(heap, goal_arg(heap, goal, 0)).0)).into()
 }
@@ -199,7 +199,7 @@ pub fn is_compound(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     (resolve_to_cell(heap, goal_arg(heap, goal, 0)).0 == Comp).into()
 }
@@ -210,7 +210,7 @@ pub fn is_tup(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     (resolve_to_cell(heap, goal_arg(heap, goal, 0)).0 == Tup).into()
 }
@@ -221,7 +221,7 @@ pub fn is_set(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     (resolve_to_cell(heap, goal_arg(heap, goal, 0)).0 == Set).into()
 }
@@ -232,7 +232,7 @@ pub fn is_list(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let addr = goal_arg(heap, goal, 0);
     match heap[addr] {

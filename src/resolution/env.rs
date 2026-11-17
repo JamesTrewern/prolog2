@@ -21,7 +21,7 @@ use crate::{
         unification::{unify, unify_from},
         Substitution,
     },
-    Bindings, Config,
+    Bindings, ResolutionConfig,
 };
 /// How a goal is resolved: either by unifying with clauses or by calling a
 /// native predicate function.
@@ -116,7 +116,7 @@ impl<'a> Env<'a> {
 
     /// Gather the clauses this goal may resolve against.
     ///
-    /// `protect` is [`Config::protect_h_preds`]. It insulates invented
+    /// `protect` is [`ResolutionConfig::protect_h_preds`]. It insulates invented
     /// predicates from the rest of the program in the two directions they can
     /// be reached from, which are separate cases needing separate treatment:
     ///
@@ -335,7 +335,7 @@ impl<'a> Env<'a> {
         heap: &mut QueryHeap,
         hypothesis: &mut H,
         predicate_table: &'a PredicateTable,
-        config: Config,
+        config: ResolutionConfig,
     ) -> Option<Vec<Env<'a>>> {
         if self.depth > config.max_depth {
             if config.debug {
@@ -369,7 +369,7 @@ impl<'a> Env<'a> {
         heap: &mut QueryHeap,
         hypothesis: &mut H,
         predicate_table: &PredicateTable,
-        config: Config,
+        config: ResolutionConfig,
     ) -> Option<Vec<Env<'a>>> {
         let Strategy::Native {
             function,

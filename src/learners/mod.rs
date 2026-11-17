@@ -12,5 +12,5 @@ mod noise;
 mod noise_report;
 mod parallel_mil;
 mod predicate_unification;
-mod sub_h_unification;
+mod sub_h_comb;
 mod utils;

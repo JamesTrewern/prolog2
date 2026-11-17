@@ -442,8 +442,8 @@ impl PredicateTable {
     /// Where `clause` sits in the clause arena, or `None` if it is not one
     /// of this table's clauses. Good until the table is next changed.
     pub fn index_of(&self, clause: &Clause) -> Option<usize> {
-        let offset = (clause as *const Clause as usize)
-            .checked_sub(self.clauses.as_ptr() as usize)?;
+        let offset =
+            (clause as *const Clause as usize).checked_sub(self.clauses.as_ptr() as usize)?;
         let size = std::mem::size_of::<Clause>();
         (offset % size == 0 && offset / size < self.clauses.len()).then_some(offset / size)
     }
@@ -656,7 +656,7 @@ mod tests {
         heap::{test_prog, Heap, ProgramHeap, QueryHeap},
         predicate_modules::PredReturn,
         program::Hypothesis,
-        Config,
+        ResolutionConfig,
     };
 
     fn pred_fn_placeholder(
@@ -664,7 +664,7 @@ mod tests {
         _hypothesis: &Hypothesis,
         _goal: usize,
         _predicate_table: &PredicateTable,
-        _config: Config,
+        _config: ResolutionConfig,
     ) -> PredReturn {
         PredReturn::True
     }

@@ -354,7 +354,7 @@ pub fn build_set(heap: &mut QueryHeap, elements: &[impl HeapTerm]) -> usize {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-use crate::{app::App, app::Solution, predicate_modules::PredicateModule, Config};
+use crate::{app::App, app::Solution, predicate_modules::PredicateModule, ResolutionConfig};
 
 #[cfg(test)]
 pub struct TestWrapper {
@@ -364,14 +364,13 @@ pub struct TestWrapper {
 #[cfg(test)]
 impl TestWrapper {
     pub fn new(modules: &[PredicateModule]) -> Self {
-        let mut config = Config::default();
+        let mut config = ResolutionConfig::default();
         config.debug = true;
         TestWrapper {
-            app: modules
-                .iter()
-                .fold(App::new().config(|_| config), |app, predicate_module| {
-                    app.load_module(predicate_module).unwrap()
-                }),
+            app: modules.iter().fold(
+                App::new().resolution(|_| config),
+                |app, predicate_module| app.load_module(predicate_module).unwrap(),
+            ),
         }
     }
 

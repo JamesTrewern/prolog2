@@ -794,7 +794,7 @@ mod tests {
         parser::_build_clause,
         program::{Clause, Constraints, Hypothesis, MetaSubTrait, PackedMetaSubs, PredicateTable},
         resolution::{build, Proof, Substitution},
-        Config,
+        ResolutionConfig,
     };
     use smallvec::SmallVec;
 
@@ -1503,7 +1503,7 @@ mod tests {
         pdt.dependencies(hypotheses.get(0).iter(), &heap, &mut defs);
         assert_eq!(defs.len(), 2);
 
-        let config = Config {
+        let config = ResolutionConfig {
             max_depth: 10,
             max_clause: 0,
             debug: false,

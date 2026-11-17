@@ -1,12 +1,12 @@
 {
-    "config": {
-        "max_depth": 5,
-        "max_clause": 3,
+    "resolution": {
+        "max_depth": 10,
+        "max_clause": 4,
         "debug": false
     },
     "examples": {
-        "pos": "examples/colreg/pos/avoid.pl",
-        "neg": "examples/colreg/neg/avoid.pl"
+        "pos": "examples/colreg/pos/cpa_side.pl",
+        "neg": "examples/colreg/neg/cpa_side.pl"
     },
     "body_predicates": [
         "sector/3",
@@ -48,7 +48,7 @@
     "files": [
         "examples/colreg/combined_bk.pl",
         "examples/colreg/meta.pl",
-        "examples/colreg/avoid_resume_meta.pl"
+        "examples/colreg/side_meta.pl"
     ],
     "parallel": {
         "reduce": true

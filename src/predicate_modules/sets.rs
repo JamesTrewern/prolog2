@@ -14,7 +14,7 @@ use crate::{
     heap::{Heap, QueryHeap, Tag, VarBind::Addr},
     predicate_modules::maths::Number,
     program::{Hypothesis, PredicateTable},
-    Config,
+    ResolutionConfig,
 };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ pub fn set_member_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let elem = goal_arg(heap, goal, 0);
     let Some(elements) = read_set(heap, goal_arg(heap, goal, 1)) else {
@@ -142,7 +142,7 @@ pub fn subset_sized(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let size_arg = resolve_to_cell(heap, goal_arg(heap, goal, 2));
     let Ok(Number::Int(size)) = Number::try_from(size_arg) else {
@@ -202,7 +202,7 @@ pub fn set_union_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let Some((first, second)) = read_two_sets(heap, goal) else {
         return PredReturn::False;
@@ -219,7 +219,7 @@ pub fn set_intersection_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let Some((first, second)) = read_two_sets(heap, goal) else {
         return PredReturn::False;
@@ -238,7 +238,7 @@ pub fn set_difference_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let Some((first, second)) = read_two_sets(heap, goal) else {
         return PredReturn::False;
@@ -257,7 +257,7 @@ pub fn set_symdiff_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let Some((first, second)) = read_two_sets(heap, goal) else {
         return PredReturn::False;
@@ -282,7 +282,7 @@ pub fn set_size_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let Some(elements) = read_set(heap, goal_arg(heap, goal, 0)) else {
         return PredReturn::False;
@@ -297,7 +297,7 @@ pub fn set_add_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let Some(mut elements) = read_set(heap, goal_arg(heap, goal, 0)) else {
         return PredReturn::False;
@@ -318,7 +318,7 @@ pub fn set_del_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let Some(elements) = read_set(heap, goal_arg(heap, goal, 0)) else {
         return PredReturn::False;
@@ -337,7 +337,7 @@ pub fn set_to_list_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let Some(elements) = read_set(heap, goal_arg(heap, goal, 0)) else {
         return PredReturn::False;
@@ -354,7 +354,7 @@ pub fn list_to_set_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let Some(elements) = read_list_addrs(heap, goal_arg(heap, goal, 0)) else {
         return PredReturn::False;

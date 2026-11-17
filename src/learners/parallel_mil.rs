@@ -23,13 +23,13 @@ use crate::{
         HypothesisTrait, MetaSub, MetaSubGroup, MetaSubTrait, PackedMetaSubs, PredicateTable,
     },
     resolution::Proof,
-    Config,
+    ResolutionConfig,
 };
 
 use super::{
     coverage::build_profiles,
     noise::{resolve_noise, Noise},
-    sub_h_unification::{least_sub_h, SearchCtx},
+    sub_h_comb::{least_sub_h, SearchCtx},
     utils::{compile_examples, reduce as reduce_hypothesis},
 };
 
@@ -50,11 +50,11 @@ impl App {
         };
         let parallel = self.parallel.unwrap_or_default();
         assert!(
-            self.config.max_clause <= MAX_PRED_DEFS,
+            self.resolution.max_clause <= MAX_PRED_DEFS,
             "max_clause is {}, but top program construction supports at most {MAX_PRED_DEFS}: \
              a sub hypothesis of that size could invent more predicates than the dependency \
              graph used to order their definitions can hold",
-            self.config.max_clause,
+            self.resolution.max_clause,
         );
         println!("=== Top Program Construction ===");
         println!(
@@ -72,7 +72,7 @@ impl App {
             &pos_goals,
             &self.predicate_table,
             &self.prog_heap,
-            self.config,
+            self.resolution,
         );
 
         // In debug mode double check no var cells left
@@ -96,7 +96,7 @@ impl App {
             &self.predicate_table,
             &hypotheses,
             &pdt,
-            self.config,
+            self.resolution,
             parallel,
         );
 
@@ -154,7 +154,7 @@ impl App {
                     hypothesis,
                     &self.prog_heap,
                     &self.predicate_table,
-                    self.config,
+                    self.resolution,
                     true,
                 );
             }
@@ -191,7 +191,7 @@ fn generalise(
     pos_goals: &[usize],
     predicate_table: &PredicateTable,
     heap: &ProgramHeap,
-    config: Config,
+    config: ResolutionConfig,
 ) -> (Vec<Cell>, PackedMetaSubs, PredDefTable) {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(*CPU_COUNT - 1)
@@ -518,7 +518,7 @@ fn generalise_thread(
     goal: usize,
     predicate_table: &PredicateTable,
     prog_heap: &ProgramHeap,
-    config: Config,
+    config: ResolutionConfig,
     tx: &mpsc::SyncSender<HypothesisMsg>,
 ) {
     let mut query_heap = QueryHeap::new(prog_heap, None);

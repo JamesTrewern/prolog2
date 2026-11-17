@@ -11,7 +11,7 @@ use super::{maths::Number, utils::*, PredReturn, PredicateModule};
 use crate::{
     heap::{Heap, QueryHeap, Tag::*, VarBind::Addr, EMPTY_LIS, LIS},
     program::{Hypothesis, PredicateTable},
-    Config,
+    ResolutionConfig,
 };
 
 // ── Predicates ────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ pub fn length(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let len_arg = resolve_to_cell(heap, goal_arg(heap, goal, 1));
 
@@ -65,7 +65,7 @@ pub fn sort(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let (Var, var_id) = resolve_to_cell(heap, goal_arg(heap, goal, 1)) else {
         return false.into();

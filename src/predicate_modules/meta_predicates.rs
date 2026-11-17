@@ -3,7 +3,7 @@ use crate::{
     predicate_modules::utils::{goal_arg, resolve_to_cell_and_addr},
     program::{Hypothesis, PredicateTable},
     resolution::Proof,
-    Config,
+    ResolutionConfig,
 };
 
 use super::{PredReturn, PredicateModule};
@@ -14,7 +14,7 @@ pub fn not(
     hypothesis: &Hypothesis,
     goal: usize,
     predicate_table: &PredicateTable,
-    config: Config,
+    config: ResolutionConfig,
 ) -> PredReturn {
     //Extract inner negated goal
     let (_, inner_goal) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
@@ -66,7 +66,7 @@ pub fn findall(
     _hypothesis: &Hypothesis,
     _goal: usize,
     _predicate_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     todo!()
 }

@@ -5,7 +5,7 @@ use crate::{
     parser::{build_clause, tokenise, TokenStream},
     program::PredicateTable,
     resolution::Proof,
-    Config,
+    ResolutionConfig,
 };
 
 /// Compile every example onto the program heap once, returning each one's
@@ -59,11 +59,11 @@ pub(super) fn reduce<'m>(
     mut hypothesis: Vec<&'m [usize]>,
     heap: &ProgramHeap,
     predicate_table: &PredicateTable,
-    config: Config,
+    config: ResolutionConfig,
     verbose: bool,
 ) -> Vec<&'m [usize]> {
     // Learning is off on the proofs below, not here.
-    let config = Config {
+    let config = ResolutionConfig {
         debug: false,
         ..config
     };

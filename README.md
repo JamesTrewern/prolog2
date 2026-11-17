@@ -57,10 +57,10 @@ $ prolog2 [CONFIG_FILE]
 ```
 
 ## Configuration Options
-Configured in a JSON file (default: `setup.json`):
+Configured in a JSON file (default: `config.json`):
 ``` json
 {
-    "config" : {
+    "resolution" : {
         "max_depth": 20,
         "max_clause": 4
     },
@@ -75,7 +75,7 @@ Configured in a JSON file (default: `setup.json`):
     "approx_tolerance_pct" : 10
 }
 ```
-`config` is used by the solver, to limit the possible search size.<br>
+`resolution` is used by the solver, to limit the possible search size.<br>
 `max_depth`: how many sub_goals deep the solver is allowed to go.<br>
 `max_clause`: number of clauses that can be added to hypothesis. This also bounds predicate invention, which has no setting of its own: an invented predicate needs a clause defining it on top of the clause that calls it, so a hypothesis can hold at most `max_clause - 1` invented predicates.<br>
 
@@ -118,7 +118,7 @@ Each sub-hypothesis collected by the above steps is then tested against the exam
 
 A sub-hypothesis entailing no negative then has each positive queried against it, to build a **Hypothesis Profile**: which positives it covers, along with its clause and literal counts, counting the **Predicate Definitions** it depends on.
 
-If the surving profiled sub-hypotheses cover every positive between them, the examples are consistent and the pipeline moves straight on to **Sub Hypothesis Unification**.
+If the surving profiled sub-hypotheses cover every positive between them, the examples are consistent and the pipeline moves straight on to **Sub Hypothesis Combination**.
 
 ### Noise Handling
 
@@ -130,7 +130,7 @@ This step only runs when some positive is left uncovered, meaning it is only ent
 4. If a removal fits within `pos_noise` and `neg_noise`, those examples are filtered out and noted in the output, the sub-hypotheses that entail only ignored negatives are brought back, and every profile is restricted to the examples left.
 5. If no removal fits, the run stops with a **Noise Report** on the examples of the cheapest removal found without the bounds. The report is described under [PMIL Usage](#pmil-usage).
 
-### Sub Hypothesis Unification
+### Sub Hypothesis Combination
 
 A single sub-hypothesis only has to prove the example it was generalised from, so a complete hypothesis is usually the union of several. This step looks for the smallest groups of sub-hypotheses that cover every positive between them:
 
@@ -159,7 +159,7 @@ If that removal fits within `pos_noise` and `neg_noise`, the examples are filter
 
 ``` json
 {
-    "config" : {
+    "resolution" : {
         "max_depth": 5,
         "max_clause": 2
     },
@@ -181,11 +181,11 @@ If that removal fits within `pos_noise` and `neg_noise`, the examples are filter
 }
 ```
 
-The same settings can be given in code. `App::config` and `App::parallel` each take a function from the settings so far to the ones to use, and each field has a method of its name:
+The same settings can be given in code. `App::resolution` and `App::parallel` each take a function from the settings so far to the ones to use, and each field has a method of its name:
 
 ``` rust
 let app = App::default()
-    .config(|config| config.max_depth(5).max_clause(2))
+    .resolution(|resolution| resolution.max_depth(5).max_clause(2))
     .parallel(|parallel| parallel.reduce(true).pos_noise(1));
 ```
 
@@ -237,7 +237,7 @@ We must then define our learning parameters in a config file
 
 ``` json
 {
-    "config" : {
+    "resolution" : {
         "max_depth": 10,
         "max_clause": 4,
         "debug": false
@@ -293,7 +293,7 @@ double(X,Y):-
 
 ``` json
 {
-    "config" : {
+    "resolution" : {
         "max_depth": 10,
         "max_clause": 0,
         "debug": false

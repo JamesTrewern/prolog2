@@ -1,7 +1,7 @@
 // Broad test on example files to prove working state of application
-use crate::{
+use prolog2::{
     app::{App, Solution},
-    Config,
+    ResolutionConfig,
 };
 
 pub(crate) fn contains_clause(solution: &Solution, clause: &str) -> bool {
@@ -73,7 +73,7 @@ fn ancestor() {
         "pred_1(A,B):-mum(A,B).",
     ];
 
-    let app = App::from_setup_json("examples/ancestor/config.json")
+    let app = App::from_config_json("examples/ancestor/config.json")
         .expect("failed to load config")
         .auto(true);
     test_solutions(app, &[H1, H2]);
@@ -81,7 +81,7 @@ fn ancestor() {
 
 #[test]
 fn map() {
-    let app = App::from_setup_json("examples/map/config.json").expect("failed to load config");
+    let app = App::from_config_json("examples/map/config.json").expect("failed to load config");
     // Grounded Double
     let solutions: Vec<Solution> = app
         .query_session("map([1,2,3],[2,4,6],double).")
@@ -113,7 +113,7 @@ fn odd_even() {
         "even(A):-zero(A).",
     ];
 
-    let app = App::from_setup_json("examples/odd_even/config.json")
+    let app = App::from_config_json("examples/odd_even/config.json")
         .expect("failed to load config")
         .auto(true);
     test_solutions(app, &[H1, H2]);
@@ -126,7 +126,7 @@ fn learn_map_double() {
         "double(A,B):-add(A,A,B).",
         "map_double([],[],A).",
     ];
-    let app = App::from_setup_json("examples/map/learn_config.json")
+    let app = App::from_config_json("examples/map/learn_config.json")
         .expect("failed to load config")
         .auto(true);
     test_solutions(app, &[H1]);
@@ -146,7 +146,7 @@ fn trains() {
         "e(A):-pred_1(A,B),short(B).",
         "pred_1(A,B):-has_car(A,B),closed(B).",
     ];
-    let app = App::from_setup_json("examples/trains/config.json")
+    let app = App::from_config_json("examples/trains/config.json")
         .expect("failed to load config")
         .auto(true);
     test_solutions(app, &[H1, H2, H3]);
@@ -160,7 +160,7 @@ fn fsm_parity() {
         "edge(0,odd,odd):-q(odd),q(odd).",
         "edge(1,odd,even):-q(odd),q(even).",
     ];
-    let app = App::from_setup_json("examples/parity/config.json")
+    let app = App::from_config_json("examples/parity/config.json")
         .expect("failed to load config")
         .auto(true);
     test_solutions(app, &[H1]);
@@ -170,7 +170,7 @@ fn fsm_parity() {
 
 #[test]
 fn top_prog_robots() {
-    let mut app = App::from_setup_json("examples/robots/tpc_config.json")
+    let mut app = App::from_config_json("examples/robots/tpc_config.json")
         .expect("failed to load config")
         .auto(true);
     app.run_parallel();
@@ -187,7 +187,7 @@ fn top_prog_robots() {
 // produces a hypothesis without panicking.
 // #[test]
 // fn top_prog_molecules_not() {
-//     let mut app = App::from_setup_json("examples/molecules/phenolic.json")
+//     let mut app = App::from_config_json("examples/molecules/phenolic.json")
 //         .expect("failed to load molecules setup")
 //         .auto(true);
 //     let result = app.run_top_prog();
@@ -199,7 +199,7 @@ fn top_prog_robots() {
 
 #[test]
 fn top_prog_trains() {
-    let mut app = App::from_setup_json("examples/trains/tpc_config.json")
+    let mut app = App::from_config_json("examples/trains/tpc_config.json")
         .expect("failed to load config")
         .auto(true);
     let result = app.run_parallel().unwrap().pop().unwrap();
@@ -210,7 +210,7 @@ fn top_prog_trains() {
     // assert!(result.lines().find(|line| *line == "pred_1(A):-short(A),closed(A).").is_some());
 }
 
-const COLREG_CONF: Config = Config {
+const COLREG_CONF: ResolutionConfig = ResolutionConfig {
     max_depth: 5,
     max_clause: 2,
     debug: false,
@@ -219,32 +219,32 @@ const COLREG_CONF: Config = Config {
 
 #[test]
 fn cpa_side() {
-    let mut app = App::from_setup_json("examples/colreg/setup_cpa_side.json")
+    let mut app = App::from_config_json("examples/colreg/cpa_side.json")
         .expect("failed to load config")
-        .config(|_| COLREG_CONF);
+        .resolution(|_| COLREG_CONF);
     let _result = app.run_parallel();
 }
 
 #[test]
 fn turn() {
-    let mut app = App::from_setup_json("examples/colreg/setup_turn.json")
+    let mut app = App::from_config_json("examples/colreg/turn.json")
         .expect("failed to load config")
-        .config(|_| COLREG_CONF);
+        .resolution(|_| COLREG_CONF);
     let _result = app.run_parallel();
 }
 
 #[test]
 fn avoid() {
-    let mut app = App::from_setup_json("examples/colreg/setup_avoid.json")
+    let mut app = App::from_config_json("examples/colreg/avoid.json")
         .expect("failed to load config")
-        .config(|_| COLREG_CONF);
+        .resolution(|_| COLREG_CONF);
     let _result = app.run_parallel();
 }
 
 #[test]
 fn resume() {
-    let mut app = App::from_setup_json("examples/colreg/setup_resume.json")
+    let mut app = App::from_config_json("examples/colreg/resume.json")
         .expect("failed to load config")
-        .config(|_| COLREG_CONF);
+        .resolution(|_| COLREG_CONF);
     let _result = app.run_parallel();
 }

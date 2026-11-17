@@ -9,7 +9,7 @@ use crate::{
     },
     predicate_modules::utils::{goal_arg, resolve_to_cell_and_addr},
     program::{Hypothesis, PredicateTable},
-    Config,
+    ResolutionConfig,
 };
 
 use fsize::fsize;
@@ -21,7 +21,7 @@ use fsize::fsize;
 /// `|a − b| ≤ (pct / 100) × max(|a|, |b|)`
 /// (exact equality passes when both values are zero).
 ///
-/// Updated by [`set_approx_tolerance`] or from `setup.json`.
+/// Updated by [`set_approx_tolerance`] or from `config.json`.
 static APPROX_TOLERANCE_PCT: AtomicU8 = AtomicU8::new(10);
 
 /// Update the global approximate-equality tolerance.
@@ -395,7 +395,7 @@ pub fn is_pred(
     _hypothesis: &Hypothesis,
     goal: usize,
     _pred_table: &PredicateTable,
-    _config: Config,
+    _config: ResolutionConfig,
 ) -> PredReturn {
     let ((Comp, 3), _) = resolve_to_cell_and_addr(heap, goal) else {
         return false.into();
@@ -434,7 +434,7 @@ pub fn lt_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     match eval_comparison(heap, goal) {
         Some((lhs, rhs)) => (lhs < rhs).into(),
@@ -448,7 +448,7 @@ pub fn gt_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     match eval_comparison(heap, goal) {
         Some((lhs, rhs)) => (lhs > rhs).into(),
@@ -462,7 +462,7 @@ pub fn le_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     match eval_comparison(heap, goal) {
         Some((lhs, rhs)) => (lhs <= rhs).into(),
@@ -476,7 +476,7 @@ pub fn ge_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     match eval_comparison(heap, goal) {
         Some((lhs, rhs)) => (lhs >= rhs).into(),
@@ -493,7 +493,7 @@ pub fn arith_eq_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     match eval_comparison(heap, goal) {
         Some((lhs, rhs)) => (lhs == rhs).into(),
@@ -508,13 +508,13 @@ pub fn arith_eq_pred(
 /// When both values are zero the predicate always succeeds.
 ///
 /// The tolerance percentage is set globally via `set_approx_tolerance`
-/// (default 10 %) or via the `approx_tolerance_pct` field in `setup.json`.
+/// (default 10 %) or via the `approx_tolerance_pct` field in `config.json`.
 pub fn approx_eq_pred(
     heap: &mut QueryHeap,
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let Some((lhs, rhs)) = eval_comparison(heap, goal) else {
         return false.into();

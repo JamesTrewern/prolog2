@@ -19,7 +19,7 @@ use std::collections::HashSet;
 use super::{
     coverage::{profile_rest, HProfile},
     noise_report::{noisy_positives, report_negative, report_positive, NoiseReport, NoisyNegative},
-    sub_h_unification::SearchCtx,
+    sub_h_comb::SearchCtx,
 };
 use crate::heap::{Heap, QueryHeap};
 

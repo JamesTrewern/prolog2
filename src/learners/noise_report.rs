@@ -38,7 +38,7 @@ use smallvec::SmallVec;
 
 use super::{
     coverage::{Coverage, HProfile},
-    sub_h_unification::SearchCtx,
+    sub_h_comb::SearchCtx,
 };
 use crate::{
     heap::{Heap, QueryHeap, Tag::Arg},

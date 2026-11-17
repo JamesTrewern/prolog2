@@ -1,5 +1,5 @@
 {
-    "config": {
+    "resolution": {
         "max_depth": 20,
         "max_clause": 200,
         "debug": false

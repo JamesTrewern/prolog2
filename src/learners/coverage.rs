@@ -16,8 +16,8 @@ use std::{
 
 use rayon::prelude::*;
 
-use super::sub_h_unification::SearchCtx;
-use crate::{heap::QueryHeap, program::MetaSubTrait, resolution::Proof, Config};
+use super::sub_h_comb::SearchCtx;
+use crate::{heap::QueryHeap, program::MetaSubTrait, resolution::Proof, ResolutionConfig};
 
 /// A bit per example, set when it is proved. Bits past the number of
 /// examples are set from the start, so full coverage is all ones.
@@ -190,10 +190,10 @@ impl HProfile {
     }
 }
 
-/// Config for a test proof: only the debug trace is silenced. `max_depth`
+/// ResolutionConfig for a test proof: only the debug trace is silenced. `max_depth`
 /// is kept to bound recursive candidates.
-fn test_config(config: Config) -> Config {
-    Config {
+fn test_config(config: ResolutionConfig) -> ResolutionConfig {
+    ResolutionConfig {
         debug: false,
         ..config
     }
@@ -328,22 +328,21 @@ pub(super) mod fixture {
     use crate::{
         heap::{Heap, ProgramHeap, Tag::Con, VarReg},
         learners::{
-            predicate_unification::PredDefTable, sub_h_unification::SearchCtx,
-            utils::compile_examples,
+            predicate_unification::PredDefTable, sub_h_comb::SearchCtx, utils::compile_examples,
         },
         parser::_build_clause,
         program::{MetaSub, PackedMetaSubs, PredicateTable},
-        Config, ParallelConfig,
+        ParallelConfig, ResolutionConfig,
     };
 
     /// `max_clause` is left at the default: the proofs these tests drive do
     /// not learn, so the hypothesis size limit never comes into it.
-    fn config() -> Config {
-        Config {
+    fn config() -> ResolutionConfig {
+        ResolutionConfig {
             max_depth: 10,
             debug: false,
             protect_h_preds: false,
-            ..Config::default()
+            ..ResolutionConfig::default()
         }
     }
 

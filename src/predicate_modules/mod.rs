@@ -42,13 +42,12 @@ pub use sets::SETS;
 pub use strings::STRINGS;
 
 use crate::{
-    Bindings,
     heap::{
         Heap, QueryHeap,
         VarBind::{self, Addr},
     },
     program::{Hypothesis, PredicateTable},
-    Config,
+    Bindings, ResolutionConfig,
 };
 use smallvec::SmallVec;
 
@@ -131,9 +130,14 @@ impl PredReturn {
 /// - `&Hypothesis` — the current learned hypothesis
 /// - `usize` — heap address of the goal term being resolved
 /// - `&PredicateTable` — the program's predicate table
-/// - `Config` — engine configuration
-pub type PredicateFunction =
-    for<'a> fn(&mut QueryHeap<'a>, &Hypothesis, usize, &PredicateTable, Config) -> PredReturn;
+/// - `ResolutionConfig` — engine configuration
+pub type PredicateFunction = for<'a> fn(
+    &mut QueryHeap<'a>,
+    &Hypothesis,
+    usize,
+    &PredicateTable,
+    ResolutionConfig,
+) -> PredReturn;
 
 /// A predicate module: a tuple of native predicate entries and built-in Prolog source code.
 ///

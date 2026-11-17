@@ -5,7 +5,7 @@ use super::{
 use crate::{
     heap::{Heap, ProgramHeap, QueryHeap},
     program::{PackedMetaSubs, PredicateTable},
-    Config, ParallelConfig,
+    ParallelConfig, ResolutionConfig,
 };
 
 /// The read-only program context every stage of the group search needs.
@@ -22,7 +22,7 @@ pub(super) struct SearchCtx<'a> {
     pub(super) hypotheses: &'a PackedMetaSubs,
     /// The definitions of the predicates they invent.
     pub(super) pdt: &'a PredDefTable,
-    pub(super) config: Config,
+    pub(super) config: ResolutionConfig,
     pub(super) parallel: ParallelConfig,
 }
 
@@ -32,7 +32,7 @@ impl<'a> SearchCtx<'a> {
         predicate_table: &'a PredicateTable,
         hypotheses: &'a PackedMetaSubs,
         pdt: &'a PredDefTable,
-        config: Config,
+        config: ResolutionConfig,
         parallel: ParallelConfig,
     ) -> Self {
         Self {

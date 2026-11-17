@@ -4,7 +4,7 @@ use super::env::Env;
 use crate::{
     heap::{Heap, QueryHeap},
     program::{Hypothesis, HypothesisTrait, PredicateTable},
-    Config,
+    ResolutionConfig,
 };
 
 /// The proof search engine.
@@ -55,7 +55,7 @@ impl<'a, H: HypothesisTrait> Proof<'a, H> {
         &mut self,
         heap: &mut QueryHeap,
         predicate_table: &'a PredicateTable,
-        config: Config,
+        config: ResolutionConfig,
     ) -> bool {
         // Handle restart after previous success
         if self.pointer == self.stack.len() {
@@ -167,7 +167,7 @@ mod learning_switch_tests {
         let mut heap = QueryHeap::new(&app.prog_heap, None);
         let mut learning = Proof::new(&heap, &[goal]);
         assert!(
-            learning.prove(&mut heap, &app.predicate_table, app.config),
+            learning.prove(&mut heap, &app.predicate_table, app.resolution),
             "t(a) should be provable by inventing t(X):-q(X)"
         );
         assert_eq!(
@@ -181,7 +181,7 @@ mod learning_switch_tests {
         let empty = Hypothesis::new();
         let mut testing = Proof::with_hypothesis(&heap, &[goal], &empty);
         assert!(
-            !testing.prove(&mut heap, &app.predicate_table, app.config),
+            !testing.prove(&mut heap, &app.predicate_table, app.resolution),
             "with learning off there is no clause for t/1, so the goal must fail -- \
              this is what the six test-proof call sites rely on"
         );
@@ -194,7 +194,7 @@ mod learning_switch_tests {
     fn max_clause_is_not_what_disables_learning() {
         let app = app();
         assert!(
-            app.config.max_clause > 0,
+            app.resolution.max_clause > 0,
             "the fixture must leave room to learn, or the test above proves nothing"
         );
     }
@@ -293,7 +293,7 @@ mod hypothesis_resolution_tests {
             .expect("test program should load")
             .add_body_predicates(["q/1", "r/1"])
             .expect("body predicates should load");
-        app.config.max_clause = max_clause;
+        app.resolution.max_clause = max_clause;
         app
     }
 
@@ -311,7 +311,7 @@ mod hypothesis_resolution_tests {
         let mut heap = QueryHeap::new(&app.prog_heap, None);
         let mut proof = Proof::new(&heap, &goals);
 
-        assert!(proof.prove(&mut heap, &app.predicate_table, app.config));
+        assert!(proof.prove(&mut heap, &app.predicate_table, app.resolution));
         assert_eq!(proof.hypothesis.len(), 1);
     }
 
@@ -325,7 +325,7 @@ mod hypothesis_resolution_tests {
         let mut heap = QueryHeap::new(&app.prog_heap, None);
         let mut proof = Proof::new(&heap, &goals);
 
-        assert!(!proof.prove(&mut heap, &app.predicate_table, app.config));
+        assert!(!proof.prove(&mut heap, &app.predicate_table, app.resolution));
     }
 
     #[test]
@@ -339,7 +339,7 @@ mod hypothesis_resolution_tests {
         let mut heap = QueryHeap::new(&app.prog_heap, None);
         let mut proof = Proof::new(&heap, &goals);
 
-        assert!(proof.prove(&mut heap, &app.predicate_table, app.config));
+        assert!(proof.prove(&mut heap, &app.predicate_table, app.resolution));
         assert_eq!(proof.hypothesis.len(), 2);
     }
 
@@ -355,13 +355,13 @@ mod hypothesis_resolution_tests {
 
         let mut heap = QueryHeap::new(&app.prog_heap, None);
         let mut learning = Proof::new(&heap, &[learn]);
-        assert!(learning.prove(&mut heap, &app.predicate_table, app.config));
+        assert!(learning.prove(&mut heap, &app.predicate_table, app.resolution));
         let hypothesis = learning.hypothesis.clone();
 
         for (goal, expected) in cases {
             let mut proof = Proof::with_hypothesis(&heap, &[goal], &hypothesis);
             assert_eq!(
-                proof.prove(&mut heap, &app.predicate_table, app.config),
+                proof.prove(&mut heap, &app.predicate_table, app.resolution),
                 expected
             );
             assert_eq!(
@@ -380,7 +380,7 @@ mod hypothesis_resolution_tests {
 
         let mut heap = QueryHeap::new(&app.prog_heap, None);
         let mut proof = Proof::new(&heap, &[learn]);
-        assert!(proof.prove(&mut heap, &app.predicate_table, app.config));
+        assert!(proof.prove(&mut heap, &app.predicate_table, app.resolution));
 
         let before = (heap.cells.clone(), heap.var_regs.clone());
         let printed = proof.hypothesis.to_string(&mut heap, &app.predicate_table);
@@ -405,7 +405,7 @@ mod hypothesis_resolution_tests {
 
         let mut heap = QueryHeap::new(&app.prog_heap, None);
         let mut learning = Proof::new(&heap, &[learn]);
-        assert!(learning.prove(&mut heap, &app.predicate_table, app.config));
+        assert!(learning.prove(&mut heap, &app.predicate_table, app.resolution));
 
         let mut packed = PackedMetaSubs::default();
         packed.push(learning.hypothesis.meta_subs.iter());
@@ -416,7 +416,7 @@ mod hypothesis_resolution_tests {
         for (goal, expected) in cases {
             let mut proof = Proof::with_hypothesis(&heap, &[goal], meta_subs.as_slice());
             assert_eq!(
-                proof.prove(&mut heap, &app.predicate_table, app.config),
+                proof.prove(&mut heap, &app.predicate_table, app.resolution),
                 expected
             );
             proof.undo_all(&mut heap);
@@ -425,6 +425,6 @@ mod hypothesis_resolution_tests {
         // Without them the goal has nothing to resolve against.
         let none: &[&[usize]] = &[];
         let mut bare = Proof::with_hypothesis(&heap, &[cases[0].0], none);
-        assert!(!bare.prove(&mut heap, &app.predicate_table, app.config));
+        assert!(!bare.prove(&mut heap, &app.predicate_table, app.resolution));
     }
 }

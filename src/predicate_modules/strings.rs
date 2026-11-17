@@ -16,7 +16,7 @@ use super::{utils::*, PredReturn, PredicateModule};
 use crate::{
     heap::{Cell, Heap, QueryHeap, Tag::*, VarBind::Addr},
     program::{Hypothesis, PredicateTable},
-    Config,
+    ResolutionConfig,
 };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ pub fn atom_string_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let (con_cell, _) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 0));
     let (stri_cell, _) = resolve_to_cell_and_addr(heap, goal_arg(heap, goal, 1));
@@ -88,7 +88,7 @@ pub fn atom_number_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let const_a = goal_arg(heap, goal, 0);
     let num_a = goal_arg(heap, goal, 1);
@@ -134,7 +134,7 @@ pub fn number_string_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let num_a = goal_arg(heap, goal, 0);
     let str_a = goal_arg(heap, goal, 1);
@@ -177,7 +177,7 @@ pub fn term_string_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let term_a = goal_arg(heap, goal, 0);
     let str_a = goal_arg(heap, goal, 1);
@@ -202,7 +202,7 @@ pub fn char_code_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     let char_a = goal_arg(heap, goal, 0);
     let code_a = goal_arg(heap, goal, 1);
@@ -252,7 +252,7 @@ pub fn atom_length_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     length_impl(heap, goal, |cell| matches!(cell, (Con, _)))
 }
@@ -263,7 +263,7 @@ pub fn string_length_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     length_impl(heap, goal, |cell| matches!(cell, (Stri, _)))
 }
@@ -343,7 +343,7 @@ pub fn atom_concat_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     concat_impl(heap, goal, |h, s| push_const(h, s))
 }
@@ -354,7 +354,7 @@ pub fn string_concat_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     concat_impl(heap, goal, |h, s| push_string(h, Arc::from(s)))
 }
@@ -413,7 +413,7 @@ pub fn upcase_atom_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     upcase_impl(heap, goal, false)
 }
@@ -424,7 +424,7 @@ pub fn downcase_atom_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     downcase_impl(heap, goal, false)
 }
@@ -435,7 +435,7 @@ pub fn upcase_string_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     upcase_impl(heap, goal, true)
 }
@@ -446,7 +446,7 @@ pub fn downcase_string_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     downcase_impl(heap, goal, true)
 }
@@ -531,7 +531,7 @@ pub fn atom_chars_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     chars_impl(heap, goal, |h, s| push_const(h, s))
 }
@@ -542,7 +542,7 @@ pub fn string_chars_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     chars_impl(heap, goal, |h, s| push_string(h, Arc::from(s)))
 }
@@ -617,7 +617,7 @@ pub fn atom_codes_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     codes_impl(heap, goal, |h, s| push_const(h, s))
 }
@@ -628,7 +628,7 @@ pub fn string_codes_pred(
     _: &Hypothesis,
     goal: usize,
     _: &PredicateTable,
-    _: Config,
+    _: ResolutionConfig,
 ) -> PredReturn {
     codes_impl(heap, goal, |h, s| push_string(h, Arc::from(s)))
 }
@@ -744,7 +744,7 @@ pub fn string_codes_pred(
 //     _: &Hypothesis,
 //     goal: usize,
 //     _: &PredicateTable,
-//     _: Config,
+//     _: ResolutionConfig,
 // ) -> PredReturn {
 //     sub_impl(heap, goal, |h, s| push_const(h, s))
 // }
@@ -755,7 +755,7 @@ pub fn string_codes_pred(
 //     _: &Hypothesis,
 //     goal: usize,
 //     _: &PredicateTable,
-//     _: Config,
+//     _: ResolutionConfig,
 // ) -> PredReturn {
 //     sub_impl(heap, goal, |h, s| push_string(h, Arc::from(s)))
 // }

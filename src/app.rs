@@ -14,9 +14,10 @@ use crate::{
     Error, Result,
 };
 
-/// Engine configuration loaded from a JSON setup file.
+/// Bounds on meta (second order) resolution, the `resolution` block of a
+/// JSON config file.
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
-pub struct Config {
+pub struct ResolutionConfig {
     /// Maximum proof search depth.
     pub max_depth: usize,
     /// Maximum number of learned clauses per hypothesis.
@@ -29,7 +30,7 @@ pub struct Config {
     pub protect_h_preds: bool,
 }
 
-/// Default for [`Config::protect_h_preds`]: absent means enabled.
+/// Default for [`ResolutionConfig::protect_h_preds`]: absent means enabled.
 ///
 /// `#[serde(default)]` on a `bool` would use `bool::default()`, which is
 /// `false` — the opposite of the intended default — so the field needs an
@@ -38,7 +39,7 @@ fn protect_h_preds_default() -> bool {
     true
 }
 
-impl Config {
+impl ResolutionConfig {
     /// Set [`Self::max_depth`].
     pub fn max_depth(self, max_depth: usize) -> Self {
         Self { max_depth, ..self }
@@ -63,7 +64,7 @@ impl Config {
     }
 }
 
-impl Default for Config {
+impl Default for ResolutionConfig {
     fn default() -> Self {
         Self {
             max_depth: 100,
@@ -74,7 +75,7 @@ impl Default for Config {
     }
 }
 
-/// A body predicate declaration in the setup file.
+/// A body predicate declaration in the config file.
 /// Deserialized from a string whith predicate and arity seperated by '/'
 /// e.g `"p/2"`.
 #[derive(Serialize, Debug)]
@@ -209,7 +210,7 @@ pub struct Examples {
 /// Settings for parallel learning — Top Program Construction across all the
 /// positive examples at once.
 ///
-/// Its presence is what selects that mode: [`SetUp::parallel`] is an
+/// Its presence is what selects that mode: [`Config::parallel`] is an
 /// `Option`, so a config either carries this block and learns, or omits it
 /// and runs the examples as a direct query. That is why there is no `enabled`
 /// field here.
@@ -295,11 +296,12 @@ impl Default for ParallelConfig {
     }
 }
 
-/// Top-level setup loaded from a JSON configuration file.
+/// Top-level configuration loaded from a JSON config file.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct SetUp {
-    pub config: Config,
+pub struct Config {
+    /// Bounds on meta (second order) resolution.
+    pub resolution: ResolutionConfig,
     pub body_predicates: Vec<BodyPred>,
     pub files: Vec<String>,
     pub examples: Option<Examples>,
@@ -370,8 +372,8 @@ impl Examples {
 ///     .load_file("facts.pl".as_ref()).unwrap();
 /// ```
 ///
-/// Alternatively, load the full configuration from a JSON setup file with
-/// [`App::from_setup_json`].
+/// Alternatively, load the full configuration from a JSON config file with
+/// [`App::from_config_json`].
 ///
 /// # Running queries
 ///
@@ -384,7 +386,7 @@ impl Examples {
 pub struct App {
     pub(crate) predicate_table: PredicateTable,
     pub(crate) prog_heap: ProgramHeap,
-    pub(crate) config: Config,
+    pub(crate) resolution: ResolutionConfig,
     pub(crate) auto: bool,
     pub(crate) examples: Option<Examples>,
     pub(crate) parallel: Option<ParallelConfig>,
@@ -412,14 +414,14 @@ impl App {
         App {
             predicate_table: PredicateTable::new(),
             prog_heap: ProgramHeap::new(),
-            config: Config::default(),
+            resolution: ResolutionConfig::default(),
             auto: false,
             examples: None,
             parallel: None,
         }
     }
 
-    /// Sets the engine configuration (search depth, clause limits, debug mode).
+    /// Sets the resolution configuration (search depth, clause limits, debug mode).
     ///
     /// `update` is given the configuration so far and returns the one to
     /// use:
@@ -427,22 +429,22 @@ impl App {
     /// ```
     /// use prolog2::app::App;
     ///
-    /// let app = App::default().config(|config| config.max_depth(10).max_clause(3));
+    /// let app = App::default().resolution(|resolution| resolution.max_depth(10).max_clause(3));
     /// ```
     ///
     /// To give the configuration whole, ignore the one passed in:
     ///
     /// ```
-    /// use prolog2::{app::App, Config};
+    /// use prolog2::{app::App, ResolutionConfig};
     ///
-    /// let app = App::default().config(|_| Config {
+    /// let app = App::default().resolution(|_| ResolutionConfig {
     ///     max_depth: 10,
-    ///     ..Config::default()
+    ///     ..ResolutionConfig::default()
     /// });
     /// ```
-    pub fn config(self, update: impl FnOnce(Config) -> Config) -> Self {
+    pub fn resolution(self, update: impl FnOnce(ResolutionConfig) -> ResolutionConfig) -> Self {
         App {
-            config: update(self.config),
+            resolution: update(self.resolution),
             ..self
         }
     }
@@ -501,30 +503,30 @@ impl App {
         }
     }
 
-    /// Loads and fully initialises an engine from a JSON setup file.
+    /// Loads and fully initialises an engine from a JSON config file.
     ///
-    /// The setup file controls the [`Config`], which `.pl` source files to
+    /// The config file controls the [`ResolutionConfig`], which `.pl` source files to
     /// load, which predicates are available as body predicates for MIL, and
-    /// any training examples. See [`SetUp`] for the full schema.
+    /// any training examples. See [`Config`] for the full schema.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::IO`] if the file cannot be read, [`Error::Setup`] if
+    /// Returns [`Error::IO`] if the file cannot be read, [`Error::Config`] if
     /// the JSON is malformed, or [`Error::Parser`] if any of the loaded `.pl`
     /// files contain a syntax error.
-    pub fn from_setup_json(path: impl AsRef<str>) -> Result<Self> {
+    pub fn from_config_json(path: impl AsRef<str>) -> Result<Self> {
         let path = path.as_ref();
-        let setup: SetUp = serde_json::from_str(&fs::read_to_string(path)?)?;
+        let config: Config = serde_json::from_str(&fs::read_to_string(path)?)?;
 
-        set_approx_tolerance(setup.approx_tolerance_pct);
+        set_approx_tolerance(config.approx_tolerance_pct);
 
         let mut app = App {
             predicate_table: PredicateTable::new(),
             prog_heap: ProgramHeap::new(),
-            config: setup.config,
-            auto: setup.auto,
-            examples: setup.examples,
-            parallel: setup.parallel,
+            resolution: config.resolution,
+            auto: config.auto,
+            examples: config.examples,
+            parallel: config.parallel,
         };
 
         for predicate_module in STANDARD_MODULES {
@@ -533,7 +535,7 @@ impl App {
                 .expect("built-in module should always load");
         }
 
-        for path in setup.files {
+        for path in config.files {
             let path = Path::new(&path);
             if path.metadata()?.is_dir() {
                 app = app.load_dir(path)?;
@@ -541,20 +543,20 @@ impl App {
                 app = app.load_file(&path)?;
             }
         }
-        app.add_body_predicates(setup.body_predicates)
+        app.add_body_predicates(config.body_predicates)
     }
 
-    /// Load setup from a json file
-    pub fn load_setup(mut self, path: impl AsRef<str>) -> Result<Self> {
+    /// Load the configuration from a JSON file
+    pub fn load_config(mut self, path: impl AsRef<str>) -> Result<Self> {
         let path = path.as_ref();
-        let setup: SetUp = serde_json::from_str(&fs::read_to_string(path)?)?;
+        let config: Config = serde_json::from_str(&fs::read_to_string(path)?)?;
 
-        set_approx_tolerance(setup.approx_tolerance_pct);
+        set_approx_tolerance(config.approx_tolerance_pct);
 
-        self.parallel = setup.parallel;
-        self.config = setup.config;
-        self.examples = setup.examples;
-        self.auto = setup.auto;
+        self.parallel = config.parallel;
+        self.resolution = config.resolution;
+        self.examples = config.examples;
+        self.auto = config.auto;
         Ok(self)
     }
 
@@ -750,7 +752,7 @@ impl App {
             proof,
             vars,
             predicate_table: &self.predicate_table,
-            config: self.config,
+            config: self.resolution,
         })
     }
 
@@ -892,7 +894,7 @@ pub struct QuerySession<'a> {
     proof: Proof<'a>,
     vars: Vec<(Arc<str>, usize)>, // (variable_name, heap_address)
     predicate_table: &'a PredicateTable,
-    config: Config,
+    config: ResolutionConfig,
 }
 
 /// A single solution returned by [`QuerySession`].
@@ -948,11 +950,11 @@ impl<'a> Iterator for QuerySession<'a> {
 
 #[cfg(test)]
 mod builder_tests {
-    use super::{App, Config, ParallelConfig, DEFAULT_FINAL_H_COUNT};
+    use super::{App, ParallelConfig, ResolutionConfig, DEFAULT_FINAL_H_COUNT};
 
     #[test]
-    fn each_config_field_has_a_builder() {
-        let config = Config::default()
+    fn each_resolution_field_has_a_builder() {
+        let config = ResolutionConfig::default()
             .max_depth(7)
             .max_clause(2)
             .debug(true)
@@ -962,13 +964,16 @@ mod builder_tests {
     }
 
     #[test]
-    fn app_config_updates_the_configuration_so_far() {
+    fn app_resolution_updates_the_configuration_so_far() {
         let app = App::default()
-            .config(|config| config.max_depth(7))
-            .config(|config| config.max_clause(2));
-        assert_eq!((app.config.max_depth, app.config.max_clause), (7, 2));
+            .resolution(|resolution| resolution.max_depth(7))
+            .resolution(|resolution| resolution.max_clause(2));
+        assert_eq!(
+            (app.resolution.max_depth, app.resolution.max_clause),
+            (7, 2)
+        );
         // The rest is as it was.
-        assert_eq!(app.config.debug, Config::default().debug);
+        assert_eq!(app.resolution.debug, ResolutionConfig::default().debug);
     }
 
     #[test]
