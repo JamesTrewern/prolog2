@@ -37,7 +37,7 @@ use rayon::prelude::*;
 use smallvec::SmallVec;
 
 use super::{
-    coverage::{Coverage, HProfile},
+    coverage::{covered_by, low_bits, Coverage, HProfile, Profiled},
     sub_h_comb::SearchCtx,
 };
 use crate::{
@@ -958,11 +958,6 @@ impl NoiseReport {
     }
 }
 
-/// Bits below `len`: the examples there are, of a [`Coverage`].
-fn low_bits(len: usize) -> u128 {
-    !u128::MAX.checked_shl(len as u32).unwrap_or(0)
-}
-
 /// The clauses of sub hypotheses taken together, with the definitions they
 /// depend on, as text.
 fn group_clauses(group: &[u32], heap: &mut QueryHeap, ctx: SearchCtx) -> Vec<String> {
@@ -999,12 +994,15 @@ pub(super) struct NoisyNegative {
 pub(super) fn report_negative(
     report: &mut NoiseReport,
     negative: &NoisyNegative,
-    kept: &[HProfile],
-    rest: &[HProfile],
-    pos_goals: &[usize],
-    neg_goals: &[usize],
-    ctx: SearchCtx,
+    profiled: Profiled,
 ) {
+    let Profiled {
+        kept,
+        rest,
+        pos_goals,
+        neg_goals,
+        ctx,
+    } = profiled;
     let mut heap = QueryHeap::new(ctx.heap, None);
     let (n_pos, n_neg) = (pos_goals.len(), neg_goals.len());
     let positives = |heap: &QueryHeap, set: u128| -> Vec<String> {
@@ -1054,9 +1052,9 @@ pub(super) fn report_negative(
 
     // Greedy covers: of everything coverable with it ignored, and of what
     // is left coverable with it kept.
-    let within = kept.iter().fold(0, |all, p| all | p.coverage.0) & low_bits(n_pos);
+    let within = covered_by(kept, n_pos);
     let ignoring = kept.iter().chain(alone.iter().copied());
-    let reachable = ignoring.clone().fold(0, |all, p| all | p.coverage.0) & low_bits(n_pos);
+    let reachable = covered_by(ignoring.clone(), n_pos);
     let with_ignored = greedy_cover(ignoring, reachable, n_neg);
     let with_kept = greedy_cover(kept.iter(), within, n_neg);
     let hs = |group: &[&HProfile]| -> Vec<u32> { group.iter().map(|p| p.h).collect() };
@@ -1086,16 +1084,18 @@ pub(super) fn report_negative(
 
 /// Add the part of the report on a noisy positive, in six sections.
 ///
-/// `kept` are the profiles proving no negative, `rest` the others.
 pub(super) fn report_positive(
     report: &mut NoiseReport,
     positive: &NoisyPositive,
-    kept: &[HProfile],
-    rest: &[HProfile],
-    pos_goals: &[usize],
-    neg_goals: &[usize],
-    ctx: SearchCtx,
+    profiled: Profiled,
 ) {
+    let Profiled {
+        kept,
+        rest,
+        pos_goals,
+        neg_goals,
+        ctx,
+    } = profiled;
     let examples = &Examples::find(positive, kept, rest, pos_goals, neg_goals.len(), ctx);
     let mut heap = QueryHeap::new(ctx.heap, None);
 
@@ -1423,7 +1423,7 @@ pub(super) fn report_positive(
 pub(super) mod toy_model {
     use super::{
         noisy_positives, report_positive, DefUse, Definitions, Examples, LiteralUse, NoiseReport,
-        NoisyPositive,
+        NoisyPositive, Profiled,
     };
     use crate::{
         learners::{
@@ -1516,11 +1516,13 @@ pub(super) mod toy_model {
                 report_positive(
                     &mut report,
                     positive,
-                    &self.kept,
-                    &self.rest,
-                    &self.pos_goals,
-                    &self.fixture.neg_goals,
-                    self.fixture.ctx(ParallelConfig::default()),
+                    Profiled {
+                        kept: &self.kept,
+                        rest: &self.rest,
+                        pos_goals: &self.pos_goals,
+                        neg_goals: &self.fixture.neg_goals,
+                        ctx: self.fixture.ctx(ParallelConfig::default()),
+                    },
                 );
             }
             report

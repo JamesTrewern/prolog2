@@ -89,8 +89,40 @@ impl Coverage {
 
     /// The examples covered, of the first `len`.
     pub(super) fn indices(&self, len: usize) -> Vec<usize> {
-        (0..len).filter(|&i| self.get(i)).collect()
+        set_bits(self.0 & low_bits(len))
     }
+}
+
+/// Bits below `len`: the examples there are, of a [`Coverage`].
+pub(super) fn low_bits(len: usize) -> u128 {
+    !u128::MAX.checked_shl(len as u32).unwrap_or(0)
+}
+
+/// The set bits, as indices.
+pub(super) fn set_bits(bits: u128) -> Vec<usize> {
+    (0..128).filter(|&i| bits & 1 << i != 0).collect()
+}
+
+/// The positives, of `n_pos`, that `profiles` cover between them.
+pub(super) fn covered_by<'a>(
+    profiles: impl IntoIterator<Item = &'a HProfile>,
+    n_pos: usize,
+) -> u128 {
+    let covered = profiles.into_iter().fold(0, |all, p| all | p.coverage.0);
+    covered & low_bits(n_pos)
+}
+
+/// The examples and the profile of every sub hypothesis, as noise handling
+/// passes them around.
+#[derive(Clone, Copy)]
+pub(super) struct Profiled<'a> {
+    /// The profiles of the sub hypotheses entailing no negative.
+    pub(super) kept: &'a [HProfile],
+    /// The profiles of the others.
+    pub(super) rest: &'a [HProfile],
+    pub(super) pos_goals: &'a [usize],
+    pub(super) neg_goals: &'a [usize],
+    pub(super) ctx: SearchCtx<'a>,
 }
 
 /// One sub hypothesis and what it proves.

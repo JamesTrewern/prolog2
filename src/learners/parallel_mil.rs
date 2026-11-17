@@ -114,7 +114,10 @@ pub(crate) fn parallel(
     // run ends with a report on those examples.
     let (pos_goals, neg_goals, h_profiles) =
         match resolve_noise(h_profiles, &pos_goals, &neg_goals, ctx) {
-            Noise::Clean(h_profiles) => (pos_goals, neg_goals, h_profiles),
+            // Uncovered: the cover search names the positives and gives up.
+            Noise::Clean(h_profiles) | Noise::Uncovered(h_profiles) => {
+                (pos_goals, neg_goals, h_profiles)
+            }
             Noise::Filtered(filtered) => {
                 println!("=== Noise ===\n{}", filtered.note);
                 (filtered.pos_goals, filtered.neg_goals, filtered.h_profiles)

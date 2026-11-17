@@ -17,7 +17,7 @@
 use std::collections::HashSet;
 
 use super::{
-    coverage::{profile_rest, HProfile},
+    coverage::{covered_by, low_bits, profile_rest, set_bits, Coverage, HProfile, Profiled},
     noise_report::{noisy_positives, report_negative, report_positive, NoiseReport, NoisyNegative},
     sub_h_comb::SearchCtx,
 };
@@ -27,12 +27,23 @@ use crate::heap::{Heap, QueryHeap};
 /// is made greedily.
 const ENUMERATION_CAP: usize = 1 << 16;
 /// Most alternative negative sets kept for one positive, smallest first.
+///
+/// Bounds the work of discarding sets that contain another. A positive with
+/// more sets than this loses the larger ones silently. That is rarely felt,
+/// a larger set never being the cheaper choice for its own positive, but a
+/// dropped set may be one shared with other positives. The removal found can
+/// then be dearer than the cheapest, set aside a positive that ignoring the
+/// chosen negatives would in fact entail, or not be found within the bounds.
 const MAX_SETS: usize = 64;
 
 /// What [`resolve_noise`] found.
 pub(super) enum Noise {
     /// Nothing to do: the profiles as they were given.
     Clean(Vec<HProfile>),
+    /// Nothing to settle, but nothing entails some positives and they are
+    /// more than may be left uncovered: the profiles as they were given,
+    /// for the cover search to name those positives.
+    Uncovered(Vec<HProfile>),
     /// Some examples were set aside.
     Filtered(Filtered),
     /// No removal within the bounds leaves a hypothesis.
@@ -45,10 +56,6 @@ pub(super) struct Filtered {
     pub(super) neg_goals: Vec<usize>,
     /// The usable sub hypotheses, their coverage over the examples left.
     pub(super) h_profiles: Vec<HProfile>,
-    /// Indices of the positives left uncovered, in the original examples.
-    pub(super) dropped: Vec<usize>,
-    /// Indices of the negatives ignored, in the original examples.
-    pub(super) ignored: Vec<usize>,
     /// What was set aside, to be printed.
     pub(super) note: String,
 }
@@ -75,38 +82,24 @@ impl Removal {
     }
 }
 
-/// Bits below `len`.
-fn low_bits(len: usize) -> u128 {
-    !u128::MAX.checked_shl(len as u32).unwrap_or(0)
-}
-
-/// The set bits, as indices.
-fn indices(bits: u128) -> Vec<usize> {
-    (0..128).filter(|&i| bits & 1 << i != 0).collect()
-}
-
 /// The conflicts among the positives `kept` leaves uncovered, and the
 /// positives nothing in `rest` proves either, which no removal recovers.
-fn conflicts(
-    kept: &[HProfile],
-    rest: &[HProfile],
-    n_pos: usize,
-    n_neg: usize,
-) -> (Vec<Conflict>, u128) {
-    let covered = kept.iter().fold(0, |all, p| all | p.coverage.0);
-    let uncovered = !covered & low_bits(n_pos);
+fn conflicts(profiled: Profiled) -> (Vec<Conflict>, u128) {
+    let Profiled { kept, rest, .. } = profiled;
+    let (n_pos, n_neg) = (profiled.pos_goals.len(), profiled.neg_goals.len());
+    let uncovered = !covered_by(kept, n_pos) & low_bits(n_pos);
 
     let mut sets: Vec<HashSet<u128>> = vec![HashSet::new(); n_pos];
     for h_profile in rest {
         let negatives = h_profile.neg_coverage.0 & low_bits(n_neg);
-        for pos in indices(h_profile.coverage.0 & uncovered) {
+        for pos in set_bits(h_profile.coverage.0 & uncovered) {
             sets[pos].insert(negatives);
         }
     }
 
     let mut forced = 0;
     let mut found = Vec::new();
-    for pos in indices(uncovered) {
+    for pos in set_bits(uncovered) {
         if sets[pos].is_empty() {
             forced |= 1 << pos;
             continue;
@@ -141,7 +134,9 @@ fn dropped_given(conflicts: &[Conflict], forced: u128, ignored: u128) -> u128 {
 /// ignoring more negatives, and otherwise the one dropping more positives.
 ///
 /// Exact while the combinations of one choice per positive (leave it, or
-/// one of its sets) number at most [`ENUMERATION_CAP`]; greedy beyond.
+/// one of its sets) number at most [`ENUMERATION_CAP`], over the sets
+/// [`conflicts`] kept (at most [`MAX_SETS`] a positive). Greedy beyond: it
+/// stays within the bounds where it can, but may not find the fewest.
 fn cheapest(
     conflicts: &[Conflict],
     forced: u128,
@@ -192,11 +187,13 @@ fn cheapest(
         }
         None => {
             // Keep taking the set that recovers most positives for the
-            // negatives it adds, while one pays for itself.
+            // negatives it adds: while one pays for itself, and whatever it
+            // costs while too many positives are still left uncovered.
             let mut ignored = 0;
             consider(ignored);
             loop {
                 let dropped = dropped_given(conflicts, forced, ignored);
+                let over = dropped.count_ones() as usize > max_dropped;
                 let next = conflicts
                     .iter()
                     .filter(|conflict| dropped & 1 << conflict.pos != 0)
@@ -208,7 +205,7 @@ fn cheapest(
                         let recovered = (dropped & !left).count_ones() as i64;
                         (recovered - added, set)
                     })
-                    .filter(|&(gain, _)| gain > 0 || gain == 0 && prefer_ignoring)
+                    .filter(|&(gain, _)| over || gain > 0 || gain == 0 && prefer_ignoring)
                     .max_by_key(|&(gain, set)| (gain, std::cmp::Reverse(set)));
                 let Some((_, set)) = next else {
                     break;
@@ -236,39 +233,43 @@ pub(super) fn resolve_noise(
     neg_goals: &[usize],
     ctx: SearchCtx,
 ) -> Noise {
-    let (n_pos, n_neg) = (pos_goals.len(), neg_goals.len());
-    let covered = kept.iter().fold(0, |all, p| all | p.coverage.0);
-    if covered & low_bits(n_pos) == low_bits(n_pos) {
+    let n_pos = pos_goals.len();
+    if covered_by(&kept, n_pos) == low_bits(n_pos) {
         return Noise::Clean(kept);
     }
 
     let rest = profile_rest(&kept, pos_goals, neg_goals, ctx);
-    let (conflicts, forced) = conflicts(&kept, &rest, n_pos, n_neg);
+    let profiled = Profiled {
+        kept: &kept,
+        rest: &rest,
+        pos_goals,
+        neg_goals,
+        ctx,
+    };
+    let (conflicts, forced) = conflicts(profiled);
     let bounds = (ctx.parallel.pos_noise, ctx.parallel.neg_noise);
     if conflicts.is_empty() && forced.count_ones() as usize > bounds.0 {
-        return Noise::Clean(kept);
+        return Noise::Uncovered(kept);
     }
 
     match cheapest(&conflicts, forced, bounds, true) {
-        Some(removal) => Noise::Filtered(filter(removal, kept, rest, pos_goals, neg_goals, ctx)),
-        None => Noise::Failed(failure_report(
-            &conflicts, forced, &kept, &rest, pos_goals, neg_goals, ctx,
-        )),
+        Some(removal) => Noise::Filtered(filter(removal, profiled)),
+        None => Noise::Failed(failure_report(&conflicts, forced, profiled)),
     }
 }
 
 /// Set the examples of `removal` aside.
-fn filter(
-    removal: Removal,
-    kept: Vec<HProfile>,
-    rest: Vec<HProfile>,
-    pos_goals: &[usize],
-    neg_goals: &[usize],
-    ctx: SearchCtx,
-) -> Filtered {
+fn filter(removal: Removal, profiled: Profiled) -> Filtered {
+    let Profiled {
+        kept,
+        rest,
+        pos_goals,
+        neg_goals,
+        ..
+    } = profiled;
     let (n_pos, n_neg) = (pos_goals.len(), neg_goals.len());
-    let pos_keep = indices(!removal.dropped & low_bits(n_pos));
-    let neg_keep = indices(!removal.ignored & low_bits(n_neg));
+    let pos_keep = set_bits(!removal.dropped & low_bits(n_pos));
+    let neg_keep = set_bits(!removal.ignored & low_bits(n_neg));
 
     // Usable now: whatever entails none of the negatives left.
     let recovered = rest
@@ -280,17 +281,36 @@ fn filter(
         .map(|h_profile| h_profile.restricted(&pos_keep, &neg_keep))
         .collect();
 
+    Filtered {
+        pos_goals: pos_keep.iter().map(|&pos| pos_goals[pos]).collect(),
+        neg_goals: neg_keep.iter().map(|&neg| neg_goals[neg]).collect(),
+        h_profiles,
+        note: filter_note(removal, profiled),
+    }
+}
+
+/// What `removal` sets aside and what that gains, to be printed.
+fn filter_note(removal: Removal, profiled: Profiled) -> String {
+    let Profiled {
+        kept,
+        pos_goals,
+        neg_goals,
+        ctx,
+        ..
+    } = profiled;
+    let (n_pos, n_neg) = (pos_goals.len(), neg_goals.len());
+    let (pos_noise, neg_noise) = (ctx.parallel.pos_noise, ctx.parallel.neg_noise);
+
     let heap = QueryHeap::new(ctx.heap, None);
     let mut note = String::new();
     let mut list = |heading: String, goals: &[usize], examples: u128| {
         if examples != 0 {
             note += &format!("{heading}\n");
-            for example in indices(examples) {
+            for example in set_bits(examples) {
                 note += &format!("\t{}\n", heap.term_string(goals[example]));
             }
         }
     };
-    let (pos_noise, neg_noise) = (ctx.parallel.pos_noise, ctx.parallel.neg_noise);
     list(
         format!(
             "Ignoring {} of the {n_neg} negatives as noise (at most {neg_noise})",
@@ -299,11 +319,10 @@ fn filter(
         neg_goals,
         removal.ignored,
     );
-    let within = kept.iter().fold(0, |all, p| all | p.coverage.0);
     list(
         "Positives entailed as a result".to_string(),
         pos_goals,
-        !within & !removal.dropped & low_bits(n_pos),
+        !covered_by(kept, n_pos) & !removal.dropped & low_bits(n_pos),
     );
     list(
         format!(
@@ -313,29 +332,20 @@ fn filter(
         pos_goals,
         removal.dropped,
     );
-
-    Filtered {
-        pos_goals: pos_keep.iter().map(|&pos| pos_goals[pos]).collect(),
-        neg_goals: neg_keep.iter().map(|&neg| neg_goals[neg]).collect(),
-        h_profiles,
-        dropped: indices(removal.dropped),
-        ignored: indices(removal.ignored),
-        note,
-    }
+    note
 }
 
 /// The report for when no removal fits the bounds: on the examples of the
 /// cheapest removal there is, bounds aside. When ignoring negatives and
 /// leaving positives uncovered come equally cheap, on both.
-fn failure_report(
-    conflicts: &[Conflict],
-    forced: u128,
-    kept: &[HProfile],
-    rest: &[HProfile],
-    pos_goals: &[usize],
-    neg_goals: &[usize],
-    ctx: SearchCtx,
-) -> NoiseReport {
+fn failure_report(conflicts: &[Conflict], forced: u128, profiled: Profiled) -> NoiseReport {
+    let Profiled {
+        kept,
+        rest,
+        pos_goals,
+        neg_goals,
+        ctx,
+    } = profiled;
     let unbounded = (usize::MAX, usize::MAX);
     let cheapest_ignoring =
         cheapest(conflicts, forced, unbounded, true).expect("unbounded, so some removal fits");
@@ -350,7 +360,7 @@ fn failure_report(
 
     let heap = QueryHeap::new(ctx.heap, None);
     let names = |goals: &[usize], examples: u128| -> Vec<String> {
-        indices(examples)
+        set_bits(examples)
             .into_iter()
             .map(|example| heap.term_string(goals[example]))
             .collect()
@@ -387,18 +397,10 @@ fn failure_report(
     let ignored = removals.iter().fold(0, |all, r| all | r.ignored);
     for positive in noisy_positives(kept, rest, pos_goals.len(), neg_goals.len()) {
         if dropped & 1 << positive.pos != 0 {
-            report_positive(
-                &mut report,
-                &positive,
-                kept,
-                rest,
-                pos_goals,
-                neg_goals,
-                ctx,
-            );
+            report_positive(&mut report, &positive, profiled);
         }
     }
-    for neg in indices(ignored) {
+    for neg in set_bits(ignored) {
         // The positives that need it whichever way they are entailed, or
         // failing any, those that need it one way.
         let needing = |every: bool| {
@@ -419,17 +421,9 @@ fn failure_report(
         };
         let negative = NoisyNegative {
             neg,
-            blocks: super::coverage::Coverage(blocks),
+            blocks: Coverage(blocks),
         };
-        report_negative(
-            &mut report,
-            &negative,
-            kept,
-            rest,
-            pos_goals,
-            neg_goals,
-            ctx,
-        );
+        report_negative(&mut report, &negative, profiled);
     }
     report
 }
@@ -516,6 +510,46 @@ mod tests {
         );
     }
 
+    /// Seventeen positives each needing three negatives of its own: too
+    /// many combinations to enumerate, so the choice is greedy.
+    fn many_conflicts() -> Vec<Conflict> {
+        (0..17)
+            .map(|pos| Conflict {
+                pos,
+                sets: vec![0b111 << (3 * pos)],
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_greedy_choice_leaves_what_does_not_pay_for_itself() {
+        let all_positives = (1 << 17) - 1;
+        assert_eq!(
+            cheapest(&many_conflicts(), 0, FREE, true),
+            removal(0, all_positives)
+        );
+    }
+
+    #[test]
+    fn the_greedy_choice_pays_what_the_bounds_demand() {
+        let conflicts = many_conflicts();
+        // No positive may be left: every set is taken, cost what it may.
+        let all_negatives = (1 << 51) - 1;
+        assert_eq!(
+            cheapest(&conflicts, 0, (0, 51), true),
+            removal(all_negatives, 0)
+        );
+        // Five may be left: sets are taken only until five remain.
+        let twelve_sets = (1 << 36) - 1;
+        let last_five = 0b1_1111 << 12;
+        assert_eq!(
+            cheapest(&conflicts, 0, (5, usize::MAX), true),
+            removal(twelve_sets, last_five)
+        );
+        // One negative short of covering them all.
+        assert_eq!(cheapest(&conflicts, 0, (0, 50), true), None);
+    }
+
     fn resolve(model: Model, pos_noise: usize, neg_noise: usize) -> Noise {
         let parallel = ParallelConfig {
             pos_noise,
@@ -528,9 +562,33 @@ mod tests {
 
     #[test]
     fn full_clean_coverage_needs_no_settling() {
-        // `m` and `a` would do for p1..p3, but `m` entails n2: use
-        // positives the clean hypotheses cover. Here nothing is uncovered
-        // only when the model has no p3..p5, so check the opposite too.
+        // `a` entails no negative and covers p1 and p2: with only those
+        // two as the positives there is nothing to settle.
+        let mut model = model(&single(&["a"]));
+        model.pos_goals.truncate(2);
+        let Noise::Clean(h_profiles) = resolve(model, 0, 0) else {
+            panic!("every positive is covered by a clean hypothesis");
+        };
+        assert_eq!(h_profiles.len(), 1);
+    }
+
+    #[test]
+    fn positives_nothing_entails_are_left_to_the_cover_search() {
+        // With `a` alone p3..p5 are entailed by nothing, so no removal of
+        // negatives helps and there is nothing to report on.
+        let Noise::Uncovered(h_profiles) = resolve(model(&single(&["a"])), 2, 3) else {
+            panic!("three positives are beyond help and only two may be left");
+        };
+        assert_eq!(h_profiles.len(), 1);
+        // Within the bound they are simply left uncovered.
+        let Noise::Filtered(filtered) = resolve(model(&single(&["a"])), 3, 0) else {
+            panic!("three positives may be left");
+        };
+        assert_eq!(filtered.pos_goals.len(), 2);
+    }
+
+    #[test]
+    fn without_noise_allowed_a_conflict_fails() {
         let Noise::Failed(_) = resolve(model(&single(&BASE)), 0, 0) else {
             panic!("p3 and p4 need a negative and p5 is beyond help");
         };
@@ -542,8 +600,6 @@ mod tests {
         let Noise::Filtered(filtered) = resolve(model(&single(&BASE)), 1, 1) else {
             panic!("one negative and one positive are enough");
         };
-        assert_eq!(filtered.ignored, vec![0]);
-        assert_eq!(filtered.dropped, vec![4]);
         assert_eq!(filtered.pos_goals.len(), 4);
         assert_eq!(filtered.neg_goals.len(), 2);
 
@@ -579,8 +635,14 @@ mod tests {
         let Noise::Filtered(filtered) = resolve(model(&single(&BASE)), 3, 0) else {
             panic!("three positives are enough");
         };
-        assert!(filtered.ignored.is_empty());
-        assert_eq!(filtered.dropped, vec![2, 3, 4]);
+        assert_eq!(filtered.neg_goals.len(), 3);
+        assert_eq!(
+            filtered.note,
+            "Leaving 3 of the 5 positives uncovered as noise (at most 3)\n\
+             \tt(p3)\n\
+             \tt(p4)\n\
+             \tt(p5)\n"
+        );
         let usable: Vec<u32> = filtered.h_profiles.iter().map(|p| p.h).collect();
         assert_eq!(usable, vec![0]);
     }

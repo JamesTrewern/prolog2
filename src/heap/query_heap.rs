@@ -234,7 +234,7 @@ impl<'a> QueryHeap<'a> {
     ///
     /// Sized from the program, so it covers the widest clause that can be
     /// resolved against. Variables created during a proof land above it.
-    pub(crate) fn arg_window(&self) -> usize {
+    pub(crate) fn _arg_window(&self) -> usize {
         self.prog.max_arg()
     }
 
