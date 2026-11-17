@@ -27,7 +27,9 @@ pub(super) fn compile_examples(examples: &[String], heap: &mut ProgramHeap) -> V
         .iter()
         .map(|example| {
             let literals = match TokenStream::new(
-                tokenise(example).unwrap_or_else(|e| panic!("Example '{example}': {e}")),
+                // An example is the literal alone; the parser wants its `.`.
+                tokenise(format!("{example}."))
+                    .unwrap_or_else(|e| panic!("Example '{example}': {e}")),
             )
             .parse_goals()
             {

@@ -4,6 +4,11 @@ use std::fs;
 
 use serde::{Deserialize, Serialize};
 
+use crate::{
+    parser::{tokenise, TokenStream},
+    Error, Result,
+};
+
 /// Bounds on meta (second order) resolution, the `resolution` block of a
 /// JSON config file.
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
@@ -170,8 +175,7 @@ where
 
         // "examples/pos.pl" — treat as a file path and load it
         fn visit_str<E: de::Error>(self, v: &str) -> std::result::Result<Vec<String>, E> {
-            read_examples(v)
-                .map_err(|e| E::custom(format!("failed to read examples file {v:?}: {e}")))
+            read_examples(v).map_err(E::custom)
         }
 
         // ["p(a)", "p(b)"] — take the strings directly
@@ -181,7 +185,7 @@ where
         ) -> std::result::Result<Vec<String>, A::Error> {
             let mut items = Vec::with_capacity(seq.size_hint().unwrap_or(0));
             while let Some(item) = seq.next_element::<String>()? {
-                items.push(item);
+                items.push(normalise_example(&item).map_err(de::Error::custom)?);
             }
             Ok(items)
         }
@@ -190,104 +194,166 @@ where
     deserializer.deserialize_any(ExamplesVisitor)
 }
 
-/// The examples in the file at `path`: one literal each, ended by a `.` and
-/// a new line.
-fn read_examples(path: &str) -> std::io::Result<Vec<String>> {
-    Ok(fs::read_to_string(path)?
-        .split(".\n")
-        .map(str::trim)
-        .filter(|ex| !ex.is_empty())
-        .map(String::from)
-        .collect())
+/// `example` as its literal alone: trimmed, with no closing `.`.
+///
+/// # Errors
+///
+/// [`Error::Example`] if what is left does not parse as a single literal.
+fn normalise_example(example: &str) -> Result<String> {
+    let trimmed = example.trim();
+    let literal = trimmed.strip_suffix('.').unwrap_or(trimmed).trim_end();
+    let invalid = |reason: String| Error::Example(format!("{example:?} {reason}"));
+
+    let tokens =
+        tokenise(format!("{literal}.")).map_err(|e| invalid(format!("is not a literal: {e}")))?;
+    // The only `.` is the one closing it, so nothing follows the literal.
+    if tokens.iter().filter(|token| *token == ".").count() != 1 {
+        return Err(invalid("is more than one clause".into()));
+    }
+    match TokenStream::new(tokens).parse_goals() {
+        Ok(literals) if literals.len() == 1 => Ok(literal.to_string()),
+        Ok(literals) => Err(invalid(format!("is {} literals, not one", literals.len()))),
+        Err(e) => Err(invalid(format!("is not a literal: {e}"))),
+    }
 }
 
-/// One side of the [`Examples`], positive or negative: a file path or a list
-/// of literals.
+fn normalise_examples<T: AsRef<str>>(examples: &[T]) -> Result<Vec<String>> {
+    examples
+        .iter()
+        .map(|example| normalise_example(example.as_ref()))
+        .collect()
+}
+
+/// The examples in the file at `path`: one literal each, ended by a `.` and
+/// a new line.
+fn read_examples(path: &str) -> Result<Vec<String>> {
+    let file = fs::read_to_string(path).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("failed to read examples file {path:?}: {e}"),
+        )
+    })?;
+    file.split(".\n")
+        .filter(|example| !example.trim().is_empty())
+        .map(normalise_example)
+        .collect()
+}
+
+/// Something [`Examples`] can be made from.
 ///
-/// A string (`&str`, `String`) is the path of a file holding one literal per
-/// line, each ended by a `.`. A list (`&[T]`, `&[T; N]`, `[T; N]`, `Vec<T>`,
-/// for any `T: AsRef<str>`) holds the literals themselves.
+/// One side on its own gives the positives, with no negatives:
 ///
-/// # Panics
+/// - a string (`&str`, `String`) is the path of a file holding one literal
+///   per line, each ended by a `.`;
+/// - a list (`&[T]`, `&[T; N]`, `[T; N]`, `Vec<T>`, for any `T: AsRef<str>`)
+///   holds the literals themselves.
 ///
-/// Converting a path panics if the file cannot be read.
+/// A pair of those gives the positives then the negatives, and the two need
+/// not be of the same kind. [`Examples`] is its own source.
+///
+/// Every example is normalised to its literal alone: surrounding white space
+/// and a closing `.` are dropped.
+///
+/// # Errors
+///
+/// [`Error::IO`] if a file cannot be read, and [`Error::Example`] if an
+/// example is not a single literal.
 pub trait ExampleSource {
-    fn into_examples(self) -> Vec<String>;
+    fn into_examples(self) -> Result<Examples>;
+}
+
+/// The positives of a source standing for one side of a pair.
+fn one_side(source: impl ExampleSource) -> Result<Vec<String>> {
+    let Examples { pos, neg } = source.into_examples()?;
+    if neg.is_empty() {
+        Ok(pos)
+    } else {
+        Err(Error::Example(
+            "one side of a pair of example sources has negatives of its own".into(),
+        ))
+    }
+}
+
+fn positives(pos: Vec<String>) -> Examples {
+    Examples {
+        pos,
+        neg: Vec::new(),
+    }
 }
 
 impl ExampleSource for &str {
-    fn into_examples(self) -> Vec<String> {
-        read_examples(self).unwrap_or_else(|e| panic!("failed to read examples file {self:?}: {e}"))
+    fn into_examples(self) -> Result<Examples> {
+        read_examples(self).map(positives)
     }
 }
 
 impl ExampleSource for String {
-    fn into_examples(self) -> Vec<String> {
+    fn into_examples(self) -> Result<Examples> {
         self.as_str().into_examples()
     }
 }
 
 impl<T: AsRef<str>> ExampleSource for &[T] {
-    fn into_examples(self) -> Vec<String> {
-        self.iter().map(|ex| ex.as_ref().to_string()).collect()
+    fn into_examples(self) -> Result<Examples> {
+        normalise_examples(self).map(positives)
     }
 }
 
 impl<T: AsRef<str>, const N: usize> ExampleSource for &[T; N] {
-    fn into_examples(self) -> Vec<String> {
+    fn into_examples(self) -> Result<Examples> {
         self.as_slice().into_examples()
     }
 }
 
 impl<T: AsRef<str>, const N: usize> ExampleSource for [T; N] {
-    fn into_examples(self) -> Vec<String> {
+    fn into_examples(self) -> Result<Examples> {
         self.as_slice().into_examples()
     }
 }
 
 impl<T: AsRef<str>> ExampleSource for Vec<T> {
-    fn into_examples(self) -> Vec<String> {
+    fn into_examples(self) -> Result<Examples> {
         self.as_slice().into_examples()
     }
 }
 
-/// Positive examples only, from a file path or a list of literals.
-impl<P: ExampleSource> From<P> for Examples {
-    fn from(pos: P) -> Self {
-        Examples {
-            pos: pos.into_examples(),
-            neg: Vec::new(),
-        }
+impl<P: ExampleSource, N: ExampleSource> ExampleSource for (P, N) {
+    fn into_examples(self) -> Result<Examples> {
+        Ok(Examples {
+            pos: one_side(self.0)?,
+            neg: one_side(self.1)?,
+        })
     }
 }
 
-/// Positive then negative examples, each from a file path or a list of
-/// literals.
-impl<P: ExampleSource, N: ExampleSource> From<(P, N)> for Examples {
-    fn from((pos, neg): (P, N)) -> Self {
-        Examples {
-            pos: pos.into_examples(),
-            neg: neg.into_examples(),
-        }
+impl ExampleSource for Examples {
+    fn into_examples(self) -> Result<Examples> {
+        Ok(Examples {
+            pos: normalise_examples(&self.pos)?,
+            neg: normalise_examples(&self.neg)?,
+        })
     }
 }
 
-/// Positive and negative training examples.
+/// Positive and negative training examples, each a literal with no closing
+/// `.`.
 ///
-/// Usually made by conversion, from one [`ExampleSource`] for the positives
-/// or a pair for the positives and negatives. Each source is a file path or
-/// a list of literals:
+/// Made from an [`ExampleSource`]: a file path or a list of literals for the
+/// positives alone, or a pair of them for the positives and negatives.
 ///
 /// ```no_run
-/// use prolog2::Examples;
+/// use prolog2::{ExampleSource, Examples};
 ///
+/// # fn main() -> prolog2::Result<()> {
 /// // Two files, or the positives' file alone.
-/// let examples = Examples::from(("pos.pl", "neg.pl"));
-/// let examples = Examples::from("pos.pl");
+/// let examples: Examples = ("pos.pl", "neg.pl").into_examples()?;
+/// let examples: Examples = "pos.pl".into_examples()?;
 ///
 /// // Two lists, or the positives alone.
-/// let examples = Examples::from((["p(a)", "p(b)"], ["p(c)"]));
-/// let examples = Examples::from(["p(a)", "p(b)"]);
+/// let examples: Examples = (["p(a)", "p(b)"], ["p(c)"]).into_examples()?;
+/// let examples: Examples = ["p(a)", "p(b)"].into_examples()?;
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// In a JSON config file `pos` and `neg` each take the same two forms: a
@@ -430,77 +496,109 @@ impl Examples {
         buffer += ".";
         buffer
     }
-
-    pub fn normalise_for_parallel(&mut self) {
-        fn normalise(ex: &mut String) {
-            *ex = ex.trim().into();
-            if ex.chars().last() != Some('.') {
-                *ex += ".";
-            }
-        }
-        self.pos.iter_mut().for_each(normalise);
-        self.neg.iter_mut().for_each(normalise);
-    }
 }
 
 #[cfg(test)]
 mod example_tests {
-    use super::Examples;
+    use super::{ExampleSource, Examples};
+    use crate::Error;
 
     const POS_FILE: &str = "examples/colreg/pos/avoid.pl";
     const NEG_FILE: &str = "examples/colreg/neg/avoid.pl";
 
-    fn from_json(pos: &str, neg: &str) -> Examples {
-        serde_json::from_str(&format!(r#"{{"pos":{pos},"neg":{neg}}}"#)).unwrap()
+    fn from_json(pos: &str, neg: &str) -> serde_json::Result<Examples> {
+        serde_json::from_str(&format!(r#"{{"pos":{pos},"neg":{neg}}}"#))
     }
 
     #[test]
     fn lists_are_taken_as_the_literals() {
-        let examples = Examples::from((["p(a)", "p(b)"], ["p(c)"]));
+        let examples = (["p(a)", "p(b)"], ["p(c)"]).into_examples().unwrap();
         assert_eq!(examples.pos, ["p(a)", "p(b)"]);
         assert_eq!(examples.neg, ["p(c)"]);
 
         // Slices, array references and vectors of any string type.
         let (pos, neg) = (vec!["p(a)".to_string()], ["p(c)"]);
-        let examples = Examples::from((pos.as_slice(), &neg));
-        assert_eq!(
-            (examples.pos, examples.neg),
-            (pos.clone(), vec!["p(c)".to_string()])
-        );
-        assert_eq!(Examples::from((pos.clone(), neg)).pos, pos);
+        let examples = (pos.as_slice(), &neg).into_examples().unwrap();
+        assert_eq!(examples.pos, pos);
+        assert_eq!(examples.neg, ["p(c)"]);
+        assert_eq!((pos.clone(), neg).into_examples().unwrap().pos, pos);
     }
 
     #[test]
     fn one_source_is_the_positives_alone() {
-        let examples = Examples::from(["p(a)", "p(b)"]);
+        let examples = ["p(a)", "p(b)"].into_examples().unwrap();
         assert_eq!(examples.pos, ["p(a)", "p(b)"]);
         assert!(examples.neg.is_empty());
 
-        let examples = Examples::from(POS_FILE);
+        let examples = POS_FILE.into_examples().unwrap();
         assert!(!examples.pos.is_empty() && examples.neg.is_empty());
     }
 
     #[test]
     fn paths_load_what_the_config_file_loads() {
-        let expected = from_json(&format!("{POS_FILE:?}"), &format!("{NEG_FILE:?}"));
+        let expected = from_json(&format!("{POS_FILE:?}"), &format!("{NEG_FILE:?}")).unwrap();
         assert!(!expected.pos.is_empty() && !expected.neg.is_empty());
 
-        let examples = Examples::from((POS_FILE, NEG_FILE));
+        let examples = (POS_FILE, NEG_FILE).into_examples().unwrap();
         assert_eq!(
             (&examples.pos, &examples.neg),
             (&expected.pos, &expected.neg)
         );
 
         // Owned paths, and a path beside a list.
-        let examples = Examples::from((POS_FILE.to_string(), ["p(c)"]));
+        let examples = (POS_FILE.to_string(), ["p(c)"]).into_examples().unwrap();
         assert_eq!(examples.pos, expected.pos);
         assert_eq!(examples.neg, ["p(c)"]);
     }
 
+    /// However an example is written, it is kept as the literal alone.
     #[test]
-    #[should_panic(expected = "failed to read examples file")]
-    fn a_missing_file_panics_naming_it() {
-        let _ = Examples::from("no/such/examples.pl");
+    fn examples_are_normalised_to_the_literal() {
+        let examples = (["p(a).", " p(b) .\n", "q(1.5)"], ["p(c)."])
+            .into_examples()
+            .unwrap();
+        assert_eq!(examples.pos, ["p(a)", "p(b)", "q(1.5)"]);
+        assert_eq!(examples.neg, ["p(c)"]);
+
+        // From a config file and from a file of examples alike.
+        let examples = from_json(r#"["p(a).", "p(b)"]"#, r#"[" p(c). "]"#).unwrap();
+        assert_eq!(examples.pos, ["p(a)", "p(b)"]);
+        assert_eq!(examples.neg, ["p(c)"]);
+        let from_file = POS_FILE.into_examples().unwrap();
+        assert!(from_file.pos.iter().all(|example| !example.ends_with('.')));
+
+        // And when the struct is filled in by hand.
+        let by_hand = Examples {
+            pos: vec!["p(a).".into()],
+            neg: vec![],
+        };
+        assert_eq!(by_hand.into_examples().unwrap().pos, ["p(a)"]);
+    }
+
+    #[test]
+    fn what_is_not_one_literal_is_an_error() {
+        for bad in ["p(a", "p(a), p(b)", "p(a). p(b)", "", "p(a) :- q(a)"] {
+            let result = [bad].into_examples();
+            assert!(
+                matches!(result, Err(Error::Example(_))),
+                "{bad:?} gave {result:?}"
+            );
+        }
+        // The same from a config file.
+        assert!(from_json(r#"["p(a"]"#, "[]").is_err());
+    }
+
+    #[test]
+    fn a_missing_file_is_an_io_error_naming_it() {
+        let error = "no/such/examples.pl".into_examples().unwrap_err();
+        assert!(matches!(error, Error::IO(_)), "{error:?}");
+        assert!(error.to_string().contains("no/such/examples.pl"));
+    }
+
+    #[test]
+    fn a_pair_inside_a_pair_is_an_error() {
+        let result = ((["p(a)"], ["p(b)"]), ["p(c)"]).into_examples();
+        assert!(matches!(result, Err(Error::Example(_))));
     }
 }
 

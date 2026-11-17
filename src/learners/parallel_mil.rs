@@ -49,7 +49,7 @@ type SmallH = SmallVec<[MetaSub; 1]>;
 /// The examples are compiled onto `prog_heap`, as are the terms of the sub
 /// hypotheses found.
 pub(crate) fn parallel(
-    mut examples: Examples,
+    examples: Examples,
     predicate_table: &PredicateTable,
     prog_heap: &mut ProgramHeap,
     resolution: ResolutionConfig,
@@ -68,7 +68,6 @@ pub(crate) fn parallel(
         examples.pos.len(),
         examples.neg.len()
     );
-    examples.normalise_for_parallel();
 
     // Compiled once onto program heap so all threads can use heap index to same data
     let pos_goals = compile_examples(&examples.pos, prog_heap);

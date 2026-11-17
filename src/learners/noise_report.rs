@@ -1445,8 +1445,8 @@ pub(super) mod toy_model {
     ];
     pub(in crate::learners) const BASE: [&str; 6] = ["a", "b", "c", "d", "e", "f"];
     pub(in crate::learners) const POSITIVES: [&str; 5] =
-        ["t(p1).", "t(p2).", "t(p3).", "t(p4).", "t(p5)."];
-    pub(in crate::learners) const NEGATIVES: [&str; 3] = ["t(n1).", "t(n2).", "t(n3)."];
+        ["t(p1)", "t(p2)", "t(p3)", "t(p4)", "t(p5)"];
+    pub(in crate::learners) const NEGATIVES: [&str; 3] = ["t(n1)", "t(n2)", "t(n3)"];
     /// Index of `t(p3)` and `t(p4)` in [`POSITIVES`].
     const P3: usize = 2;
     const P4: usize = 3;

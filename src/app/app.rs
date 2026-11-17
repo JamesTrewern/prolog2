@@ -3,7 +3,7 @@
 use std::{fs, path::Path};
 
 use super::config::{
-    BodyPred, Config, Examples, ParallelConfig, ResolutionConfig, TryIntoBodyPred,
+    BodyPred, Config, ExampleSource, Examples, ParallelConfig, ResolutionConfig, TryIntoBodyPred,
 };
 use crate::{
     heap::{Heap, ProgramHeap},
@@ -158,34 +158,40 @@ impl App {
     /// Sets the positive and negative training examples used by [`App::run`]
     /// when no interactive REPL is desired.
     ///
-    /// Takes anything that converts into [`Examples`]: a file path or a list
-    /// of literals for the positives alone, or a pair of them for the
-    /// positives and negatives.
+    /// Takes any [`ExampleSource`]: a file path or a list of literals for the
+    /// positives alone, or a pair of them for the positives and negatives.
     ///
     /// ```
     /// use prolog2::app::App;
     ///
-    /// let app = App::default().examples((["e(east1)", "e(east2)"], ["e(west6)"]));
-    /// let app = App::default().examples(["e(east1)", "e(east2)"]);
+    /// # fn main() -> prolog2::Result<()> {
+    /// let app = App::default().examples((["e(east1)", "e(east2)"], ["e(west6)"]))?;
+    /// let app = App::default().examples(["e(east1)", "e(east2)"])?;
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// A file holds one literal per line, each ended by a `.`:
     ///
-    /// ```
+    /// ```no_run
     /// use prolog2::app::App;
     ///
-    /// let app = App::default().examples(("pos.pl", "neg.pl"));
-    /// let app = App::default().examples("pos.pl");
+    /// # fn main() -> prolog2::Result<()> {
+    /// let app = App::default().examples(("pos.pl", "neg.pl"))?;
+    /// let app = App::default().examples("pos.pl")?;
+    /// # Ok(())
+    /// # }
     /// ```
-    /// [Example file example](https://github.com/JamesTrewern/prolog2/blob/master/examples/colreg/pos/avoid.pl)
-    /// # Panics
     ///
-    /// If an examples file cannot be read.
-    pub fn examples(self, examples: impl Into<Examples>) -> Self {
-        App {
-            examples: Some(examples.into()),
+    /// # Errors
+    ///
+    /// Returns [`Error::IO`] if an examples file cannot be read, or
+    /// [`Error::Example`] if an example is not a single literal.
+    pub fn examples(self, examples: impl ExampleSource) -> Result<Self> {
+        Ok(App {
+            examples: Some(examples.into_examples()?),
             ..self
-        }
+        })
     }
 
     /// Loads and fully initialises an engine from a JSON config file.

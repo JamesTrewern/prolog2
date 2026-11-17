@@ -123,6 +123,7 @@
 //! - [`Error::Query`] — a query could not be executed (e.g. bad goal syntax).
 //! - [`Error::BodyPred`] — a body-predicate specification in the config is invalid.
 //! - [`Error::Module`] — a predicate module could not be loaded (e.g. duplicate predicate).
+//! - [`Error::Example`] — a training example is not a single literal.
 
 // ── inline capacities ────────────────────────────────────────────────────
 //
@@ -227,6 +228,7 @@ pub enum Error {
     Query(String),
     BodyPred(String),
     Module(String),
+    Example(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -240,6 +242,7 @@ impl fmt::Display for Error {
             Self::Query(msg) => write!(f, "query error: {msg}"),
             Self::BodyPred(msg) => write!(f, "body predicate error: {msg}"),
             Self::Module(msg) => write!(f, "module error: {msg}"),
+            Self::Example(msg) => write!(f, "example error: {msg}"),
         }
     }
 }

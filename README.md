@@ -214,13 +214,15 @@ let app = App::default()
 
 ``` rust
 // Two files, or the positives' file alone.
-let app = App::default().examples(("pos.pl", "neg.pl"));
-let app = App::default().examples("pos.pl");
+let app = App::default().examples(("pos.pl", "neg.pl"))?;
+let app = App::default().examples("pos.pl")?;
 
 // Two lists, or the positives alone.
-let app = App::default().examples((["e(east1)", "e(east2)"], ["e(west6)"]));
-let app = App::default().examples(["e(east1)", "e(east2)"]);
+let app = App::default().examples((["e(east1)", "e(east2)"], ["e(west6)"]))?;
+let app = App::default().examples(["e(east1)", "e(east2)"])?;
 ```
+
+However they are given, examples are kept as the literal alone, so a closing `.` is optional. An example that is not a single literal is an error, as is an examples file that cannot be read.
 
 Running this on Michalski's trains problem produces:
 

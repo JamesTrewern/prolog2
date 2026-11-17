@@ -452,8 +452,8 @@ mod tests {
 
     #[test]
     fn profiles_record_positive_and_negative_coverage() {
-        let mut fixture = fixture(&CLAUSES, &["p(c)."]);
-        let pos_goals = compile_examples(&["p(d).".to_string()], &mut fixture.prog_heap);
+        let mut fixture = fixture(&CLAUSES, &["p(c)"]);
+        let pos_goals = compile_examples(&["p(d)".to_string()], &mut fixture.prog_heap);
         let ctx = fixture.ctx(ParallelConfig::default());
 
         // Those proving no negative are kept, the rest profiled on request.
@@ -483,7 +483,7 @@ mod tests {
     #[test]
     fn a_combination_is_checked_against_the_negatives() {
         // Together `p(X):-r(X)` and `r(X):-bad(X)` prove `p(c)`.
-        let fixture = fixture(&[("p", "r"), ("r", "bad")], &["p(c)."]);
+        let fixture = fixture(&[("p", "r"), ("r", "bad")], &["p(c)"]);
         let ctx = fixture.ctx(ParallelConfig::default());
         let both = [fixture.hypotheses.get(0), fixture.hypotheses.get(1)];
         let combined = fixture.pdt.union_meta_subs(both, &fixture.prog_heap);

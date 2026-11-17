@@ -392,7 +392,7 @@ mod coverage_group_tests {
     /// neither does `r(X):-bad(X)`, but combined they prove `p(c)`.
     #[test]
     fn a_group_entailing_a_negative_is_rejected_and_the_search_continues() {
-        let fixture = fixture(&RULE_AND_TWO_DEFINITIONS, &["p(c)."]);
+        let fixture = fixture(&RULE_AND_TWO_DEFINITIONS, &["p(c)"]);
         let groups = groups(&fixture, &one_first_two_second(), MANY_GROUPS);
 
         assert!(
