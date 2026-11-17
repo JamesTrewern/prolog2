@@ -99,11 +99,16 @@ Configured in a JSON file (default: `config.json`):
 If the config file includes an `examples` field, Prolog<sup>2</sup> will immediately attempt to prove the examples as a query and output any learned hypotheses. 
 If `examples` is omitted, an interactive REPL is started where queries can be entered manually.
 
-`pos` and `neg` each take either a list of literals, as above, or the path of a file holding one literal per line, each ended by a `.`:
+`pos` and `neg` can each be given in one of two ways: a JSON list of example strings, as above, or the path of a file of examples. An example file holds one example per line, each ended by a `.`, as in [examples/ancestor/pos.pl](examples/ancestor/pos.pl):
+``` prolog
+ancestor(ken,james).
+ancestor(christine,james).
+```
+The two ways can be mixed, so the config above could instead have:
 ``` json
 "examples" : {
-    "pos" : "examples/colreg/pos/avoid.pl",
-    "neg" : "examples/colreg/neg/avoid.pl"
+    "pos" : "examples/ancestor/pos.pl",
+    "neg" : []
 }
 ```
 
@@ -201,28 +206,6 @@ If that removal fits within `pos_noise` and `neg_noise`, the examples are filter
     "files" : ["examples/trains/trains.pl"]
 }
 ```
-
-The same settings can be given in code. `App::resolution` and `App::parallel` each take a function from the settings so far to the ones to use, and each field has a method of its name:
-
-``` rust
-let app = App::default()
-    .resolution(|resolution| resolution.max_depth(5).max_clause(2))
-    .parallel(|parallel| parallel.reduce(true).pos_noise(1));
-```
-
-`App::examples` takes the examples in the same two forms as the config file, file paths or lists of literals. Give a pair for the positives and negatives, or a single value for the positives alone:
-
-``` rust
-// Two files, or the positives' file alone.
-let app = App::default().examples(("pos.pl", "neg.pl"))?;
-let app = App::default().examples("pos.pl")?;
-
-// Two lists, or the positives alone.
-let app = App::default().examples((["e(east1)", "e(east2)"], ["e(west6)"]))?;
-let app = App::default().examples(["e(east1)", "e(east2)"])?;
-```
-
-However they are given, examples are kept as the literal alone, so a closing `.` is optional. An example that is not a single literal is an error, as is an examples file that cannot be read.
 
 Running this on Michalski's trains problem produces:
 
