@@ -221,7 +221,7 @@ const COLREG_CONF: Config = Config {
 fn cpa_side() {
     let mut app = App::from_setup_json("examples/colreg/setup_cpa_side.json")
         .expect("failed to load config")
-        .config(COLREG_CONF);
+        .config(|_| COLREG_CONF);
     let _result = app.run_parallel();
 }
 
@@ -229,7 +229,7 @@ fn cpa_side() {
 fn turn() {
     let mut app = App::from_setup_json("examples/colreg/setup_turn.json")
         .expect("failed to load config")
-        .config(COLREG_CONF);
+        .config(|_| COLREG_CONF);
     let _result = app.run_parallel();
 }
 
@@ -237,7 +237,7 @@ fn turn() {
 fn avoid() {
     let mut app = App::from_setup_json("examples/colreg/setup_avoid.json")
         .expect("failed to load config")
-        .config(COLREG_CONF);
+        .config(|_| COLREG_CONF);
     let _result = app.run_parallel();
 }
 
@@ -245,6 +245,6 @@ fn avoid() {
 fn resume() {
     let mut app = App::from_setup_json("examples/colreg/setup_resume.json")
         .expect("failed to load config")
-        .config(COLREG_CONF);
+        .config(|_| COLREG_CONF);
     let _result = app.run_parallel();
 }

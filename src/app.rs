@@ -38,6 +38,31 @@ fn protect_h_preds_default() -> bool {
     true
 }
 
+impl Config {
+    /// Set [`Self::max_depth`].
+    pub fn max_depth(self, max_depth: usize) -> Self {
+        Self { max_depth, ..self }
+    }
+
+    /// Set [`Self::max_clause`].
+    pub fn max_clause(self, max_clause: usize) -> Self {
+        Self { max_clause, ..self }
+    }
+
+    /// Set [`Self::debug`].
+    pub fn debug(self, debug: bool) -> Self {
+        Self { debug, ..self }
+    }
+
+    /// Set [`Self::protect_h_preds`].
+    pub fn protect_h_preds(self, protect_h_preds: bool) -> Self {
+        Self {
+            protect_h_preds,
+            ..self
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -225,6 +250,39 @@ fn default_final_h_count() -> usize {
     DEFAULT_FINAL_H_COUNT
 }
 
+impl ParallelConfig {
+    /// Set [`Self::reduce`].
+    pub fn reduce(self, reduce: bool) -> Self {
+        Self { reduce, ..self }
+    }
+
+    /// Set [`Self::sort_by_literals`].
+    pub fn sort_by_literals(self, sort_by_literals: bool) -> Self {
+        Self {
+            sort_by_literals,
+            ..self
+        }
+    }
+
+    /// Set [`Self::final_h_count`].
+    pub fn final_h_count(self, final_h_count: usize) -> Self {
+        Self {
+            final_h_count,
+            ..self
+        }
+    }
+
+    /// Set [`Self::neg_noise`].
+    pub fn neg_noise(self, neg_noise: usize) -> Self {
+        Self { neg_noise, ..self }
+    }
+
+    /// Set [`Self::pos_noise`].
+    pub fn pos_noise(self, pos_noise: usize) -> Self {
+        Self { pos_noise, ..self }
+    }
+}
+
 impl Default for ParallelConfig {
     fn default() -> Self {
         Self {
@@ -362,8 +420,31 @@ impl App {
     }
 
     /// Sets the engine configuration (search depth, clause limits, debug mode).
-    pub fn config(self, config: Config) -> Self {
-        App { config, ..self }
+    ///
+    /// `update` is given the configuration so far and returns the one to
+    /// use:
+    ///
+    /// ```
+    /// use prolog2::app::App;
+    ///
+    /// let app = App::default().config(|config| config.max_depth(10).max_clause(3));
+    /// ```
+    ///
+    /// To give the configuration whole, ignore the one passed in:
+    ///
+    /// ```
+    /// use prolog2::{app::App, Config};
+    ///
+    /// let app = App::default().config(|_| Config {
+    ///     max_depth: 10,
+    ///     ..Config::default()
+    /// });
+    /// ```
+    pub fn config(self, update: impl FnOnce(Config) -> Config) -> Self {
+        App {
+            config: update(self.config),
+            ..self
+        }
     }
 
     /// Sets the tolerance for the `=~=` (approximately-equal) operator.
@@ -383,9 +464,30 @@ impl App {
 
     /// Learn from the examples by parallel Top Program Construction rather
     /// than running them as a direct query.
-    pub fn parallel(self, parallel: ParallelConfig) -> Self {
+    ///
+    /// `update` is given the parallel settings so far -- the defaults, if
+    /// none were set -- and returns the ones to use:
+    ///
+    /// ```
+    /// use prolog2::app::App;
+    ///
+    /// let app = App::default().parallel(|parallel| parallel.reduce(true).pos_noise(1));
+    /// ```
+    ///
+    /// `.parallel(|parallel| parallel)` turns it on with nothing changed. To
+    /// give the settings whole, ignore the ones passed in:
+    ///
+    /// ```
+    /// use prolog2::{app::App, ParallelConfig};
+    ///
+    /// let app = App::default().parallel(|_| ParallelConfig {
+    ///     reduce: true,
+    ///     ..ParallelConfig::default()
+    /// });
+    /// ```
+    pub fn parallel(self, update: impl FnOnce(ParallelConfig) -> ParallelConfig) -> Self {
         App {
-            parallel: Some(parallel),
+            parallel: Some(update(self.parallel.unwrap_or_default())),
             ..self
         }
     }
@@ -841,5 +943,66 @@ impl<'a> Iterator for QuerySession<'a> {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod builder_tests {
+    use super::{App, Config, ParallelConfig, DEFAULT_FINAL_H_COUNT};
+
+    #[test]
+    fn each_config_field_has_a_builder() {
+        let config = Config::default()
+            .max_depth(7)
+            .max_clause(2)
+            .debug(true)
+            .protect_h_preds(false);
+        assert_eq!((config.max_depth, config.max_clause), (7, 2));
+        assert!(config.debug && !config.protect_h_preds);
+    }
+
+    #[test]
+    fn app_config_updates_the_configuration_so_far() {
+        let app = App::default()
+            .config(|config| config.max_depth(7))
+            .config(|config| config.max_clause(2));
+        assert_eq!((app.config.max_depth, app.config.max_clause), (7, 2));
+        // The rest is as it was.
+        assert_eq!(app.config.debug, Config::default().debug);
+    }
+
+    #[test]
+    fn each_parallel_field_has_a_builder() {
+        let parallel = ParallelConfig::default()
+            .reduce(true)
+            .sort_by_literals(true)
+            .final_h_count(3)
+            .neg_noise(2)
+            .pos_noise(1);
+        assert!(parallel.reduce && parallel.sort_by_literals);
+        assert_eq!(
+            (
+                parallel.final_h_count,
+                parallel.neg_noise,
+                parallel.pos_noise
+            ),
+            (3, 2, 1)
+        );
+    }
+
+    #[test]
+    fn app_parallel_updates_the_settings_so_far() {
+        // From the defaults when none are set, which also turns it on.
+        let app = App::default().parallel(|parallel| parallel.pos_noise(1));
+        let parallel = app.parallel.expect("parallel learning is on");
+        assert_eq!(parallel.pos_noise, 1);
+        assert_eq!(parallel.final_h_count, DEFAULT_FINAL_H_COUNT);
+
+        // A second call builds on the first.
+        let app = App::default()
+            .parallel(|parallel| parallel.pos_noise(1))
+            .parallel(|parallel| parallel.neg_noise(2));
+        let parallel = app.parallel.unwrap();
+        assert_eq!((parallel.pos_noise, parallel.neg_noise), (1, 2));
     }
 }

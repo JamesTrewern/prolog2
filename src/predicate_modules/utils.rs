@@ -369,7 +369,7 @@ impl TestWrapper {
         TestWrapper {
             app: modules
                 .iter()
-                .fold(App::new().config(config), |app, predicate_module| {
+                .fold(App::new().config(|_| config), |app, predicate_module| {
                     app.load_module(predicate_module).unwrap()
                 }),
         }
