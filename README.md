@@ -5,9 +5,18 @@
 
 This project aims to allow for more complex formations of second-order clauses and resolution.
 
-# Defining second order clauses
+# Second Order Clauses
 
-Traditional meta-rules can be written simply by making predicate symbols start with upper case letters. 
+Second order clauses are written simply by placing a variable in a predicate position
+
+```prolog
+map([],[],_).
+map([H1|T1],[H2|T2],P):- P(H1,H2).
+``` 
+
+# Defining Meta-Clauses (Meta-Rules)
+
+Meta-clauses are second order clauses which when matched against a goal have the side effect of instantiating hypothesis clauses. 
 We must define which variables will remain as variables when a new clause is created from this higher-order clause.
 We define these existentially quantified variables using curly braces like so:  `{X,Y}` 
 
@@ -24,12 +33,12 @@ This is intended to prevent unwanted recursion in meta-rules. If you want to rem
 
 ```prolog
 P(X,Y):- Q(X,A), R(Y,B), {P,Q,R}, [A,B].
-P(A,B), [A,B] % Meta fact
+P(A,B), {P}, [A,B] % Meta fact
 ```
 
-With this notation we can create many interesting second-order clauses </br> 
+With this notation we can create many interesting second-order/meta clauses </br> 
 for example, we can introduce certain constant predicate symbols either in the head or body to allow us to have greater control over the clauses that will be learnt.
-We can also create second-order clauses with only constant predicate symbols but existentially and universally quantified variables to denote the introduction of some constants
+We can also create meta clauses with only constant predicate symbols but existentially and universally quantified variables to denote the introduction of some constants
 
 ``` prolog
 p(X,Y):- Q(X), R(Y), {Q,R}. % Meta-Clause with constant head predicate
@@ -39,7 +48,7 @@ P(X,Y):- q(X,Y), R(Y), {P,R}. % Meta-Clause with constant body predicate
 p(X,Y):- q(X,Z), {Z}. %matching with this clause will create a new clause where Z is a constant
 ```
 
-This can even be extended to using infix operators in second-order clauses
+This can even be extended to using infix operators in meta clauses
 
 ``` prolog
 P(X,Y):- X > Y, Q(Y), {P,Q}.
@@ -62,7 +71,9 @@ Configured in a JSON file (default: `config.json`):
 {
     "resolution" : {
         "max_depth": 20,
-        "max_clause": 4
+        "max_clause": 4,
+        "protect_h_preds": true,
+        "debug": false
     },
 
     "body_predicates" : ["dad/2","mum/2"],
@@ -78,6 +89,8 @@ Configured in a JSON file (default: `config.json`):
 `resolution` is used by the solver, to limit the possible search size.<br>
 `max_depth`: how many sub_goals deep the solver is allowed to go.<br>
 `max_clause`: number of clauses that can be added to hypothesis. This also bounds predicate invention, which has no setting of its own: an invented predicate needs a clause defining it on top of the clause that calls it, so a hypothesis can hold at most `max_clause - 1` invented predicates.<br>
+`protect_h_preds`: Optional, defaults to true. A hypothesis can contain clauses with a variable predicate in the head literal. If this option is on variable predicates in the head position are prevented from unifying with existing constants, but may still unify with variable predicates in body literals from the hypothesis.
+`debug`: Optional, defaults to false. With this option on each resolution step during the proof will print to console.
 
 `examples`, `auto`, `parallel`, and `approx_tolerance_pct` are all optional fields. Any other key is an error rather than being ignored, so a typo or a field name from an older version is reported instead of silently taking its default.
 
