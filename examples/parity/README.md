@@ -35,7 +35,7 @@ q(odd).
 <!-- embed-start: config.json -->
 ```json
 {
-    "config" : {
+    "resolution" : {
         "max_depth": 10,
         "max_clause": 4,
         "debug": false

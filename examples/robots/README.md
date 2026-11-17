@@ -213,7 +213,7 @@ move_up([4/3,G,4 - 4],[4/4,G,4 - 4]).
 <!-- embed-start: tpc_config.json -->
 ```json
 {
-    "config": {
+    "resolution": {
         "max_depth": 20,
         "max_clause": 1,
         "debug": false

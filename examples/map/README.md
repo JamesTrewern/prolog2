@@ -19,7 +19,7 @@ double(X,Y):-
 <!-- embed-start: config.json -->
 ```json
 {
-    "config" : {
+    "resolution" : {
         "max_depth": 5,
         "max_clause": 0,
         "debug": false
@@ -67,7 +67,7 @@ add(X,Y,Z):- Z is X + Y.
 <!-- embed-start: learn_config.json -->
 ```json
 {
-    "config" : {
+    "resolution" : {
         "max_depth": 5,
         "max_clause": 3,
         "debug": false

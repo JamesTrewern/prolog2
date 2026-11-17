@@ -31,7 +31,7 @@ P(X,Y):-Q(X,Z),P(Z,Y), {P,Q}. % Tail Recursion
 <!-- embed-start: config.json -->
 ```json
 {
-    "config": {
+    "resolution": {
         "max_depth": 10,
         "max_clause": 4,
         "debug": false

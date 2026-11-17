@@ -257,7 +257,7 @@ wheels(car_94,2).
 <!-- embed-start: config.json -->
 ```json
 {
-    "config": {
+    "resolution": {
         "max_depth": 5,
         "max_clause": 2,
         "debug": false

@@ -24,7 +24,7 @@ P(X):- Q(X,Y), R(Y), {P,Q,R}.
 <!-- embed-start: config.json -->
 ```json
 {
-    "config": {
+    "resolution": {
         "max_depth": 6,
         "max_clause": 3,
         "debug": true
