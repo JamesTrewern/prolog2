@@ -3,11 +3,10 @@
 //!
 //! [`build_profiles`] replaces specialisation as a pass of its own. A sub
 //! hypothesis is no longer simply kept or dropped for entailing a negative:
-//! its coverage of both example sets is recorded in an [`HProfile`], and it
-//! is kept while it entails no more negatives than
-//! [`ParallelConfig::neg_noise`](crate::ParallelConfig::neg_noise) allows.
-//! [`profile_rest`] profiles the ones that were not kept, for the
-//! [noise report](super::noise_report).
+//! its coverage of both example sets is recorded in an [`HProfile`].
+//! [`build_profiles`] keeps those entailing no negative, and
+//! [`profile_rest`] profiles the others once [noise handling](super::noise)
+//! finds it needs them.
 
 use std::{
     io::{self, Write},
@@ -76,6 +75,18 @@ impl Coverage {
         self.0 == 0
     }
 
+    /// The bits at `keep`, packed down in that order: the coverage of the
+    /// examples that are left when the others are set aside.
+    pub(super) fn select(&self, keep: &[usize]) -> Self {
+        let mut selected = Self::from_len(keep.len());
+        for (new, &old) in keep.iter().enumerate() {
+            if self.get(old) {
+                selected.set(new);
+            }
+        }
+        selected
+    }
+
     /// The examples covered, of the first `len`.
     pub(super) fn indices(&self, len: usize) -> Vec<usize> {
         (0..len).filter(|&i| self.get(i)).collect()
@@ -134,6 +145,20 @@ impl HProfile {
             coverage,
             neg_coverage,
         })
+    }
+
+    /// This profile over only the positives `pos_keep` and the negatives
+    /// `neg_keep`, given by their indices in order.
+    pub(super) fn restricted(&self, pos_keep: &[usize], neg_keep: &[usize]) -> Self {
+        let coverage = self.coverage.select(pos_keep);
+        Self {
+            h: self.h,
+            n_covered: coverage.count(pos_keep.len()) as u32,
+            n_clauses: self.n_clauses,
+            n_literals: self.n_literals,
+            coverage,
+            neg_coverage: self.neg_coverage.select(neg_keep),
+        }
     }
 
     /// The ranking key: most coverage first, then fewest clauses, then --
@@ -203,8 +228,7 @@ fn proved(
 }
 
 /// Profile every sub hypothesis in [`SearchCtx::hypotheses`], keeping those
-/// that prove no more negatives than
-/// [`ParallelConfig::neg_noise`](crate::ParallelConfig::neg_noise).
+/// that prove no negative.
 ///
 /// Hypotheses are profiled in parallel, one rayon task each; the examples
 /// *within* a hypothesis run serially, since with thousands of candidates
@@ -221,7 +245,7 @@ pub(super) fn build_profiles(
     ctx: SearchCtx,
 ) -> Vec<HProfile> {
     let total = u32::try_from(ctx.hypotheses.len()).expect("more than u32::MAX hypotheses");
-    let at_most_neg = ctx.parallel.neg_noise;
+    let at_most_neg = 0;
     profile_each(
         (0..total).into_par_iter(),
         pos_goals,
@@ -278,29 +302,23 @@ fn profile_each(
     h_profiles
 }
 
-/// Do the ground clauses `meta_subs` prove more negative examples than
-/// [`ParallelConfig::neg_noise`](crate::ParallelConfig::neg_noise) allows?
+/// Do the ground clauses `meta_subs` prove any negative example?
 ///
-/// For a *combination* of sub hypotheses: two that are each within the
-/// threshold can together exceed it, since a clause from one can resolve
-/// against a clause from the other. The negatives are proved in parallel.
-pub(super) fn exceeds_neg_noise(
+/// For a *combination* of sub hypotheses: two that each prove no negative
+/// can together prove one, since a clause from one can resolve against a
+/// clause from the other. The negatives are proved in parallel, and the
+/// rest are abandoned as soon as one is proved.
+pub(super) fn entails_negative(
     neg_goals: &[usize],
     meta_subs: &[&[usize]],
     ctx: SearchCtx,
 ) -> bool {
     let config = test_config(ctx.config);
-    let proves = |&goal: &usize| {
+    neg_goals.par_iter().any(|&goal| {
         let mut query_heap = QueryHeap::new(ctx.heap, None);
         let mut proof = Proof::with_hypothesis(&query_heap, &[goal], meta_subs);
         proof.prove(&mut query_heap, ctx.predicate_table, config)
-    };
-
-    match ctx.parallel.neg_noise {
-        // `any` abandons the remaining negatives as soon as one is proved.
-        0 => neg_goals.par_iter().any(proves),
-        neg_noise => neg_goals.par_iter().filter(|goal| proves(goal)).count() > neg_noise,
-    }
+    })
 }
 
 /// A small program and one-clause sub hypotheses over it, for the tests of
@@ -410,15 +428,8 @@ pub(super) mod fixture {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_profiles, exceeds_neg_noise, fixture::fixture, Coverage};
+    use super::{build_profiles, entails_negative, fixture::fixture, profile_rest, Coverage};
     use crate::{learners::utils::compile_examples, ParallelConfig};
-
-    fn noise(neg_noise: usize) -> ParallelConfig {
-        ParallelConfig {
-            neg_noise,
-            ..ParallelConfig::default()
-        }
-    }
 
     #[test]
     fn coverage_sub_set() {
@@ -444,50 +455,44 @@ mod tests {
     fn profiles_record_positive_and_negative_coverage() {
         let mut fixture = fixture(&CLAUSES, &["p(c)."]);
         let pos_goals = compile_examples(&["p(d).".to_string()], &mut fixture.prog_heap);
+        let ctx = fixture.ctx(ParallelConfig::default());
 
-        let h_profiles = build_profiles(&pos_goals, &fixture.neg_goals, fixture.ctx(noise(1)));
-        let seen: Vec<(u32, bool, bool, u32)> = h_profiles
-            .iter()
-            .map(|p| (p.h, p.coverage.get(0), p.neg_coverage.get(0), p.n_covered))
-            .collect();
-        assert_eq!(
-            seen,
-            vec![
-                (0, true, false, 1),
-                (1, false, true, 0),
-                (2, false, false, 0)
-            ]
-        );
-        assert!(h_profiles
-            .iter()
-            .all(|p| p.n_clauses == 1 && p.n_literals == 1));
+        // Those proving no negative are kept, the rest profiled on request.
+        let kept = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
+        let rest = profile_rest(&kept, &pos_goals, &fixture.neg_goals, ctx);
+        let seen = |profiles: &[super::HProfile]| -> Vec<(u32, bool, bool, u32)> {
+            profiles
+                .iter()
+                .map(|p| (p.h, p.coverage.get(0), p.neg_coverage.get(0), p.n_covered))
+                .collect()
+        };
+        assert_eq!(seen(&kept), vec![(0, true, false, 1), (2, false, false, 0)]);
+        assert_eq!(seen(&rest), vec![(1, false, true, 0)]);
+        assert!(kept.iter().all(|p| p.n_clauses == 1 && p.n_literals == 1));
     }
 
     #[test]
-    fn a_hypothesis_over_the_negative_noise_threshold_is_dropped() {
-        let mut fixture = fixture(&CLAUSES, &["p(c)."]);
-        let pos_goals = compile_examples(&["p(d).".to_string()], &mut fixture.prog_heap);
-
-        // The default threshold is 0.
-        let h_profiles = build_profiles(
-            &pos_goals,
-            &fixture.neg_goals,
-            fixture.ctx(ParallelConfig::default()),
-        );
-        let kept: Vec<u32> = h_profiles.iter().map(|p| p.h).collect();
-        assert_eq!(kept, vec![0, 2]);
+    fn a_profile_is_restricted_to_the_examples_kept() {
+        let mut coverage = Coverage::from_len(4);
+        coverage.set(1);
+        coverage.set(3);
+        // Examples 1 and 3 of four become 0 and 1 of two; then 0 and 2.
+        assert!(coverage.select(&[1, 3]).all());
+        assert_eq!(coverage.select(&[0, 3]).indices(2), vec![1]);
     }
 
     #[test]
-    fn a_combination_is_checked_against_the_same_threshold() {
+    fn a_combination_is_checked_against_the_negatives() {
         // Together `p(X):-r(X)` and `r(X):-bad(X)` prove `p(c)`.
         let fixture = fixture(&[("p", "r"), ("r", "bad")], &["p(c)."]);
-        let hypotheses = [fixture.hypotheses.get(0), fixture.hypotheses.get(1)];
-        let combined = fixture.pdt.union_meta_subs(hypotheses, &fixture.prog_heap);
+        let ctx = fixture.ctx(ParallelConfig::default());
+        let both = [fixture.hypotheses.get(0), fixture.hypotheses.get(1)];
+        let combined = fixture.pdt.union_meta_subs(both, &fixture.prog_heap);
+        assert!(entails_negative(&fixture.neg_goals, &combined, ctx));
 
-        let ctx = fixture.ctx(noise(0));
-        assert!(exceeds_neg_noise(&fixture.neg_goals, &combined, ctx));
-        let ctx = fixture.ctx(noise(1));
-        assert!(!exceeds_neg_noise(&fixture.neg_goals, &combined, ctx));
+        let one = fixture
+            .pdt
+            .union_meta_subs([fixture.hypotheses.get(0)], &fixture.prog_heap);
+        assert!(!entails_negative(&fixture.neg_goals, &one, ctx));
     }
 }

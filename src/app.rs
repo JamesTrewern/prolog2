@@ -203,14 +203,19 @@ pub struct ParallelConfig {
     /// Defaults to [`DEFAULT_FINAL_H_COUNT`].
     #[serde(default = "default_final_h_count")]
     pub final_h_count: usize,
-    /// How many negative examples a sub hypothesis may entail and still be
-    /// considered. Defaults to 0.
+    /// How many negative examples may be set aside as noise. Defaults to 0.
     ///
-    /// A positive that no sub hypothesis within this entails, though some
-    /// sub hypothesis over it does, ends the run with a report on what
-    /// entailing it would take.
+    /// When some positive is only entailed together with negatives, the
+    /// fewest examples whose removal leaves a hypothesis are found: those
+    /// negatives ignored, or those positives left uncovered. Within this
+    /// and [`Self::pos_noise`] they are filtered out, with a note, and the
+    /// run goes on. Otherwise it ends with a report on those examples.
     #[serde(default)]
     pub neg_noise: usize,
+    /// How many positive examples may be left uncovered as noise. Defaults
+    /// to 0. See [`Self::neg_noise`].
+    #[serde(default)]
+    pub pos_noise: usize,
 }
 
 /// Default for [`ParallelConfig::final_h_count`].
@@ -227,6 +232,7 @@ impl Default for ParallelConfig {
             sort_by_literals: false,
             final_h_count: DEFAULT_FINAL_H_COUNT,
             neg_noise: 0,
+            pos_noise: 0,
         }
     }
 }

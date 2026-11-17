@@ -1,11 +1,12 @@
 //! Why a positive example cannot be entailed within the negative noise
 //! threshold.
 //!
-//! [`noise_report`] is for a run that is about to fail: some positive is
-//! entailed by no sub hypothesis within
-//! [`ParallelConfig::neg_noise`](crate::ParallelConfig::neg_noise), though
-//! sub hypotheses over it do entail it. For each such positive it gives the
-//! negatives that come with it, and example hypotheses from two angles:
+//! For a run that [noise handling](super::noise) finds it cannot rescue:
+//! some positive is entailed by no sub hypothesis that entails no negative,
+//! though sub hypotheses entailing negatives do entail it, and removing the
+//! examples at fault would take more than the noise bounds allow.
+//! [`report_positive`] gives, for such a positive, the negatives that come
+//! with it, and example hypotheses from several angles:
 //!
 //! - what sets its covers apart: [`Lone`] covers, entailing it and as few
 //!   other positives as possible, preferring ones with a literal nothing
@@ -20,6 +21,9 @@
 //! - conclusions drawn from those, with the literals on either side of
 //!   the [`Boundary`] between its covers and the clean hypotheses.
 //!
+//! [`report_negative`] is the shorter account of a negative at fault: the
+//! positives it stands in the way of and the hypotheses it rules out.
+//!
 //! The [`NoiseReport`] renders as plain text for the terminal and as
 //! Markdown for a file.
 
@@ -33,7 +37,7 @@ use rayon::prelude::*;
 use smallvec::SmallVec;
 
 use super::{
-    coverage::{profile_rest, Coverage, HProfile},
+    coverage::{Coverage, HProfile},
     sub_h_unification::SearchCtx,
 };
 use crate::{
@@ -860,8 +864,8 @@ fn difference(a: &[String], b: &[String]) -> Vec<String> {
 enum Block {
     /// What the report is of; once, first.
     Title(String),
-    /// The start of one noisy positive's report, named for the positive.
-    Positive(String),
+    /// The start of one example's report, named for the example.
+    Example(String),
     Section(&'static str),
     SubSection,
     /// A heading and the items under it.
@@ -876,7 +880,14 @@ pub(super) struct NoiseReport {
 }
 
 impl NoiseReport {
-    fn section(&mut self, name: &'static str) {
+    /// An empty report, headed by what it is a report of.
+    pub(super) fn new(title: impl Into<String>) -> Self {
+        Self {
+            blocks: vec![Block::Title(title.into())],
+        }
+    }
+
+    pub(super) fn section(&mut self, name: &'static str) {
         self.blocks.push(Block::Section(name));
     }
 
@@ -884,12 +895,16 @@ impl NoiseReport {
         self.blocks.push(Block::SubSection);
     }
 
-    fn list(&mut self, heading: impl Into<String>, items: impl IntoIterator<Item = String>) {
+    pub(super) fn list(
+        &mut self,
+        heading: impl Into<String>,
+        items: impl IntoIterator<Item = String>,
+    ) {
         let items = items.into_iter().collect();
         self.blocks.push(Block::List(heading.into(), items));
     }
 
-    fn line(&mut self, text: impl Into<String>) {
+    pub(super) fn line(&mut self, text: impl Into<String>) {
         self.blocks.push(Block::Line(text.into()));
     }
 
@@ -902,7 +917,7 @@ impl NoiseReport {
         for block in &self.blocks {
             match block {
                 Block::Title(title) => text += &format!("{title}\n"),
-                Block::Positive(_) => text += &format!("{section}{section}"),
+                Block::Example(_) => text += &format!("{section}{section}"),
                 Block::Section(name) => text += &format!("{section}{name}\n"),
                 Block::SubSection => text += &sub_section,
                 Block::List(heading, items) => {
@@ -924,7 +939,7 @@ impl NoiseReport {
         for block in &self.blocks {
             match block {
                 Block::Title(title) => markdown += &format!("# Noise report\n\n{title}\n\n"),
-                Block::Positive(name) => markdown += &format!("## `{name}`\n\n"),
+                Block::Example(name) => markdown += &format!("## `{name}`\n\n"),
                 Block::Section(name) => markdown += &format!("### {name}\n\n"),
                 Block::SubSection => markdown += "---\n\n",
                 Block::List(heading, items) => {
@@ -943,49 +958,145 @@ impl NoiseReport {
     }
 }
 
-/// The report on the positives that cannot be entailed within the noise
-/// threshold, or `None` when every positive that can be entailed at all is
-/// entailed by something in `kept`.
-///
-/// `kept` are [`build_profiles`](super::coverage::build_profiles)' profiles,
-/// in hypothesis order. The hypotheses it dropped are only profiled here,
-/// once a positive is found to need them.
-pub(super) fn noise_report(
-    kept: &[HProfile],
-    pos_goals: &[usize],
-    neg_goals: &[usize],
-    ctx: SearchCtx,
-) -> Option<NoiseReport> {
-    let (n_pos, n_neg) = (pos_goals.len(), neg_goals.len());
-    let mut covered = Coverage::from_len(n_pos);
-    for h_profile in kept {
-        *covered |= *h_profile.coverage;
-    }
-    if covered.all() {
-        return None;
-    }
-
-    let rest = profile_rest(kept, pos_goals, neg_goals, ctx);
-    let noisy = noisy_positives(kept, &rest, n_pos, n_neg);
-    if noisy.is_empty() {
-        return None;
-    }
-    let examples: Vec<Examples> = noisy
-        .iter()
-        .map(|positive| Examples::find(positive, kept, &rest, pos_goals, n_neg, ctx))
-        .collect();
-    Some(render(&noisy, &examples, pos_goals, neg_goals, ctx))
+/// Bits below `len`: the examples there are, of a [`Coverage`].
+fn low_bits(len: usize) -> u128 {
+    !u128::MAX.checked_shl(len as u32).unwrap_or(0)
 }
 
-/// The noisy positives and their examples as a report: a part per positive,
-/// each in six sections.
-fn render(
-    noisy: &[NoisyPositive],
-    examples: &[Examples],
+/// The clauses of sub hypotheses taken together, with the definitions they
+/// depend on, as text.
+fn group_clauses(group: &[u32], heap: &mut QueryHeap, ctx: SearchCtx) -> Vec<String> {
+    let sub_hypotheses = group.iter().map(|&h| ctx.hypotheses.get(h as usize));
+    let meta_subs = ctx.pdt.union_meta_subs(sub_hypotheses, ctx.heap);
+    meta_subs
+        .as_slice()
+        .clause_strings(heap, ctx.predicate_table)
+}
+
+/// "1 sub hypothesis", "3 sub hypotheses".
+fn sub_hypotheses(count: usize) -> String {
+    match count {
+        1 => "1 sub hypothesis".to_string(),
+        count => format!("{count} sub hypotheses"),
+    }
+}
+
+/// A negative example that stands in the way of positives: they are only
+/// proved by hypotheses that prove it too.
+#[derive(Debug)]
+pub(super) struct NoisyNegative {
+    /// Index of the negative example.
+    pub(super) neg: usize,
+    /// The positives it stands in the way of.
+    pub(super) blocks: Coverage,
+}
+
+/// Add the part of the report on a negative at fault: the positives it
+/// blocks, hypotheses that prove no negative but it, and greedy covers with
+/// it ignored and with it kept.
+///
+/// `kept` are the profiles proving no negative, `rest` the others.
+pub(super) fn report_negative(
+    report: &mut NoiseReport,
+    negative: &NoisyNegative,
+    kept: &[HProfile],
+    rest: &[HProfile],
     pos_goals: &[usize],
     neg_goals: &[usize],
     ctx: SearchCtx,
-) -> NoiseReport {
+) {
+    let mut heap = QueryHeap::new(ctx.heap, None);
+    let (n_pos, n_neg) = (pos_goals.len(), neg_goals.len());
+    let positives = |heap: &QueryHeap, set: u128| -> Vec<String> {
+        Coverage(set)
+            .indices(n_pos)
+            .into_iter()
+            .map(|pos| heap.term_string(pos_goals[pos]))
+            .collect()
+    };
+
+    let name = heap.term_string(neg_goals[negative.neg]);
+    report.blocks.push(Block::Example(name.clone()));
+    report.list("Noisy negative", [name]);
+    report.list(
+        "Positives only entailed together with it",
+        positives(&heap, negative.blocks.0),
+    );
+
+    // The hypotheses that would prove no negative were it not one.
+    let only_it = 1 << negative.neg;
+    let mut alone: Vec<&HProfile> = rest
+        .iter()
+        .filter(|h_profile| h_profile.neg_coverage.0 & low_bits(n_neg) == only_it)
+        .collect();
+    report.section("Hypotheses it rules out");
+    report.line(format!(
+        "{} entail it and no other negative",
+        match alone.len() {
+            1 => "1 hypothesis".to_string(),
+            count => format!("{count} hypotheses"),
+        }
+    ));
+    alone.sort_by_key(|p| {
+        (
+            Reverse((p.coverage.0 & negative.blocks.0 & low_bits(n_pos)).count_ones()),
+            Reverse(p.n_covered),
+            p.n_clauses,
+            p.n_literals,
+            p.h,
+        )
+    });
+    for h_profile in alone.iter().take(EXAMPLES) {
+        report.sub_section();
+        report.list("Hypothesis", group_clauses(&[h_profile.h], &mut heap, ctx));
+        report.list("Positives entailed", positives(&heap, h_profile.coverage.0));
+    }
+
+    // Greedy covers: of everything coverable with it ignored, and of what
+    // is left coverable with it kept.
+    let within = kept.iter().fold(0, |all, p| all | p.coverage.0) & low_bits(n_pos);
+    let ignoring = kept.iter().chain(alone.iter().copied());
+    let reachable = ignoring.clone().fold(0, |all, p| all | p.coverage.0) & low_bits(n_pos);
+    let with_ignored = greedy_cover(ignoring, reachable, n_neg);
+    let with_kept = greedy_cover(kept.iter(), within, n_neg);
+    let hs = |group: &[&HProfile]| -> Vec<u32> { group.iter().map(|p| p.h).collect() };
+
+    report.section("Greedy hypothesis");
+    report.sub_section();
+    report.list(
+        format!(
+            "With the noisy negative ignored ({})",
+            sub_hypotheses(with_ignored.len())
+        ),
+        group_clauses(&hs(&with_ignored), &mut heap, ctx),
+    );
+    report.sub_section();
+    report.list(
+        format!(
+            "With the noisy negative kept ({})",
+            sub_hypotheses(with_kept.len())
+        ),
+        group_clauses(&hs(&with_kept), &mut heap, ctx),
+    );
+    report.list(
+        "Positives then left uncovered",
+        positives(&heap, reachable & !within),
+    );
+}
+
+/// Add the part of the report on a noisy positive, in six sections.
+///
+/// `kept` are the profiles proving no negative, `rest` the others.
+pub(super) fn report_positive(
+    report: &mut NoiseReport,
+    positive: &NoisyPositive,
+    kept: &[HProfile],
+    rest: &[HProfile],
+    pos_goals: &[usize],
+    neg_goals: &[usize],
+    ctx: SearchCtx,
+) {
+    let examples = &Examples::find(positive, kept, rest, pos_goals, neg_goals.len(), ctx);
     let mut heap = QueryHeap::new(ctx.heap, None);
 
     let names = |heap: &QueryHeap, set: Coverage, goals: &[usize]| -> Vec<String> {
@@ -1008,296 +1119,280 @@ fn render(
             .clause_strings(heap, ctx.predicate_table)
     };
 
-    let title = match ctx.parallel.neg_noise {
-        0 => format!(
-            "{} positive example(s) are only entailed together with a negative",
-            noisy.len()
-        ),
-        neg_noise => format!(
-            "{} positive example(s) are only entailed together with more than {neg_noise} \
-             negative(s)",
-            noisy.len()
-        ),
-    };
-    let mut report = NoiseReport::default();
-    report.blocks.push(Block::Title(title));
-    for (positive, examples) in noisy.iter().zip(examples) {
-        let name = heap.term_string(pos_goals[positive.pos]);
-        report.blocks.push(Block::Positive(name));
+    let name = heap.term_string(pos_goals[positive.pos]);
+    report.blocks.push(Block::Example(name));
 
-        // The noisy positive and its minimal negative set.
+    // The noisy positive and its minimal negative set.
+    report.list(
+        &format!(
+            "Noisy positive (entailed by {})",
+            hypotheses(positive.covering)
+        ),
+        [heap.term_string(pos_goals[positive.pos])],
+    );
+    if positive.shared_is_minimal() {
         report.list(
             &format!(
-                "Noisy positive (entailed by {})",
-                hypotheses(positive.covering)
+                "Minimal negatives (entailed alone by {})",
+                hypotheses(positive.smallest[0].1)
             ),
-            [heap.term_string(pos_goals[positive.pos])],
+            names(&heap, positive.shared, neg_goals),
         );
-        if positive.shared_is_minimal() {
+    } else {
+        match positive.shared.count(neg_goals.len()) {
+            0 => report.line("No negative is entailed by all of them"),
+            _ => report.list(
+                "Negatives entailed by all of them",
+                names(&heap, positive.shared, neg_goals),
+            ),
+        }
+        for (set, count) in &positive.smallest {
             report.list(
                 &format!(
-                    "Minimal negatives (entailed alone by {})",
-                    hypotheses(positive.smallest[0].1)
+                    "Smallest negative set (entailed alone by {})",
+                    hypotheses(*count)
                 ),
-                names(&heap, positive.shared, neg_goals),
+                names(&heap, *set, neg_goals),
             );
+        }
+    }
+    // The minimal set is long enough to name once.
+    let negatives = |report: &mut NoiseReport, heap: &QueryHeap, set: Coverage| {
+        if positive.shared_is_minimal() && set == positive.shared {
+            report.line("Entails the minimal negatives");
+        } else if set.count(neg_goals.len()) == 0 {
+            report.line("Entails no negative");
         } else {
-            match positive.shared.count(neg_goals.len()) {
-                0 => report.line("No negative is entailed by all of them"),
-                _ => report.list(
-                    "Negatives entailed by all of them",
-                    names(&heap, positive.shared, neg_goals),
-                ),
-            }
-            for (set, count) in &positive.smallest {
-                report.list(
-                    &format!(
-                        "Smallest negative set (entailed alone by {})",
-                        hypotheses(*count)
-                    ),
-                    names(&heap, *set, neg_goals),
-                );
-            }
+            report.list("Negatives entailed", names(heap, set, neg_goals));
         }
-        // The minimal set is long enough to name once.
-        let negatives = |report: &mut NoiseReport, heap: &QueryHeap, set: Coverage| {
-            if positive.shared_is_minimal() && set == positive.shared {
-                report.line("Entails the minimal negatives");
-            } else if set.count(neg_goals.len()) == 0 {
-                report.line("Entails no negative");
-            } else {
-                report.list("Negatives entailed", names(heap, set, neg_goals));
-            }
-        };
-        // A heading is left out when it has nothing under it.
-        let optional = |report: &mut NoiseReport, heading: &str, items: Vec<String>| {
-            if !items.is_empty() {
-                report.list(heading, items);
-            }
-        };
-
-        report.section("Predicate definitions");
-        let definitions = &examples.definitions;
-        let sub_sections = [
-            (
-                "Least used by hypotheses entailing no negative",
-                &definitions.noisy,
-            ),
-            (
-                "Least used by hypotheses entailing the noisy positive",
-                &definitions.clean,
-            ),
-            ("Most used by both", &definitions.common),
-        ];
-        for (heading, def_uses) in sub_sections {
-            report.sub_section();
-            report.line(heading);
-            if def_uses.is_empty() {
-                report.line("No such invented predicate");
-            }
-            for def_use in def_uses {
-                // Its own clauses name it, so it is found among the
-                // definitions they call, with those it depends on.
-                let mut defs = SmallVec::new();
-                let own = ctx.pdt.get(def_use.def as usize);
-                ctx.pdt.dependencies(own.iter(), ctx.heap, &mut defs);
-                let meta_subs: Vec<&[usize]> = defs
-                    .iter()
-                    .flat_map(|&def| {
-                        let def = ctx.pdt.get(def as usize);
-                        (0..def.len()).map(move |clause| def.get(clause))
-                    })
-                    .collect();
-                let clauses = meta_subs
-                    .as_slice()
-                    .clause_strings(&mut heap, ctx.predicate_table);
-                report.list("Definition", clauses);
-                report.line(format!(
-                    "Used by {} of {} entailing the noisy positive, and {} of {} entailing no \
-                     negative",
-                    def_use.in_covers,
-                    hypotheses(definitions.n_covers),
-                    def_use.in_clean,
-                    hypotheses(definitions.n_clean),
-                ));
-            }
+    };
+    // A heading is left out when it has nothing under it.
+    let optional = |report: &mut NoiseReport, heading: &str, items: Vec<String>| {
+        if !items.is_empty() {
+            report.list(heading, items);
         }
+    };
 
-        report.section("Unique properties");
-        for lone in &examples.lone {
-            report.sub_section();
-            report.list("Hypothesis", clauses(&mut heap, lone.h));
-            optional(
-                &mut report,
-                "Literals only hypotheses entailing the noisy positive have",
-                lone.unique.clone(),
-            );
-            let others = Coverage(lone.coverage.0 & !(1 << positive.pos));
-            optional(
-                &mut report,
-                "Other positives entailed",
-                names(&heap, others, pos_goals),
-            );
-            negatives(&mut report, &heap, lone.neg_coverage);
+    report.section("Predicate definitions");
+    let definitions = &examples.definitions;
+    let sub_sections = [
+        (
+            "Least used by hypotheses entailing no negative",
+            &definitions.noisy,
+        ),
+        (
+            "Least used by hypotheses entailing the noisy positive",
+            &definitions.clean,
+        ),
+        ("Most used by both", &definitions.common),
+    ];
+    for (heading, def_uses) in sub_sections {
+        report.sub_section();
+        report.line(heading);
+        if def_uses.is_empty() {
+            report.line("No such invented predicate");
         }
-
-        report.section("Comparisons");
-        if examples.pairs.is_empty() {
-            report.line("No hypothesis entails any of the same positives and no negative");
-        }
-        for pair in &examples.pairs {
-            report.sub_section();
-            report.list(
-                "Hypothesis entailing the noisy positive",
-                clauses(&mut heap, pair.with),
-            );
-            report.list(
-                "Other positives entailed",
-                names(&heap, pair.others, pos_goals),
-            );
-            negatives(&mut report, &heap, pair.neg_coverage);
-
-            let (others, without) = (pair.others.0, pair.without_coverage.0);
-            report.list(
-                "Nearest hypothesis without it, entailing no negative",
-                clauses(&mut heap, pair.without),
-            );
-            report.list(
-                "Positives entailed by both",
-                names(&heap, Coverage(others & without), pos_goals),
-            );
-            optional(
-                &mut report,
-                "Positives it does not entail",
-                names(&heap, Coverage(others & !without), pos_goals),
-            );
-            optional(
-                &mut report,
-                "Further positives it entails",
-                names(&heap, Coverage(without & !others), pos_goals),
-            );
-            optional(&mut report, "Literals both have", pair.shared.clone());
-            optional(
-                &mut report,
-                "Literals only the hypothesis entailing it has",
-                pair.only_with.clone(),
-            );
-            optional(
-                &mut report,
-                "Literals only the hypothesis without it has",
-                pair.only_without.clone(),
-            );
-        }
-
-        report.section("Greedy hypothesis");
-        let greedy = &examples.greedy;
-        let pool = match positive.shared_is_minimal() {
-            true => "the minimal negatives",
-            false => "a smallest negative set",
-        };
-        let runs = [
-            (
-                "Without the noisy positive".to_string(),
-                &greedy.without,
-                greedy.without_neg,
-            ),
-            (
-                format!("With the noisy positive, adding hypotheses entailing {pool}"),
-                &greedy.with,
-                greedy.with_neg,
-            ),
-        ];
-        for (heading, group, neg_coverage) in runs {
-            report.sub_section();
-            let sub_hypotheses = group.iter().map(|&h| ctx.hypotheses.get(h as usize));
-            let meta_subs = ctx.pdt.union_meta_subs(sub_hypotheses, ctx.heap);
+        for def_use in def_uses {
+            // Its own clauses name it, so it is found among the
+            // definitions they call, with those it depends on.
+            let mut defs = SmallVec::new();
+            let own = ctx.pdt.get(def_use.def as usize);
+            ctx.pdt.dependencies(own.iter(), ctx.heap, &mut defs);
+            let meta_subs: Vec<&[usize]> = defs
+                .iter()
+                .flat_map(|&def| {
+                    let def = ctx.pdt.get(def as usize);
+                    (0..def.len()).map(move |clause| def.get(clause))
+                })
+                .collect();
             let clauses = meta_subs
                 .as_slice()
                 .clause_strings(&mut heap, ctx.predicate_table);
-            report.list(
-                &format!(
-                    "{heading} ({} sub {})",
-                    group.len(),
-                    if group.len() == 1 {
-                        "hypothesis"
-                    } else {
-                        "hypotheses"
-                    }
-                ),
-                clauses,
-            );
-            negatives(&mut report, &heap, neg_coverage);
+            report.list("Definition", clauses);
+            report.line(format!(
+                "Used by {} of {} entailing the noisy positive, and {} of {} entailing no \
+                     negative",
+                def_use.in_covers,
+                hypotheses(definitions.n_covers),
+                def_use.in_clean,
+                hypotheses(definitions.n_clean),
+            ));
         }
+    }
 
-        report.section("Conclusions");
-        let n_neg = neg_goals.len();
-        let count = |count: usize, one: &str| match (count, one) {
-            (1, _) => format!("1 {one}"),
-            (_, "sub hypothesis") => format!("{count} sub hypotheses"),
-            _ => format!("{count} {one}s"),
-        };
-        match positive.shared.count(n_neg) {
-            0 => report.line(format!(
-                "No one negative comes with the noisy positive every time, but entailing it \
-                 costs at least {}.",
-                count(positive.fewest, "negative")
-            )),
-            shared => {
-                report.line(format!(
-                    "No hypothesis tells the noisy positive from {}: every hypothesis \
-                     entailing it entails {} too. Either an example is mislabelled or the \
-                     background knowledge lacks what separates them.",
-                    count(shared, "negative"),
-                    if shared == 1 {
-                        "that negative"
-                    } else {
-                        "those negatives"
-                    }
-                ));
-                if !positive.shared_is_minimal() {
-                    report.line(format!(
-                        "Entailing it costs at least {}.",
-                        count(positive.fewest, "negative")
-                    ));
+    report.section("Unique properties");
+    for lone in &examples.lone {
+        report.sub_section();
+        report.list("Hypothesis", clauses(&mut heap, lone.h));
+        optional(
+            report,
+            "Literals only hypotheses entailing the noisy positive have",
+            lone.unique.clone(),
+        );
+        let others = Coverage(lone.coverage.0 & !(1 << positive.pos));
+        optional(
+            report,
+            "Other positives entailed",
+            names(&heap, others, pos_goals),
+        );
+        negatives(report, &heap, lone.neg_coverage);
+    }
+
+    report.section("Comparisons");
+    if examples.pairs.is_empty() {
+        report.line("No hypothesis entails any of the same positives and no negative");
+    }
+    for pair in &examples.pairs {
+        report.sub_section();
+        report.list(
+            "Hypothesis entailing the noisy positive",
+            clauses(&mut heap, pair.with),
+        );
+        report.list(
+            "Other positives entailed",
+            names(&heap, pair.others, pos_goals),
+        );
+        negatives(report, &heap, pair.neg_coverage);
+
+        let (others, without) = (pair.others.0, pair.without_coverage.0);
+        report.list(
+            "Nearest hypothesis without it, entailing no negative",
+            clauses(&mut heap, pair.without),
+        );
+        report.list(
+            "Positives entailed by both",
+            names(&heap, Coverage(others & without), pos_goals),
+        );
+        optional(
+            report,
+            "Positives it does not entail",
+            names(&heap, Coverage(others & !without), pos_goals),
+        );
+        optional(
+            report,
+            "Further positives it entails",
+            names(&heap, Coverage(without & !others), pos_goals),
+        );
+        optional(report, "Literals both have", pair.shared.clone());
+        optional(
+            report,
+            "Literals only the hypothesis entailing it has",
+            pair.only_with.clone(),
+        );
+        optional(
+            report,
+            "Literals only the hypothesis without it has",
+            pair.only_without.clone(),
+        );
+    }
+
+    report.section("Greedy hypothesis");
+    let greedy = &examples.greedy;
+    let pool = match positive.shared_is_minimal() {
+        true => "the minimal negatives",
+        false => "a smallest negative set",
+    };
+    let runs = [
+        (
+            "Without the noisy positive".to_string(),
+            &greedy.without,
+            greedy.without_neg,
+        ),
+        (
+            format!("With the noisy positive, adding hypotheses entailing {pool}"),
+            &greedy.with,
+            greedy.with_neg,
+        ),
+    ];
+    for (heading, group, neg_coverage) in runs {
+        report.sub_section();
+        let sub_hypotheses = group.iter().map(|&h| ctx.hypotheses.get(h as usize));
+        let meta_subs = ctx.pdt.union_meta_subs(sub_hypotheses, ctx.heap);
+        let clauses = meta_subs
+            .as_slice()
+            .clause_strings(&mut heap, ctx.predicate_table);
+        report.list(
+            &format!(
+                "{heading} ({} sub {})",
+                group.len(),
+                if group.len() == 1 {
+                    "hypothesis"
+                } else {
+                    "hypotheses"
                 }
+            ),
+            clauses,
+        );
+        negatives(report, &heap, neg_coverage);
+    }
+
+    report.section("Conclusions");
+    let n_neg = neg_goals.len();
+    let count = |count: usize, one: &str| match count {
+        1 => format!("1 {one}"),
+        count => format!("{count} {one}s"),
+    };
+    match positive.shared.count(n_neg) {
+        0 => report.line(format!(
+            "No one negative comes with the noisy positive every time, but entailing it \
+                 costs at least {}.",
+            count(positive.fewest, "negative")
+        )),
+        shared => {
+            report.line(format!(
+                "No hypothesis tells the noisy positive from {}: every hypothesis \
+                     entailing it entails {} too. Either an example is mislabelled, or the \
+                     background knowledge and/or meta-rules lack what is needed to form a \
+                     hypothesis separating them.",
+                count(shared, "negative"),
+                if shared == 1 {
+                    "that negative"
+                } else {
+                    "those negatives"
+                }
+            ));
+            if !positive.shared_is_minimal() {
+                report.line(format!(
+                    "Entailing it costs at least {}.",
+                    count(positive.fewest, "negative")
+                ));
             }
         }
-        optional(
-            &mut report,
-            "Positives every hypothesis entailing it also entails",
-            names(&heap, examples.always_with, pos_goals),
-        );
-        let boundary = &examples.boundary;
-        let uses = |uses: &[LiteralUse]| -> Vec<String> {
-            uses.iter()
-                .map(|u| {
-                    format!(
-                        "{} (in {} of {} entailing it, {} of {} entailing no negative)",
-                        u.literal, u.in_covers, boundary.n_covers, u.in_clean, boundary.n_clean
-                    )
-                })
-                .collect()
-        };
-        optional(
-            &mut report,
-            "Literals most particular to hypotheses entailing the noisy positive",
-            uses(&boundary.noisy),
-        );
-        optional(
-            &mut report,
-            "Literals most particular to hypotheses entailing no negative",
-            uses(&boundary.clean),
-        );
-        report.line(format!(
-            "A greedy cover of the other positives takes {} and entails {}; with the noisy \
-             positive it takes {} and entails {}.",
-            count(greedy.without.len(), "sub hypothesis"),
-            count(greedy.without_neg.count(n_neg), "negative"),
-            count(greedy.with.len(), "sub hypothesis"),
-            count(greedy.with_neg.count(n_neg), "negative"),
-        ));
     }
-    report
+    optional(
+        report,
+        "Positives every hypothesis entailing it also entails",
+        names(&heap, examples.always_with, pos_goals),
+    );
+    let boundary = &examples.boundary;
+    let uses = |uses: &[LiteralUse]| -> Vec<String> {
+        uses.iter()
+            .map(|u| {
+                format!(
+                    "{} (in {} of {} entailing it, {} of {} entailing no negative)",
+                    u.literal, u.in_covers, boundary.n_covers, u.in_clean, boundary.n_clean
+                )
+            })
+            .collect()
+    };
+    optional(
+        report,
+        "Literals most particular to hypotheses entailing the noisy positive",
+        uses(&boundary.noisy),
+    );
+    optional(
+        report,
+        "Literals most particular to hypotheses entailing no negative",
+        uses(&boundary.clean),
+    );
+    report.line(format!(
+        "A greedy cover of the other positives takes {} and entails {}; with the noisy \
+             positive it takes {} and entails {}.",
+        sub_hypotheses(greedy.without.len()),
+        count(greedy.without_neg.count(n_neg), "negative"),
+        sub_hypotheses(greedy.with.len()),
+        count(greedy.with_neg.count(n_neg), "negative"),
+    ));
 }
 
 /// A toy learning problem.
@@ -1325,9 +1420,10 @@ fn render(
 /// nothing more), `p4` only with a negative but no one negative in
 /// particular, and nothing covers `p5`.
 #[cfg(test)]
-mod toy_model {
+pub(super) mod toy_model {
     use super::{
-        noise_report, noisy_positives, DefUse, Definitions, Examples, LiteralUse, NoisyPositive,
+        noisy_positives, report_positive, DefUse, Definitions, Examples, LiteralUse, NoiseReport,
+        NoisyPositive,
     };
     use crate::{
         learners::{
@@ -1341,57 +1437,54 @@ mod toy_model {
         ParallelConfig,
     };
 
-    const FACTS: &[&str] = &[
+    pub(in crate::learners) const FACTS: &[&str] = &[
         "a(p1).", "a(p2).", "b(p2).", "b(p3).", "b(n1).", "c(p3).", "c(n1).", "c(n2).", "d(p4).",
         "d(n1).", "e(p4).", "e(n2).", "f(p4).", "f(n1).", "f(n2).", "f(n3).", "g(p4).", "g(n1).",
         "g(n2).", "h(p4).", "h(n1).", "h(n3).", "i(p2).", "k(p3).", "k(n1).", "m(p1).", "m(p2).",
         "m(p3).", "m(n2).",
     ];
-    const BASE: [&str; 6] = ["a", "b", "c", "d", "e", "f"];
-    const POSITIVES: [&str; 5] = ["t(p1).", "t(p2).", "t(p3).", "t(p4).", "t(p5)."];
-    const NEGATIVES: [&str; 3] = ["t(n1).", "t(n2).", "t(n3)."];
+    pub(in crate::learners) const BASE: [&str; 6] = ["a", "b", "c", "d", "e", "f"];
+    pub(in crate::learners) const POSITIVES: [&str; 5] =
+        ["t(p1).", "t(p2).", "t(p3).", "t(p4).", "t(p5)."];
+    pub(in crate::learners) const NEGATIVES: [&str; 3] = ["t(n1).", "t(n2).", "t(n3)."];
     /// Index of `t(p3)` and `t(p4)` in [`POSITIVES`].
     const P3: usize = 2;
     const P4: usize = 3;
 
-    /// Sub hypotheses proved for real: those within `neg_noise` negatives
-    /// as `kept`, the others as `rest`.
-    struct Model {
-        fixture: Fixture,
-        pos_goals: Vec<usize>,
-        parallel: ParallelConfig,
-        kept: Vec<HProfile>,
-        rest: Vec<HProfile>,
+    /// Sub hypotheses proved for real: those entailing no negative as
+    /// `kept`, the others as `rest`.
+    pub(in crate::learners) struct Model {
+        pub(in crate::learners) fixture: Fixture,
+        pub(in crate::learners) pos_goals: Vec<usize>,
+        pub(in crate::learners) kept: Vec<HProfile>,
+        pub(in crate::learners) rest: Vec<HProfile>,
     }
 
     /// One hypothesis `t(X):-body(X)` per body.
-    fn single(bodies: &[&'static str]) -> Vec<Vec<(&'static str, &'static str)>> {
+    pub(in crate::learners) fn single(
+        bodies: &[&'static str],
+    ) -> Vec<Vec<(&'static str, &'static str)>> {
         bodies.iter().map(|&body| vec![("t", body)]).collect()
     }
 
-    fn model(hypotheses: &[Vec<(&str, &str)>], neg_noise: usize) -> Model {
+    pub(in crate::learners) fn model(hypotheses: &[Vec<(&str, &str)>]) -> Model {
         let mut fixture = fixture_with_facts(FACTS, hypotheses, &NEGATIVES);
         let positives: Vec<String> = POSITIVES.iter().map(|goal| goal.to_string()).collect();
         let pos_goals = compile_examples(&positives, &mut fixture.prog_heap);
 
-        let parallel = ParallelConfig {
-            neg_noise,
-            ..ParallelConfig::default()
-        };
-        let ctx = fixture.ctx(parallel);
+        let ctx = fixture.ctx(ParallelConfig::default());
         let kept = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
         let rest = profile_rest(&kept, &pos_goals, &fixture.neg_goals, ctx);
         Model {
             fixture,
             pos_goals,
-            parallel,
             kept,
             rest,
         }
     }
 
     fn model_of(bodies: &[&'static str]) -> Model {
-        model(&single(bodies), 0)
+        model(&single(bodies))
     }
 
     impl Model {
@@ -1408,20 +1501,35 @@ mod toy_model {
                 &self.rest,
                 &self.pos_goals,
                 NEGATIVES.len(),
-                self.fixture.ctx(self.parallel),
+                self.fixture.ctx(ParallelConfig::default()),
             )
         }
 
-        fn report(&self) -> Option<String> {
-            let ctx = self.fixture.ctx(self.parallel);
-            noise_report(&self.kept, &self.pos_goals, &self.fixture.neg_goals, ctx)
-                .map(|report| report.text())
+        /// Every noisy positive reported on.
+        fn report(&self) -> NoiseReport {
+            let noisy = self.noisy();
+            let mut report = NoiseReport::new(format!(
+                "{} positive example(s) are only entailed together with a negative",
+                noisy.len()
+            ));
+            for positive in &noisy {
+                report_positive(
+                    &mut report,
+                    positive,
+                    &self.kept,
+                    &self.rest,
+                    &self.pos_goals,
+                    &self.fixture.neg_goals,
+                    self.fixture.ctx(ParallelConfig::default()),
+                );
+            }
+            report
         }
     }
 
     #[test]
     fn the_model_profiles_as_tabled() {
-        let model = model(&single(&BASE), 0);
+        let model = model(&single(&BASE));
         let coverage = |profiles: &[HProfile]| -> Vec<(u32, Vec<usize>, Vec<usize>)> {
             profiles
                 .iter()
@@ -1443,7 +1551,7 @@ mod toy_model {
 
     #[test]
     fn cleanly_covered_and_uncovered_positives_are_not_noisy() {
-        let positives: Vec<usize> = model(&single(&BASE), 0)
+        let positives: Vec<usize> = model(&single(&BASE))
             .noisy()
             .iter()
             .map(|n| n.pos)
@@ -1455,7 +1563,7 @@ mod toy_model {
 
     #[test]
     fn a_hypothesis_entailing_only_the_shared_negatives_makes_them_minimal() {
-        let noisy = model(&single(&BASE), 0).noisy();
+        let noisy = model(&single(&BASE)).noisy();
         let p3 = &noisy[0];
 
         assert_eq!(p3.covering, 2);
@@ -1467,7 +1575,7 @@ mod toy_model {
 
     #[test]
     fn covers_sharing_no_negative_report_their_smallest_sets() {
-        let noisy = model(&single(&BASE), 0).noisy();
+        let noisy = model(&single(&BASE)).noisy();
         let p4 = &noisy[1];
 
         assert_eq!(p4.covering, 3);
@@ -1486,7 +1594,7 @@ mod toy_model {
     fn shared_negatives_are_not_minimal_when_every_cover_entails_more() {
         // `g` entails n1 and n2, `h` entails n1 and n3: both covers of p4
         // entail n1, but neither entails n1 alone.
-        let noisy = model(&single(&["a", "g", "h"]), 0).noisy();
+        let noisy = model(&single(&["a", "g", "h"])).noisy();
         let p4 = &noisy[0];
 
         assert_eq!(p4.pos, P4);
@@ -1495,17 +1603,6 @@ mod toy_model {
         assert_eq!(p4.fewest, 2);
         let smallest: Vec<Vec<usize>> = p4.smallest.iter().map(|(set, _)| set.indices(3)).collect();
         assert_eq!(smallest, vec![vec![0, 1], vec![0, 2]]);
-    }
-
-    #[test]
-    fn a_positive_entailed_within_the_threshold_is_not_noisy() {
-        // With one negative allowed `b` covers p3 and `d` covers p4.
-        let model = model(&single(&BASE), 1);
-        let kept: Vec<u32> = model.kept.iter().map(|p| p.h).collect();
-        assert_eq!(kept, vec![0, 1, 3, 4]);
-        assert!(model.noisy().is_empty());
-        // p5 is still uncovered, which is not for this report.
-        assert_eq!(model.report(), None);
     }
 
     /// [`BASE`] and more, for the examples of `p3`:
@@ -1529,7 +1626,7 @@ mod toy_model {
 
     #[test]
     fn a_cover_with_a_literal_of_its_own_is_the_first_example() {
-        let model = model(&extended(), 0);
+        let model = model(&extended());
         let lone = model.examples(P3).lone;
 
         // `c` is used by nothing but hypothesis 2, which so comes before 3
@@ -1546,7 +1643,7 @@ mod toy_model {
         // No `c` hypothesis, and `b` and `k` are used by hypothesis 4.
         let mut hypotheses = single(&["a", "b", "k", "i"]);
         hypotheses.push(vec![("t", "i"), ("u", "b"), ("u", "k")]);
-        let model = model(&hypotheses, 0);
+        let model = model(&hypotheses);
 
         let picked: Vec<(u32, Vec<usize>)> = model
             .examples(P3)
@@ -1559,7 +1656,7 @@ mod toy_model {
 
     #[test]
     fn a_pair_covers_the_same_other_positives_and_prefers_shared_literals() {
-        let model = model(&extended(), 0);
+        let model = model(&extended());
         let pairs = model.examples(P3).pairs;
 
         // Only hypothesis 1 covers another positive, p2. Hypotheses 4 and 5
@@ -1576,7 +1673,7 @@ mod toy_model {
 
     #[test]
     fn a_second_pair_differs_from_the_first() {
-        let model = model(&extended(), 0);
+        let model = model(&extended());
         let pairs = model.examples(P3).pairs;
 
         // The same cover and positives again, there being no others, but
@@ -1595,7 +1692,7 @@ mod toy_model {
         // sharing `b(A)` would be as near to `m` as the first pair.
         let mut hypotheses = single(&["m", "b", "a", "i"]);
         hypotheses.push(vec![("t", "a"), ("u", "m")]);
-        let model = model(&hypotheses, 0);
+        let model = model(&hypotheses);
         let pairs: Vec<(u32, u32, Vec<String>)> = model
             .examples(P3)
             .pairs
@@ -1613,7 +1710,7 @@ mod toy_model {
 
     #[test]
     fn a_pair_need_not_share_a_literal() {
-        let model = model(&single(&["a", "b", "c", "k", "i"]), 0);
+        let model = model(&single(&["a", "b", "c", "k", "i"]));
         let pairs = model.examples(P3).pairs;
 
         assert_eq!(pairs.len(), 1);
@@ -1624,7 +1721,7 @@ mod toy_model {
     #[test]
     fn without_an_exact_match_the_nearest_clean_coverage_is_paired() {
         // `m` covers p1 and p2 besides p3. `i` covers p2 alone.
-        let model = model(&single(&["m", "i"]), 0);
+        let model = model(&single(&["m", "i"]));
         let pairs = model.examples(P3).pairs;
         assert_eq!((pairs[0].with, pairs[0].without), (0, 1));
         assert_eq!(pairs[0].others.indices(5), vec![0, 1]);
@@ -1650,7 +1747,7 @@ mod toy_model {
 
     #[test]
     fn no_pair_for_covers_entailing_no_other_positive() {
-        let model = model(&single(&BASE), 0);
+        let model = model(&single(&BASE));
         assert!(model.examples(P4).pairs.is_empty());
     }
 
@@ -1658,7 +1755,7 @@ mod toy_model {
     fn a_literal_reads_the_same_in_any_clause() {
         // `b(A)` is a body literal of `t` in one hypothesis and of `u` in
         // the other.
-        let model = model(&extended(), 0);
+        let model = model(&extended());
         assert_eq!(model.examples(P3).pairs[0].shared, vec!["b(A)"]);
     }
 
@@ -1689,7 +1786,7 @@ mod toy_model {
 
     #[test]
     fn a_model_without_invented_predicates_has_no_definitions_to_show() {
-        let definitions = model(&single(&BASE), 0).examples(P3).definitions;
+        let definitions = model(&single(&BASE)).examples(P3).definitions;
         assert_eq!((definitions.n_covers, definitions.n_clean), (2, 1));
         assert!(definitions.noisy.is_empty());
         assert!(definitions.clean.is_empty());
@@ -1698,7 +1795,7 @@ mod toy_model {
 
     #[test]
     fn the_greedy_cover_with_a_noisy_positive_adds_its_least_noisy_covers() {
-        let model = model(&single(&BASE), 0);
+        let model = model(&single(&BASE));
 
         // Only `a` is within the threshold; `b` entails just the minimal
         // negative of p3. p4 is in neither cover, being noisy itself.
@@ -1720,7 +1817,7 @@ mod toy_model {
     fn boundary_literals_are_the_most_lopsided() {
         // The covers of p3 are `b`, `c` and `k`; the clean hypotheses are
         // 0 (`a`), 4 (`i`) and 5 (`i`, with `u:-b` and `u:-k`).
-        let model = model(&extended(), 0);
+        let model = model(&extended());
         let examples = model.examples(P3);
         let boundary = &examples.boundary;
         assert_eq!((boundary.n_covers, boundary.n_clean), (3, 3));
@@ -1747,13 +1844,13 @@ mod toy_model {
     #[test]
     fn positives_every_cover_entails_are_found() {
         // `m` is the one cover of p3, and covers p1 and p2 too.
-        let model = model(&single(&["m", "i"]), 0);
+        let model = model(&single(&["m", "i"]));
         assert_eq!(model.examples(P3).always_with.indices(5), vec![0, 1]);
     }
 
     #[test]
     fn the_report_as_text() {
-        let report = model(&extended(), 0).report().unwrap();
+        let report = model(&extended()).report().text();
         let (section, sub_section) = (&"=".repeat(80)[..], &"-".repeat(80)[..]);
         let expected = [
             "1 positive example(s) are only entailed together with a negative",
@@ -1835,7 +1932,7 @@ mod toy_model {
             "Entails the minimal negatives",
             section,
             "Conclusions",
-            "No hypothesis tells the noisy positive from 1 negative: every hypothesis entailing it entails that negative too. Either: an example is mislabelled or the background knowledge and/or meta-rules lack what is needed to form a hypothesis seperating them .",
+            "No hypothesis tells the noisy positive from 1 negative: every hypothesis entailing it entails that negative too. Either an example is mislabelled, or the background knowledge and/or meta-rules lack what is needed to form a hypothesis separating them.",
             "Literals most particular to hypotheses entailing the noisy positive",
             "\tc(A) (in 1 of 3 entailing it, 0 of 3 entailing no negative)",
             "Literals most particular to hypotheses entailing no negative",
@@ -1849,9 +1946,7 @@ mod toy_model {
 
     #[test]
     fn the_report_as_markdown() {
-        let model = model(&extended(), 0);
-        let ctx = model.fixture.ctx(model.parallel);
-        let report = noise_report(&model.kept, &model.pos_goals, &model.fixture.neg_goals, ctx);
+        let report = model(&extended()).report();
         let expected = [
             "# Noise report",
             "",
@@ -1995,7 +2090,7 @@ mod toy_model {
             "",
             "### Conclusions",
             "",
-            "No hypothesis tells the noisy positive from 1 negative: every hypothesis entailing it entails that negative too. Either an example is mislabelled or the background knowledge lacks what separates them.",
+            "No hypothesis tells the noisy positive from 1 negative: every hypothesis entailing it entails that negative too. Either an example is mislabelled, or the background knowledge and/or meta-rules lack what is needed to form a hypothesis separating them.",
             "",
             "**Literals most particular to hypotheses entailing the noisy positive**",
             "",
@@ -2009,6 +2104,6 @@ mod toy_model {
             "",
             "A greedy cover of the other positives takes 1 sub hypothesis and entails 0 negatives; with the noisy positive it takes 2 sub hypotheses and entails 1 negative.",
         ];
-        assert_eq!(report.unwrap().markdown(), expected.join("\n") + "\n\n");
+        assert_eq!(report.markdown(), expected.join("\n") + "\n\n");
     }
 }

@@ -1,5 +1,5 @@
 use super::{
-    coverage::{exceeds_neg_noise, Coverage, HProfile},
+    coverage::{entails_negative, Coverage, HProfile},
     predicate_unification::PredDefTable,
 };
 use crate::{
@@ -278,8 +278,7 @@ fn find_coverage_groups(
     groups
 }
 
-/// Does the union of a group's sub hypotheses prove more negative examples
-/// than [`ParallelConfig::neg_noise`] allows?
+/// Does the union of a group's sub hypotheses prove a negative example?
 fn group_entails_negative(
     h_profiles: &[HProfile],
     group: &[usize],
@@ -290,7 +289,7 @@ fn group_entails_negative(
         .iter()
         .map(|&i| ctx.hypotheses.get(h_profiles[i].h as usize));
     let combined = ctx.pdt.union_meta_subs(hypotheses, ctx.heap);
-    exceeds_neg_noise(neg_goals, &combined, ctx)
+    entails_negative(neg_goals, &combined, ctx)
 }
 
 /// Search coverage profiles for next valid index, None if no valid

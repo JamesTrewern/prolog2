@@ -28,7 +28,7 @@ use crate::{
 
 use super::{
     coverage::build_profiles,
-    noise_report::noise_report,
+    noise::{resolve_noise, Noise},
     sub_h_unification::{least_sub_h, SearchCtx},
     utils::{compile_examples, reduce as reduce_hypothesis},
 };
@@ -100,30 +100,37 @@ impl App {
             parallel,
         );
 
-        // What each hypothesis proves, keeping those within the negative
-        // noise threshold.
+        // What each hypothesis proves, keeping those entailing no negative.
         let h_profiles = build_profiles(&pos_goals, &neg_goals, ctx);
         println!(
-            "=== Specialisation ===\n{} of {} hypotheses entail at most {} of the {} negatives",
+            "=== Specialisation ===\n{} of {} hypotheses entail none of the {} negatives",
             h_profiles.len(),
             hypotheses.len(),
-            parallel.neg_noise,
             neg_goals.len(),
         );
 
-        // A positive that cannot be entailed within the threshold ends the
-        // run, with a report on what entailing it would take.
-        if let Some(report) = noise_report(&h_profiles, &pos_goals, &neg_goals, ctx) {
-            println!("=== Noise ===\n{}", report.text());
-            let time_stamp = chrono::Utc::now().format("%d-%m-%Y,%H:%M:%S");
-            let path = format!("noise_report_{time_stamp}.md");
-            match std::fs::write(&path, report.markdown()) {
-                Ok(()) => println!("Noise report written to {path}"),
-                Err(error) => eprintln!("Could not write {path}: {error}"),
-            }
-            println!("No Valid Hypothesis Found");
-            return None;
-        }
+        // Positives only entailed together with negatives: within the noise
+        // bounds the examples at fault are set aside, and beyond them the
+        // run ends with a report on those examples.
+        let (pos_goals, neg_goals, h_profiles) =
+            match resolve_noise(h_profiles, &pos_goals, &neg_goals, ctx) {
+                Noise::Clean(h_profiles) => (pos_goals, neg_goals, h_profiles),
+                Noise::Filtered(filtered) => {
+                    println!("=== Noise ===\n{}", filtered.note);
+                    (filtered.pos_goals, filtered.neg_goals, filtered.h_profiles)
+                }
+                Noise::Failed(report) => {
+                    println!("=== Noise ===\n{}", report.text());
+                    let time_stamp = chrono::Utc::now().format("%d-%m-%Y,%H:%M:%S");
+                    let path = format!("noise_report_{time_stamp}.md");
+                    match std::fs::write(&path, report.markdown()) {
+                        Ok(()) => println!("Noise report written to {path}"),
+                        Err(error) => eprintln!("Could not write {path}: {error}"),
+                    }
+                    println!("No Valid Hypothesis Found");
+                    return None;
+                }
+            };
 
         // Attempt to find small sets of sub hypotheses entailing all positives
         let Some(groups) = least_sub_h(&pos_goals, &neg_goals, h_profiles, ctx) else {
