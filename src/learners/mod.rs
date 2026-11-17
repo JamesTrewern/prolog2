@@ -14,3 +14,5 @@ mod parallel_mil;
 mod predicate_unification;
 mod sub_h_comb;
 mod utils;
+
+pub(crate) use parallel_mil::parallel;

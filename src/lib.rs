@@ -2,8 +2,9 @@
 //! # Prolog²
 //!
 //! A Meta-Interpretive Learning (MIL) framework implementing native second-order
-//! SLD resolution. Prolog² extends traditional Prolog with the ability to learn
-//! logical rules from examples through predicate invention.
+//! SLD resolution. Prolog² extends traditional Prolog with the ability to write
+//! higher-order clauses without the `=...` operator, and with meta-clauses(meta-rules)
+//! to learn a hypothesis from a higher order proof.
 //!
 //! ## Library usage
 //!
@@ -30,7 +31,7 @@
 //! For the common case of a simple boolean check, `bool` converts directly via
 //! `Into<PredReturn>`.
 //!
-//! ```no_run
+//! ```
 //! use std::process::ExitCode;
 //! use prolog2::{app::App, ResolutionConfig};
 //! use prolog2::predicate_modules::{
@@ -168,9 +169,7 @@ pub mod resolution;
 mod utils;
 
 // Re-export commonly used types at crate root.
-pub use app::{
-    BodyPred, Config, Examples, ParallelConfig, ResolutionConfig, DEFAULT_FINAL_H_COUNT,
-};
+pub use app::{BodyPred, Config, Examples, ParallelConfig, ResolutionConfig};
 pub use parser::ParserError;
 
 use std::fmt;

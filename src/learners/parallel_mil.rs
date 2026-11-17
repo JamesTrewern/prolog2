@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    app::App,
+    app::{Examples, ParallelConfig},
     heap::{
         Cell, Heap, ProgramHeap, QueryHeap,
         Tag::{Con, ELis, Flt, Int, Stri, Var},
@@ -43,130 +43,124 @@ lazy_static! {
 
 type SmallH = SmallVec<[MetaSub; 1]>;
 
-impl App {
-    pub fn run_parallel(&mut self) -> Option<Vec<String>> {
-        let Some(mut examples) = self.examples.clone() else {
-            panic!("Can't start top prog without examples");
-        };
-        let parallel = self.parallel.unwrap_or_default();
-        assert!(
-            self.resolution.max_clause <= MAX_PRED_DEFS,
-            "max_clause is {}, but top program construction supports at most {MAX_PRED_DEFS}: \
-             a sub hypothesis of that size could invent more predicates than the dependency \
-             graph used to order their definitions can hold",
-            self.resolution.max_clause,
-        );
-        println!("=== Top Program Construction ===");
-        println!(
-            "Positive examples: {}, Negative examples: {}",
-            examples.pos.len(),
-            examples.neg.len()
-        );
-        examples.normalise_for_parallel();
+/// Learn from `examples` by parallel Top Program Construction, returning
+/// each program found as Prolog source.
+///
+/// The examples are compiled onto `prog_heap`, as are the terms of the sub
+/// hypotheses found.
+pub(crate) fn parallel(
+    mut examples: Examples,
+    predicate_table: &PredicateTable,
+    prog_heap: &mut ProgramHeap,
+    resolution: ResolutionConfig,
+    parallel: ParallelConfig,
+) -> Option<Vec<String>> {
+    assert!(
+        resolution.max_clause <= MAX_PRED_DEFS,
+        "max_clause is {}, but top program construction supports at most {MAX_PRED_DEFS}: \
+         a sub hypothesis of that size could invent more predicates than the dependency \
+         graph used to order their definitions can hold",
+        resolution.max_clause,
+    );
+    println!("=== Top Program Construction ===");
+    println!(
+        "Positive examples: {}, Negative examples: {}",
+        examples.pos.len(),
+        examples.neg.len()
+    );
+    examples.normalise_for_parallel();
 
-        // Compiled once onto program heap so all threads can use heap index to same data
-        let pos_goals = compile_examples(&examples.pos, &mut self.prog_heap);
-        let neg_goals = compile_examples(&examples.neg, &mut self.prog_heap);
+    // Compiled once onto program heap so all threads can use heap index to same data
+    let pos_goals = compile_examples(&examples.pos, prog_heap);
+    let neg_goals = compile_examples(&examples.neg, prog_heap);
 
-        let (cells, hypotheses, pdt) = generalise(
-            &pos_goals,
-            &self.predicate_table,
-            &self.prog_heap,
-            self.resolution,
-        );
+    let (cells, hypotheses, pdt) = generalise(&pos_goals, predicate_table, prog_heap, resolution);
 
-        // In debug mode double check no var cells left
-        #[cfg(debug_assertions)]
-        for (i, cell) in cells.iter().enumerate() {
-            if cell.0 == Var {
-                let lo = i.saturating_sub(5);
-                let hi = (i + 5).min(cells.len());
-                panic!("{cell:?}@{i}\n{:?}", &cells[lo..hi]);
-            }
+    // In debug mode double check no var cells left
+    #[cfg(debug_assertions)]
+    for (i, cell) in cells.iter().enumerate() {
+        if cell.0 == Var {
+            let lo = i.saturating_sub(5);
+            let hi = (i + 5).min(cells.len());
+            panic!("{cell:?}@{i}\n{:?}", &cells[lo..hi]);
         }
-
-        self.prog_heap.extend_from_slice(&cells);
-        println!(
-            "\n=== Generalisation ===\n{} unique sub hypotheses",
-            hypotheses.len(),
-        );
-
-        let ctx = SearchCtx::new(
-            &self.prog_heap,
-            &self.predicate_table,
-            &hypotheses,
-            &pdt,
-            self.resolution,
-            parallel,
-        );
-
-        // What each hypothesis proves, keeping those entailing no negative.
-        let h_profiles = build_profiles(&pos_goals, &neg_goals, ctx);
-        println!(
-            "=== Specialisation ===\n{} of {} hypotheses entail none of the {} negatives",
-            h_profiles.len(),
-            hypotheses.len(),
-            neg_goals.len(),
-        );
-
-        // Positives only entailed together with negatives: within the noise
-        // bounds the examples at fault are set aside, and beyond them the
-        // run ends with a report on those examples.
-        let (pos_goals, neg_goals, h_profiles) =
-            match resolve_noise(h_profiles, &pos_goals, &neg_goals, ctx) {
-                Noise::Clean(h_profiles) => (pos_goals, neg_goals, h_profiles),
-                Noise::Filtered(filtered) => {
-                    println!("=== Noise ===\n{}", filtered.note);
-                    (filtered.pos_goals, filtered.neg_goals, filtered.h_profiles)
-                }
-                Noise::Failed(report) => {
-                    println!("=== Noise ===\n{}", report.text());
-                    let time_stamp = chrono::Utc::now().format("%d-%m-%Y,%H:%M:%S");
-                    let path = format!("noise_report_{time_stamp}.md");
-                    match std::fs::write(&path, report.markdown()) {
-                        Ok(()) => println!("Noise report written to {path}"),
-                        Err(error) => eprintln!("Could not write {path}: {error}"),
-                    }
-                    println!("No Valid Hypothesis Found");
-                    return None;
-                }
-            };
-
-        // Attempt to find small sets of sub hypotheses entailing all positives
-        let Some(groups) = least_sub_h(&pos_goals, &neg_goals, h_profiles, ctx) else {
-            println!("No Valid Hypothesis Found");
-            return None;
-        };
-
-        let mut buffer = Vec::new();
-        for (i, group) in groups.into_iter().enumerate() {
-            println!("Hypothesis {i}");
-
-            // The group's clauses and the definitions they depend on.
-            let sub_hypotheses = group.iter().map(|&index| hypotheses.get(index as usize));
-            let mut hypothesis = pdt
-                .union_meta_subs(sub_hypotheses, &self.prog_heap)
-                .into_vec();
-
-            if parallel.reduce {
-                hypothesis = reduce_hypothesis(
-                    &pos_goals,
-                    hypothesis,
-                    &self.prog_heap,
-                    &self.predicate_table,
-                    self.resolution,
-                    true,
-                );
-            }
-
-            buffer.push(top_prog_to_string(
-                &hypothesis,
-                &self.prog_heap,
-                &self.predicate_table,
-            ));
-        }
-        Some(buffer)
     }
+
+    prog_heap.extend_from_slice(&cells);
+    println!(
+        "\n=== Generalisation ===\n{} unique sub hypotheses",
+        hypotheses.len(),
+    );
+
+    let ctx = SearchCtx::new(
+        prog_heap,
+        predicate_table,
+        &hypotheses,
+        &pdt,
+        resolution,
+        parallel,
+    );
+
+    // What each hypothesis proves, keeping those entailing no negative.
+    let h_profiles = build_profiles(&pos_goals, &neg_goals, ctx);
+    println!(
+        "=== Specialisation ===\n{} of {} hypotheses entail none of the {} negatives",
+        h_profiles.len(),
+        hypotheses.len(),
+        neg_goals.len(),
+    );
+
+    // Positives only entailed together with negatives: within the noise
+    // bounds the examples at fault are set aside, and beyond them the
+    // run ends with a report on those examples.
+    let (pos_goals, neg_goals, h_profiles) =
+        match resolve_noise(h_profiles, &pos_goals, &neg_goals, ctx) {
+            Noise::Clean(h_profiles) => (pos_goals, neg_goals, h_profiles),
+            Noise::Filtered(filtered) => {
+                println!("=== Noise ===\n{}", filtered.note);
+                (filtered.pos_goals, filtered.neg_goals, filtered.h_profiles)
+            }
+            Noise::Failed(report) => {
+                println!("=== Noise ===\n{}", report.text());
+                let time_stamp = chrono::Utc::now().format("%d-%m-%Y,%H:%M:%S");
+                let path = format!("noise_report_{time_stamp}.md");
+                match std::fs::write(&path, report.markdown()) {
+                    Ok(()) => println!("Noise report written to {path}"),
+                    Err(error) => eprintln!("Could not write {path}: {error}"),
+                }
+                println!("No Valid Hypothesis Found");
+                return None;
+            }
+        };
+
+    // Attempt to find small sets of sub hypotheses entailing all positives
+    let Some(groups) = least_sub_h(&pos_goals, &neg_goals, h_profiles, ctx) else {
+        println!("No Valid Hypothesis Found");
+        return None;
+    };
+
+    let mut buffer = Vec::new();
+    for (i, group) in groups.into_iter().enumerate() {
+        println!("Hypothesis {i}");
+
+        // The group's clauses and the definitions they depend on.
+        let sub_hypotheses = group.iter().map(|&index| hypotheses.get(index as usize));
+        let mut hypothesis = pdt.union_meta_subs(sub_hypotheses, prog_heap).into_vec();
+
+        if parallel.reduce {
+            hypothesis = reduce_hypothesis(
+                &pos_goals,
+                hypothesis,
+                prog_heap,
+                predicate_table,
+                resolution,
+                true,
+            );
+        }
+
+        buffer.push(top_prog_to_string(&hypothesis, prog_heap, predicate_table));
+    }
+    Some(buffer)
 }
 
 /// One sub hypothesis as sent from a worker: the hypothesis as `MetaSub`s,

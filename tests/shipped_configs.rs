@@ -124,7 +124,10 @@ fn final_h_count_defaults_rather_than_zeroing() {
     )
     .expect("minimal config should parse");
     let parallel = config.parallel.expect("parallel block was given");
-    assert_eq!(parallel.final_h_count, prolog2::DEFAULT_FINAL_H_COUNT);
+    assert_eq!(
+        parallel.final_h_count,
+        prolog2::ParallelConfig::default().final_h_count
+    );
     assert_ne!(parallel.final_h_count, 0);
     assert!(parallel.reduce);
     assert!(!parallel.sort_by_literals);
