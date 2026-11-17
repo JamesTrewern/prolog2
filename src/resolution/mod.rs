@@ -15,7 +15,7 @@ mod proof;
 mod substitution;
 mod unification;
 
-// Public: what a native predicate needs to run a nested proof or to unify
+// Public: what a predicate function needs to run a nested proof or to unify
 // two terms itself, as `meta_predicates` and `defaults` do.
 pub use proof::Proof;
 pub use unification::unify;

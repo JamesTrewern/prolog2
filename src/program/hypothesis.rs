@@ -142,7 +142,7 @@ impl Hypothesis {
     }
 }
 
-/// What native predicates are handed by a proof whose hypothesis is not a
+/// What predicate functions are handed by a proof whose hypothesis is not a
 /// [`Hypothesis`].
 static EMPTY: Hypothesis = Hypothesis {
     meta_subs: Vec::new(),
@@ -185,7 +185,7 @@ pub(crate) trait HypothesisTrait {
         false
     }
 
-    /// The hypothesis native predicates see.
+    /// The hypothesis predicate functions see.
     fn learned(&self) -> &Hypothesis {
         &EMPTY
     }

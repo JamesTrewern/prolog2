@@ -1,7 +1,7 @@
 //! Goal environment for the SLD resolution proof search.
 //!
 //! Each [`Env`] represents a single goal on the proof stack. The [`Strategy`]
-//! enum separates clause-based resolution from native predicate evaluation,
+//! enum separates clause-based resolution from predicate function evaluation,
 //! keeping the two execution paths explicit at the type level.
 use smallvec::SmallVec;
 
@@ -24,7 +24,7 @@ use crate::{
     Bindings, ResolutionConfig,
 };
 /// How a goal is resolved: either by unifying with clauses or by calling a
-/// native predicate function.
+/// predicate function.
 #[derive(Debug)]
 pub(crate) enum Strategy<'a> {
     /// Resolution via clause unification (standard SLD + meta-interpretive learning).
@@ -39,9 +39,9 @@ pub(crate) enum Strategy<'a> {
         /// the env stack.
         invent_pred: Option<usize>,
     },
-    /// Resolution via a native predicate function, with optional backtrackable
+    /// Resolution via a predicate function, with optional backtrackable
     /// alternatives produced by [`PredReturn::Choices`].
-    Native {
+    PredFn {
         function: PredicateFunction,
         /// Alternative results to try on backtracking. Each entry is a
         /// `(bindings, sub_goals)` pair, popped one at a time.
@@ -58,7 +58,7 @@ pub(crate) enum Strategy<'a> {
 
 /// A goal environment in the proof search.
 ///
-/// Shared fields live directly on the struct; the divergent clause-vs-native
+/// Shared fields live directly on the struct; the divergent clause-vs-pred_fn
 /// state lives inside [`Strategy`].
 #[derive(Debug)]
 pub(super) struct Env<'a> {
@@ -214,7 +214,7 @@ impl<'a> Env<'a> {
     }
 
     /// Get choices for constant predicate goal
-    /// If symbol/arity is a predicate function select Native strategy
+    /// If symbol/arity is a predicate function select PredFn strategy
     /// If symbol/arity is a known predicate use hashmap to get clauses + hypothesis
     /// If symbol/arity is unkown predicate get hypothesis and variable predicate clauses
     fn get_choices_con_pred<H: HypothesisTrait>(
@@ -227,7 +227,7 @@ impl<'a> Env<'a> {
     ) {
         match predicate_table.get_predicate((symbol, arity)) {
             Some(PredicateRef::Function(pred_function)) => {
-                self.strategy = Strategy::Native {
+                self.strategy = Strategy::PredFn {
                     function: pred_function,
                     alternatives: Vec::new(),
                     called: false,
@@ -315,7 +315,7 @@ impl<'a> Env<'a> {
         self.got_choices = false;
         match &mut self.strategy {
             Strategy::Clause { choices, .. } => *choices = Choices::default(),
-            Strategy::Native {
+            Strategy::PredFn {
                 called,
                 alternatives,
                 ..
@@ -349,7 +349,7 @@ impl<'a> Env<'a> {
         }
 
         match &self.strategy {
-            Strategy::Native { .. } => self.try_native(heap, hypothesis, predicate_table, config),
+            Strategy::PredFn { .. } => self.try_pred_fn(heap, hypothesis, predicate_table, config),
             Strategy::Clause { .. } => self.try_clause(
                 heap,
                 hypothesis,
@@ -362,16 +362,16 @@ impl<'a> Env<'a> {
         }
     }
 
-    // ── native predicate resolution ─────────────────────────────────────
+    // ── predicate function resolution ─────────────────────────────────────
 
-    fn try_native<H: HypothesisTrait>(
+    fn try_pred_fn<H: HypothesisTrait>(
         &mut self,
         heap: &mut QueryHeap,
         hypothesis: &mut H,
         predicate_table: &PredicateTable,
         config: ResolutionConfig,
     ) -> Option<Vec<Env<'a>>> {
-        let Strategy::Native {
+        let Strategy::PredFn {
             function,
             alternatives,
             called,
@@ -420,7 +420,7 @@ impl<'a> Env<'a> {
         }
 
         // Pop the next alternative (either from initial Choices or on backtrack).
-        let Strategy::Native { alternatives, .. } = &mut self.strategy else {
+        let Strategy::PredFn { alternatives, .. } = &mut self.strategy else {
             unreachable!()
         };
         let (bindings, goals) = alternatives.pop()?;

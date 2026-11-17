@@ -5,7 +5,7 @@
 //! of clauses or built-in predicate functions. During proof search, learned
 //! clauses are collected in a [`Hypothesis`](crate::program::Hypothesis).
 //!
-//! Both types appear in the signature of a native predicate (see
+//! Both types appear in the signature of a predicate function (see
 //! [`PredicateFunction`](crate::predicate_modules::PredicateFunction)), so
 //! both are public; the rest of the representation is internal.
 
@@ -14,7 +14,7 @@ mod hypothesis;
 mod meta_sub;
 mod predicate_table;
 
-// Public: named by every native predicate's signature.
+// Public: named by every predicate function's signature.
 pub use hypothesis::Hypothesis;
 pub(crate) use hypothesis::HypothesisTrait;
 pub use predicate_table::PredicateTable;

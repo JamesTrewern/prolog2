@@ -1,4 +1,4 @@
-//! Building blocks for writing native predicates.
+//! Building blocks for writing predicate functions.
 //!
 //! A predicate function receives the heap address of the goal it is resolving
 //! and returns a [`PredReturn`](crate::predicate_modules::PredReturn). The helpers here cover the three things

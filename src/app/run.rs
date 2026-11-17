@@ -110,7 +110,7 @@ impl App {
     ///
     /// Positive examples become goals; negative examples are wrapped in
     /// `not(...)`. This is a convenience wrapper around [`App::query_session`]
-    /// using [`Examples::to_query`].
+    /// using [`Examples::to_query`](super::Examples::to_query).
     ///
     /// # Errors
     ///

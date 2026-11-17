@@ -42,7 +42,7 @@ use crate::{
 ///   an interactive REPL or runs configured examples depending on state.
 /// - [`App::start_query`] runs a single query string and prints solutions
 ///   interactively to stdout.
-/// - [`App::query_session`] returns a [`QuerySession`] for programmatic
+/// - [`App::query_session`] returns a [`QuerySession`](super::QuerySession) for programmatic
 ///   iteration over solutions without any I/O side-effects.
 pub struct App {
     pub(crate) predicate_table: PredicateTable,
@@ -157,9 +157,33 @@ impl App {
 
     /// Sets the positive and negative training examples used by [`App::run`]
     /// when no interactive REPL is desired.
-    pub fn examples(self, examples: Examples) -> Self {
+    ///
+    /// Takes anything that converts into [`Examples`]: a file path or a list
+    /// of literals for the positives alone, or a pair of them for the
+    /// positives and negatives.
+    ///
+    /// ```
+    /// use prolog2::app::App;
+    ///
+    /// let app = App::default().examples((["e(east1)", "e(east2)"], ["e(west6)"]));
+    /// let app = App::default().examples(["e(east1)", "e(east2)"]);
+    /// ```
+    ///
+    /// A file holds one literal per line, each ended by a `.`:
+    ///
+    /// ```
+    /// use prolog2::app::App;
+    ///
+    /// let app = App::default().examples(("pos.pl", "neg.pl"));
+    /// let app = App::default().examples("pos.pl");
+    /// ```
+    /// [Example file example](https://github.com/JamesTrewern/prolog2/blob/master/examples/colreg/pos/avoid.pl)
+    /// # Panics
+    ///
+    /// If an examples file cannot be read.
+    pub fn examples(self, examples: impl Into<Examples>) -> Self {
         App {
-            examples: Some(examples),
+            examples: Some(examples.into()),
             ..self
         }
     }

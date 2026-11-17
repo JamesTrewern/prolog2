@@ -54,12 +54,12 @@ impl ResolutionConfig {
     }
 }
 
-/// ```no_run
-/// ResolutionConfig{
+/// ```text
+/// ResolutionConfig {
 ///     max_depth: 100,
 ///     max_clause: 4,
 ///     debug: false,
-///     protect_h_preds: protect_h_preds_default(),
+///     protect_h_preds: true,
 /// }
 /// ```
 impl Default for ResolutionConfig {
@@ -108,7 +108,7 @@ impl TryFrom<&str> for BodyPred {
 /// - Any string-like type implementing [`AsRef<str>`] (e.g. `&str`, `&&str`,
 ///   `String`) — parses the `"name/arity"` format.
 ///
-/// This trait is the bound on [`App::add_body_predicates`], so you can pass
+/// This trait is the bound on [`App::add_body_predicates`](super::App::add_body_predicates), so you can pass
 /// either a `Vec<BodyPred>` or a plain string slice like `&["p/2", "q/1"]`
 /// without any intermediate allocation.
 pub trait TryIntoBodyPred {
@@ -170,14 +170,8 @@ where
 
         // "examples/pos.pl" — treat as a file path and load it
         fn visit_str<E: de::Error>(self, v: &str) -> std::result::Result<Vec<String>, E> {
-            let file = fs::read_to_string(v)
-                .map_err(|e| E::custom(format!("failed to read examples file {v:?}: {e}")))?;
-            Ok(file
-                .split(".\n")
-                .map(str::trim)
-                .filter(|ex| !ex.is_empty())
-                .map(String::from)
-                .collect())
+            read_examples(v)
+                .map_err(|e| E::custom(format!("failed to read examples file {v:?}: {e}")))
         }
 
         // ["p(a)", "p(b)"] — take the strings directly
@@ -196,7 +190,108 @@ where
     deserializer.deserialize_any(ExamplesVisitor)
 }
 
+/// The examples in the file at `path`: one literal each, ended by a `.` and
+/// a new line.
+fn read_examples(path: &str) -> std::io::Result<Vec<String>> {
+    Ok(fs::read_to_string(path)?
+        .split(".\n")
+        .map(str::trim)
+        .filter(|ex| !ex.is_empty())
+        .map(String::from)
+        .collect())
+}
+
+/// One side of the [`Examples`], positive or negative: a file path or a list
+/// of literals.
+///
+/// A string (`&str`, `String`) is the path of a file holding one literal per
+/// line, each ended by a `.`. A list (`&[T]`, `&[T; N]`, `[T; N]`, `Vec<T>`,
+/// for any `T: AsRef<str>`) holds the literals themselves.
+///
+/// # Panics
+///
+/// Converting a path panics if the file cannot be read.
+pub trait ExampleSource {
+    fn into_examples(self) -> Vec<String>;
+}
+
+impl ExampleSource for &str {
+    fn into_examples(self) -> Vec<String> {
+        read_examples(self).unwrap_or_else(|e| panic!("failed to read examples file {self:?}: {e}"))
+    }
+}
+
+impl ExampleSource for String {
+    fn into_examples(self) -> Vec<String> {
+        self.as_str().into_examples()
+    }
+}
+
+impl<T: AsRef<str>> ExampleSource for &[T] {
+    fn into_examples(self) -> Vec<String> {
+        self.iter().map(|ex| ex.as_ref().to_string()).collect()
+    }
+}
+
+impl<T: AsRef<str>, const N: usize> ExampleSource for &[T; N] {
+    fn into_examples(self) -> Vec<String> {
+        self.as_slice().into_examples()
+    }
+}
+
+impl<T: AsRef<str>, const N: usize> ExampleSource for [T; N] {
+    fn into_examples(self) -> Vec<String> {
+        self.as_slice().into_examples()
+    }
+}
+
+impl<T: AsRef<str>> ExampleSource for Vec<T> {
+    fn into_examples(self) -> Vec<String> {
+        self.as_slice().into_examples()
+    }
+}
+
+/// Positive examples only, from a file path or a list of literals.
+impl<P: ExampleSource> From<P> for Examples {
+    fn from(pos: P) -> Self {
+        Examples {
+            pos: pos.into_examples(),
+            neg: Vec::new(),
+        }
+    }
+}
+
+/// Positive then negative examples, each from a file path or a list of
+/// literals.
+impl<P: ExampleSource, N: ExampleSource> From<(P, N)> for Examples {
+    fn from((pos, neg): (P, N)) -> Self {
+        Examples {
+            pos: pos.into_examples(),
+            neg: neg.into_examples(),
+        }
+    }
+}
+
 /// Positive and negative training examples.
+///
+/// Usually made by conversion, from one [`ExampleSource`] for the positives
+/// or a pair for the positives and negatives. Each source is a file path or
+/// a list of literals:
+///
+/// ```no_run
+/// use prolog2::Examples;
+///
+/// // Two files, or the positives' file alone.
+/// let examples = Examples::from(("pos.pl", "neg.pl"));
+/// let examples = Examples::from("pos.pl");
+///
+/// // Two lists, or the positives alone.
+/// let examples = Examples::from((["p(a)", "p(b)"], ["p(c)"]));
+/// let examples = Examples::from(["p(a)", "p(b)"]);
+/// ```
+///
+/// In a JSON config file `pos` and `neg` each take the same two forms: a
+/// path string or a list of strings.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Examples {
     #[serde(deserialize_with = "deserialize_examples")]
@@ -213,18 +308,17 @@ pub struct Examples {
 /// and runs the examples as a direct query. That is why there is no `enabled`
 /// field here.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+// An omitted field takes its value from `Default`, not the zero of its type.
+#[serde(default)]
 pub struct ParallelConfig {
     /// Run Plotkin's program reduction over each learned program, dropping
     /// clauses the remaining ones already cover.
     /// Off by default, which is useful for profiling or for inspecting the
     /// raw top program.
-    #[serde(default)]
     pub reduce: bool,
     /// Break ties between equally-sized sub hypotheses by literal count.
-    #[serde(default)]
     pub sort_by_literals: bool,
     /// How many complete programs to return.
-    #[serde(default)]
     pub final_h_count: usize,
     /// How many negative examples may be set aside as noise. Defaults to 0.
     ///
@@ -233,11 +327,9 @@ pub struct ParallelConfig {
     /// negatives ignored, or those positives left uncovered. Within this
     /// and [`Self::pos_noise`] they are filtered out, with a note, and the
     /// run goes on. Otherwise it ends with a report on those examples.
-    #[serde(default)]
     pub neg_noise: usize,
     /// How many positive examples may be left uncovered as noise. Defaults
     /// to 0. See [`Self::neg_noise`].
-    #[serde(default)]
     pub pos_noise: usize,
 }
 
@@ -274,8 +366,8 @@ impl ParallelConfig {
     }
 }
 
-/// ```
-/// ParallelConfig{
+/// ```text
+/// ParallelConfig {
 ///     reduce: false,
 ///     sort_by_literals: false,
 ///     final_h_count: 5,
@@ -348,6 +440,67 @@ impl Examples {
         }
         self.pos.iter_mut().for_each(normalise);
         self.neg.iter_mut().for_each(normalise);
+    }
+}
+
+#[cfg(test)]
+mod example_tests {
+    use super::Examples;
+
+    const POS_FILE: &str = "examples/colreg/pos/avoid.pl";
+    const NEG_FILE: &str = "examples/colreg/neg/avoid.pl";
+
+    fn from_json(pos: &str, neg: &str) -> Examples {
+        serde_json::from_str(&format!(r#"{{"pos":{pos},"neg":{neg}}}"#)).unwrap()
+    }
+
+    #[test]
+    fn lists_are_taken_as_the_literals() {
+        let examples = Examples::from((["p(a)", "p(b)"], ["p(c)"]));
+        assert_eq!(examples.pos, ["p(a)", "p(b)"]);
+        assert_eq!(examples.neg, ["p(c)"]);
+
+        // Slices, array references and vectors of any string type.
+        let (pos, neg) = (vec!["p(a)".to_string()], ["p(c)"]);
+        let examples = Examples::from((pos.as_slice(), &neg));
+        assert_eq!(
+            (examples.pos, examples.neg),
+            (pos.clone(), vec!["p(c)".to_string()])
+        );
+        assert_eq!(Examples::from((pos.clone(), neg)).pos, pos);
+    }
+
+    #[test]
+    fn one_source_is_the_positives_alone() {
+        let examples = Examples::from(["p(a)", "p(b)"]);
+        assert_eq!(examples.pos, ["p(a)", "p(b)"]);
+        assert!(examples.neg.is_empty());
+
+        let examples = Examples::from(POS_FILE);
+        assert!(!examples.pos.is_empty() && examples.neg.is_empty());
+    }
+
+    #[test]
+    fn paths_load_what_the_config_file_loads() {
+        let expected = from_json(&format!("{POS_FILE:?}"), &format!("{NEG_FILE:?}"));
+        assert!(!expected.pos.is_empty() && !expected.neg.is_empty());
+
+        let examples = Examples::from((POS_FILE, NEG_FILE));
+        assert_eq!(
+            (&examples.pos, &examples.neg),
+            (&expected.pos, &expected.neg)
+        );
+
+        // Owned paths, and a path beside a list.
+        let examples = Examples::from((POS_FILE.to_string(), ["p(c)"]));
+        assert_eq!(examples.pos, expected.pos);
+        assert_eq!(examples.neg, ["p(c)"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "failed to read examples file")]
+    fn a_missing_file_panics_naming_it() {
+        let _ = Examples::from("no/such/examples.pl");
     }
 }
 

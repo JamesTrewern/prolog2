@@ -17,7 +17,7 @@ mod symbol_db;
 mod varbind;
 mod walk;
 
-// Public: what a native predicate needs to read its goal and build a result.
+// Public: what a predicate function needs to read its goal and build a result.
 // `HeapPoint` and `VarReg` are here because they appear in the signatures of
 // public `QueryHeap` methods rather than because they are named directly.
 pub use heap::{Cell, Heap, Tag, EMPTY_LIS, LIS};

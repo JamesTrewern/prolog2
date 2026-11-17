@@ -22,7 +22,7 @@ pub(crate) type SymbolArity = (usize, usize);
 #[allow(unpredictable_function_pointer_comparisons)]
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub(crate) enum Predicate {
-    /// A native Rust predicate function.
+    /// A Rust predicate function.
     Function(PredicateFunction),
     /// Where this predicate's clauses sit in the arena. Never empty.
     Clauses(Range<usize>),
@@ -36,7 +36,7 @@ pub(crate) enum Predicate {
 #[allow(unpredictable_function_pointer_comparisons)]
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum PredicateRef<'a> {
-    /// A native Rust predicate function.
+    /// A Rust predicate function.
     Function(PredicateFunction),
     /// This predicate's clauses, in source order.
     Clauses(&'a [Clause]),

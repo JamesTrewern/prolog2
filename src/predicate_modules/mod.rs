@@ -1,4 +1,4 @@
-//! Native predicates, and the pieces for writing your own.
+//! Predicate functions, and the pieces for writing your own.
 //!
 //! A predicate module is a [`PredicateModule`](crate::predicate_modules::PredicateModule): a slice of
 //! `(name, arity, function)` triples implemented in Rust, paired with any
@@ -58,7 +58,7 @@ use smallvec::SmallVec;
 ///
 /// # Variants
 ///
-/// The three variants cover the full range of outcomes a native predicate can produce:
+/// The three variants cover the full range of outcomes a predicate function can produce:
 ///
 /// - [`PredReturn::True`] — pure success with no heap side-effects; equivalent to
 ///   `Success(vec![], vec![])` but avoids allocating empty vecs for the common case.
@@ -139,11 +139,11 @@ pub type PredicateFunction = for<'a> fn(
     ResolutionConfig,
 ) -> PredReturn;
 
-/// A predicate module: a tuple of native predicate entries and built-in Prolog source code.
+/// A predicate module: a tuple of predicate function entries and built-in Prolog source code.
 ///
 /// The two components let you extend the engine in two complementary ways:
 ///
-/// 1. **Native predicates** — a static slice of `(name, arity, function)` triples wired
+/// 1. **Predicate functions** — a static slice of `(name, arity, function)` triples wired
 ///    directly into the engine. Use these for anything that needs to inspect or mutate heap
 ///    memory, perform I/O, or call into Rust logic that cannot be expressed in Prolog.
 ///    Each function returns a [`PredReturn`] describing whether the predicate succeeded,
@@ -151,7 +151,7 @@ pub type PredicateFunction = for<'a> fn(
 ///
 /// 2. **Prolog source** — a static slice of `&str` source snippets (typically embedded at
 ///    compile time with `include_str!`). These are parsed and loaded as ordinary clauses
-///    when the module is registered, so they can call each other or any native predicates
+///    when the module is registered, so they can call each other or any predicate functions
 ///    in the module.
 ///
 /// Either slice may be empty if the module only uses one mechanism.

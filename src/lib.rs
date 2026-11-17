@@ -8,16 +8,61 @@
 //!
 //! ## Library usage
 //!
-//! The main extension point is the **predicate module** system. A
-//! [`predicate_modules::PredicateModule`] bundles native Rust predicate functions
-//! together with optional Prolog source code. Modules are registered with the
-//! [`app::App`] builder, which also handles configuration loading and execution.
-//! Examples of builtin predicate functions can be found at
+//! The library has two main uses: building an engine in code and querying
+//! it, and extending the engine with predicate functions written in Rust.
+//!
+//! ### Building an engine and sending queries
+//!
+//! [`app::App`] is a builder. [`App::default`](app::App::default) starts with
+//! the standard predicate modules loaded, and each method adds to it: Prolog
+//! source ([`load_code`](app::App::load_code),
+//! [`load_file`](app::App::load_file), [`load_dir`](app::App::load_dir)),
+//! body predicates for learning
+//! ([`add_body_predicates`](app::App::add_body_predicates)), and settings
+//! ([`resolution`](app::App::resolution), [`parallel`](app::App::parallel)).
+//! The same can be read from a JSON config file with
+//! [`App::from_config_json`](app::App::from_config_json).
+//!
+//! [`App::query_session`](app::App::query_session) then proves a query,
+//! returning an iterator over its [`Solution`](app::Solution)s. Each holds
+//! the variable bindings and any hypothesis learned by that proof.
+//!
+//! ```
+//! use prolog2::app::App;
+//!
+//! # fn main() -> prolog2::Result<()> {
+//! let app = App::default()
+//!     .load_code("parent(ann, bob). parent(bob, cat).")?
+//!     .resolution(|resolution| resolution.max_depth(10));
+//!
+//! for solution in app.query_session("parent(ann, X).")? {
+//!     for (name, value) in &solution.bindings {
+//!         println!("{name} = {value}");
+//!     }
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! To learn from examples, set them with [`App::examples`](app::App::examples)
+//! (file paths or lists of literals, see [`Examples`]) and either query them
+//! with [`App::query_session_from_examples`](app::App::query_session_from_examples)
+//! or run the parallel learner with
+//! [`App::run_parallel`](app::App::run_parallel).
+//! [`App::run`](app::App::run) is what the binary calls: it picks between
+//! those and the interactive loop from what has been set.
+//!
+//! ### Writing a predicate function
+//!
+//! The engine is extended through the **predicate module** system. A
+//! [`predicate_modules::PredicateModule`] bundles Rust predicate functions
+//! together with optional Prolog source code, and is registered with
+//! [`App::load_module`](app::App::load_module). Examples of builtin predicate
+//! functions can be found at
 //! <https://github.com/JamesTrewern/prolog2/tree/master/src/predicate_modules>.
 //!
-//! ### Writing a native predicate
-//!
-//! A native predicate is a Rust function with the signature defined by
+//! A predicate function, `pred_fn` for short, is a Rust function with the
+//! signature defined by
 //! [`predicate_modules::PredicateFunction`]. It receives the current heap, the
 //! hypothesis being constructed, the heap address of the goal term, the predicate
 //! table, and the engine configuration. It returns a [`predicate_modules::PredReturn`]
@@ -79,7 +124,6 @@
 //! - [`Error::BodyPred`] — a body-predicate specification in the config is invalid.
 //! - [`Error::Module`] — a predicate module could not be loaded (e.g. duplicate predicate).
 
-/// Application builder and configuration types.
 // ── inline capacities ────────────────────────────────────────────────────
 //
 // Each of these is the inline length of a `SmallVec` held by a struct that
@@ -145,6 +189,7 @@ pub const BINDINGS_DEFAULT_SIZE: usize = 4;
 /// even when empty.
 pub type Bindings = smallvec::SmallVec<[usize; BINDINGS_DEFAULT_SIZE]>;
 
+/// Application builder and configuration types.
 pub mod app;
 /// Heap memory management: cells, query heaps, and the symbol database.
 pub mod heap;
@@ -169,7 +214,7 @@ pub mod resolution;
 mod utils;
 
 // Re-export commonly used types at crate root.
-pub use app::{BodyPred, Config, Examples, ParallelConfig, ResolutionConfig};
+pub use app::{BodyPred, Config, ExampleSource, Examples, ParallelConfig, ResolutionConfig};
 pub use parser::ParserError;
 
 use std::fmt;

@@ -99,6 +99,14 @@ Configured in a JSON file (default: `config.json`):
 If the config file includes an `examples` field, Prolog<sup>2</sup> will immediately attempt to prove the examples as a query and output any learned hypotheses. 
 If `examples` is omitted, an interactive REPL is started where queries can be entered manually.
 
+`pos` and `neg` each take either a list of literals, as above, or the path of a file holding one literal per line, each ended by a `.`:
+``` json
+"examples" : {
+    "pos" : "examples/colreg/pos/avoid.pl",
+    "neg" : "examples/colreg/neg/avoid.pl"
+}
+```
+
 The `auto` option makes the program iterate through all possible proofs in a query. By default this is off and after each proof the program awaits user input (Space/;: continue, Enter: stop).
 
 `files`: a list of either directory or file paths. If a directory is found it recursively searches subdirectories and loads all files with a .pl extension
@@ -200,6 +208,18 @@ The same settings can be given in code. `App::resolution` and `App::parallel` ea
 let app = App::default()
     .resolution(|resolution| resolution.max_depth(5).max_clause(2))
     .parallel(|parallel| parallel.reduce(true).pos_noise(1));
+```
+
+`App::examples` takes the examples in the same two forms as the config file, file paths or lists of literals. Give a pair for the positives and negatives, or a single value for the positives alone:
+
+``` rust
+// Two files, or the positives' file alone.
+let app = App::default().examples(("pos.pl", "neg.pl"));
+let app = App::default().examples("pos.pl");
+
+// Two lists, or the positives alone.
+let app = App::default().examples((["e(east1)", "e(east2)"], ["e(west6)"]));
+let app = App::default().examples(["e(east1)", "e(east2)"]);
 ```
 
 Running this on Michalski's trains problem produces:

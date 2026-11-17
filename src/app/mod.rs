@@ -7,5 +7,5 @@ mod config;
 mod run;
 
 pub use app::App;
-pub use config::{BodyPred, Config, Examples, ParallelConfig, ResolutionConfig, TryIntoBodyPred};
+pub use config::{BodyPred, Config, ExampleSource, Examples, ParallelConfig, ResolutionConfig, TryIntoBodyPred};
 pub use run::{QuerySession, Solution};
