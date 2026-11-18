@@ -2,11 +2,11 @@
 //!
 //! [`BitFlag`] is the one interface to them. It is implemented for every
 //! unsigned integer, which holds as many indices as it has bits, and for
-//! [`BitVec`], which grows to hold any index.
+//! every array of them, which holds as many as its integers do together:
+//! `[u128; 8]` holds 1024.
 //!
-//! The integers share one implementation, written with the bit operators
-//! over [`Word`]. [`BitVec`] has its own, which never takes an operand by
-//! value.
+//! An implementor only says how it is seen as a slice of [`Word`]s. Every
+//! operation is written once, in the trait, over those slices.
 //!
 //! A set holds only the indices put in it. There is no padding convention:
 //! whether a set holds all of the first `n` indices is asked with
@@ -17,51 +17,108 @@
 
 use std::ops::{BitAnd, BitOr, Not, Shl};
 
-/// A set of indices.
-///
-/// The required methods change a set in place or read it. The combining
-/// methods that return a new set are provided from those.
-pub(crate) trait BitFlag: Clone + PartialEq {
-    /// The most indices a set can hold: indices `0..n` for `Some(n)`, any
-    /// index for `None`.
-    const CAPACITY: Option<usize>;
+/// A set of indices below [`Self::CAPACITY`].
+pub(crate) trait BitFlag: Copy + PartialEq {
+    /// The integer the set is made of.
+    type Word: Word;
+
+    /// How many indices the set can hold: `0..CAPACITY`.
+    const CAPACITY: usize;
 
     /// The set of nothing.
     fn empty() -> Self;
 
+    /// The set as its words, the lowest indices first.
+    fn words(&self) -> &[Self::Word];
+
+    /// As [`Self::words`], to change.
+    fn words_mut(&mut self) -> &mut [Self::Word];
+
     /// Whether `index` is in the set. An index past the capacity is not.
-    fn get(&self, index: usize) -> bool;
+    fn get(&self, index: usize) -> bool {
+        let (word, bit) = position::<Self>(index);
+        self.words()
+            .get(word)
+            .is_some_and(|word| *word & bit != zero::<Self>())
+    }
 
     /// Put `index` in the set.
     ///
     /// # Panics
     ///
     /// If `index` is past the capacity.
-    fn set(&mut self, index: usize);
+    fn set(&mut self, index: usize) {
+        assert!(
+            index < Self::CAPACITY,
+            "index {index} is past the {} a set of this width holds",
+            Self::CAPACITY
+        );
+        let (word, bit) = position::<Self>(index);
+        let word = &mut self.words_mut()[word];
+        *word = *word | bit;
+    }
 
     /// Take `index` out of the set.
-    fn unset(&mut self, index: usize);
+    fn unset(&mut self, index: usize) {
+        let (word, bit) = position::<Self>(index);
+        if let Some(word) = self.words_mut().get_mut(word) {
+            *word = *word & !bit;
+        }
+    }
 
     /// Add everything in `other`.
-    fn union_with(&mut self, other: &Self);
+    fn union_with(&mut self, other: &Self) {
+        for (word, other) in self.words_mut().iter_mut().zip(other.words()) {
+            *word = *word | *other;
+        }
+    }
 
     /// Keep only what is also in `other`.
-    fn intersect_with(&mut self, other: &Self);
+    fn intersect_with(&mut self, other: &Self) {
+        for (word, other) in self.words_mut().iter_mut().zip(other.words()) {
+            *word = *word & *other;
+        }
+    }
 
     /// Remove everything in `other`.
-    fn difference_with(&mut self, other: &Self);
+    fn difference_with(&mut self, other: &Self) {
+        for (word, other) in self.words_mut().iter_mut().zip(other.words()) {
+            *word = *word & !*other;
+        }
+    }
 
     /// How many indices are in the set.
-    fn count(&self) -> usize;
+    fn count(&self) -> usize {
+        self.words().iter().map(|word| word.ones()).sum()
+    }
 
     /// Whether nothing is in the set.
-    fn is_empty(&self) -> bool;
+    fn is_empty(&self) -> bool {
+        self.words().iter().all(|word| *word == zero::<Self>())
+    }
 
     /// Whether everything in the set is in `other`.
-    fn is_subset(&self, other: &Self) -> bool;
+    fn is_subset(&self, other: &Self) -> bool {
+        self.words()
+            .iter()
+            .zip(other.words())
+            .all(|(word, other)| *word & !*other == zero::<Self>())
+    }
 
     /// The lowest index in the set that is at least `from`.
-    fn next_set(&self, from: usize) -> Option<usize>;
+    fn next_set(&self, from: usize) -> Option<usize> {
+        let bits = Self::Word::BITS;
+        // Of the first word looked at, only the bits from `from` up.
+        let mut mask = Self::Word::bits_from(from % bits);
+        for (i, word) in self.words().iter().enumerate().skip(from / bits) {
+            let rest = *word & mask;
+            if rest != zero::<Self>() {
+                return Some(i * bits + rest.lowest());
+            }
+            mask = !zero::<Self>();
+        }
+        None
+    }
 
     /// The set of indices `0..n`.
     ///
@@ -69,42 +126,55 @@ pub(crate) trait BitFlag: Clone + PartialEq {
     ///
     /// If `n` is more than the capacity.
     fn full(n: usize) -> Self {
+        assert!(
+            n <= Self::CAPACITY,
+            "{n} indices are more than the {} a set of this width holds",
+            Self::CAPACITY
+        );
+        let bits = Self::Word::BITS;
         let mut full = Self::empty();
-        for index in 0..n {
-            full.set(index);
+        for (i, word) in full.words_mut().iter_mut().enumerate() {
+            // How many of the `n` fall in this word: all of it, part, none.
+            let in_word = n.saturating_sub(i * bits);
+            *word = !Self::Word::bits_from(in_word);
         }
         full
     }
 
-    /// Whether every index in `0..n` is in the set.
+    /// Whether every index in `0..n` is in the set. Never, for more than
+    /// the capacity.
     fn is_full(&self, n: usize) -> bool {
-        Self::full(n).is_subset(self)
+        n <= Self::CAPACITY && Self::full(n).is_subset(self)
     }
 
     /// Everything in either set.
     fn union(&self, other: &Self) -> Self {
-        let mut union = self.clone();
+        let mut union = *self;
         union.union_with(other);
         union
     }
 
     /// Everything in both sets.
     fn intersection(&self, other: &Self) -> Self {
-        let mut intersection = self.clone();
+        let mut intersection = *self;
         intersection.intersect_with(other);
         intersection
     }
 
     /// Everything in this set that is not in `other`.
     fn difference(&self, other: &Self) -> Self {
-        let mut difference = self.clone();
+        let mut difference = *self;
         difference.difference_with(other);
         difference
     }
 
     /// How many indices are in this set and not in `other`.
     fn difference_count(&self, other: &Self) -> usize {
-        self.difference(other).count()
+        self.words()
+            .iter()
+            .zip(other.words())
+            .map(|(word, other)| (*word & !*other).ones())
+            .sum()
     }
 
     /// The indices in the set, lowest first.
@@ -129,6 +199,17 @@ pub(crate) trait BitFlag: Clone + PartialEq {
     }
 }
 
+/// The word of no bits.
+fn zero<B: BitFlag>() -> B::Word {
+    B::Word::default()
+}
+
+/// Where `index` is held: which word, and the bit of it.
+fn position<B: BitFlag>(index: usize) -> (usize, B::Word) {
+    let bits = B::Word::BITS;
+    (index / bits, B::Word::bit(index % bits))
+}
+
 /// The indices of a [`BitFlag`], lowest first.
 pub(crate) struct Iter<'a, B> {
     flags: &'a B,
@@ -151,8 +232,8 @@ impl<B: BitFlag> Iterator for Iter<'_, B> {
 /// what no standard trait gives, and the provided ones are built from both.
 ///
 /// `BitFlag` is implemented for every `Word` at once. Being this crate's own
-/// trait, the compiler knows what does not implement it, which is what lets
-/// [`BitVec`] have an implementation of its own beside that one.
+/// trait, the compiler knows an array is not one, which is what lets the
+/// arrays have an implementation beside that one.
 pub(crate) trait Word:
     Copy
     + Eq
@@ -206,191 +287,41 @@ macro_rules! impl_word {
 }
 impl_word!(u8, u16, u32, u64, u128);
 
+/// One integer: a set of as many indices as it has bits.
 impl<W: Word> BitFlag for W {
-    const CAPACITY: Option<usize> = Some(W::BITS);
+    type Word = W;
+
+    const CAPACITY: usize = W::BITS;
 
     fn empty() -> Self {
         W::default()
     }
 
-    fn get(&self, index: usize) -> bool {
-        index < W::BITS && *self & W::bit(index) != W::default()
+    fn words(&self) -> &[W] {
+        std::slice::from_ref(self)
     }
 
-    fn set(&mut self, index: usize) {
-        assert!(
-            index < W::BITS,
-            "index {index} is past the {} a set of this width holds",
-            W::BITS
-        );
-        *self = *self | W::bit(index);
-    }
-
-    fn unset(&mut self, index: usize) {
-        if index < W::BITS {
-            *self = *self & !W::bit(index);
-        }
-    }
-
-    fn union_with(&mut self, other: &Self) {
-        *self = *self | *other;
-    }
-
-    fn intersect_with(&mut self, other: &Self) {
-        *self = *self & *other;
-    }
-
-    fn difference_with(&mut self, other: &Self) {
-        *self = *self & !*other;
-    }
-
-    fn count(&self) -> usize {
-        self.ones()
-    }
-
-    fn is_empty(&self) -> bool {
-        *self == W::default()
-    }
-
-    fn is_subset(&self, other: &Self) -> bool {
-        *self & !*other == W::default()
-    }
-
-    fn next_set(&self, from: usize) -> Option<usize> {
-        let rest = *self & W::bits_from(from);
-        (rest != W::default()).then(|| rest.lowest())
-    }
-
-    fn full(n: usize) -> Self {
-        assert!(
-            n <= W::BITS,
-            "{n} indices are more than the {} a set of this width holds",
-            W::BITS
-        );
-        !W::bits_from(n)
-    }
-
-    fn difference_count(&self, other: &Self) -> usize {
-        (*self & !*other).ones()
+    fn words_mut(&mut self) -> &mut [W] {
+        std::slice::from_mut(self)
     }
 }
 
-/// A set of indices of any size, 64 to a word.
-///
-/// The last word is never zero, so equal sets are equal word for word.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct BitVec {
-    words: Vec<u64>,
-}
+/// Several integers: a set of as many indices as they have bits together.
+impl<W: Word, const N: usize> BitFlag for [W; N] {
+    type Word = W;
 
-impl BitVec {
-    const WORD: usize = u64::BITS as usize;
-
-    /// Restore the invariant: drop the zero words at the end.
-    fn trim(&mut self) {
-        while self.words.last() == Some(&0) {
-            self.words.pop();
-        }
-    }
-
-    /// Word `i`, zero past the end.
-    fn word(&self, i: usize) -> u64 {
-        self.words.get(i).copied().unwrap_or(0)
-    }
-}
-
-impl BitFlag for BitVec {
-    const CAPACITY: Option<usize> = None;
+    const CAPACITY: usize = W::BITS * N;
 
     fn empty() -> Self {
-        Self::default()
+        [W::default(); N]
     }
 
-    fn get(&self, index: usize) -> bool {
-        self.word(index / Self::WORD) & 1 << (index % Self::WORD) != 0
+    fn words(&self) -> &[W] {
+        self
     }
 
-    fn set(&mut self, index: usize) {
-        let word = index / Self::WORD;
-        if self.words.len() <= word {
-            self.words.resize(word + 1, 0);
-        }
-        self.words[word] |= 1 << (index % Self::WORD);
-    }
-
-    fn unset(&mut self, index: usize) {
-        if let Some(word) = self.words.get_mut(index / Self::WORD) {
-            *word &= !(1 << (index % Self::WORD));
-            self.trim();
-        }
-    }
-
-    fn union_with(&mut self, other: &Self) {
-        if self.words.len() < other.words.len() {
-            self.words.resize(other.words.len(), 0);
-        }
-        for (word, other) in self.words.iter_mut().zip(&other.words) {
-            *word |= other;
-        }
-    }
-
-    fn intersect_with(&mut self, other: &Self) {
-        self.words.truncate(other.words.len());
-        for (word, other) in self.words.iter_mut().zip(&other.words) {
-            *word &= other;
-        }
-        self.trim();
-    }
-
-    fn difference_with(&mut self, other: &Self) {
-        for (word, other) in self.words.iter_mut().zip(&other.words) {
-            *word &= !other;
-        }
-        self.trim();
-    }
-
-    fn count(&self) -> usize {
-        self.words
-            .iter()
-            .map(|word| word.count_ones() as usize)
-            .sum()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.words.is_empty()
-    }
-
-    fn is_subset(&self, other: &Self) -> bool {
-        // A longer set has an index the shorter cannot: its last word is
-        // not zero.
-        self.words.len() <= other.words.len()
-            && self
-                .words
-                .iter()
-                .zip(&other.words)
-                .all(|(word, other)| word & !other == 0)
-    }
-
-    fn next_set(&self, from: usize) -> Option<usize> {
-        let first = from / Self::WORD;
-        // Of the first word, only the bits from `from` up.
-        let mut mask = u64::MAX << (from % Self::WORD);
-        for (i, word) in self.words.iter().enumerate().skip(first) {
-            let rest = word & mask;
-            if rest != 0 {
-                return Some(i * Self::WORD + rest.trailing_zeros() as usize);
-            }
-            mask = u64::MAX;
-        }
-        None
-    }
-
-    fn difference_count(&self, other: &Self) -> usize {
-        self.words
-            .iter()
-            .enumerate()
-            .map(|(i, word)| (word & !other.word(i)).count_ones() as usize)
-            .sum()
+    fn words_mut(&mut self) -> &mut [W] {
+        self
     }
 }
 
@@ -398,7 +329,7 @@ impl BitFlag for BitVec {
 mod tests {
     use std::{collections::BTreeSet, fmt::Debug};
 
-    use super::{BitFlag, BitVec};
+    use super::BitFlag;
 
     /// The set a `BitFlag` should agree with.
     type Model = BTreeSet<usize>;
@@ -408,15 +339,13 @@ mod tests {
     }
 
     /// Indices to test with: every one a `u8` holds, and for a wider set
-    /// those either side of each word boundary up to its capacity (300 for
-    /// one with none).
+    /// those either side of each word boundary up to its capacity.
     fn indices<B: BitFlag>() -> Vec<usize> {
-        let limit = B::CAPACITY.unwrap_or(300);
         let mut indices: Vec<usize> = (0..8).collect();
-        for boundary in [16, 32, 64, 128, 192, 256, 300] {
+        for boundary in [16, 32, 64, 128, 192, 256, 512, 1024] {
             indices.extend([boundary - 1, boundary]);
         }
-        indices.retain(|&index| index < limit);
+        indices.retain(|&index| index < B::CAPACITY);
         indices
     }
 
@@ -479,7 +408,7 @@ mod tests {
             assert_eq!(a.difference_count(&b), (&model_a - &model_b).len());
             assert_eq!(a.is_subset(&b), model_a.is_subset(&model_b));
             assert_eq!(b.is_subset(&a), model_b.is_subset(&model_a));
-            let mut in_place = a.clone();
+            let mut in_place = a;
             in_place.union_with(&b);
             in_place.difference_with(&b);
             assert_eq!(in_place, set(&model_a - &model_b));
@@ -497,27 +426,31 @@ mod tests {
         agrees_with_the_model::<u32>();
         agrees_with_the_model::<u64>();
         agrees_with_the_model::<u128>();
-        agrees_with_the_model::<BitVec>();
+        agrees_with_the_model::<[u8; 1]>();
+        agrees_with_the_model::<[u64; 3]>();
+        agrees_with_the_model::<[u128; 2]>();
+        agrees_with_the_model::<[u128; 8]>();
     }
 
     /// `full(n)` is the indices `0..n` and nothing else, and `is_full(n)`
     /// asks for exactly those, at every `n` the set can hold.
     fn full_is_the_first_n<B: BitFlag + Debug>() {
-        let limit = B::CAPACITY.unwrap_or(200);
-        for n in 0..=limit {
+        for n in 0..=B::CAPACITY {
             let full = B::full(n);
             assert_eq!(full.count(), n, "full({n})");
             assert_eq!(model(&full), (0..n).collect::<Model>());
             assert!(full.is_full(n));
             // A set with more than the first `n` is still full of them.
-            assert!(B::full(limit).is_full(n));
+            assert!(B::full(B::CAPACITY).is_full(n));
             if n > 0 {
                 assert!(!B::full(n - 1).is_full(n));
-                let mut missing_one = full.clone();
+                let mut missing_one = full;
                 missing_one.unset(n / 2);
                 assert!(!missing_one.is_full(n));
             }
         }
+        // More than it can hold is never all there.
+        assert!(!B::full(B::CAPACITY).is_full(B::CAPACITY + 1));
     }
 
     #[test]
@@ -527,14 +460,18 @@ mod tests {
         full_is_the_first_n::<u32>();
         full_is_the_first_n::<u64>();
         full_is_the_first_n::<u128>();
-        full_is_the_first_n::<BitVec>();
+        full_is_the_first_n::<[u8; 1]>();
+        full_is_the_first_n::<[u64; 3]>();
+        full_is_the_first_n::<[u128; 2]>();
+        full_is_the_first_n::<[u128; 8]>();
     }
 
     #[test]
-    fn the_integers_hold_as_many_indices_as_they_have_bits() {
-        assert_eq!(<u8 as BitFlag>::CAPACITY, Some(8));
-        assert_eq!(<u128 as BitFlag>::CAPACITY, Some(128));
-        assert_eq!(<BitVec as BitFlag>::CAPACITY, None);
+    fn a_set_holds_as_many_indices_as_it_has_bits() {
+        assert_eq!(<u8 as BitFlag>::CAPACITY, 8);
+        assert_eq!(<u128 as BitFlag>::CAPACITY, 128);
+        assert_eq!(<[u64; 3] as BitFlag>::CAPACITY, 192);
+        assert_eq!(<[u128; 8] as BitFlag>::CAPACITY, 1024);
 
         // The top bit is an index like any other.
         let mut flags = 0u8;
@@ -550,6 +487,20 @@ mod tests {
         assert_eq!(unchanged, u8::MAX);
     }
 
+    /// An index is held in the word it falls in, lowest words first.
+    #[test]
+    fn an_array_holds_an_index_in_the_word_it_falls_in() {
+        let flags = <[u64; 3]>::from_indices([0, 63, 64, 191]);
+        assert_eq!(flags, [1 | 1 << 63, 1, 1 << 63]);
+        assert_eq!(flags.iter().collect::<Vec<_>>(), vec![0, 63, 64, 191]);
+
+        // One word in an array is the word.
+        assert_eq!(
+            <[u64; 1]>::from_indices([5, 40])[0],
+            u64::from_indices([5, 40])
+        );
+    }
+
     #[test]
     #[should_panic(expected = "index 8 is past the 8")]
     fn setting_past_an_integers_capacity_panics() {
@@ -558,43 +509,15 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "index 256 is past the 256")]
+    fn setting_past_an_arrays_capacity_panics() {
+        let mut flags = [0u128; 2];
+        flags.set(256);
+    }
+
+    #[test]
     #[should_panic(expected = "9 indices are more than the 8")]
-    fn filling_past_an_integers_capacity_panics() {
+    fn filling_past_the_capacity_panics() {
         let _ = <u8 as BitFlag>::full(9);
-    }
-
-    /// Taking out the highest indices leaves no empty words behind, so the
-    /// set equals one that never held them.
-    #[test]
-    fn a_bit_vec_shrinks_back() {
-        let mut flags = BitVec::from_indices([3, 700]);
-        flags.unset(700);
-        assert_eq!(flags, BitVec::from_indices([3]));
-        flags.unset(3);
-        assert_eq!(flags, BitVec::empty());
-        assert!(flags.is_empty());
-
-        let high = BitVec::from_indices([700]);
-        let mut low = BitVec::from_indices([3, 700]);
-        low.difference_with(&high);
-        assert_eq!(low, BitVec::from_indices([3]));
-        let mut both = BitVec::from_indices([3, 700]);
-        both.intersect_with(&BitVec::from_indices([3]));
-        assert_eq!(both, BitVec::from_indices([3]));
-    }
-
-    /// Sets of different lengths combine as if the shorter were padded.
-    #[test]
-    fn bit_vecs_of_different_lengths_combine() {
-        let short = BitVec::from_indices([1]);
-        let long = BitVec::from_indices([1, 500]);
-        assert!(short.is_subset(&long));
-        assert!(!long.is_subset(&short));
-        assert_eq!(short.union(&long), long);
-        assert_eq!(long.union(&short), long);
-        assert_eq!(long.intersection(&short), short);
-        assert_eq!(long.difference_count(&short), 1);
-        assert_eq!(short.difference_count(&long), 0);
-        assert_eq!(long.iter().collect::<Vec<_>>(), vec![1, 500]);
     }
 }
