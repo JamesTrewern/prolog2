@@ -10,106 +10,30 @@
 
 use std::{
     io::{self, Write},
-    ops::{Deref, DerefMut},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
 use rayon::prelude::*;
 
 use super::sub_h_comb::SearchCtx;
-use crate::{heap::QueryHeap, program::MetaSubTrait, resolution::Proof, ResolutionConfig};
+use crate::{
+    bitflag::BitFlag, heap::QueryHeap, program::MetaSubTrait, resolution::Proof, ResolutionConfig,
+};
 
-/// A bit per example, set when it is proved. Bits past the number of
-/// examples are set from the start, so full coverage is all ones.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) struct Coverage(pub u128);
+/// A set of examples, a bit each: those a hypothesis proves.
+pub(super) type Coverage = u128;
 
-impl Deref for Coverage {
-    type Target = u128;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl DerefMut for Coverage {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
+/// The members of `coverage` at `keep`, packed down in that order: the
+/// coverage of the examples that are left when the others are set aside.
+pub(super) fn select(coverage: Coverage, keep: &[usize]) -> Coverage {
+    Coverage::from_indices((0..keep.len()).filter(|&new| coverage.get(keep[new])))
 }
 
-impl Coverage {
-    pub(super) fn from_len(len: usize) -> Self {
-        if len > 128 {
-            todo!("More than 128 pos examples not yet implemented");
-        }
-        let mask = u128::MAX << len;
-        Self(mask)
-    }
-
-    pub(super) fn sub_set(&self, other: &Self) -> bool {
-        other.0 | self.0 == other.0
-    }
-
-    /// How many bits set in self not set in other
-    pub(super) fn difference(&self, other: &Self) -> usize {
-        (self.0 & !other.0).count_ones() as usize
-    }
-
-    pub(super) fn count(&self, max_bit: usize) -> usize {
-        (self.0 & !(u128::MAX << max_bit)).count_ones() as usize
-    }
-
-    pub(super) fn set(&mut self, i: usize) {
-        self.0 |= 1 << i
-    }
-
-    pub(super) fn get(&self, i: usize) -> bool {
-        self.0 & 1 << i != 0
-    }
-
-    pub(super) fn all(&self) -> bool {
-        self.0 == u128::MAX
-    }
-
-    pub(super) fn _none(&self) -> bool {
-        self.0 == 0
-    }
-
-    /// The bits at `keep`, packed down in that order: the coverage of the
-    /// examples that are left when the others are set aside.
-    pub(super) fn select(&self, keep: &[usize]) -> Self {
-        let mut selected = Self::from_len(keep.len());
-        for (new, &old) in keep.iter().enumerate() {
-            if self.get(old) {
-                selected.set(new);
-            }
-        }
-        selected
-    }
-
-    /// The examples covered, of the first `len`.
-    pub(super) fn indices(&self, len: usize) -> Vec<usize> {
-        set_bits(self.0 & low_bits(len))
-    }
-}
-
-/// Bits below `len`: the examples there are, of a [`Coverage`].
-pub(super) fn low_bits(len: usize) -> u128 {
-    !u128::MAX.checked_shl(len as u32).unwrap_or(0)
-}
-
-/// The set bits, as indices.
-pub(super) fn set_bits(bits: u128) -> Vec<usize> {
-    (0..128).filter(|&i| bits & 1 << i != 0).collect()
-}
-
-/// The positives, of `n_pos`, that `profiles` cover between them.
-pub(super) fn covered_by<'a>(
-    profiles: impl IntoIterator<Item = &'a HProfile>,
-    n_pos: usize,
-) -> u128 {
-    let covered = profiles.into_iter().fold(0, |all, p| all | p.coverage.0);
-    covered & low_bits(n_pos)
+/// The positives that `profiles` cover between them.
+pub(super) fn covered_by<'a>(profiles: impl IntoIterator<Item = &'a HProfile>) -> Coverage {
+    profiles
+        .into_iter()
+        .fold(Coverage::empty(), |all, p| all.union(&p.coverage))
 }
 
 /// The examples and the profile of every sub hypothesis, as noise handling
@@ -171,7 +95,7 @@ impl HProfile {
             .sum();
         Some(Self {
             h,
-            n_covered: coverage.count(pos_goals.len()) as u32,
+            n_covered: coverage.count() as u32,
             n_clauses: meta_subs.len() as u32,
             n_literals: n_literals as u32,
             coverage,
@@ -182,14 +106,14 @@ impl HProfile {
     /// This profile over only the positives `pos_keep` and the negatives
     /// `neg_keep`, given by their indices in order.
     pub(super) fn restricted(&self, pos_keep: &[usize], neg_keep: &[usize]) -> Self {
-        let coverage = self.coverage.select(pos_keep);
+        let coverage = select(self.coverage, pos_keep);
         Self {
             h: self.h,
-            n_covered: coverage.count(pos_keep.len()) as u32,
+            n_covered: coverage.count() as u32,
             n_clauses: self.n_clauses,
             n_literals: self.n_literals,
             coverage,
-            neg_coverage: self.neg_coverage.select(neg_keep),
+            neg_coverage: select(self.neg_coverage, neg_keep),
         }
     }
 
@@ -243,7 +167,7 @@ fn proved(
     at_most: usize,
 ) -> Option<Coverage> {
     let config = test_config(ctx.config);
-    let mut coverage = Coverage::from_len(goals.len());
+    let mut coverage = Coverage::empty();
     let mut count = 0;
     for (i, &goal) in goals.iter().enumerate() {
         let mut query_heap = QueryHeap::new(ctx.heap, None);
@@ -459,24 +383,11 @@ pub(super) mod fixture {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_profiles, entails_negative, fixture::fixture, profile_rest, Coverage};
+    use super::{
+        build_profiles, entails_negative, fixture::fixture, profile_rest, select, Coverage,
+    };
+    use crate::bitflag::BitFlag;
     use crate::{learners::utils::compile_examples, ParallelConfig};
-
-    #[test]
-    fn coverage_sub_set() {
-        let mut a = Coverage::from_len(4);
-        let mut b = Coverage::from_len(4);
-
-        a.set(0);
-        a.set(1);
-        b.set(1);
-        assert!(!a.sub_set(&b));
-        assert!(b.sub_set(&a));
-
-        b.set(0);
-        assert!(a.sub_set(&b));
-        assert!(b.sub_set(&a));
-    }
 
     /// Given `good(d)` and `bad(c)`: sub hypothesis 0 proves the positive
     /// `p(d)`, 1 proves the negative `p(c)`, and 2 proves neither.
@@ -504,12 +415,12 @@ mod tests {
 
     #[test]
     fn a_profile_is_restricted_to_the_examples_kept() {
-        let mut coverage = Coverage::from_len(4);
+        let mut coverage = Coverage::empty();
         coverage.set(1);
         coverage.set(3);
         // Examples 1 and 3 of four become 0 and 1 of two; then 0 and 2.
-        assert!(coverage.select(&[1, 3]).all());
-        assert_eq!(coverage.select(&[0, 3]).indices(2), vec![1]);
+        assert!(select(coverage, &[1, 3]).is_full(2));
+        assert_eq!(select(coverage, &[0, 3]).indices(), vec![1]);
     }
 
     #[test]

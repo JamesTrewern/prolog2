@@ -37,11 +37,12 @@ use rayon::prelude::*;
 use smallvec::SmallVec;
 
 use super::{
-    coverage::{covered_by, low_bits, Coverage, HProfile, Profiled},
+    coverage::{covered_by, Coverage, HProfile, Profiled},
     noise::Conflict,
     sub_h_comb::SearchCtx,
 };
 use crate::{
+    bitflag::BitFlag,
     heap::{Heap, QueryHeap, Tag::Arg},
     program::HypothesisTrait,
     resolution::{build, Substitution},
@@ -310,7 +311,6 @@ impl Examples {
             .collect();
         let mut finder = Finder {
             pos,
-            n_pos: pos_goals.len(),
             n_neg,
             targets,
             covers,
@@ -320,12 +320,12 @@ impl Examples {
         let always_with = finder
             .covers
             .iter()
-            .fold(u128::MAX, |all, cover| all & cover.profile.coverage.0)
+            .fold(u128::MAX, |all, cover| all & cover.profile.coverage)
             & !(1 << pos)
             & !u128::MAX.checked_shl(pos_goals.len() as u32).unwrap_or(0);
         Self {
             boundary,
-            always_with: Coverage(always_with),
+            always_with: always_with,
             lone: finder.lone(),
             pairs: finder.pairs(kept),
             definitions: finder.definitions(kept),
@@ -346,7 +346,6 @@ struct Cover<'p> {
 /// The search for one positive's [`Examples`].
 struct Finder<'p, 'c> {
     pos: usize,
-    n_pos: usize,
     n_neg: usize,
     targets: &'p [usize],
     covers: Vec<Cover<'p>>,
@@ -364,7 +363,7 @@ impl Finder<'_, '_> {
             .flat_map(|cover| cover.literals.iter().map(String::as_str))
             .collect();
         let (pos, targets, ctx) = (self.pos, self.targets, self.ctx);
-        let clean = Coverage::from_len(self.n_neg);
+        let clean = Coverage::empty();
 
         type Seen = (HashSet<String>, HashMap<String, u32>, usize);
         let (elsewhere, in_clean, n_clean): Seen = kept
@@ -421,7 +420,7 @@ impl Finder<'_, '_> {
             (
                 cover.unique.is_empty(),
                 p.n_covered,
-                p.neg_coverage.count(self.n_neg),
+                p.neg_coverage.count(),
                 p.n_clauses,
                 p.n_literals,
                 p.h,
@@ -463,30 +462,24 @@ impl Finder<'_, '_> {
         // least noisy and smallest few of each.
         let mut by_others: HashMap<u128, Vec<&Cover>> = HashMap::new();
         for cover in &self.covers {
-            let others = Coverage(cover.profile.coverage.0 & !(1 << self.pos));
-            if others.count(self.n_pos) > 0 {
-                by_others.entry(others.0).or_default().push(cover);
+            let others = cover.profile.coverage & !(1 << self.pos);
+            if others.count() > 0 {
+                by_others.entry(others).or_default().push(cover);
             }
         }
         for covers in by_others.values_mut() {
             covers.sort_by_key(|cover| {
                 let p = cover.profile;
-                (
-                    p.neg_coverage.count(self.n_neg),
-                    p.n_clauses,
-                    p.n_literals,
-                    p.h,
-                )
+                (p.neg_coverage.count(), p.n_clauses, p.n_literals, p.h)
             });
             covers.truncate(COVERS_PER_SET);
         }
 
         // Per set of other positives, the nearest coverages any clean
         // hypothesis has; kept as clean coverage -> the sets it is nearest.
-        let clean = Coverage::from_len(self.n_neg);
+        let clean = Coverage::empty();
         let is_clean = |h_profile: &&HProfile| h_profile.neg_coverage == clean;
-        let clean_sets: HashSet<u128> =
-            kept.iter().filter(is_clean).map(|p| p.coverage.0).collect();
+        let clean_sets: HashSet<u128> = kept.iter().filter(is_clean).map(|p| p.coverage).collect();
         let distance = |others: u128, set: u128| {
             (
                 (others & !set).count_ones() as usize,
@@ -496,7 +489,7 @@ impl Finder<'_, '_> {
         let mut nearest_to: HashMap<u128, Vec<u128>> = HashMap::new();
         for &others in by_others.keys() {
             // Missing every one of them is not near at all.
-            let n_others = Coverage(others).count(self.n_pos);
+            let n_others = others.count();
             let near = |set: &&u128| distance(others, **set).0 < n_others;
             let Some(nearest) = clean_sets
                 .iter()
@@ -517,7 +510,7 @@ impl Finder<'_, '_> {
         // and the smallest clean hypothesis with a nearest coverage.
         let mut candidates: HashMap<(u128, Vec<String>), (&Cover, &HProfile)> = HashMap::new();
         for without in kept.iter().filter(is_clean) {
-            let Some(sets) = nearest_to.get(&without.coverage.0) else {
+            let Some(sets) = nearest_to.get(&without.coverage) else {
                 continue;
             };
             let has = literals(without.h, self.targets, self.ctx);
@@ -548,7 +541,7 @@ impl Finder<'_, '_> {
         impl Candidate<'_, '_> {
             /// The positives the two hypotheses have in common.
             fn common(&self) -> u128 {
-                self.others & self.without.coverage.0
+                self.others & self.without.coverage
             }
         }
         let mut candidates: Vec<Candidate> = candidates
@@ -563,10 +556,10 @@ impl Finder<'_, '_> {
         // Best first on their own merits; ties go to the earlier one.
         candidates.sort_by_key(|c| {
             (
-                distance(c.others, c.without.coverage.0),
+                distance(c.others, c.without.coverage),
                 Reverse(c.shared.len()),
-                Reverse(Coverage(c.others).count(self.n_pos)),
-                c.cover.profile.neg_coverage.count(self.n_neg),
+                Reverse(c.others.count()),
+                c.cover.profile.neg_coverage.count(),
                 c.cover.profile.h,
                 c.without.h,
             )
@@ -589,7 +582,7 @@ impl Finder<'_, '_> {
                     let unseen = c.shared.iter().filter(|l| !shown.contains(l)).count();
                     (
                         repeats,
-                        distance(c.others, c.without.coverage.0),
+                        distance(c.others, c.without.coverage),
                         Reverse(unseen),
                         Reverse(c.shared.len()),
                     )
@@ -606,7 +599,7 @@ impl Finder<'_, '_> {
                 Pair {
                     with: c.cover.profile.h,
                     neg_coverage: c.cover.profile.neg_coverage,
-                    others: Coverage(c.others),
+                    others: c.others,
                     without: c.without.h,
                     without_coverage: c.without.coverage,
                     only_with: difference(&c.cover.literals, &has),
@@ -635,7 +628,7 @@ impl Finder<'_, '_> {
             (uses, profiles.len())
         };
 
-        let clean = Coverage::from_len(self.n_neg);
+        let clean = Coverage::empty();
         let (in_covers, n_covers) = count(self.covers.iter().map(|c| c.profile).collect());
         let (in_clean, n_clean) = count(kept.iter().filter(|p| p.neg_coverage == clean).collect());
         Definitions::rank(&in_covers, &in_clean, n_covers, n_clean)
@@ -644,23 +637,17 @@ impl Finder<'_, '_> {
     /// The [`Greedy`] covers for `positive`. Other noisy positives are in
     /// neither: only positives proved within the threshold are covered.
     fn greedy(&self, positive: &Conflict, kept: &[HProfile], rest: &[HProfile]) -> Greedy {
-        let within = covered_by(kept, self.n_pos);
+        let within = covered_by(kept);
         let least_noisy = rest.iter().filter(|h_profile| {
-            let negatives = h_profile.neg_coverage.0 & low_bits(self.n_neg);
+            let negatives = h_profile.neg_coverage & Coverage::full(self.n_neg);
             positive.smallest().any(|(set, _)| set == negatives)
         });
 
-        let without = greedy_cover(kept.iter(), within, self.n_neg);
-        let with = greedy_cover(
-            kept.iter().chain(least_noisy),
-            within | 1 << self.pos,
-            self.n_neg,
-        );
+        let without = greedy_cover(kept.iter(), within);
+        let with = greedy_cover(kept.iter().chain(least_noisy), within | 1 << self.pos);
         let negatives = |group: &[&HProfile]| {
-            let none = Coverage::from_len(self.n_neg);
-            group
-                .iter()
-                .fold(none, |all, p| Coverage(all.0 | p.neg_coverage.0))
+            let none = Coverage::empty();
+            group.iter().fold(none, |all, p| all | p.neg_coverage)
         };
         Greedy {
             without_neg: negatives(&without),
@@ -676,20 +663,19 @@ impl Finder<'_, '_> {
 /// smallest, until none proves any more.
 fn greedy_cover<'p>(
     pool: impl Iterator<Item = &'p HProfile> + Clone,
-    target: u128,
-    n_neg: usize,
+    target: Coverage,
 ) -> Vec<&'p HProfile> {
     let mut uncovered = target;
     let mut picked = Vec::new();
     while uncovered != 0 {
-        let gain = |h_profile: &HProfile| (h_profile.coverage.0 & uncovered).count_ones();
+        let gain = |h_profile: &HProfile| (h_profile.coverage & uncovered).count_ones();
         let best = pool
             .clone()
             .filter(|h_profile| gain(h_profile) > 0)
             .min_by_key(|p| {
                 (
                     Reverse(gain(p)),
-                    p.neg_coverage.count(n_neg),
+                    p.neg_coverage.count(),
                     p.n_clauses,
                     p.n_literals,
                     p.h,
@@ -698,7 +684,7 @@ fn greedy_cover<'p>(
         let Some(best) = best else {
             break;
         };
-        uncovered &= !best.coverage.0;
+        uncovered &= !best.coverage;
         picked.push(best);
     }
     picked
@@ -913,10 +899,9 @@ pub(super) fn report_negative(
         ctx,
     } = profiled;
     let mut heap = QueryHeap::new(ctx.heap, None);
-    let (n_pos, n_neg) = (pos_goals.len(), neg_goals.len());
+    let n_neg = neg_goals.len();
     let positives = |heap: &QueryHeap, set: u128| -> Vec<String> {
-        Coverage(set)
-            .indices(n_pos)
+        set.indices()
             .into_iter()
             .map(|pos| heap.term_string(pos_goals[pos]))
             .collect()
@@ -927,14 +912,14 @@ pub(super) fn report_negative(
     report.list("Noisy negative", [name]);
     report.list(
         "Positives only entailed together with it",
-        positives(&heap, negative.blocks.0),
+        positives(&heap, negative.blocks),
     );
 
     // The hypotheses that would prove no negative were it not one.
     let only_it = 1 << negative.neg;
     let mut alone: Vec<&HProfile> = rest
         .iter()
-        .filter(|h_profile| h_profile.neg_coverage.0 & low_bits(n_neg) == only_it)
+        .filter(|h_profile| h_profile.neg_coverage & Coverage::full(n_neg) == only_it)
         .collect();
     report.section("Hypotheses it rules out");
     report.line(format!(
@@ -946,7 +931,7 @@ pub(super) fn report_negative(
     ));
     alone.sort_by_key(|p| {
         (
-            Reverse((p.coverage.0 & negative.blocks.0 & low_bits(n_pos)).count_ones()),
+            Reverse((p.coverage & negative.blocks).count_ones()),
             Reverse(p.n_covered),
             p.n_clauses,
             p.n_literals,
@@ -956,16 +941,16 @@ pub(super) fn report_negative(
     for h_profile in alone.iter().take(EXAMPLES) {
         report.sub_section();
         report.list("Hypothesis", group_clauses(&[h_profile.h], &mut heap, ctx));
-        report.list("Positives entailed", positives(&heap, h_profile.coverage.0));
+        report.list("Positives entailed", positives(&heap, h_profile.coverage));
     }
 
     // Greedy covers: of everything coverable with it ignored, and of what
     // is left coverable with it kept.
-    let within = covered_by(kept, n_pos);
+    let within = covered_by(kept);
     let ignoring = kept.iter().chain(alone.iter().copied());
-    let reachable = covered_by(ignoring.clone(), n_pos);
-    let with_ignored = greedy_cover(ignoring, reachable, n_neg);
-    let with_kept = greedy_cover(kept.iter(), within, n_neg);
+    let reachable = covered_by(ignoring.clone());
+    let with_ignored = greedy_cover(ignoring, reachable);
+    let with_kept = greedy_cover(kept.iter(), within);
     let hs = |group: &[&HProfile]| -> Vec<u32> { group.iter().map(|p| p.h).collect() };
 
     report.section("Greedy hypothesis");
@@ -1005,7 +990,7 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
     let mut heap = QueryHeap::new(ctx.heap, None);
 
     let names = |heap: &QueryHeap, set: Coverage, goals: &[usize]| -> Vec<String> {
-        set.indices(goals.len())
+        set.indices()
             .into_iter()
             .map(|example| heap.term_string(goals[example]))
             .collect()
@@ -1041,14 +1026,14 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
                 "Minimal negatives (entailed alone by {})",
                 hypotheses(positive.sets[0].1)
             ),
-            names(&heap, Coverage(positive.shared), neg_goals),
+            names(&heap, positive.shared, neg_goals),
         );
     } else {
         match positive.shared {
             0 => report.line("No negative is entailed by all of them"),
             shared => report.list(
                 "Negatives entailed by all of them",
-                names(&heap, Coverage(shared), neg_goals),
+                names(&heap, shared, neg_goals),
             ),
         }
         for (set, count) in positive.smallest() {
@@ -1057,15 +1042,15 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
                     "Smallest negative set (entailed alone by {})",
                     hypotheses(count)
                 ),
-                names(&heap, Coverage(set), neg_goals),
+                names(&heap, set, neg_goals),
             );
         }
     }
     // The minimal set is long enough to name once.
     let negatives = |report: &mut NoiseReport, heap: &QueryHeap, set: Coverage| {
-        if positive.shared_is_minimal() && set.0 & low_bits(neg_goals.len()) == positive.shared {
+        if positive.shared_is_minimal() && set == positive.shared {
             report.line("Entails the minimal negatives");
-        } else if set.count(neg_goals.len()) == 0 {
+        } else if set.count() == 0 {
             report.line("Entails no negative");
         } else {
             report.list("Negatives entailed", names(heap, set, neg_goals));
@@ -1134,7 +1119,7 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
             "Literals only hypotheses entailing the noisy positive have",
             lone.unique.clone(),
         );
-        let others = Coverage(lone.coverage.0 & !(1 << positive.pos));
+        let others = lone.coverage & !(1 << positive.pos);
         optional(
             report,
             "Other positives entailed",
@@ -1159,24 +1144,24 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
         );
         negatives(report, &heap, pair.neg_coverage);
 
-        let (others, without) = (pair.others.0, pair.without_coverage.0);
+        let (others, without) = (pair.others, pair.without_coverage);
         report.list(
             "Nearest hypothesis without it, entailing no negative",
             clauses(&mut heap, pair.without),
         );
         report.list(
             "Positives entailed by both",
-            names(&heap, Coverage(others & without), pos_goals),
+            names(&heap, others & without, pos_goals),
         );
         optional(
             report,
             "Positives it does not entail",
-            names(&heap, Coverage(others & !without), pos_goals),
+            names(&heap, others & !without, pos_goals),
         );
         optional(
             report,
             "Further positives it entails",
-            names(&heap, Coverage(without & !others), pos_goals),
+            names(&heap, without & !others, pos_goals),
         );
         optional(report, "Literals both have", pair.shared.clone());
         optional(
@@ -1232,7 +1217,6 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
     }
 
     report.section("Conclusions");
-    let n_neg = neg_goals.len();
     let count = |count: usize, one: &str| match count {
         1 => format!("1 {one}"),
         count => format!("{count} {one}s"),
@@ -1294,9 +1278,9 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
         "A greedy cover of the other positives takes {} and entails {}; with the noisy \
              positive it takes {} and entails {}.",
         sub_hypotheses(greedy.without.len()),
-        count(greedy.without_neg.count(n_neg), "negative"),
+        count(greedy.without_neg.count(), "negative"),
         sub_hypotheses(greedy.with.len()),
-        count(greedy.with_neg.count(n_neg), "negative"),
+        count(greedy.with_neg.count(), "negative"),
     ));
 }
 
@@ -1329,6 +1313,7 @@ pub(super) mod toy_model {
     use super::{
         report_positive, Conflict, DefUse, Definitions, Examples, LiteralUse, NoiseReport, Profiled,
     };
+    use crate::bitflag::BitFlag;
     use crate::{
         learners::{
             coverage::{
@@ -1441,7 +1426,7 @@ pub(super) mod toy_model {
         let coverage = |profiles: &[HProfile]| -> Vec<(u32, Vec<usize>, Vec<usize>)> {
             profiles
                 .iter()
-                .map(|p| (p.h, p.coverage.indices(5), p.neg_coverage.indices(3)))
+                .map(|p| (p.h, p.coverage.indices(), p.neg_coverage.indices()))
                 .collect()
         };
         assert_eq!(coverage(&model.kept), vec![(0, vec![0, 1], vec![])]);
@@ -1553,7 +1538,7 @@ pub(super) mod toy_model {
             .examples(P3)
             .lone
             .iter()
-            .map(|lone| (lone.h, lone.coverage.indices(5)))
+            .map(|lone| (lone.h, lone.coverage.indices()))
             .collect();
         assert_eq!(picked, vec![(2, vec![2]), (1, vec![1, 2])]);
     }
@@ -1567,9 +1552,9 @@ pub(super) mod toy_model {
         // cover just p2 cleanly (0 covers p1 as well), and 5 shares `b(A)`.
         let pair = &pairs[0];
         assert_eq!((pair.with, pair.without), (1, 5));
-        assert_eq!(pair.others.indices(5), vec![1]);
-        assert_eq!(pair.without_coverage.indices(5), vec![1]);
-        assert_eq!(pair.neg_coverage.indices(3), vec![0]);
+        assert_eq!(pair.others.indices(), vec![1]);
+        assert_eq!(pair.without_coverage.indices(), vec![1]);
+        assert_eq!(pair.neg_coverage.indices(), vec![0]);
         assert_eq!(pair.shared, vec!["b(A)"]);
         assert!(pair.only_with.is_empty());
         assert_eq!(pair.only_without, vec!["i(A)", "k(A)", "u(A)"]);
@@ -1628,8 +1613,8 @@ pub(super) mod toy_model {
         let model = model(&single(&["m", "i"]));
         let pairs = model.examples(P3).pairs;
         assert_eq!((pairs[0].with, pairs[0].without), (0, 1));
-        assert_eq!(pairs[0].others.indices(5), vec![0, 1]);
-        assert_eq!(pairs[0].without_coverage.indices(5), vec![1]);
+        assert_eq!(pairs[0].others.indices(), vec![0, 1]);
+        assert_eq!(pairs[0].without_coverage.indices(), vec![1]);
 
         // With `a` there is an exact match for `m`. For `b`, which covers
         // p2 besides p3, `i` is exact and `a` covers p1 too.
@@ -1646,7 +1631,7 @@ pub(super) mod toy_model {
         let model = model_of(&["a", "b"]);
         let pairs = model.examples(P3).pairs;
         assert_eq!((pairs[0].with, pairs[0].without), (1, 0));
-        assert_eq!(pairs[0].without_coverage.indices(5), vec![0, 1]);
+        assert_eq!(pairs[0].without_coverage.indices(), vec![0, 1]);
     }
 
     #[test]
@@ -1705,16 +1690,16 @@ pub(super) mod toy_model {
         // negative of p3. p4 is in neither cover, being noisy itself.
         let greedy = model.examples(P3).greedy;
         assert_eq!(greedy.without, vec![0]);
-        assert!(greedy.without_neg.indices(3).is_empty());
+        assert!(greedy.without_neg.indices().is_empty());
         assert_eq!(greedy.with, vec![0, 1]);
-        assert_eq!(greedy.with_neg.indices(3), vec![0]);
+        assert_eq!(greedy.with_neg.indices(), vec![0]);
 
         // p4 has two smallest negative sets, from `d` and `e`: either
         // will do, and `c` and `f` are not used.
         let greedy = model.examples(P4).greedy;
         assert_eq!(greedy.without, vec![0]);
         assert_eq!(greedy.with, vec![0, 3]);
-        assert_eq!(greedy.with_neg.indices(3), vec![0]);
+        assert_eq!(greedy.with_neg.indices(), vec![0]);
     }
 
     #[test]
@@ -1742,14 +1727,14 @@ pub(super) mod toy_model {
             ]
         );
         // `b` covers p2 as well, `c` and `k` do not.
-        assert!(examples.always_with.indices(5).is_empty());
+        assert!(examples.always_with.indices().is_empty());
     }
 
     #[test]
     fn positives_every_cover_entails_are_found() {
         // `m` is the one cover of p3, and covers p1 and p2 too.
         let model = model(&single(&["m", "i"]));
-        assert_eq!(model.examples(P3).always_with.indices(5), vec![0, 1]);
+        assert_eq!(model.examples(P3).always_with.indices(), vec![0, 1]);
     }
 
     #[test]

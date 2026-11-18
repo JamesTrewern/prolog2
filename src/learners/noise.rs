@@ -17,11 +17,14 @@
 use std::collections::HashMap;
 
 use super::{
-    coverage::{covered_by, low_bits, profile_rest, set_bits, Coverage, HProfile, Profiled},
+    coverage::{covered_by, profile_rest, Coverage, HProfile, Profiled},
     noise_report::{report_negative, report_positive, NoiseReport, NoisyNegative},
     sub_h_comb::SearchCtx,
 };
-use crate::heap::{Heap, QueryHeap};
+use crate::{
+    bitflag::BitFlag,
+    heap::{Heap, QueryHeap},
+};
 
 /// Most combinations of choices tried exhaustively; past this the choice
 /// is made greedily.
@@ -120,16 +123,16 @@ impl Removal {
 pub(super) fn conflicts(profiled: Profiled) -> (Vec<Conflict>, u128) {
     let Profiled { kept, rest, .. } = profiled;
     let (n_pos, n_neg) = (profiled.pos_goals.len(), profiled.neg_goals.len());
-    let uncovered = !covered_by(kept, n_pos) & low_bits(n_pos);
+    let uncovered = !covered_by(kept) & Coverage::full(n_pos);
 
     // Per positive: how many prove it, the negatives they all prove, and
     // how many prove it with each set of negatives.
     let mut covering = vec![0; n_pos];
-    let mut shared = vec![low_bits(n_neg); n_pos];
+    let mut shared = vec![Coverage::full(n_neg); n_pos];
     let mut sets: Vec<HashMap<u128, usize>> = vec![HashMap::new(); n_pos];
     for h_profile in rest {
-        let negatives = h_profile.neg_coverage.0 & low_bits(n_neg);
-        for pos in set_bits(h_profile.coverage.0 & uncovered) {
+        let negatives = h_profile.neg_coverage & Coverage::full(n_neg);
+        for pos in (h_profile.coverage & uncovered).indices() {
             covering[pos] += 1;
             shared[pos] &= negatives;
             *sets[pos].entry(negatives).or_default() += 1;
@@ -138,7 +141,7 @@ pub(super) fn conflicts(profiled: Profiled) -> (Vec<Conflict>, u128) {
 
     let mut forced = 0;
     let mut found = Vec::new();
-    for pos in set_bits(uncovered) {
+    for pos in uncovered.indices() {
         if covering[pos] == 0 {
             forced |= 1 << pos;
             continue;
@@ -278,7 +281,7 @@ pub(super) fn resolve_noise(
     ctx: SearchCtx,
 ) -> Noise {
     let n_pos = pos_goals.len();
-    if covered_by(&kept, n_pos) == low_bits(n_pos) {
+    if covered_by(&kept) == Coverage::full(n_pos) {
         return Noise::Clean(kept);
     }
 
@@ -312,13 +315,13 @@ fn filter(removal: Removal, profiled: Profiled) -> Filtered {
         ..
     } = profiled;
     let (n_pos, n_neg) = (pos_goals.len(), neg_goals.len());
-    let pos_keep = set_bits(!removal.dropped & low_bits(n_pos));
-    let neg_keep = set_bits(!removal.ignored & low_bits(n_neg));
+    let pos_keep = (!removal.dropped & Coverage::full(n_pos)).indices();
+    let neg_keep = (!removal.ignored & Coverage::full(n_neg)).indices();
 
     // Usable now: whatever entails none of the negatives left.
     let recovered = rest
         .iter()
-        .filter(|h_profile| h_profile.neg_coverage.0 & low_bits(n_neg) & !removal.ignored == 0);
+        .filter(|h_profile| h_profile.neg_coverage & Coverage::full(n_neg) & !removal.ignored == 0);
     let h_profiles: Vec<HProfile> = kept
         .iter()
         .chain(recovered)
@@ -350,7 +353,7 @@ fn filter_note(removal: Removal, profiled: Profiled) -> String {
     let mut list = |heading: String, goals: &[usize], examples: u128| {
         if examples != 0 {
             note += &format!("{heading}\n");
-            for example in set_bits(examples) {
+            for example in examples.indices() {
                 note += &format!("\t{}\n", heap.term_string(goals[example]));
             }
         }
@@ -366,7 +369,7 @@ fn filter_note(removal: Removal, profiled: Profiled) -> String {
     list(
         "Positives entailed as a result".to_string(),
         pos_goals,
-        !covered_by(kept, n_pos) & !removal.dropped & low_bits(n_pos),
+        !covered_by(kept) & !removal.dropped & Coverage::full(n_pos),
     );
     list(
         format!(
@@ -403,7 +406,8 @@ fn failure_report(conflicts: &[Conflict], forced: u128, profiled: Profiled) -> N
 
     let heap = QueryHeap::new(ctx.heap, None);
     let names = |goals: &[usize], examples: u128| -> Vec<String> {
-        set_bits(examples)
+        examples
+            .indices()
             .into_iter()
             .map(|example| heap.term_string(goals[example]))
             .collect()
@@ -443,7 +447,7 @@ fn failure_report(conflicts: &[Conflict], forced: u128, profiled: Profiled) -> N
             report_positive(&mut report, conflict, profiled);
         }
     }
-    for neg in set_bits(ignored) {
+    for neg in ignored.indices() {
         // The positives that need it whichever way they are entailed, or
         // failing any, those that need it one way.
         let needing = |every: bool| {
@@ -464,7 +468,7 @@ fn failure_report(conflicts: &[Conflict], forced: u128, profiled: Profiled) -> N
         };
         let negative = NoisyNegative {
             neg,
-            blocks: Coverage(blocks),
+            blocks: blocks,
         };
         report_negative(&mut report, &negative, profiled);
     }
@@ -474,6 +478,7 @@ fn failure_report(conflicts: &[Conflict], forced: u128, profiled: Profiled) -> N
 #[cfg(test)]
 mod tests {
     use super::{cheapest, resolve_noise, Conflict, Noise, Removal};
+    use crate::bitflag::BitFlag;
     use crate::{
         learners::noise_report::toy_model::{model, single, Model, BASE},
         ParallelConfig,
@@ -637,7 +642,7 @@ mod tests {
         let profiles: Vec<(u32, Vec<usize>, Vec<usize>)> = filtered
             .h_profiles
             .iter()
-            .map(|p| (p.h, p.coverage.indices(4), p.neg_coverage.indices(2)))
+            .map(|p| (p.h, p.coverage.indices(), p.neg_coverage.indices()))
             .collect();
         assert_eq!(
             profiles,

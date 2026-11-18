@@ -1,4 +1,5 @@
 use crate::{
+    bitflag::BitFlag,
     heap::{QueryHeap, VarReg},
     program::BitFlag64,
 };

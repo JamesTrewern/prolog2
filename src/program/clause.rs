@@ -1,5 +1,6 @@
 //! Clause representation and metadata.
 use crate::{
+    bitflag::BitFlag,
     heap::{Heap, Tag},
     LITERALS_DEFAULT_SIZE,
 };
@@ -11,55 +12,23 @@ use std::{
 
 pub(crate) const MAX_ARG: usize = 64;
 
-/// Compact 64-bit flag set used to mark meta-variables and constrained variables.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct BitFlag64(u64);
+/// The variables of a clause, a bit each: used to mark those that are
+/// constrained and those that stand for a predicate.
+pub(crate) type BitFlag64 = u64;
 
-impl BitFlag64 {
-    pub fn set(&mut self, idx: usize) {
-        self.0 = self.0 | 1 << idx;
+/// The flags of `vars`.
+///
+/// # Panics
+///
+/// If a variable index is [`MAX_ARG`] or more.
+fn flags(vars: Vec<usize>) -> BitFlag64 {
+    for &var in &vars {
+        assert!(
+            var < MAX_ARG,
+            "meta clause cannot have more than {MAX_ARG} variables (variable index {var} exceeds limit)"
+        );
     }
-
-    pub fn _unset(&mut self, idx: usize) {
-        self.0 = self.0 & !(1 << idx);
-    }
-
-    pub fn get(&self, idx: usize) -> bool {
-        self.0 & (1 << idx) != 0
-    }
-
-    pub fn is_some(&self) -> bool {
-        self.0 != 0
-    }
-
-    pub fn is_none(&self) -> bool {
-        self.0 == 0
-    }
-
-    /// Iterate the set bit indices in ascending order.
-    ///
-    /// The inverse of the filter in
-    /// [`MetaSub::from_arg_regs`](crate::program::MetaSub::from_arg_regs),
-    /// which compacts the argument registers by discarding every position
-    /// whose bit is clear. Zipping this iterator with the compacted vector
-    /// recovers the original argument ids.
-    pub fn iter(&self) -> impl Iterator<Item = usize> + '_ {
-        (0..MAX_ARG).filter(move |&idx| self.get(idx))
-    }
-}
-
-impl From<Vec<usize>> for BitFlag64 {
-    fn from(bit_positions: Vec<usize>) -> Self {
-        let mut bit_flags = Self(0);
-        for bit_pos in bit_positions {
-            assert!(
-                bit_pos < MAX_ARG,
-                "meta clause cannot have more than {MAX_ARG} variables (variable index {bit_pos} exceeds limit)"
-            );
-            bit_flags.set(bit_pos);
-        }
-        bit_flags
-    }
+    BitFlag64::from_indices(vars)
 }
 
 static META_CLAUSE_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -120,7 +89,7 @@ impl Clause {
             );
             MetaData {
                 meta_var_threshold,
-                constrained_vars: cvs.into(),
+                constrained_vars: flags(cvs),
                 pred_vars: BitFlag64::default(),
                 head_pred: false,
                 id: META_CLAUSE_COUNT.fetch_add(1, Relaxed),
@@ -144,7 +113,11 @@ impl Clause {
         let threshold = meta_data.meta_var_threshold;
         for (i, &addr) in self.literals.iter().enumerate() {
             // A literal with no arguments is its own functor.
-            let functor = if heap[addr].0 == Tag::Comp { addr + 1 } else { addr };
+            let functor = if heap[addr].0 == Tag::Comp {
+                addr + 1
+            } else {
+                addr
+            };
             if let (Tag::Arg, arg_id) = heap[functor] {
                 if arg_id >= threshold {
                     meta_data.pred_vars.set(arg_id);

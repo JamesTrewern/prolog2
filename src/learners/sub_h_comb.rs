@@ -1,8 +1,9 @@
 use super::{
-    coverage::{entails_negative, Coverage, HProfile},
+    coverage::{covered_by, entails_negative, Coverage, HProfile},
     predicate_unification::PredDefTable,
 };
 use crate::{
+    bitflag::BitFlag,
     heap::{Heap, ProgramHeap, QueryHeap},
     program::{PackedMetaSubs, PredicateTable},
     ParallelConfig, ResolutionConfig,
@@ -85,7 +86,7 @@ pub(super) fn least_sub_h(
         ctx.parallel.sort_by_literals,
     );
 
-    let greedy = greedy_find_coverage_group(&h_profiles);
+    let greedy = greedy_find_coverage_group(&h_profiles, pos_goals.len());
     let max_k = greedy.len();
     eprintln!("Found full coverage from greedy with {max_k} sub hypotheses");
 
@@ -114,13 +115,9 @@ pub(super) fn least_sub_h(
 }
 
 fn find_uncovered(h_profiles: &Vec<HProfile>, n_pos_examples: usize) -> Option<Vec<usize>> {
-    let mut covered = Coverage::from_len(n_pos_examples);
+    let covered = covered_by(h_profiles);
 
-    for HProfile { coverage, .. } in h_profiles {
-        *covered |= **coverage;
-    }
-
-    if !covered.0 == 0 {
+    if covered.is_full(n_pos_examples) {
         None
     } else {
         Some((0..n_pos_examples).filter(|i| !covered.get(*i)).collect())
@@ -148,7 +145,7 @@ fn filter_coverage_sub_sets(
             {
                 break;
             }
-            if p_i.coverage.sub_set(&p_j.coverage) {
+            if p_i.coverage.is_subset(&p_j.coverage) {
                 h_profiles.remove(i);
                 filtered += 1;
                 break;
@@ -161,22 +158,22 @@ fn filter_coverage_sub_sets(
     );
 }
 
-fn greedy_find_coverage_group(h_profiles: &[HProfile]) -> Vec<usize> {
+fn greedy_find_coverage_group(h_profiles: &[HProfile], n_pos_examples: usize) -> Vec<usize> {
     let mut res = vec![0];
     let mut covered = h_profiles[0].coverage;
-    while !covered.all() {
+    while !covered.is_full(n_pos_examples) {
         let mut best = (0, 0);
         for i in 1..h_profiles.len() {
-            if res.contains(&i) || h_profiles[i].coverage.sub_set(&covered) {
+            if res.contains(&i) || h_profiles[i].coverage.is_subset(&covered) {
                 continue;
             }
-            let a = h_profiles[i].coverage.difference(&covered);
+            let a = h_profiles[i].coverage.difference_count(&covered);
             if best.0 < a {
                 best = (a, i)
             }
         }
         res.push(best.1);
-        *covered |= *h_profiles[best.1].coverage;
+        covered.union_with(&h_profiles[best.1].coverage);
     }
     res
 }
@@ -202,7 +199,7 @@ fn find_coverage_groups(
     neg_goals: &[usize],
     ctx: SearchCtx,
 ) -> Vec<Box<[usize]>> {
-    let no_coverage = Coverage::from_len(n_pos_examples);
+    let no_coverage = Coverage::empty();
     let mut groups = Vec::new();
     let mut rejected = 0;
 
@@ -212,10 +209,10 @@ fn find_coverage_groups(
     loop {
         let mut prefix_coverage = no_coverage;
         for &i in &group[..depth] {
-            *prefix_coverage |= *h_profiles[i].coverage;
+            prefix_coverage.union_with(&h_profiles[i].coverage);
         }
 
-        let left_to_cover = n_pos_examples - prefix_coverage.count(n_pos_examples);
+        let left_to_cover = n_pos_examples - prefix_coverage.count();
         let choices_left = max_k - depth;
         let min_covered = left_to_cover / choices_left;
 
@@ -244,9 +241,9 @@ fn find_coverage_groups(
         }
 
         let mut coverage = prefix_coverage;
-        *coverage |= *h_profiles[next_i].coverage;
+        coverage.union_with(&h_profiles[next_i].coverage);
 
-        if coverage.all() {
+        if coverage.is_full(n_pos_examples) {
             // Covers every positive; it is only a valid group if the
             // combination also proves no negative.
             if group_entails_negative(h_profiles, &group[..=depth], neg_goals, ctx) {
@@ -305,7 +302,7 @@ fn find_next_choice(
         if (h_profiles[i].n_covered as usize) < min_covered {
             break;
         }
-        if h_profiles[i].coverage.difference(&prefix_coverage) < min_covered {
+        if h_profiles[i].coverage.difference_count(&prefix_coverage) < min_covered {
             continue;
         }
         return Some(i);
@@ -316,6 +313,7 @@ fn find_next_choice(
 #[cfg(test)]
 mod coverage_group_tests {
     use super::find_coverage_groups;
+    use crate::bitflag::BitFlag;
     use crate::{
         learners::coverage::{
             fixture::{fixture, Fixture},
@@ -347,8 +345,8 @@ mod coverage_group_tests {
     /// choosing candidates, so fabricating them keeps the fixture to the one
     /// thing under test -- which combinations get built -- while leaving `h`
     /// a real sub hypothesis for the negative check to resolve against.
-    fn profile(h: u32, covers: &[usize], n_pos: usize) -> HProfile {
-        profile_with_counts(h, covers, n_pos, 1, 1)
+    fn profile(h: u32, covers: &[usize]) -> HProfile {
+        profile_with_counts(h, covers, 1, 1)
     }
 
     /// As [`profile`], but with the clause and literal counts set by hand,
@@ -356,18 +354,17 @@ mod coverage_group_tests {
     pub(super) fn profile_with_counts(
         h: u32,
         covers: &[usize],
-        n_pos: usize,
         n_clauses: u32,
         n_literals: u32,
     ) -> HProfile {
-        let mut coverage = Coverage::from_len(n_pos);
+        let mut coverage = Coverage::empty();
         for &i in covers {
             coverage.set(i);
         }
         HProfile {
             h,
             coverage,
-            neg_coverage: Coverage::from_len(0),
+            neg_coverage: Coverage::empty(),
             n_covered: covers.len() as u32,
             n_clauses,
             n_literals,
@@ -380,11 +377,7 @@ mod coverage_group_tests {
     /// Two positives: profile 0 covers the first, profiles 1 and 2 the
     /// second, so either pairing is a complete cover.
     fn one_first_two_second() -> Vec<HProfile> {
-        vec![
-            profile(0, &[0], 2),
-            profile(1, &[1], 2),
-            profile(2, &[1], 2),
-        ]
+        vec![profile(0, &[0]), profile(1, &[1]), profile(2, &[1])]
     }
 
     /// Two sub hypotheses that are each consistent with the negatives can
@@ -433,12 +426,12 @@ mod coverage_group_tests {
 
         assert!(!groups.is_empty());
         for group in &groups {
-            let mut coverage = Coverage::from_len(2);
+            let mut coverage = Coverage::empty();
             for &i in group.iter() {
-                *coverage |= *h_profiles[i].coverage;
+                coverage.union_with(&h_profiles[i].coverage);
             }
             assert!(
-                coverage.all(),
+                coverage.is_full(2),
                 "group {group:?} was returned but does not cover every positive"
             );
         }
@@ -449,7 +442,7 @@ mod coverage_group_tests {
     #[test]
     fn groups_are_not_repeated_in_a_different_order() {
         let fixture = fixture(&[("a", "good"), ("b", "good")], &[]);
-        let h_profiles = vec![profile(0, &[0], 2), profile(1, &[1], 2)];
+        let h_profiles = vec![profile(0, &[0]), profile(1, &[1])];
         let groups = groups(&fixture, &h_profiles, MANY_GROUPS);
 
         let mut sorted: Vec<Vec<usize>> = groups.iter().map(|g| g.to_vec()).collect();
@@ -466,10 +459,10 @@ mod coverage_group_tests {
     fn the_search_stops_at_final_h_count() {
         let fixture = fixture(&[("a", "good")], &[]);
         let h_profiles = vec![
-            profile(0, &[0], 2),
-            profile(0, &[0], 2),
-            profile(0, &[1], 2),
-            profile(0, &[1], 2),
+            profile(0, &[0]),
+            profile(0, &[0]),
+            profile(0, &[1]),
+            profile(0, &[1]),
         ];
 
         let uncapped = groups(&fixture, &h_profiles, MANY_GROUPS);
@@ -494,8 +487,8 @@ mod sort_key_tests {
     /// ordered by literal count -- but only with the flag set.
     #[test]
     fn literals_break_a_tie_only_when_enabled() {
-        let wordy = profile_with_counts(0, &[0], 1, 1, 3);
-        let terse = profile_with_counts(0, &[0], 1, 1, 1);
+        let wordy = profile_with_counts(0, &[0], 1, 3);
+        let terse = profile_with_counts(0, &[0], 1, 1);
 
         assert!(
             terse.sort_key(1, true) < wordy.sort_key(1, true),
@@ -514,17 +507,17 @@ mod sort_key_tests {
     #[test]
     fn literals_never_outweigh_coverage_or_clause_count() {
         // Covers one of two positives with a single literal.
-        let narrow = profile_with_counts(0, &[0], 2, 1, 1);
+        let narrow = profile_with_counts(0, &[0], 1, 1);
         // Covers both, but with far more literals.
-        let broad = profile_with_counts(0, &[0, 1], 2, 1, 99);
+        let broad = profile_with_counts(0, &[0, 1], 1, 99);
         assert!(
             broad.sort_key(2, true) < narrow.sort_key(2, true),
             "coverage dominates literal count"
         );
 
         // Same coverage, one clause vs two, and the bigger program is terser.
-        let one_clause = profile_with_counts(0, &[0], 1, 1, 9);
-        let two_clauses = profile_with_counts(0, &[0], 1, 2, 1);
+        let one_clause = profile_with_counts(0, &[0], 1, 9);
+        let two_clauses = profile_with_counts(0, &[0], 2, 1);
         assert!(
             one_clause.sort_key(1, true) < two_clauses.sort_key(1, true),
             "clause count dominates literal count"

@@ -12,12 +12,11 @@
 //! whether a set holds all of the first `n` indices is asked with
 //! [`BitFlag::is_full`].
 
-// Until the callers move onto it.
-#![allow(dead_code)]
-
 use std::ops::{BitAnd, BitOr, Not, Shl};
 
 /// A set of indices below [`Self::CAPACITY`].
+// The whole interface: not every operation has a caller yet.
+#[allow(dead_code)]
 pub(crate) trait BitFlag: Copy + PartialEq {
     /// The integer the set is made of.
     type Word: Word;
@@ -183,6 +182,11 @@ pub(crate) trait BitFlag: Copy + PartialEq {
             flags: self,
             from: 0,
         }
+    }
+
+    /// The indices in the set as a list, lowest first.
+    fn indices(&self) -> Vec<usize> {
+        self.iter().collect()
     }
 
     /// The set of `indices`.
