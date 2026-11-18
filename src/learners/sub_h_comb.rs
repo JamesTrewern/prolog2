@@ -100,7 +100,7 @@ pub(super) fn least_sub_h(
         // and the caller wants the same number of programs either way.
         h_profiles
             .into_iter()
-            .filter(|profile| profile.n_covered as usize == pos_goals.len())
+            .filter(|profile| profile.coverage.is_full(pos_goals.len()))
             .take(ctx.parallel.final_h_count)
             .map(|profile| vec![profile.h])
             .collect()
@@ -299,7 +299,7 @@ fn find_next_choice(
     for i in start..h_profiles.len() {
         // Profiles are sorted by descending coverage, so once one is too
         // small every later one is too.
-        if (h_profiles[i].n_covered as usize) < min_covered {
+        if h_profiles[i].coverage.count() < min_covered {
             break;
         }
         if h_profiles[i].coverage.difference_count(&prefix_coverage) < min_covered {
@@ -341,7 +341,7 @@ mod coverage_group_tests {
 
     /// A profile of sub hypothesis `h` with hand-set coverage.
     ///
-    /// `find_coverage_groups` only ever reads `coverage`/`n_covered` when
+    /// `find_coverage_groups` only ever reads `coverage` when
     /// choosing candidates, so fabricating them keeps the fixture to the one
     /// thing under test -- which combinations get built -- while leaving `h`
     /// a real sub hypothesis for the negative check to resolve against.
@@ -354,8 +354,8 @@ mod coverage_group_tests {
     pub(super) fn profile_with_counts(
         h: u32,
         covers: &[usize],
-        n_clauses: u32,
-        n_literals: u32,
+        n_clauses: u8,
+        n_literals: u8,
     ) -> HProfile {
         let mut coverage = Coverage::empty();
         for &i in covers {
@@ -365,7 +365,6 @@ mod coverage_group_tests {
             h,
             coverage,
             neg_coverage: Coverage::empty(),
-            n_covered: covers.len() as u32,
             n_clauses,
             n_literals,
         }

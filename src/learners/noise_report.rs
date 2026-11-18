@@ -419,7 +419,7 @@ impl Finder<'_, '_> {
             let p = cover.profile;
             (
                 cover.unique.is_empty(),
-                p.n_covered,
+                p.coverage.count(),
                 p.neg_coverage.count(),
                 p.n_clauses,
                 p.n_literals,
@@ -932,7 +932,7 @@ pub(super) fn report_negative(
     alone.sort_by_key(|p| {
         (
             Reverse((p.coverage & negative.blocks).count_ones()),
-            Reverse(p.n_covered),
+            Reverse(p.coverage.count()),
             p.n_clauses,
             p.n_literals,
             p.h,

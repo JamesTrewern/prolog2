@@ -10,7 +10,10 @@
 
 use std::{
     io::{self, Write},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Once,
+    },
 };
 
 use rayon::prelude::*;
@@ -21,19 +24,24 @@ use crate::{
 };
 
 /// A set of examples, a bit each: those a hypothesis proves.
+///
+/// The width the pipeline after profiling is written for. An [`HProfile`]
+/// can be of any [`BitFlag`].
 pub(super) type Coverage = u128;
 
 /// The members of `coverage` at `keep`, packed down in that order: the
 /// coverage of the examples that are left when the others are set aside.
-pub(super) fn select(coverage: Coverage, keep: &[usize]) -> Coverage {
-    Coverage::from_indices((0..keep.len()).filter(|&new| coverage.get(keep[new])))
+pub(super) fn select<B: BitFlag>(coverage: B, keep: &[usize]) -> B {
+    B::from_indices((0..keep.len()).filter(|&new| coverage.get(keep[new])))
 }
 
 /// The positives that `profiles` cover between them.
-pub(super) fn covered_by<'a>(profiles: impl IntoIterator<Item = &'a HProfile>) -> Coverage {
+pub(super) fn covered_by<'a, B: BitFlag + 'a>(
+    profiles: impl IntoIterator<Item = &'a HProfile<B>>,
+) -> B {
     profiles
         .into_iter()
-        .fold(Coverage::empty(), |all, p| all.union(&p.coverage))
+        .fold(B::empty(), |all, p| all.union(&p.coverage))
 }
 
 /// The examples and the profile of every sub hypothesis, as noise handling
@@ -51,23 +59,41 @@ pub(super) struct Profiled<'a> {
 
 /// One sub hypothesis and what it proves.
 ///
-/// `u32` counts keep this to 48 bytes; there is one per sub hypothesis.
-pub(super) struct HProfile {
+/// There is one per sub hypothesis, so it is kept small: `B` is chosen as
+/// the narrowest set that holds the examples, and the counts are a byte
+/// each. With `u8` sets a profile is 8 bytes, with `u64` 24, with `u128` 48.
+pub(super) struct HProfile<B = Coverage> {
     /// Index of the sub hypothesis in [`SearchCtx::hypotheses`].
     pub(super) h: u32,
-    /// Positives proved.
-    pub(super) n_covered: u32,
-    /// Clauses in `h` plus those of every invented predicate it calls.
-    pub(super) n_clauses: u32,
-    /// Body literals across that same clause set.
-    pub(super) n_literals: u32,
+    /// Clauses in `h` plus those of every invented predicate it calls; 255
+    /// for that many or more.
+    pub(super) n_clauses: u8,
+    /// Body literals across that same clause set; 255 for that many or more.
+    pub(super) n_literals: u8,
     /// The positives it proves.
-    pub(super) coverage: Coverage,
+    pub(super) coverage: B,
     /// The negatives it proves.
-    pub(super) neg_coverage: Coverage,
+    pub(super) neg_coverage: B,
 }
 
-impl HProfile {
+/// A count of clauses or of literals, as an [`HProfile`] holds it: 255
+/// stands for that many or more.
+///
+/// The first count to pass 255 is warned of, once for the whole run.
+fn small_count(count: usize, what: &str) -> u8 {
+    static WARNED: Once = Once::new();
+    u8::try_from(count).unwrap_or_else(|_| {
+        WARNED.call_once(|| {
+            eprintln!(
+                "Warning: a sub hypothesis has {count} {what}. Counts above 255 are treated \
+                 as 255 when sub hypotheses are compared by size."
+            );
+        });
+        u8::MAX
+    })
+}
+
+impl<B: BitFlag> HProfile<B> {
     /// Profile sub hypothesis `h`, or `None` if it proves more than
     /// `at_most_neg` negatives.
     ///
@@ -95,9 +121,8 @@ impl HProfile {
             .sum();
         Some(Self {
             h,
-            n_covered: coverage.count() as u32,
-            n_clauses: meta_subs.len() as u32,
-            n_literals: n_literals as u32,
+            n_clauses: small_count(meta_subs.len(), "clauses"),
+            n_literals: small_count(n_literals, "literals"),
             coverage,
             neg_coverage,
         })
@@ -106,13 +131,11 @@ impl HProfile {
     /// This profile over only the positives `pos_keep` and the negatives
     /// `neg_keep`, given by their indices in order.
     pub(super) fn restricted(&self, pos_keep: &[usize], neg_keep: &[usize]) -> Self {
-        let coverage = select(self.coverage, pos_keep);
         Self {
             h: self.h,
-            n_covered: coverage.count() as u32,
             n_clauses: self.n_clauses,
             n_literals: self.n_literals,
-            coverage,
+            coverage: select(self.coverage, pos_keep),
             neg_coverage: select(self.neg_coverage, neg_keep),
         }
     }
@@ -135,7 +158,7 @@ impl HProfile {
         by_literals: bool,
     ) -> (usize, usize, usize) {
         (
-            n_pos_examples - self.n_covered as usize,
+            n_pos_examples - self.coverage.count(),
             self.n_clauses as usize,
             if by_literals {
                 self.n_literals as usize
@@ -160,14 +183,14 @@ fn test_config(config: ResolutionConfig) -> ResolutionConfig {
 ///
 /// `goals` are addresses of goals compiled onto the program heap by
 /// [`compile_examples`](super::utils::compile_examples).
-fn proved(
+fn proved<B: BitFlag>(
     goals: &[usize],
     meta_subs: &[&[usize]],
     ctx: SearchCtx,
     at_most: usize,
-) -> Option<Coverage> {
+) -> Option<B> {
     let config = test_config(ctx.config);
-    let mut coverage = Coverage::empty();
+    let mut coverage = B::empty();
     let mut count = 0;
     for (i, &goal) in goals.iter().enumerate() {
         let mut query_heap = QueryHeap::new(ctx.heap, None);
@@ -195,11 +218,21 @@ fn proved(
 /// heap, and their clause indices good for the predicate table.
 ///
 /// Profiles are returned in hypothesis order.
-pub(super) fn build_profiles(
+///
+/// # Panics
+///
+/// If `B` cannot hold as many examples as there are of either kind.
+pub(super) fn build_profiles<B: BitFlag + Send>(
     pos_goals: &[usize],
     neg_goals: &[usize],
     ctx: SearchCtx,
-) -> Vec<HProfile> {
+) -> Vec<HProfile<B>> {
+    let most = pos_goals.len().max(neg_goals.len());
+    assert!(
+        most <= B::CAPACITY,
+        "{most} examples are more than the {} a coverage of this width holds",
+        B::CAPACITY
+    );
     let total = u32::try_from(ctx.hypotheses.len()).expect("more than u32::MAX hypotheses");
     let at_most_neg = 0;
     profile_each(
@@ -213,12 +246,12 @@ pub(super) fn build_profiles(
 
 /// Profile the sub hypotheses [`build_profiles`] did not keep, however many
 /// negatives they prove. `kept` is its result, still in hypothesis order.
-pub(super) fn profile_rest(
-    kept: &[HProfile],
+pub(super) fn profile_rest<B: BitFlag + Send>(
+    kept: &[HProfile<B>],
     pos_goals: &[usize],
     neg_goals: &[usize],
     ctx: SearchCtx,
-) -> Vec<HProfile> {
+) -> Vec<HProfile<B>> {
     let mut kept = kept.iter().map(|h_profile| h_profile.h).peekable();
     let rest: Vec<u32> = (0..ctx.hypotheses.len() as u32)
         .filter(|h| kept.next_if_eq(h).is_none())
@@ -228,13 +261,13 @@ pub(super) fn profile_rest(
 
 /// The profiles of `hypotheses`, in order, less those proving more than
 /// `at_most_neg` negatives.
-fn profile_each(
+fn profile_each<B: BitFlag + Send>(
     hypotheses: impl IndexedParallelIterator<Item = u32>,
     pos_goals: &[usize],
     neg_goals: &[usize],
     ctx: SearchCtx,
     at_most_neg: usize,
-) -> Vec<HProfile> {
+) -> Vec<HProfile<B>> {
     let total = hypotheses.len();
     let profiled = AtomicUsize::new(0);
 
@@ -402,15 +435,91 @@ mod tests {
         // Those proving no negative are kept, the rest profiled on request.
         let kept = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
         let rest = profile_rest(&kept, &pos_goals, &fixture.neg_goals, ctx);
-        let seen = |profiles: &[super::HProfile]| -> Vec<(u32, bool, bool, u32)> {
+        let seen = |profiles: &[super::HProfile]| -> Vec<(u32, bool, bool, usize)> {
             profiles
                 .iter()
-                .map(|p| (p.h, p.coverage.get(0), p.neg_coverage.get(0), p.n_covered))
+                .map(|p| {
+                    (
+                        p.h,
+                        p.coverage.get(0),
+                        p.neg_coverage.get(0),
+                        p.coverage.count(),
+                    )
+                })
                 .collect()
         };
         assert_eq!(seen(&kept), vec![(0, true, false, 1), (2, false, false, 0)]);
         assert_eq!(seen(&rest), vec![(1, false, true, 0)]);
         assert!(kept.iter().all(|p| p.n_clauses == 1 && p.n_literals == 1));
+    }
+
+    /// The same sub hypotheses profiled with sets of any width prove the
+    /// same examples.
+    #[test]
+    fn profiles_are_the_same_at_every_width() {
+        use crate::bitflag::BitFlag;
+
+        fn seen<B: BitFlag + Send>() -> Vec<(u32, Vec<usize>, Vec<usize>, u8, u8)> {
+            let mut fixture = fixture(&CLAUSES, &["p(c)"]);
+            let pos_goals = compile_examples(&["p(d)".to_string()], &mut fixture.prog_heap);
+            let ctx = fixture.ctx(ParallelConfig::default());
+            let kept: Vec<super::HProfile<B>> = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
+            let rest = profile_rest(&kept, &pos_goals, &fixture.neg_goals, ctx);
+            let mut all: Vec<_> = kept
+                .iter()
+                .chain(&rest)
+                .map(|p| {
+                    let (pos, neg) = (p.coverage.indices(), p.neg_coverage.indices());
+                    (p.h, pos, neg, p.n_clauses, p.n_literals)
+                })
+                .collect();
+            all.sort();
+            all
+        }
+
+        let expected = vec![
+            (0, vec![0], vec![], 1, 1),
+            (1, vec![], vec![0], 1, 1),
+            (2, vec![], vec![], 1, 1),
+        ];
+        assert_eq!(seen::<u8>(), expected);
+        assert_eq!(seen::<u64>(), expected);
+        assert_eq!(seen::<u128>(), expected);
+        assert_eq!(seen::<[u128; 8]>(), expected);
+    }
+
+    #[test]
+    fn counts_past_255_are_held_as_255() {
+        assert_eq!(super::small_count(0, "clauses"), 0);
+        assert_eq!(super::small_count(255, "clauses"), 255);
+        assert_eq!(super::small_count(256, "clauses"), 255);
+        assert_eq!(super::small_count(100_000, "literals"), 255);
+    }
+
+    /// A profile is as small as its sets allow.
+    #[test]
+    fn a_profile_is_sized_by_its_sets() {
+        use super::HProfile;
+        use std::mem::size_of;
+
+        assert_eq!(size_of::<HProfile<u8>>(), 8);
+        assert_eq!(size_of::<HProfile<u16>>(), 12);
+        assert_eq!(size_of::<HProfile<u32>>(), 16);
+        assert_eq!(size_of::<HProfile<u64>>(), 24);
+        assert_eq!(size_of::<HProfile<u128>>(), 48);
+        assert_eq!(size_of::<HProfile<[u128; 2]>>(), 80);
+        assert_eq!(size_of::<HProfile<[u128; 4]>>(), 144);
+        assert_eq!(size_of::<HProfile<[u128; 8]>>(), 272);
+    }
+
+    #[test]
+    #[should_panic(expected = "9 examples are more than the 8")]
+    fn more_examples_than_the_width_holds_are_refused() {
+        let mut fixture = fixture(&CLAUSES, &["p(c)"]);
+        let positives: Vec<String> = (0..9).map(|i| format!("p(d{i})")).collect();
+        let pos_goals = compile_examples(&positives, &mut fixture.prog_heap);
+        let ctx = fixture.ctx(ParallelConfig::default());
+        let _: Vec<super::HProfile<u8>> = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
     }
 
     #[test]
