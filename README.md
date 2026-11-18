@@ -122,7 +122,7 @@ The `auto` option makes the program iterate through all possible proofs in a que
 
 Prolog<sup>2</sup> supports a parallel MIL learner, partially based on TPC as an alternative to the standard second order SLD-Resolution hypothesis search. TPC constructs the Top program — the set of clauses in all correct hypotheses — directly in polynomial time, then reduces it to remove redundant clauses using Plotkin's program reduction algorithm. This approach is based on the work of [Patsantzis and Muggleton (2021)](https://link.springer.com/article/10.1007/s10994-020-05945-w).
 
-The TPC has three stages: **Generalise** generalise from each positive example in to collect all constructible clauses, **Specialise** removes any clause that entails a negative example, and **Reduce** applies Plotkin's reduction to eliminate redundant clauses while preferring general patterns over specific ones.
+The TPC has three stages: **Generalise** generalise from each positive example in to collect all constructible clauses, **Specialise** removes any clause that entails a negative example, and **Reduce** applies Plotkin's reduction to eliminate redundant clauses while preferring general patterns over specific ones. The pipeline below follows the same shape, with a search and a final check added between specialising and returning a hypothesis.
 
 ## PMIL pipeline
 
@@ -138,50 +138,39 @@ Once **Predicate Defintions** are extracted and ordered they are inserted to the
 
 A the end of this process all predicate symbols are grounded and the sub-hypothesis (now only containing the top level clauses) is described by a unified global set of invented predicate symbols, allowing for easy deduplication, a reduced memory usage for sub-hypotheses sharing **Predicate Definitions**.
 
-### Coverage and Specialisation
+### Profiling
 
-Each sub-hypothesis collected by the above steps is then tested against the examples, in parallel. The negatives are queried first, against the sub-hypothesis and background knowledge, and the sub-hypothesis is dropped at the first one it entails. This is the **Specialisation** of TPC, done here per sub-hypothesis rather than per clause.
+Each sub-hypothesis is then tested against the examples, in parallel. Every positive and negative example is queried against the sub-hypothesis and background knowledge to build a **Hypothesis Profile**, recording which positives and which negatives it entails, along with its size. The steps that follow work on these profiles.
 
-A sub-hypothesis entailing no negative then has each positive queried against it, to build a **Hypothesis Profile**: which positives it covers, along with its clause and literal counts, counting the **Predicate Definitions** it depends on.
+### Negative Noise Filter
 
-If the surving profiled sub-hypotheses cover every positive between them, the examples are consistent and the pipeline moves straight on to **Sub Hypothesis Combination**.
+In place of the **Specialisation** step of TPC, sub-hypotheses that entail more than `neg_noise` negatives are filtered out. With the default of `0` this leaves only the sub-hypotheses that entail no negative.
 
-### Noise Handling
+If the filter leaves a positive example that no remaining sub-hypothesis entails, that positive cannot be covered within the bound. Unless `pos_noise` allows it to be left uncovered, the run stops with a **Noise Report** on the positives at fault.
 
-This step only runs when some positive is left uncovered, meaning it is only entailed by sub-hypotheses that also entail negatives, or by none at all:
+### Search
 
-1. The dropped sub-hypotheses are profiled in full, this time recording every negative each one entails.
-2. Each uncovered positive becomes a *conflict*: the positive, together with the minimal sets of negatives that would have to be ignored for some sub-hypothesis entailing it to be kept. A positive that no sub-hypothesis entails at all can only be left uncovered.
-3. The cheapest *removal* is searched for: the fewest examples, positives left uncovered plus negatives ignored, that settles every conflict. Ignoring a set of negatives can settle several conflicts at once, so the choices are considered together rather than one positive at a time.
-4. If a removal fits within `pos_noise` and `neg_noise`, those examples are filtered out and noted in the output, the sub-hypotheses that entail only ignored negatives are brought back, and every profile is restricted to the examples left.
-5. If no removal fits, the run stops with a **Noise Report** on the examples of the cheapest removal found without the bounds. The report is described under [PMIL Usage](#pmil-usage).
+A single sub-hypothesis only has to prove the example it was generalised from, so a complete hypothesis is usually the union of several. The remaining sub-hypotheses are searched for valid coverage groups: groups of sub-hypotheses that between them entail every positive and at most `neg_noise` negatives.
 
-### Sub Hypothesis Combination
+The search is a greedy algorithm with backtracking. Each candidate for the next member of a group is scored by the share of the positives still to cover that it adds, minus the share of the remaining negative bound that it spends. The search is started from several of the best first choices, so that the groups found are not all variations on one.
 
-A single sub-hypothesis only has to prove the example it was generalised from, so a complete hypothesis is usually the union of several. This step looks for the smallest groups of sub-hypotheses that cover every positive between them:
+### Pool
 
-1. The profiles are sorted by positives covered (most first), then by clause count (fewest first), and optionally by literal count (`sort_by_literals`).
-2. Any sub-hypothesis whose coverage is a subset of the coverage of one sorted ahead of it is discarded, as the other does at least as much for no greater cost.
-3. A greedy cover is built, starting from the best profile and repeatedly adding the sub-hypothesis covering the most positives still uncovered. Its size `k` bounds the search that follows.
-4. If `k` is 1, the sub-hypotheses covering every positive on their own are the result. Otherwise a backtracking search enumerates each combination of up to `k` sub-hypotheses that covers every positive, pruning any choice which covers too few of the remaining positives for the group to be completed within `k`.
-5. Each complete group is checked against the negatives again. Two sub-hypotheses that each entail no negative can entail one together, since a clause from one can resolve with a clause from the other. A group that does is rejected and the search continues.
-6. The search stops once `final_h_count` groups have been accepted.
-
-Each accepted group is then turned into a program: the union of its clauses and the **Predicate Definitions** they depend on, with shared clauses and definitions included once. If `reduce` is set, Plotkin's reduction is applied to each program before it is printed.
+The groups found by the search form a pool of candidate hypotheses. Each group is turned into a hypothesis, the union of its clauses and the **Predicate Definitions** they depend on, and reduced with Plotkin's reduction if `reduce` is set. Each hypothesis is then tested against the examples directly, since a group can entail more together than its members do apart. The hypotheses that hold up are ranked by fewest negatives entailed and then by size, and the best `final_h_count` are returned.
 
 ## PMIL Usage
 
 To enable PMIL, add a `"parallel"` block to your config file. Its presence is what selects PMIL over a direct query, so there is no separate on/off flag; an empty block `"parallel": {}` runs PMIL with every option at its default. The block takes five optional fields:<br>
 
-`reduce`: run Plotkin's program reduction over each learned program. Off by default, which is useful for profiling or for inspecting the raw top program.<br>
-`sort_by_literals`: when two candidate sub hypotheses tie on coverage and clause count, prefer the one with fewer body literals. Off by default. A tiebreaker only — it never outranks coverage or clause count.<br>
-`final_h_count`: how many complete programs to return. Defaults to `5`. Many combinations of sub hypotheses usually cover every positive while proving no negative, and each costs a proof search against every negative to confirm, so this bounds how many are collected before the search stops.<br>
-`neg_noise`: how many negative examples may be ignored as noise. Defaults to `0`.<br>
-`pos_noise`: how many positive examples may be left uncovered as noise. Defaults to `0`.
+`reduce`: run Plotkin's program reduction over each hypothesis before it is ranked and returned. Off by default, which is useful for profiling or for inspecting the raw top program.<br>
+`sort_by_literals`: when two sub hypotheses or two hypotheses tie on clause count, prefer the one with fewer body literals. Off by default. A tiebreaker only — it never outranks clause count.<br>
+`final_h_count`: how many hypotheses to return, best first. Defaults to `5`. Fewer are returned when fewer are found.<br>
+`neg_noise`: how many negative examples a hypothesis may entail. Defaults to `0`.<br>
+`pos_noise`: how many positive examples may be left uncovered. Defaults to `0`.
 
-The two noise options come into play when some positive example is only entailed by sub hypotheses that also entail negatives. That is one conflict with two ways out: leave the positive uncovered, or ignore those negatives. PMIL looks for the fewest examples whose removal leaves a consistent program, so a single positive that needs seven negatives ignored is the one set aside, and a single negative standing in the way of several positives is the one ignored.
+The hypotheses returned are those entailing the fewest negatives, so raising `neg_noise` does not make a noisy hypothesis preferred to one entailing no negative. Each hypothesis is printed with the negatives it entails, if any.
 
-If that removal fits within `pos_noise` and `neg_noise`, the examples are filtered out, the output notes which, and learning carries on with the rest. If it does not, the run stops and reports on the examples in the cheapest removal: which negatives a positive always comes with, example hypotheses that entail it, how they compare with hypotheses entailing no negative, and what a greedy program looks like with and without it. The report is printed and also written to `noise_report_<time stamp>.md` in the working directory. With both options at `0`, the default, any such conflict produces the report.
+When a positive example can only be entailed by going over `neg_noise`, it is left uncovered if `pos_noise` allows, and the output notes which. Otherwise the run stops with a noise report on each such positive: the negatives it comes with, example hypotheses that entail it, and how they compare with the hypotheses within the bound. The report is printed and also written to `noise_report_<time stamp>.md` in the working directory.
 
 ``` json
 {
@@ -207,13 +196,16 @@ If that removal fits within `pos_noise` and `neg_noise`, the examples are filter
 }
 ```
 
-Running this on Michalski's trains problem produces:
+Running this on Michalski's trains problem returns, as its best hypothesis:
 
 ```
-=== Reduced Program (2 clauses) ===
-  e(Arg_0):-has_car(Arg_0,Arg_1),pred_1(Arg_1).
-  pred_1(Arg_0):-short(Arg_0),closed(Arg_0).
+Hypothesis 0
+=== Top Program (2 clauses) ===
+pred_5(A):-closed(A),short(A).
+e(A):-has_car(A,B),pred_5(B).
 ```
+
+The number in an invented predicate's name, and the order of the body literals, can differ from run to run.
 
 # Step by Step Demonstration of New Clause Generation
 

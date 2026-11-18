@@ -384,18 +384,21 @@ pub struct ParallelConfig {
     pub reduce: bool,
     /// Break ties between equally-sized sub hypotheses by literal count.
     pub sort_by_literals: bool,
-    /// How many complete programs to return.
+    /// How many hypotheses to return, the best first.
     pub final_h_count: usize,
-    /// How many negative examples may be set aside as noise. Defaults to 0.
+    /// How many negative examples a hypothesis may entail. Defaults to 0.
     ///
-    /// When some positive is only entailed together with negatives, the
-    /// fewest examples whose removal leaves a hypothesis are found: those
-    /// negatives ignored, or those positives left uncovered. Within this
-    /// and [`Self::pos_noise`] they are filtered out, with a note, and the
-    /// run goes on. Otherwise it ends with a report on those examples.
+    /// Sub hypotheses entailing more are set aside, and the hypotheses
+    /// returned are those entailing fewest, each printed with the negatives
+    /// it entails. A positive that only the sub hypotheses set aside entail
+    /// cannot be covered within this: the run ends with a report on it,
+    /// unless [`Self::pos_noise`] lets it be left.
     pub neg_noise: usize,
-    /// How many positive examples may be left uncovered as noise. Defaults
-    /// to 0. See [`Self::neg_noise`].
+    /// How many positive examples may be left uncovered. Defaults to 0.
+    ///
+    /// When no more than this many positives cannot be covered within
+    /// [`Self::neg_noise`], they are left uncovered, with a note, and the
+    /// run goes on with the rest.
     pub pos_noise: usize,
 }
 

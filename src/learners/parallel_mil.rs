@@ -27,10 +27,11 @@ use crate::{
 };
 
 use super::{
-    coverage::build_profiles,
-    noise::{resolve_noise, Noise},
-    sub_h_comb::{least_sub_h, SearchCtx},
-    utils::{compile_examples, reduce as reduce_hypothesis},
+    coverage::{build_profiles, within, ExampleSet, HProfile, Profiled},
+    noise::{uncovered, uncovered_report},
+    pool::best_of_pool,
+    search::{undominated, Search, BRANCHING_FACTOR, MAX_EFFORT},
+    utils::{compile_examples, SearchCtx},
 };
 
 use hashbrown::HashTable;
@@ -100,67 +101,147 @@ pub(crate) fn parallel(
         parallel,
     );
 
-    // What each hypothesis proves, keeping those entailing no negative.
-    let h_profiles = build_profiles(&pos_goals, &neg_goals, ctx);
+    // The narrowest sets that hold the examples: there is one profile to a
+    // sub hypothesis, and the search reads them all at every step.
+    let most = pos_goals.len().max(neg_goals.len());
+    match most {
+        0..=8 => from_sub_hypotheses::<u8>(&pos_goals, &neg_goals, ctx),
+        9..=16 => from_sub_hypotheses::<u16>(&pos_goals, &neg_goals, ctx),
+        17..=32 => from_sub_hypotheses::<u32>(&pos_goals, &neg_goals, ctx),
+        33..=64 => from_sub_hypotheses::<u64>(&pos_goals, &neg_goals, ctx),
+        65..=128 => from_sub_hypotheses::<u128>(&pos_goals, &neg_goals, ctx),
+        129..=256 => from_sub_hypotheses::<[u128; 2]>(&pos_goals, &neg_goals, ctx),
+        257..=512 => from_sub_hypotheses::<[u128; 4]>(&pos_goals, &neg_goals, ctx),
+        513..=1024 => from_sub_hypotheses::<[u128; 8]>(&pos_goals, &neg_goals, ctx),
+        _ => {
+            println!(
+                "{most} positive or negative examples are more than the 1024 of either that \
+                 can be learned from"
+            );
+            println!("No Valid Hypothesis Found");
+            None
+        }
+    }
+}
+
+/// The hypotheses to return, as Prolog source and best first, from the sub
+/// hypotheses in `ctx`: profile them, keep those within the negative noise
+/// bound, search for groups of them, and take the best of the hypotheses
+/// those groups stand for.
+///
+/// `B` is the set of examples a profile holds, which must be wide enough
+/// for as many as there are of either kind.
+fn from_sub_hypotheses<B: ExampleSet>(
+    pos_goals: &[usize],
+    neg_goals: &[usize],
+    ctx: SearchCtx,
+) -> Option<Vec<String>> {
+    let parallel = ctx.parallel;
+    eprintln!("Coverage held in {} bits", B::CAPACITY);
+
+    // What each sub hypothesis proves, then those within the negative noise
+    // bound apart from the rest.
+    let profiles: Vec<HProfile<B>> = build_profiles(pos_goals, neg_goals, ctx);
+    let (kept, rest) = within(profiles, parallel.neg_noise);
     println!(
-        "=== Specialisation ===\n{} of {} hypotheses entail none of the {} negatives",
-        h_profiles.len(),
-        hypotheses.len(),
+        "=== Specialisation ===\n{} of {} hypotheses entail {} of the {} negatives",
+        kept.len(),
+        ctx.hypotheses.len(),
+        match parallel.neg_noise {
+            0 => "none".to_string(),
+            neg_noise => format!("at most {neg_noise}"),
+        },
         neg_goals.len(),
     );
 
-    // Positives only entailed together with negatives: within the noise
-    // bounds the examples at fault are set aside, and beyond them the
-    // run ends with a report on those examples.
-    let (pos_goals, neg_goals, h_profiles) =
-        match resolve_noise(h_profiles, &pos_goals, &neg_goals, ctx) {
-            // Uncovered: the cover search names the positives and gives up.
-            Noise::Clean(h_profiles) | Noise::Uncovered(h_profiles) => {
-                (pos_goals, neg_goals, h_profiles)
-            }
-            Noise::Filtered(filtered) => {
-                println!("=== Noise ===\n{}", filtered.note);
-                (filtered.pos_goals, filtered.neg_goals, filtered.h_profiles)
-            }
-            Noise::Failed(report) => {
-                println!("=== Noise ===\n{}", report.text());
-                let time_stamp = chrono::Utc::now().format("%d-%m-%Y,%H:%M:%S");
-                let path = format!("noise_report_{time_stamp}.md");
-                match std::fs::write(&path, report.markdown()) {
-                    Ok(()) => println!("Noise report written to {path}"),
-                    Err(error) => eprintln!("Could not write {path}: {error}"),
-                }
-                println!("No Valid Hypothesis Found");
-                return None;
-            }
-        };
-
-    // Attempt to find small sets of sub hypotheses entailing all positives
-    let Some(groups) = least_sub_h(&pos_goals, &neg_goals, h_profiles, ctx) else {
+    // A positive none of those entails cannot be covered within the bound.
+    let profiled = Profiled {
+        kept: &kept,
+        rest: &rest,
+        pos_goals,
+        neg_goals,
+        ctx,
+    };
+    let uncovered = uncovered(profiled);
+    let dropped = if uncovered.is_empty() {
+        B::empty()
+    } else if uncovered.count() <= parallel.pos_noise {
+        // TODO: refine. Every uncovered positive is left as noise when
+        // there are few enough of them, whatever it would take to cover one.
+        println!(
+            "=== Noise ===\nLeaving {} of the {} positives uncovered as noise (at most {})",
+            uncovered.count(),
+            pos_goals.len(),
+            parallel.pos_noise
+        );
+        let heap = QueryHeap::new(ctx.heap, None);
+        for pos in uncovered.iter() {
+            println!("\t{}", heap.term_string(pos_goals[pos]));
+        }
+        uncovered
+    } else {
+        let report = uncovered_report(profiled);
+        println!("=== Noise ===\n{}", report.text());
+        let time_stamp = chrono::Utc::now().format("%d-%m-%Y,%H:%M:%S");
+        let path = format!("noise_report_{time_stamp}.md");
+        match std::fs::write(&path, report.markdown()) {
+            Ok(()) => println!("Noise report written to {path}"),
+            Err(error) => eprintln!("Could not write {path}: {error}"),
+        }
         println!("No Valid Hypothesis Found");
         return None;
     };
 
+    // Groups of sub hypotheses covering the positives within the bound,
+    // going by what each proves alone.
+    let candidates = undominated(&kept, parallel.sort_by_literals);
+    eprintln!("{} of those are not bettered by another", candidates.len());
+    let groups = Search {
+        profiles: &candidates,
+        n_pos: pos_goals.len(),
+        neg_noise: parallel.neg_noise,
+        dropped,
+        per_start: parallel.final_h_count,
+        by_literals: parallel.sort_by_literals,
+        branching: BRANCHING_FACTOR,
+        max_effort: MAX_EFFORT,
+    }
+    .run();
+    eprintln!("{} groups found", groups.len());
+
+    // The hypotheses those groups stand for, proved, and the best of them.
+    let pool = best_of_pool(&groups, &candidates, pos_goals, neg_goals, dropped, ctx);
+    if pool.best.is_empty() {
+        println!(
+            "No hypothesis was found covering every positive while entailing at most {} \
+             negative(s)",
+            parallel.neg_noise
+        );
+        println!("No Valid Hypothesis Found");
+        return None;
+    }
+
     let mut buffer = Vec::new();
-    for (i, group) in groups.into_iter().enumerate() {
+    for (i, profile) in pool.best.iter().enumerate() {
         println!("Hypothesis {i}");
+        let hypothesis: Vec<&[usize]> = pool.hypotheses.get(profile.h as usize).iter().collect();
+        buffer.push(top_prog_to_string(
+            &hypothesis,
+            ctx.heap,
+            ctx.predicate_table,
+        ));
 
-        // The group's clauses and the definitions they depend on.
-        let sub_hypotheses = group.iter().map(|&index| hypotheses.get(index as usize));
-        let mut hypothesis = pdt.union_meta_subs(sub_hypotheses, prog_heap).into_vec();
-
-        if parallel.reduce {
-            hypothesis = reduce_hypothesis(
-                &pos_goals,
-                hypothesis,
-                prog_heap,
-                predicate_table,
-                resolution,
-                true,
+        if !profile.neg_coverage.is_empty() {
+            println!(
+                "Entails {} of the {} negatives, taken as noise",
+                profile.neg_coverage.count(),
+                neg_goals.len()
             );
+            let heap = QueryHeap::new(ctx.heap, None);
+            for neg in profile.neg_coverage.iter() {
+                println!("\t{}", heap.term_string(neg_goals[neg]));
+            }
         }
-
-        buffer.push(top_prog_to_string(&hypothesis, prog_heap, predicate_table));
     }
     Some(buffer)
 }

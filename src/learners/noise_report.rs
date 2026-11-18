@@ -21,8 +21,9 @@
 //! - conclusions drawn from those, with the literals on either side of
 //!   the [`Boundary`] between its covers and the clean hypotheses.
 //!
-//! [`report_negative`] is the shorter account of a negative at fault: the
-//! positives it stands in the way of and the hypotheses it rules out.
+//! Throughout, the hypotheses a positive's covers are set against are
+//! those within the bound, called clean here: with a bound of none, the
+//! hypotheses entailing no negative.
 //!
 //! The [`NoiseReport`] renders as plain text for the terminal and as
 //! Markdown for a file.
@@ -37,12 +38,11 @@ use rayon::prelude::*;
 use smallvec::SmallVec;
 
 use super::{
-    coverage::{covered_by, Coverage, HProfile, Profiled},
+    coverage::{covered_by, ExampleSet, HProfile, Profiled},
     noise::Conflict,
-    sub_h_comb::SearchCtx,
+    utils::SearchCtx,
 };
 use crate::{
-    bitflag::BitFlag,
     heap::{Heap, QueryHeap, Tag::Arg},
     program::HypothesisTrait,
     resolution::{build, Substitution},
@@ -64,10 +64,10 @@ const COVERS_PER_SET: usize = 4;
 /// A hypothesis proving a noisy positive, picked to show what sets its
 /// covers apart.
 #[derive(Debug)]
-pub(super) struct Lone {
+pub(super) struct Lone<B> {
     pub(super) h: u32,
-    pub(super) coverage: Coverage,
-    pub(super) neg_coverage: Coverage,
+    pub(super) coverage: B,
+    pub(super) neg_coverage: B,
     /// Its literals that no hypothesis not proving the positive has.
     pub(super) unique: Vec<String>,
 }
@@ -75,16 +75,16 @@ pub(super) struct Lone {
 /// A hypothesis proving a noisy positive, and the nearest there is to one
 /// proving the same positives apart from it and no negative.
 #[derive(Debug)]
-pub(super) struct Pair {
+pub(super) struct Pair<B> {
     pub(super) with: u32,
     /// The negatives `with` proves.
-    pub(super) neg_coverage: Coverage,
+    pub(super) neg_coverage: B,
     /// The positives `with` proves besides the noisy one.
-    pub(super) others: Coverage,
+    pub(super) others: B,
     pub(super) without: u32,
     /// The positives `without` proves: `others` when there is such a
     /// hypothesis, else as near to it as any comes.
-    pub(super) without_coverage: Coverage,
+    pub(super) without_coverage: B,
     /// The literals both have.
     pub(super) shared: Vec<String>,
     /// The literals only `with` has.
@@ -171,14 +171,14 @@ impl Boundary {
 
 /// The example hypotheses for one noisy positive.
 #[derive(Debug)]
-pub(super) struct Examples {
-    pub(super) lone: Vec<Lone>,
-    pub(super) pairs: Vec<Pair>,
+pub(super) struct Examples<B = crate::learners::coverage::Coverage> {
+    pub(super) lone: Vec<Lone<B>>,
+    pub(super) pairs: Vec<Pair<B>>,
     pub(super) definitions: Definitions,
-    pub(super) greedy: Greedy,
+    pub(super) greedy: Greedy<B>,
     pub(super) boundary: Boundary,
     /// The other positives every hypothesis proving the noisy one proves.
-    pub(super) always_with: Coverage,
+    pub(super) always_with: B,
 }
 
 /// An invented predicate's definition and how many hypotheses call it,
@@ -271,22 +271,21 @@ fn least<K: Ord>(uses: impl Iterator<Item = DefUse>, key: impl Fn(&DefUse) -> K)
 /// The negatives are those the sub hypotheses prove each on their own;
 /// together they could prove more.
 #[derive(Debug)]
-pub(super) struct Greedy {
+pub(super) struct Greedy<B> {
     pub(super) without: Vec<u32>,
-    pub(super) without_neg: Coverage,
+    pub(super) without_neg: B,
     pub(super) with: Vec<u32>,
-    pub(super) with_neg: Coverage,
+    pub(super) with_neg: B,
 }
 
-impl Examples {
+impl<B: ExampleSet> Examples<B> {
     /// Pick the examples for `positive`, from the profiles within the
     /// noise threshold (`kept`) and over it (`rest`).
     pub(super) fn find(
-        positive: &Conflict,
-        kept: &[HProfile],
-        rest: &[HProfile],
+        positive: &Conflict<B>,
+        kept: &[HProfile<B>],
+        rest: &[HProfile<B>],
         pos_goals: &[usize],
-        n_neg: usize,
         ctx: SearchCtx,
     ) -> Self {
         let pos = positive.pos;
@@ -300,7 +299,7 @@ impl Examples {
         targets.dedup();
         let targets = targets.as_slice();
 
-        let covers: Vec<Cover> = rest
+        let covers: Vec<Cover<B>> = rest
             .par_iter()
             .filter(|h_profile| h_profile.coverage.get(pos))
             .map(|profile| Cover {
@@ -311,7 +310,6 @@ impl Examples {
             .collect();
         let mut finder = Finder {
             pos,
-            n_neg,
             targets,
             covers,
             ctx,
@@ -320,12 +318,13 @@ impl Examples {
         let always_with = finder
             .covers
             .iter()
-            .fold(u128::MAX, |all, cover| all & cover.profile.coverage)
-            & !(1 << pos)
-            & !u128::MAX.checked_shl(pos_goals.len() as u32).unwrap_or(0);
+            .fold(B::full(pos_goals.len()), |all, cover| {
+                all.intersection(&cover.profile.coverage)
+            })
+            .difference(&B::from_indices([pos]));
         Self {
             boundary,
-            always_with: always_with,
+            always_with,
             lone: finder.lone(),
             pairs: finder.pairs(kept),
             definitions: finder.definitions(kept),
@@ -335,8 +334,8 @@ impl Examples {
 }
 
 /// A hypothesis proving the noisy positive.
-struct Cover<'p> {
-    profile: &'p HProfile,
+struct Cover<'p, B> {
+    profile: &'p HProfile<B>,
     /// Its literals, sorted.
     literals: Vec<String>,
     /// Those of them nothing but a cover has.
@@ -344,26 +343,25 @@ struct Cover<'p> {
 }
 
 /// The search for one positive's [`Examples`].
-struct Finder<'p, 'c> {
+struct Finder<'p, 'c, B> {
     pos: usize,
-    n_neg: usize,
     targets: &'p [usize],
-    covers: Vec<Cover<'p>>,
+    covers: Vec<Cover<'p, B>>,
     ctx: SearchCtx<'c>,
 }
 
-impl Finder<'_, '_> {
+impl<B: ExampleSet> Finder<'_, '_, B> {
     /// Fill in each cover's `unique` literals: those no hypothesis outside
     /// the covers has. The same pass over the hypotheses counts the
     /// literals of the clean ones, for the [`Boundary`].
-    fn mark_unique(&mut self, kept: &[HProfile], rest: &[HProfile]) -> Boundary {
+    fn mark_unique(&mut self, kept: &[HProfile<B>], rest: &[HProfile<B>]) -> Boundary {
         let candidates: HashSet<&str> = self
             .covers
             .iter()
             .flat_map(|cover| cover.literals.iter().map(String::as_str))
             .collect();
         let (pos, targets, ctx) = (self.pos, self.targets, self.ctx);
-        let clean = Coverage::empty();
+        let neg_noise = ctx.parallel.neg_noise;
 
         type Seen = (HashSet<String>, HashMap<String, u32>, usize);
         let (elsewhere, in_clean, n_clean): Seen = kept
@@ -373,7 +371,8 @@ impl Finder<'_, '_> {
             .fold(
                 Seen::default,
                 |(mut seen, mut in_clean, mut n_clean), h_profile| {
-                    let is_clean = h_profile.neg_coverage == clean;
+                    // Within the bound, as every one of `kept` is.
+                    let is_clean = h_profile.neg_coverage.count() <= neg_noise;
                     n_clean += is_clean as usize;
                     for literal in literals(h_profile.h, targets, ctx) {
                         if is_clean {
@@ -413,8 +412,8 @@ impl Finder<'_, '_> {
     /// The covers that best show what is particular to them: first those
     /// with a unique literal, then those proving the fewest positives, then
     /// the fewest negatives, then the smallest.
-    fn lone(&self) -> Vec<Lone> {
-        let mut order: Vec<&Cover> = self.covers.iter().collect();
+    fn lone(&self) -> Vec<Lone<B>> {
+        let mut order: Vec<&Cover<B>> = self.covers.iter().collect();
         order.sort_by_key(|cover| {
             let p = cover.profile;
             (
@@ -429,10 +428,11 @@ impl Finder<'_, '_> {
 
         // Each further example is the best one whose unique literals differ
         // from those already picked, while there is one.
-        let mut picked: Vec<&Cover> = Vec::new();
+        let mut picked: Vec<&Cover<B>> = Vec::new();
         while picked.len() < EXAMPLES.min(order.len()) {
-            let fresh = |cover: &&&Cover| picked.iter().all(|p| p.unique != cover.unique);
-            let unpicked = |cover: &&&Cover| picked.iter().all(|p| p.profile.h != cover.profile.h);
+            let fresh = |cover: &&&Cover<B>| picked.iter().all(|p| p.unique != cover.unique);
+            let unpicked =
+                |cover: &&&Cover<B>| picked.iter().all(|p| p.profile.h != cover.profile.h);
             let next = order.iter().find(|c| unpicked(c) && fresh(c));
             let next = next.or_else(|| order.iter().find(unpicked));
             picked.push(next.expect("fewer picked than there are covers"));
@@ -457,13 +457,16 @@ impl Finder<'_, '_> {
     /// A pair after the first is weighted towards differing from those
     /// already picked, in the positives its two hypotheses have in common
     /// and in the literals they share.
-    fn pairs(&self, kept: &[HProfile]) -> Vec<Pair> {
+    fn pairs(&self, kept: &[HProfile<B>]) -> Vec<Pair<B>> {
         // The covers by the positives they prove besides this one, the
         // least noisy and smallest few of each.
-        let mut by_others: HashMap<u128, Vec<&Cover>> = HashMap::new();
+        let mut by_others: HashMap<B, Vec<&Cover<B>>> = HashMap::new();
         for cover in &self.covers {
-            let others = cover.profile.coverage & !(1 << self.pos);
-            if others.count() > 0 {
+            let others = cover
+                .profile
+                .coverage
+                .difference(&B::from_indices([self.pos]));
+            if !others.is_empty() {
                 by_others.entry(others).or_default().push(cover);
             }
         }
@@ -477,20 +480,14 @@ impl Finder<'_, '_> {
 
         // Per set of other positives, the nearest coverages any clean
         // hypothesis has; kept as clean coverage -> the sets it is nearest.
-        let clean = Coverage::empty();
-        let is_clean = |h_profile: &&HProfile| h_profile.neg_coverage == clean;
-        let clean_sets: HashSet<u128> = kept.iter().filter(is_clean).map(|p| p.coverage).collect();
-        let distance = |others: u128, set: u128| {
-            (
-                (others & !set).count_ones() as usize,
-                (set & !others).count_ones() as usize,
-            )
-        };
-        let mut nearest_to: HashMap<u128, Vec<u128>> = HashMap::new();
+        let clean_sets: HashSet<B> = kept.iter().map(|p| p.coverage).collect();
+        let distance =
+            |others: B, set: B| (others.difference_count(&set), set.difference_count(&others));
+        let mut nearest_to: HashMap<B, Vec<B>> = HashMap::new();
         for &others in by_others.keys() {
             // Missing every one of them is not near at all.
             let n_others = others.count();
-            let near = |set: &&u128| distance(others, **set).0 < n_others;
+            let near = |set: &&B| distance(others, **set).0 < n_others;
             let Some(nearest) = clean_sets
                 .iter()
                 .filter(near)
@@ -508,13 +505,13 @@ impl Finder<'_, '_> {
 
         // The candidates: per set and per list of shared literals, a cover
         // and the smallest clean hypothesis with a nearest coverage.
-        let mut candidates: HashMap<(u128, Vec<String>), (&Cover, &HProfile)> = HashMap::new();
-        for without in kept.iter().filter(is_clean) {
+        let mut candidates: HashMap<(B, Vec<String>), (&Cover<B>, &HProfile<B>)> = HashMap::new();
+        for without in kept {
             let Some(sets) = nearest_to.get(&without.coverage) else {
                 continue;
             };
             let has = literals(without.h, self.targets, self.ctx);
-            let size = |h_profile: &HProfile| (h_profile.n_clauses, h_profile.n_literals);
+            let size = |h_profile: &HProfile<B>| (h_profile.n_clauses, h_profile.n_literals);
             for others in sets {
                 for &cover in &by_others[others] {
                     let shared = intersection(&cover.literals, &has);
@@ -532,19 +529,19 @@ impl Finder<'_, '_> {
             }
         }
 
-        struct Candidate<'c, 'p> {
-            others: u128,
+        struct Candidate<'c, 'p, B> {
+            others: B,
             shared: Vec<String>,
-            cover: &'c Cover<'p>,
-            without: &'p HProfile,
+            cover: &'c Cover<'p, B>,
+            without: &'p HProfile<B>,
         }
-        impl Candidate<'_, '_> {
+        impl<B: ExampleSet> Candidate<'_, '_, B> {
             /// The positives the two hypotheses have in common.
-            fn common(&self) -> u128 {
-                self.others & self.without.coverage
+            fn common(&self) -> B {
+                self.others.intersection(&self.without.coverage)
             }
         }
-        let mut candidates: Vec<Candidate> = candidates
+        let mut candidates: Vec<Candidate<B>> = candidates
             .into_iter()
             .map(|((others, shared), (cover, without))| Candidate {
                 others,
@@ -565,7 +562,7 @@ impl Finder<'_, '_> {
             )
         });
 
-        let mut picked: Vec<Candidate> = Vec::new();
+        let mut picked: Vec<Candidate<B>> = Vec::new();
         while picked.len() < EXAMPLES && !candidates.is_empty() {
             let shown: HashSet<&String> = picked.iter().flat_map(|p| &p.shared).collect();
             let next = candidates
@@ -612,9 +609,9 @@ impl Finder<'_, '_> {
 
     /// Count the covers and the clean hypotheses calling each definition,
     /// and pick the [`Definitions`] from the counts.
-    fn definitions(&self, kept: &[HProfile]) -> Definitions {
+    fn definitions(&self, kept: &[HProfile<B>]) -> Definitions {
         let ctx = self.ctx;
-        let count = |profiles: Vec<&HProfile>| -> (Vec<u32>, usize) {
+        let count = |profiles: Vec<&HProfile<B>>| -> (Vec<u32>, usize) {
             let uses: Vec<AtomicU32> = (0..ctx.pdt.len()).map(|_| AtomicU32::new(0)).collect();
             profiles.par_iter().for_each(|h_profile| {
                 let mut defs = SmallVec::new();
@@ -628,26 +625,34 @@ impl Finder<'_, '_> {
             (uses, profiles.len())
         };
 
-        let clean = Coverage::empty();
         let (in_covers, n_covers) = count(self.covers.iter().map(|c| c.profile).collect());
-        let (in_clean, n_clean) = count(kept.iter().filter(|p| p.neg_coverage == clean).collect());
+        let (in_clean, n_clean) = count(kept.iter().collect());
         Definitions::rank(&in_covers, &in_clean, n_covers, n_clean)
     }
 
     /// The [`Greedy`] covers for `positive`. Other noisy positives are in
     /// neither: only positives proved within the threshold are covered.
-    fn greedy(&self, positive: &Conflict, kept: &[HProfile], rest: &[HProfile]) -> Greedy {
+    fn greedy(
+        &self,
+        positive: &Conflict<B>,
+        kept: &[HProfile<B>],
+        rest: &[HProfile<B>],
+    ) -> Greedy<B> {
         let within = covered_by(kept);
         let least_noisy = rest.iter().filter(|h_profile| {
-            let negatives = h_profile.neg_coverage & Coverage::full(self.n_neg);
-            positive.smallest().any(|(set, _)| set == negatives)
+            positive
+                .smallest()
+                .any(|(set, _)| set == h_profile.neg_coverage)
         });
 
         let without = greedy_cover(kept.iter(), within);
-        let with = greedy_cover(kept.iter().chain(least_noisy), within | 1 << self.pos);
-        let negatives = |group: &[&HProfile]| {
-            let none = Coverage::empty();
-            group.iter().fold(none, |all, p| all | p.neg_coverage)
+        let with = greedy_cover(
+            kept.iter().chain(least_noisy),
+            within.union(&B::from_indices([self.pos])),
+        );
+        let negatives = |group: &[&HProfile<B>]| {
+            let none = B::empty();
+            group.iter().fold(none, |all, p| all.union(&p.neg_coverage))
         };
         Greedy {
             without_neg: negatives(&without),
@@ -661,14 +666,14 @@ impl Finder<'_, '_> {
 /// Cover the positives `target` greedily from `pool`: whichever profile
 /// proves most of those still uncovered, then fewest negatives, then the
 /// smallest, until none proves any more.
-fn greedy_cover<'p>(
-    pool: impl Iterator<Item = &'p HProfile> + Clone,
-    target: Coverage,
-) -> Vec<&'p HProfile> {
+fn greedy_cover<'p, B: ExampleSet>(
+    pool: impl Iterator<Item = &'p HProfile<B>> + Clone,
+    target: B,
+) -> Vec<&'p HProfile<B>> {
     let mut uncovered = target;
     let mut picked = Vec::new();
-    while uncovered != 0 {
-        let gain = |h_profile: &HProfile| (h_profile.coverage & uncovered).count_ones();
+    while !uncovered.is_empty() {
+        let gain = |h_profile: &HProfile<B>| h_profile.coverage.intersection(&uncovered).count();
         let best = pool
             .clone()
             .filter(|h_profile| gain(h_profile) > 0)
@@ -684,7 +689,7 @@ fn greedy_cover<'p>(
         let Some(best) = best else {
             break;
         };
-        uncovered &= !best.coverage;
+        uncovered.difference_with(&best.coverage);
         picked.push(best);
     }
     picked
@@ -853,16 +858,6 @@ impl NoiseReport {
     }
 }
 
-/// The clauses of sub hypotheses taken together, with the definitions they
-/// depend on, as text.
-fn group_clauses(group: &[u32], heap: &mut QueryHeap, ctx: SearchCtx) -> Vec<String> {
-    let sub_hypotheses = group.iter().map(|&h| ctx.hypotheses.get(h as usize));
-    let meta_subs = ctx.pdt.union_meta_subs(sub_hypotheses, ctx.heap);
-    meta_subs
-        .as_slice()
-        .clause_strings(heap, ctx.predicate_table)
-}
-
 /// "1 sub hypothesis", "3 sub hypotheses".
 fn sub_hypotheses(count: usize) -> String {
     match count {
@@ -871,25 +866,21 @@ fn sub_hypotheses(count: usize) -> String {
     }
 }
 
-/// A negative example that stands in the way of positives: they are only
-/// proved by hypotheses that prove it too.
-#[derive(Debug)]
-pub(super) struct NoisyNegative {
-    /// Index of the negative example.
-    pub(super) neg: usize,
-    /// The positives it stands in the way of.
-    pub(super) blocks: Coverage,
+/// How the hypotheses within the negative noise bound are spoken of.
+pub(super) fn within_bound(neg_noise: usize) -> String {
+    match neg_noise {
+        0 => "entailing no negative".to_string(),
+        1 => "entailing at most 1 negative".to_string(),
+        neg_noise => format!("entailing at most {neg_noise} negatives"),
+    }
 }
 
-/// Add the part of the report on a negative at fault: the positives it
-/// blocks, hypotheses that prove no negative but it, and greedy covers with
-/// it ignored and with it kept.
+/// Add the part of the report on a noisy positive, in six sections.
 ///
-/// `kept` are the profiles proving no negative, `rest` the others.
-pub(super) fn report_negative(
+pub(super) fn report_positive<B: ExampleSet>(
     report: &mut NoiseReport,
-    negative: &NoisyNegative,
-    profiled: Profiled,
+    positive: &Conflict<B>,
+    profiled: Profiled<B>,
 ) {
     let Profiled {
         kept,
@@ -898,98 +889,12 @@ pub(super) fn report_negative(
         neg_goals,
         ctx,
     } = profiled;
+    let examples = &Examples::find(positive, kept, rest, pos_goals, ctx);
     let mut heap = QueryHeap::new(ctx.heap, None);
-    let n_neg = neg_goals.len();
-    let positives = |heap: &QueryHeap, set: u128| -> Vec<String> {
-        set.indices()
-            .into_iter()
-            .map(|pos| heap.term_string(pos_goals[pos]))
-            .collect()
-    };
+    // The hypotheses the positive's own are set against.
+    let bound = &within_bound(ctx.parallel.neg_noise);
 
-    let name = heap.term_string(neg_goals[negative.neg]);
-    report.blocks.push(Block::Example(name.clone()));
-    report.list("Noisy negative", [name]);
-    report.list(
-        "Positives only entailed together with it",
-        positives(&heap, negative.blocks),
-    );
-
-    // The hypotheses that would prove no negative were it not one.
-    let only_it = 1 << negative.neg;
-    let mut alone: Vec<&HProfile> = rest
-        .iter()
-        .filter(|h_profile| h_profile.neg_coverage & Coverage::full(n_neg) == only_it)
-        .collect();
-    report.section("Hypotheses it rules out");
-    report.line(format!(
-        "{} entail it and no other negative",
-        match alone.len() {
-            1 => "1 hypothesis".to_string(),
-            count => format!("{count} hypotheses"),
-        }
-    ));
-    alone.sort_by_key(|p| {
-        (
-            Reverse((p.coverage & negative.blocks).count_ones()),
-            Reverse(p.coverage.count()),
-            p.n_clauses,
-            p.n_literals,
-            p.h,
-        )
-    });
-    for h_profile in alone.iter().take(EXAMPLES) {
-        report.sub_section();
-        report.list("Hypothesis", group_clauses(&[h_profile.h], &mut heap, ctx));
-        report.list("Positives entailed", positives(&heap, h_profile.coverage));
-    }
-
-    // Greedy covers: of everything coverable with it ignored, and of what
-    // is left coverable with it kept.
-    let within = covered_by(kept);
-    let ignoring = kept.iter().chain(alone.iter().copied());
-    let reachable = covered_by(ignoring.clone());
-    let with_ignored = greedy_cover(ignoring, reachable);
-    let with_kept = greedy_cover(kept.iter(), within);
-    let hs = |group: &[&HProfile]| -> Vec<u32> { group.iter().map(|p| p.h).collect() };
-
-    report.section("Greedy hypothesis");
-    report.sub_section();
-    report.list(
-        format!(
-            "With the noisy negative ignored ({})",
-            sub_hypotheses(with_ignored.len())
-        ),
-        group_clauses(&hs(&with_ignored), &mut heap, ctx),
-    );
-    report.sub_section();
-    report.list(
-        format!(
-            "With the noisy negative kept ({})",
-            sub_hypotheses(with_kept.len())
-        ),
-        group_clauses(&hs(&with_kept), &mut heap, ctx),
-    );
-    report.list(
-        "Positives then left uncovered",
-        positives(&heap, reachable & !within),
-    );
-}
-
-/// Add the part of the report on a noisy positive, in six sections.
-///
-pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, profiled: Profiled) {
-    let Profiled {
-        kept,
-        rest,
-        pos_goals,
-        neg_goals,
-        ctx,
-    } = profiled;
-    let examples = &Examples::find(positive, kept, rest, pos_goals, neg_goals.len(), ctx);
-    let mut heap = QueryHeap::new(ctx.heap, None);
-
-    let names = |heap: &QueryHeap, set: Coverage, goals: &[usize]| -> Vec<String> {
+    let names = |heap: &QueryHeap, set: B, goals: &[usize]| -> Vec<String> {
         set.indices()
             .into_iter()
             .map(|example| heap.term_string(goals[example]))
@@ -1029,11 +934,11 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
             names(&heap, positive.shared, neg_goals),
         );
     } else {
-        match positive.shared {
-            0 => report.line("No negative is entailed by all of them"),
-            shared => report.list(
+        match positive.shared.is_empty() {
+            true => report.line("No negative is entailed by all of them"),
+            false => report.list(
                 "Negatives entailed by all of them",
-                names(&heap, shared, neg_goals),
+                names(&heap, positive.shared, neg_goals),
             ),
         }
         for (set, count) in positive.smallest() {
@@ -1047,7 +952,7 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
         }
     }
     // The minimal set is long enough to name once.
-    let negatives = |report: &mut NoiseReport, heap: &QueryHeap, set: Coverage| {
+    let negatives = |report: &mut NoiseReport, heap: &QueryHeap, set: B| {
         if positive.shared_is_minimal() && set == positive.shared {
             report.line("Entails the minimal negatives");
         } else if set.count() == 0 {
@@ -1067,14 +972,14 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
     let definitions = &examples.definitions;
     let sub_sections = [
         (
-            "Least used by hypotheses entailing no negative",
+            format!("Least used by hypotheses {bound}"),
             &definitions.noisy,
         ),
         (
-            "Least used by hypotheses entailing the noisy positive",
+            "Least used by hypotheses entailing the noisy positive".to_string(),
             &definitions.clean,
         ),
-        ("Most used by both", &definitions.common),
+        ("Most used by both".to_string(), &definitions.common),
     ];
     for (heading, def_uses) in sub_sections {
         report.sub_section();
@@ -1119,7 +1024,7 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
             "Literals only hypotheses entailing the noisy positive have",
             lone.unique.clone(),
         );
-        let others = lone.coverage & !(1 << positive.pos);
+        let others = lone.coverage.difference(&B::from_indices([positive.pos]));
         optional(
             report,
             "Other positives entailed",
@@ -1130,7 +1035,10 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
 
     report.section("Comparisons");
     if examples.pairs.is_empty() {
-        report.line("No hypothesis entails any of the same positives and no negative");
+        report.line(format!(
+            "No hypothesis entails any of the same positives and {}",
+            bound.trim_start_matches("entailing ")
+        ));
     }
     for pair in &examples.pairs {
         report.sub_section();
@@ -1146,22 +1054,22 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
 
         let (others, without) = (pair.others, pair.without_coverage);
         report.list(
-            "Nearest hypothesis without it, entailing no negative",
+            &format!("Nearest hypothesis without it, {bound}"),
             clauses(&mut heap, pair.without),
         );
         report.list(
             "Positives entailed by both",
-            names(&heap, others & without, pos_goals),
+            names(&heap, others.intersection(&without), pos_goals),
         );
         optional(
             report,
             "Positives it does not entail",
-            names(&heap, others & !without, pos_goals),
+            names(&heap, others.difference(&without), pos_goals),
         );
         optional(
             report,
             "Further positives it entails",
-            names(&heap, without & !others, pos_goals),
+            names(&heap, without.difference(&others), pos_goals),
         );
         optional(report, "Literals both have", pair.shared.clone());
         optional(
@@ -1221,7 +1129,7 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
         1 => format!("1 {one}"),
         count => format!("{count} {one}s"),
     };
-    match positive.shared.count_ones() as usize {
+    match positive.shared.count() {
         0 => report.line(format!(
             "No one negative comes with the noisy positive every time, but entailing it \
                  costs at least {}.",
@@ -1258,7 +1166,7 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
         uses.iter()
             .map(|u| {
                 format!(
-                    "{} (in {} of {} entailing it, {} of {} entailing no negative)",
+                    "{} (in {} of {} entailing it, {} of {} {bound})",
                     u.literal, u.in_covers, boundary.n_covers, u.in_clean, boundary.n_clean
                 )
             })
@@ -1271,7 +1179,7 @@ pub(super) fn report_positive(report: &mut NoiseReport, positive: &Conflict, pro
     );
     optional(
         report,
-        "Literals most particular to hypotheses entailing no negative",
+        &format!("Literals most particular to hypotheses {bound}"),
         uses(&boundary.clean),
     );
     report.line(format!(
@@ -1319,7 +1227,7 @@ pub(super) mod toy_model {
             coverage::{
                 build_profiles,
                 fixture::{fixture_with_facts, Fixture},
-                profile_rest, HProfile,
+                within, HProfile,
             },
             noise::conflicts,
             utils::compile_examples,
@@ -1363,8 +1271,7 @@ pub(super) mod toy_model {
         let pos_goals = compile_examples(&positives, &mut fixture.prog_heap);
 
         let ctx = fixture.ctx(ParallelConfig::default());
-        let kept = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
-        let rest = profile_rest(&kept, &pos_goals, &fixture.neg_goals, ctx);
+        let (kept, rest) = within(build_profiles(&pos_goals, &fixture.neg_goals, ctx), 0);
         Model {
             fixture,
             pos_goals,
@@ -1401,7 +1308,6 @@ pub(super) mod toy_model {
                 &self.kept,
                 &self.rest,
                 &self.pos_goals,
-                NEGATIVES.len(),
                 self.fixture.ctx(ParallelConfig::default()),
             )
         }

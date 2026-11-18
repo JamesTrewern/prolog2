@@ -1,14 +1,15 @@
 //! What each sub hypothesis proves: which positive and which negative
 //! examples.
 //!
-//! [`build_profiles`] replaces specialisation as a pass of its own. A sub
-//! hypothesis is no longer simply kept or dropped for entailing a negative:
-//! its coverage of both example sets is recorded in an [`HProfile`].
-//! [`build_profiles`] keeps those entailing no negative, and
-//! [`profile_rest`] profiles the others once [noise handling](super::noise)
-//! finds it needs them.
+//! [`build_profiles`] proves every example against every sub hypothesis,
+//! once, and records the result in an [`HProfile`]. No sub hypothesis is
+//! dropped here for entailing a negative, and none is left half profiled.
+//! What follows works on the profiles: [`within`] splits them by how many
+//! negatives they entail.
 
 use std::{
+    fmt::Debug,
+    hash::Hash,
     io::{self, Write},
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -18,7 +19,7 @@ use std::{
 
 use rayon::prelude::*;
 
-use super::sub_h_comb::SearchCtx;
+use super::utils::SearchCtx;
 use crate::{
     bitflag::BitFlag, heap::QueryHeap, program::MetaSubTrait, resolution::Proof, ResolutionConfig,
 };
@@ -29,12 +30,6 @@ use crate::{
 /// can be of any [`BitFlag`].
 pub(super) type Coverage = u128;
 
-/// The members of `coverage` at `keep`, packed down in that order: the
-/// coverage of the examples that are left when the others are set aside.
-pub(super) fn select<B: BitFlag>(coverage: B, keep: &[usize]) -> B {
-    B::from_indices((0..keep.len()).filter(|&new| coverage.get(keep[new])))
-}
-
 /// The positives that `profiles` cover between them.
 pub(super) fn covered_by<'a, B: BitFlag + 'a>(
     profiles: impl IntoIterator<Item = &'a HProfile<B>>,
@@ -44,14 +39,19 @@ pub(super) fn covered_by<'a, B: BitFlag + 'a>(
         .fold(B::empty(), |all, p| all.union(&p.coverage))
 }
 
+/// What the stages after profiling ask of the set an [`HProfile`] holds.
+pub(super) trait ExampleSet: BitFlag + Hash + Ord + Send + Sync + Debug {}
+
+impl<B: BitFlag + Hash + Ord + Send + Sync + Debug> ExampleSet for B {}
+
 /// The examples and the profile of every sub hypothesis, as noise handling
 /// passes them around.
 #[derive(Clone, Copy)]
-pub(super) struct Profiled<'a> {
-    /// The profiles of the sub hypotheses entailing no negative.
-    pub(super) kept: &'a [HProfile],
+pub(super) struct Profiled<'a, B = Coverage> {
+    /// The profiles of the sub hypotheses within the negative noise bound.
+    pub(super) kept: &'a [HProfile<B>],
     /// The profiles of the others.
-    pub(super) rest: &'a [HProfile],
+    pub(super) rest: &'a [HProfile<B>],
     pub(super) pos_goals: &'a [usize],
     pub(super) neg_goals: &'a [usize],
     pub(super) ctx: SearchCtx<'a>,
@@ -62,6 +62,7 @@ pub(super) struct Profiled<'a> {
 /// There is one per sub hypothesis, so it is kept small: `B` is chosen as
 /// the narrowest set that holds the examples, and the counts are a byte
 /// each. With `u8` sets a profile is 8 bytes, with `u64` 24, with `u128` 48.
+#[derive(Clone, Copy, Debug)]
 pub(super) struct HProfile<B = Coverage> {
     /// Index of the sub hypothesis in [`SearchCtx::hypotheses`].
     pub(super) h: u32,
@@ -94,78 +95,29 @@ fn small_count(count: usize, what: &str) -> u8 {
 }
 
 impl<B: BitFlag> HProfile<B> {
-    /// Profile sub hypothesis `h`, or `None` if it proves more than
-    /// `at_most_neg` negatives.
+    /// Profile sub hypothesis `h`.
     ///
     /// The examples are proved one after another, from the hypothesis's
     /// `MetaSub`s and those of the definitions it depends on.
-    fn new(
-        h: u32,
-        pos_goals: &[usize],
-        neg_goals: &[usize],
-        ctx: SearchCtx,
-        at_most_neg: usize,
-    ) -> Option<Self> {
+    fn new(h: u32, pos_goals: &[usize], neg_goals: &[usize], ctx: SearchCtx) -> Self {
         let meta_subs = ctx
             .pdt
             .test_meta_subs(ctx.hypotheses.get(h as usize), ctx.heap);
 
-        // Negatives first: a hypothesis over the threshold is dropped
-        // without its positives being tried.
-        let neg_coverage = proved(neg_goals, &meta_subs, ctx, at_most_neg)?;
-        let coverage = proved(pos_goals, &meta_subs, ctx, usize::MAX)?;
+        let coverage = proved(pos_goals, &meta_subs, ctx);
+        let neg_coverage = proved(neg_goals, &meta_subs, ctx);
 
         let n_literals: usize = meta_subs
             .iter()
             .map(|meta_sub| meta_sub.template(ctx.predicate_table).body().len())
             .sum();
-        Some(Self {
+        Self {
             h,
             n_clauses: small_count(meta_subs.len(), "clauses"),
             n_literals: small_count(n_literals, "literals"),
             coverage,
             neg_coverage,
-        })
-    }
-
-    /// This profile over only the positives `pos_keep` and the negatives
-    /// `neg_keep`, given by their indices in order.
-    pub(super) fn restricted(&self, pos_keep: &[usize], neg_keep: &[usize]) -> Self {
-        Self {
-            h: self.h,
-            n_clauses: self.n_clauses,
-            n_literals: self.n_literals,
-            coverage: select(self.coverage, pos_keep),
-            neg_coverage: select(self.neg_coverage, neg_keep),
         }
-    }
-
-    /// The ranking key: most coverage first, then fewest clauses, then --
-    /// when `by_literals` -- fewest body literals.
-    ///
-    /// Coverage is expressed as the number of positives *not* covered so that
-    /// every component sorts ascending.
-    ///
-    /// This exists as one function because two places need the identical key.
-    /// [`least_sub_h`] sorts by it, and [`filter_coverage_sub_sets`] breaks
-    /// its scan when two profiles share it -- an early exit that is only
-    /// sound while it agrees with the order the sort actually produced. The
-    /// two disagreed before: the sort used `h.len()` where the break used
-    /// `n_clauses`, which counts invented predicates' clauses too.
-    pub(super) fn sort_key(
-        &self,
-        n_pos_examples: usize,
-        by_literals: bool,
-    ) -> (usize, usize, usize) {
-        (
-            n_pos_examples - self.coverage.count(),
-            self.n_clauses as usize,
-            if by_literals {
-                self.n_literals as usize
-            } else {
-                0
-            },
-        )
     }
 }
 
@@ -178,36 +130,25 @@ fn test_config(config: ResolutionConfig) -> ResolutionConfig {
     }
 }
 
-/// Which of `goals` the ground clauses `meta_subs` prove, or `None` as soon
-/// as more than `at_most` of them are proved.
+/// Which of `goals` the ground clauses `meta_subs` prove.
 ///
 /// `goals` are addresses of goals compiled onto the program heap by
 /// [`compile_examples`](super::utils::compile_examples).
-fn proved<B: BitFlag>(
-    goals: &[usize],
-    meta_subs: &[&[usize]],
-    ctx: SearchCtx,
-    at_most: usize,
-) -> Option<B> {
+fn proved<B: BitFlag>(goals: &[usize], meta_subs: &[&[usize]], ctx: SearchCtx) -> B {
     let config = test_config(ctx.config);
     let mut coverage = B::empty();
-    let mut count = 0;
     for (i, &goal) in goals.iter().enumerate() {
         let mut query_heap = QueryHeap::new(ctx.heap, None);
         let mut proof = Proof::with_hypothesis(&query_heap, &[goal], meta_subs);
         if proof.prove(&mut query_heap, ctx.predicate_table, config) {
-            count += 1;
-            if count > at_most {
-                return None;
-            }
             coverage.set(i);
         }
     }
-    Some(coverage)
+    coverage
 }
 
-/// Profile every sub hypothesis in [`SearchCtx::hypotheses`], keeping those
-/// that prove no negative.
+/// Profile every sub hypothesis in [`SearchCtx::hypotheses`]: every example
+/// is proved against each, in one pass.
 ///
 /// Hypotheses are profiled in parallel, one rayon task each; the examples
 /// *within* a hypothesis run serially, since with thousands of candidates
@@ -234,51 +175,17 @@ pub(super) fn build_profiles<B: BitFlag + Send>(
         B::CAPACITY
     );
     let total = u32::try_from(ctx.hypotheses.len()).expect("more than u32::MAX hypotheses");
-    let at_most_neg = 0;
-    profile_each(
-        (0..total).into_par_iter(),
-        pos_goals,
-        neg_goals,
-        ctx,
-        at_most_neg,
-    )
-}
-
-/// Profile the sub hypotheses [`build_profiles`] did not keep, however many
-/// negatives they prove. `kept` is its result, still in hypothesis order.
-pub(super) fn profile_rest<B: BitFlag + Send>(
-    kept: &[HProfile<B>],
-    pos_goals: &[usize],
-    neg_goals: &[usize],
-    ctx: SearchCtx,
-) -> Vec<HProfile<B>> {
-    let mut kept = kept.iter().map(|h_profile| h_profile.h).peekable();
-    let rest: Vec<u32> = (0..ctx.hypotheses.len() as u32)
-        .filter(|h| kept.next_if_eq(h).is_none())
-        .collect();
-    profile_each(rest.into_par_iter(), pos_goals, neg_goals, ctx, usize::MAX)
-}
-
-/// The profiles of `hypotheses`, in order, less those proving more than
-/// `at_most_neg` negatives.
-fn profile_each<B: BitFlag + Send>(
-    hypotheses: impl IndexedParallelIterator<Item = u32>,
-    pos_goals: &[usize],
-    neg_goals: &[usize],
-    ctx: SearchCtx,
-    at_most_neg: usize,
-) -> Vec<HProfile<B>> {
-    let total = hypotheses.len();
     let profiled = AtomicUsize::new(0);
 
-    let h_profiles = hypotheses
-        .filter_map(|h| {
-            let h_profile = HProfile::new(h, pos_goals, neg_goals, ctx, at_most_neg);
+    let h_profiles = (0..total)
+        .into_par_iter()
+        .map(|h| {
+            let h_profile = HProfile::new(h, pos_goals, neg_goals, ctx);
 
             // Throttled: one line per candidate would spend longer painting
             // the terminal than proving the examples.
             let done = profiled.fetch_add(1, Ordering::Relaxed) + 1;
-            if done % 256 == 0 || done == total {
+            if done % 256 == 0 || done == total as usize {
                 eprint!("\rCoverage: {done}/{total} hypotheses profiled  ");
                 let _ = io::stderr().flush();
             }
@@ -291,33 +198,23 @@ fn profile_each<B: BitFlag + Send>(
     h_profiles
 }
 
-/// Do the ground clauses `meta_subs` prove any negative example?
-///
-/// For a *combination* of sub hypotheses: two that each prove no negative
-/// can together prove one, since a clause from one can resolve against a
-/// clause from the other. The negatives are proved in parallel, and the
-/// rest are abandoned as soon as one is proved.
-pub(super) fn entails_negative(
-    neg_goals: &[usize],
-    meta_subs: &[&[usize]],
-    ctx: SearchCtx,
-) -> bool {
-    let config = test_config(ctx.config);
-    neg_goals.par_iter().any(|&goal| {
-        let mut query_heap = QueryHeap::new(ctx.heap, None);
-        let mut proof = Proof::with_hypothesis(&query_heap, &[goal], meta_subs);
-        proof.prove(&mut query_heap, ctx.predicate_table, config)
-    })
+/// Split `profiles` into those entailing at most `neg_noise` negatives and
+/// the rest, each still in hypothesis order.
+pub(super) fn within<B: BitFlag>(
+    profiles: Vec<HProfile<B>>,
+    neg_noise: usize,
+) -> (Vec<HProfile<B>>, Vec<HProfile<B>>) {
+    profiles
+        .into_iter()
+        .partition(|h_profile| h_profile.neg_coverage.count() <= neg_noise)
 }
 
-/// A small program and one-clause sub hypotheses over it, for the tests of
-/// this module and of the group search.
 #[cfg(test)]
 pub(super) mod fixture {
     use crate::{
         heap::{Heap, ProgramHeap, Tag::Con, VarReg},
         learners::{
-            predicate_unification::PredDefTable, sub_h_comb::SearchCtx, utils::compile_examples,
+            predicate_unification::PredDefTable, utils::compile_examples, utils::SearchCtx,
         },
         parser::_build_clause,
         program::{MetaSub, PackedMetaSubs, PredicateTable},
@@ -416,9 +313,7 @@ pub(super) mod fixture {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_profiles, entails_negative, fixture::fixture, profile_rest, select, Coverage,
-    };
+    use super::{build_profiles, fixture::fixture, within};
     use crate::bitflag::BitFlag;
     use crate::{learners::utils::compile_examples, ParallelConfig};
 
@@ -432,9 +327,8 @@ mod tests {
         let pos_goals = compile_examples(&["p(d)".to_string()], &mut fixture.prog_heap);
         let ctx = fixture.ctx(ParallelConfig::default());
 
-        // Those proving no negative are kept, the rest profiled on request.
-        let kept = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
-        let rest = profile_rest(&kept, &pos_goals, &fixture.neg_goals, ctx);
+        // Every one is profiled, then split by the negatives it proves.
+        let (kept, rest) = within(build_profiles(&pos_goals, &fixture.neg_goals, ctx), 0);
         let seen = |profiles: &[super::HProfile]| -> Vec<(u32, bool, bool, usize)> {
             profiles
                 .iter()
@@ -463,17 +357,15 @@ mod tests {
             let mut fixture = fixture(&CLAUSES, &["p(c)"]);
             let pos_goals = compile_examples(&["p(d)".to_string()], &mut fixture.prog_heap);
             let ctx = fixture.ctx(ParallelConfig::default());
-            let kept: Vec<super::HProfile<B>> = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
-            let rest = profile_rest(&kept, &pos_goals, &fixture.neg_goals, ctx);
-            let mut all: Vec<_> = kept
+            let all: Vec<super::HProfile<B>> = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
+            let all: Vec<_> = all
                 .iter()
-                .chain(&rest)
                 .map(|p| {
                     let (pos, neg) = (p.coverage.indices(), p.neg_coverage.indices());
                     (p.h, pos, neg, p.n_clauses, p.n_literals)
                 })
                 .collect();
-            all.sort();
+            // Already in hypothesis order.
             all
         }
 
@@ -520,30 +412,5 @@ mod tests {
         let pos_goals = compile_examples(&positives, &mut fixture.prog_heap);
         let ctx = fixture.ctx(ParallelConfig::default());
         let _: Vec<super::HProfile<u8>> = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
-    }
-
-    #[test]
-    fn a_profile_is_restricted_to_the_examples_kept() {
-        let mut coverage = Coverage::empty();
-        coverage.set(1);
-        coverage.set(3);
-        // Examples 1 and 3 of four become 0 and 1 of two; then 0 and 2.
-        assert!(select(coverage, &[1, 3]).is_full(2));
-        assert_eq!(select(coverage, &[0, 3]).indices(), vec![1]);
-    }
-
-    #[test]
-    fn a_combination_is_checked_against_the_negatives() {
-        // Together `p(X):-r(X)` and `r(X):-bad(X)` prove `p(c)`.
-        let fixture = fixture(&[("p", "r"), ("r", "bad")], &["p(c)"]);
-        let ctx = fixture.ctx(ParallelConfig::default());
-        let both = [fixture.hypotheses.get(0), fixture.hypotheses.get(1)];
-        let combined = fixture.pdt.union_meta_subs(both, &fixture.prog_heap);
-        assert!(entails_negative(&fixture.neg_goals, &combined, ctx));
-
-        let one = fixture
-            .pdt
-            .union_meta_subs([fixture.hypotheses.get(0)], &fixture.prog_heap);
-        assert!(!entails_negative(&fixture.neg_goals, &one, ctx));
     }
 }

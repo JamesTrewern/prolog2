@@ -1,12 +1,50 @@
 use std::io::{self, Write};
 
+use super::predicate_unification::PredDefTable;
 use crate::{
     heap::{ProgramHeap, QueryHeap},
     parser::{build_clause, tokenise, TokenStream},
-    program::PredicateTable,
+    program::{PackedMetaSubs, PredicateTable},
     resolution::Proof,
-    ResolutionConfig,
+    ParallelConfig, ResolutionConfig,
 };
+
+/// The read-only program context every stage after generalisation needs.
+///
+/// These travel together through profiling, the noise report and the pool,
+/// so they are passed as one value rather than re-listed at each hop.
+/// `Copy`, so handing it on costs nothing.
+#[derive(Clone, Copy)]
+pub(super) struct SearchCtx<'a> {
+    pub(super) heap: &'a ProgramHeap,
+    pub(super) predicate_table: &'a PredicateTable,
+    /// The hypotheses, named by index.
+    pub(super) hypotheses: &'a PackedMetaSubs,
+    /// The definitions of the predicates they invent.
+    pub(super) pdt: &'a PredDefTable,
+    pub(super) config: ResolutionConfig,
+    pub(super) parallel: ParallelConfig,
+}
+
+impl<'a> SearchCtx<'a> {
+    pub(super) fn new(
+        heap: &'a ProgramHeap,
+        predicate_table: &'a PredicateTable,
+        hypotheses: &'a PackedMetaSubs,
+        pdt: &'a PredDefTable,
+        config: ResolutionConfig,
+        parallel: ParallelConfig,
+    ) -> Self {
+        Self {
+            heap,
+            predicate_table,
+            hypotheses,
+            pdt,
+            config,
+            parallel,
+        }
+    }
+}
 
 /// Compile every example onto the program heap once, returning each one's
 /// goal address.

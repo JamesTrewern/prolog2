@@ -1,18 +1,27 @@
 //! Top Program Construction, parallelised.
 //!
-//! Generalisation and specialisation are not separate passes. Each positive
-//! example is searched on its own thread, and every sub hypothesis the search
-//! produces is tested against the negatives as soon as it is found, so only
-//! consistent ones are ever collected. What remains afterwards is combining
-//! them: merging the predicate definitions they invent, then choosing
-//! covering groups that stay consistent together.
+//! The stages, in the order [`parallel`] runs them:
+//!
+//! 1. **Generalise** (`parallel_mil`): each positive example is searched on
+//!    its own thread for every sub hypothesis that proves it, and the
+//!    predicates they invent are merged (`predicate_unification`).
+//! 2. **Profile** (`coverage`): every example is proved against every sub
+//!    hypothesis, once.
+//! 3. **Filter** (`coverage`, `noise`): the sub hypotheses within the
+//!    negative noise bound are kept. A positive none of them proves ends
+//!    the run with a report (`noise_report`), unless it may be left.
+//! 4. **Search** (`search`): groups of sub hypotheses covering the
+//!    positives are built from the profiles alone.
+//! 5. **Pool** (`pool`): each group's hypothesis is reduced, proved and
+//!    ranked, and the best returned.
 
 mod coverage;
 mod noise;
 mod noise_report;
 mod parallel_mil;
+mod pool;
 mod predicate_unification;
-mod sub_h_comb;
+mod search;
 mod utils;
 
 pub(crate) use parallel_mil::parallel;
