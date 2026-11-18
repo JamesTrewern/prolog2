@@ -14,11 +14,11 @@
 //! filtered out and the run goes on. When none fits, the examples in the
 //! cheapest set are the ones reported on.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use super::{
     coverage::{covered_by, low_bits, profile_rest, set_bits, Coverage, HProfile, Profiled},
-    noise_report::{noisy_positives, report_negative, report_positive, NoiseReport, NoisyNegative},
+    noise_report::{report_negative, report_positive, NoiseReport, NoisyNegative},
     sub_h_comb::SearchCtx,
 };
 use crate::heap::{Heap, QueryHeap};
@@ -60,12 +60,44 @@ pub(super) struct Filtered {
     pub(super) note: String,
 }
 
-/// A positive no clean sub hypothesis proves, and the sets of negatives it
-/// can be proved with: each set no bigger than it need be, smallest first.
+/// A positive no clean sub hypothesis proves, though sub hypotheses
+/// entailing negatives do, and the negatives it is proved with.
 #[derive(Debug)]
-struct Conflict {
-    pos: usize,
-    sets: Vec<u128>,
+pub(super) struct Conflict {
+    /// Index of the positive example.
+    pub(super) pos: usize,
+    /// How many sub hypotheses prove it.
+    pub(super) covering: usize,
+    /// The negatives every one of them proves. May be none, when they all
+    /// prove some negative but not the same one.
+    pub(super) shared: u128,
+    /// The sets of negatives it can be proved with, each no bigger than it
+    /// need be and smallest first, with the number of sub hypotheses
+    /// proving it with exactly that set.
+    pub(super) sets: Vec<(u128, usize)>,
+}
+
+impl Conflict {
+    /// The fewest negatives any sub hypothesis proves alongside it.
+    pub(super) fn fewest(&self) -> usize {
+        self.sets[0].0.count_ones() as usize
+    }
+
+    /// The sets of that many negatives.
+    pub(super) fn smallest(&self) -> impl Iterator<Item = (u128, usize)> + '_ {
+        let fewest = self.fewest();
+        self.sets
+            .iter()
+            .copied()
+            .take_while(move |(set, _)| set.count_ones() as usize == fewest)
+    }
+
+    /// Whether some sub hypothesis proves exactly the shared negatives and
+    /// no others. When one does, that set is the least any can prove
+    /// alongside this positive.
+    pub(super) fn shared_is_minimal(&self) -> bool {
+        self.smallest().count() == 1 && self.sets[0].0 == self.shared
+    }
 }
 
 /// Examples to remove, as bits: negatives to ignore and positives to leave
@@ -82,38 +114,50 @@ impl Removal {
     }
 }
 
-/// The conflicts among the positives `kept` leaves uncovered, and the
-/// positives nothing in `rest` proves either, which no removal recovers.
-fn conflicts(profiled: Profiled) -> (Vec<Conflict>, u128) {
+/// The conflicts among the positives `kept` leaves uncovered, in example
+/// order, and the positives nothing in `rest` proves either, which no
+/// removal recovers.
+pub(super) fn conflicts(profiled: Profiled) -> (Vec<Conflict>, u128) {
     let Profiled { kept, rest, .. } = profiled;
     let (n_pos, n_neg) = (profiled.pos_goals.len(), profiled.neg_goals.len());
     let uncovered = !covered_by(kept, n_pos) & low_bits(n_pos);
 
-    let mut sets: Vec<HashSet<u128>> = vec![HashSet::new(); n_pos];
+    // Per positive: how many prove it, the negatives they all prove, and
+    // how many prove it with each set of negatives.
+    let mut covering = vec![0; n_pos];
+    let mut shared = vec![low_bits(n_neg); n_pos];
+    let mut sets: Vec<HashMap<u128, usize>> = vec![HashMap::new(); n_pos];
     for h_profile in rest {
         let negatives = h_profile.neg_coverage.0 & low_bits(n_neg);
         for pos in set_bits(h_profile.coverage.0 & uncovered) {
-            sets[pos].insert(negatives);
+            covering[pos] += 1;
+            shared[pos] &= negatives;
+            *sets[pos].entry(negatives).or_default() += 1;
         }
     }
 
     let mut forced = 0;
     let mut found = Vec::new();
     for pos in set_bits(uncovered) {
-        if sets[pos].is_empty() {
+        if covering[pos] == 0 {
             forced |= 1 << pos;
             continue;
         }
-        let mut all: Vec<u128> = sets[pos].iter().copied().collect();
-        all.sort_unstable_by_key(|set| (set.count_ones(), *set));
+        let mut all: Vec<(u128, usize)> = sets[pos].drain().collect();
+        all.sort_unstable_by_key(|&(set, _)| (set.count_ones(), set));
         // A set with another inside it is never the cheaper choice.
-        let mut minimal: Vec<u128> = Vec::new();
-        for set in all {
-            if minimal.len() < MAX_SETS && !minimal.iter().any(|inner| inner & !set == 0) {
-                minimal.push(set);
+        let mut minimal: Vec<(u128, usize)> = Vec::new();
+        for (set, hypotheses) in all {
+            if minimal.len() < MAX_SETS && !minimal.iter().any(|(inner, _)| inner & !set == 0) {
+                minimal.push((set, hypotheses));
             }
         }
-        found.push(Conflict { pos, sets: minimal });
+        found.push(Conflict {
+            pos,
+            covering: covering[pos],
+            shared: shared[pos],
+            sets: minimal,
+        });
     }
     (found, forced)
 }
@@ -122,7 +166,7 @@ fn conflicts(profiled: Profiled) -> (Vec<Conflict>, u128) {
 fn dropped_given(conflicts: &[Conflict], forced: u128, ignored: u128) -> u128 {
     conflicts
         .iter()
-        .filter(|conflict| !conflict.sets.iter().any(|set| set & !ignored == 0))
+        .filter(|conflict| !conflict.sets.iter().any(|(set, _)| set & !ignored == 0))
         .fold(forced, |dropped, conflict| dropped | 1 << conflict.pos)
 }
 
@@ -179,7 +223,7 @@ fn cheapest(
                     let choice = code % radix;
                     code /= radix;
                     if choice > 0 {
-                        ignored |= conflict.sets[choice - 1];
+                        ignored |= conflict.sets[choice - 1].0;
                     }
                 }
                 consider(ignored);
@@ -197,7 +241,7 @@ fn cheapest(
                 let next = conflicts
                     .iter()
                     .filter(|conflict| dropped & 1 << conflict.pos != 0)
-                    .flat_map(|conflict| conflict.sets.iter().copied())
+                    .flat_map(|conflict| conflict.sets.iter().map(|&(set, _)| set))
                     .filter(|set| (ignored | set).count_ones() as usize <= max_ignored)
                     .map(|set| {
                         let added = (set & !ignored).count_ones() as i64;
@@ -340,11 +384,10 @@ fn filter_note(removal: Removal, profiled: Profiled) -> String {
 /// leaving positives uncovered come equally cheap, on both.
 fn failure_report(conflicts: &[Conflict], forced: u128, profiled: Profiled) -> NoiseReport {
     let Profiled {
-        kept,
-        rest,
         pos_goals,
         neg_goals,
         ctx,
+        ..
     } = profiled;
     let unbounded = (usize::MAX, usize::MAX);
     let cheapest_ignoring =
@@ -395,9 +438,9 @@ fn failure_report(conflicts: &[Conflict], forced: u128, profiled: Profiled) -> N
 
     let dropped = removals.iter().fold(0, |all, r| all | r.dropped);
     let ignored = removals.iter().fold(0, |all, r| all | r.ignored);
-    for positive in noisy_positives(kept, rest, pos_goals.len(), neg_goals.len()) {
-        if dropped & 1 << positive.pos != 0 {
-            report_positive(&mut report, &positive, profiled);
+    for conflict in conflicts {
+        if dropped & 1 << conflict.pos != 0 {
+            report_positive(&mut report, conflict, profiled);
         }
     }
     for neg in set_bits(ignored) {
@@ -407,7 +450,7 @@ fn failure_report(conflicts: &[Conflict], forced: u128, profiled: Profiled) -> N
             conflicts
                 .iter()
                 .filter(|conflict| {
-                    let needs = |set: &u128| set & 1 << neg != 0;
+                    let needs = |(set, _): &(u128, usize)| set & 1 << neg != 0;
                     match every {
                         true => conflict.sets.iter().all(needs),
                         false => conflict.sets.iter().any(needs),
@@ -438,6 +481,16 @@ mod tests {
 
     const FREE: (usize, usize) = (usize::MAX, usize::MAX);
 
+    /// A conflict with one sub hypothesis for each of `sets`.
+    fn conflict(pos: usize, sets: &[u128]) -> Conflict {
+        Conflict {
+            pos,
+            covering: sets.len(),
+            shared: sets.iter().fold(u128::MAX, |all, set| all & set),
+            sets: sets.iter().map(|&set| (set, 1)).collect(),
+        }
+    }
+
     fn removal(ignored: u128, dropped: u128) -> Option<Removal> {
         Some(Removal { ignored, dropped })
     }
@@ -445,29 +498,20 @@ mod tests {
     #[test]
     fn one_positive_against_many_negatives_is_the_one_removed() {
         // Positive 0 needs negatives 0..7.
-        let conflicts = [Conflict {
-            pos: 0,
-            sets: vec![0b111_1111],
-        }];
+        let conflicts = [conflict(0, &[0b111_1111])];
         assert_eq!(cheapest(&conflicts, 0, FREE, true), removal(0, 0b1));
     }
 
     #[test]
     fn one_negative_against_many_positives_is_the_one_removed() {
         // Positives 0, 1 and 2 each need negative 0.
-        let conflicts = [0, 1, 2].map(|pos| Conflict {
-            pos,
-            sets: vec![0b1],
-        });
+        let conflicts = [0, 1, 2].map(|pos| conflict(pos, &[0b1]));
         assert_eq!(cheapest(&conflicts, 0, FREE, true), removal(0b1, 0));
     }
 
     #[test]
     fn one_against_one_goes_by_the_preference() {
-        let conflicts = [Conflict {
-            pos: 0,
-            sets: vec![0b1],
-        }];
+        let conflicts = [conflict(0, &[0b1])];
         assert_eq!(cheapest(&conflicts, 0, FREE, true), removal(0b1, 0));
         assert_eq!(cheapest(&conflicts, 0, FREE, false), removal(0, 0b1));
     }
@@ -475,10 +519,7 @@ mod tests {
     #[test]
     fn the_bounds_can_force_the_dearer_removal_or_none() {
         // Positive 0 needs negatives 0 and 1: cheapest is to leave it.
-        let conflicts = [Conflict {
-            pos: 0,
-            sets: vec![0b11],
-        }];
+        let conflicts = [conflict(0, &[0b11])];
         assert_eq!(cheapest(&conflicts, 0, (1, 2), true), removal(0, 0b1));
         // No positive may be left, so the two negatives go.
         assert_eq!(cheapest(&conflicts, 0, (0, 2), true), removal(0b11, 0));
@@ -491,18 +532,9 @@ mod tests {
         // negative 1. Ignoring 1 settles all three; positive 3 is beyond
         // help and is left whatever is ignored.
         let conflicts = [
-            Conflict {
-                pos: 0,
-                sets: vec![0b01, 0b10],
-            },
-            Conflict {
-                pos: 1,
-                sets: vec![0b10],
-            },
-            Conflict {
-                pos: 2,
-                sets: vec![0b10],
-            },
+            conflict(0, &[0b01, 0b10]),
+            conflict(1, &[0b10]),
+            conflict(2, &[0b10]),
         ];
         assert_eq!(
             cheapest(&conflicts, 0b1000, FREE, true),
@@ -514,10 +546,7 @@ mod tests {
     /// many combinations to enumerate, so the choice is greedy.
     fn many_conflicts() -> Vec<Conflict> {
         (0..17)
-            .map(|pos| Conflict {
-                pos,
-                sets: vec![0b111 << (3 * pos)],
-            })
+            .map(|pos| conflict(pos, &[0b111 << (3 * pos)]))
             .collect()
     }
 
