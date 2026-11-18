@@ -1,5 +1,3 @@
-use std::io::{self, Write};
-
 use super::predicate_unification::PredDefTable;
 use crate::{
     heap::{ProgramHeap, QueryHeap},
@@ -100,7 +98,6 @@ pub(super) fn reduce<'m>(
     heap: &ProgramHeap,
     predicate_table: &PredicateTable,
     config: ResolutionConfig,
-    verbose: bool,
 ) -> Vec<&'m [usize]> {
     // Learning is off on the proofs below, not here.
     let config = ResolutionConfig {
@@ -108,44 +105,22 @@ pub(super) fn reduce<'m>(
         ..config
     };
 
-    // New reduction method
-    // pop clause
-    // check coverage if same continue
-    // if less coverage add clause to front (design vec with easy front adding)
-    // loop until clauses_considered == initial size
-
-    let total = hypothesis.len();
-    let mut removed = 0usize;
     let mut i = 0;
     while i < hypothesis.len() {
-        if verbose {
-            eprint!(
-                "\rReduce: {}/{total} checked, {removed} removed    ",
-                i + removed + 1
-            );
-            let _ = io::stderr().flush();
-        }
+        let clause = hypothesis.remove(i);
 
-        let c = hypothesis.remove(i);
-
-        // Check if all positive examples are still provable without clause i
+        // Are all the positives still provable without it?
         let redundant = pos_goals.iter().all(|&goal| {
             let mut query_heap = QueryHeap::new(heap, None);
             let mut proof = Proof::with_hypothesis(&query_heap, &[goal], hypothesis.as_slice());
             proof.prove(&mut query_heap, predicate_table, config)
         });
 
-        if redundant {
-            removed += 1;
-            // Don't increment i — next clause slides into this position
-        } else {
-            hypothesis.insert(i, c);
+        // A redundant clause stays out, and the next slides into its place.
+        if !redundant {
+            hypothesis.insert(i, clause);
             i += 1;
         }
     }
-    if verbose {
-        eprintln!(" ...done");
-    }
-
     hypothesis
 }

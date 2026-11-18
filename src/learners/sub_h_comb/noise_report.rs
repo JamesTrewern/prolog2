@@ -1,10 +1,9 @@
 //! Why a positive example cannot be entailed within the negative noise
-//! threshold.
+//! bound.
 //!
-//! For a run that [noise handling](super::noise) finds it cannot rescue:
-//! some positive is entailed by no sub hypothesis that entails no negative,
-//! though sub hypotheses entailing negatives do entail it, and removing the
-//! examples at fault would take more than the noise bounds allow.
+//! For a run that [`noise`](super::noise) finds cannot go on: some positive
+//! is entailed by no sub hypothesis within the bound, though sub hypotheses
+//! over it do entail it.
 //! [`report_positive`] gives, for such a positive, the negatives that come
 //! with it, and example hypotheses from several angles:
 //!
@@ -39,11 +38,11 @@ use smallvec::SmallVec;
 
 use super::{
     coverage::{covered_by, ExampleSet, HProfile, Profiled},
-    noise::Conflict,
-    utils::SearchCtx,
+    noise::NoisyPositive,
 };
 use crate::{
     heap::{Heap, QueryHeap, Tag::Arg},
+    learners::utils::SearchCtx,
     program::HypothesisTrait,
     resolution::{build, Substitution},
 };
@@ -171,7 +170,7 @@ impl Boundary {
 
 /// The example hypotheses for one noisy positive.
 #[derive(Debug)]
-pub(super) struct Examples<B = crate::learners::coverage::Coverage> {
+pub(super) struct Examples<B = crate::learners::sub_h_comb::coverage::Coverage> {
     pub(super) lone: Vec<Lone<B>>,
     pub(super) pairs: Vec<Pair<B>>,
     pub(super) definitions: Definitions,
@@ -263,10 +262,10 @@ fn least<K: Ord>(uses: impl Iterator<Item = DefUse>, key: impl Fn(&DefUse) -> K)
     least.into_iter().map(|(_, def_use)| def_use).collect()
 }
 
-/// Two greedy covers of the positives proved within the noise threshold:
+/// Two greedy covers of the positives proved within the noise bound:
 /// one of just those, and one of those and a noisy positive, which may
-/// also use the hypotheses over the threshold that prove the fewest
-/// negatives alongside it ([`Conflict::smallest`]).
+/// also use the hypotheses over the bound that prove the fewest
+/// negatives alongside it ([`NoisyPositive::smallest`]).
 ///
 /// The negatives are those the sub hypotheses prove each on their own;
 /// together they could prove more.
@@ -280,9 +279,9 @@ pub(super) struct Greedy<B> {
 
 impl<B: ExampleSet> Examples<B> {
     /// Pick the examples for `positive`, from the profiles within the
-    /// noise threshold (`kept`) and over it (`rest`).
+    /// noise bound (`kept`) and over it (`rest`).
     pub(super) fn find(
-        positive: &Conflict<B>,
+        positive: &NoisyPositive<B>,
         kept: &[HProfile<B>],
         rest: &[HProfile<B>],
         pos_goals: &[usize],
@@ -631,18 +630,19 @@ impl<B: ExampleSet> Finder<'_, '_, B> {
     }
 
     /// The [`Greedy`] covers for `positive`. Other noisy positives are in
-    /// neither: only positives proved within the threshold are covered.
+    /// neither: only positives proved within the bound are covered.
     fn greedy(
         &self,
-        positive: &Conflict<B>,
+        positive: &NoisyPositive<B>,
         kept: &[HProfile<B>],
         rest: &[HProfile<B>],
     ) -> Greedy<B> {
         let within = covered_by(kept);
         let least_noisy = rest.iter().filter(|h_profile| {
             positive
-                .smallest()
-                .any(|(set, _)| set == h_profile.neg_coverage)
+                .smallest
+                .iter()
+                .any(|(set, _)| *set == h_profile.neg_coverage)
         });
 
         let without = greedy_cover(kept.iter(), within);
@@ -879,7 +879,7 @@ pub(super) fn within_bound(neg_noise: usize) -> String {
 ///
 pub(super) fn report_positive<B: ExampleSet>(
     report: &mut NoiseReport,
-    positive: &Conflict<B>,
+    positive: &NoisyPositive<B>,
     profiled: Profiled<B>,
 ) {
     let Profiled {
@@ -929,7 +929,7 @@ pub(super) fn report_positive<B: ExampleSet>(
         report.list(
             &format!(
                 "Minimal negatives (entailed alone by {})",
-                hypotheses(positive.sets[0].1)
+                hypotheses(positive.smallest[0].1)
             ),
             names(&heap, positive.shared, neg_goals),
         );
@@ -941,7 +941,7 @@ pub(super) fn report_positive<B: ExampleSet>(
                 names(&heap, positive.shared, neg_goals),
             ),
         }
-        for (set, count) in positive.smallest() {
+        for &(set, count) in &positive.smallest {
             report.list(
                 &format!(
                     "Smallest negative set (entailed alone by {})",
@@ -1133,7 +1133,7 @@ pub(super) fn report_positive<B: ExampleSet>(
         0 => report.line(format!(
             "No one negative comes with the noisy positive every time, but entailing it \
                  costs at least {}.",
-            count(positive.fewest(), "negative")
+            count(positive.fewest, "negative")
         )),
         shared => {
             report.line(format!(
@@ -1151,7 +1151,7 @@ pub(super) fn report_positive<B: ExampleSet>(
             if !positive.shared_is_minimal() {
                 report.line(format!(
                     "Entailing it costs at least {}.",
-                    count(positive.fewest(), "negative")
+                    count(positive.fewest, "negative")
                 ));
             }
         }
@@ -1219,17 +1219,20 @@ pub(super) fn report_positive<B: ExampleSet>(
 #[cfg(test)]
 pub(super) mod toy_model {
     use super::{
-        report_positive, Conflict, DefUse, Definitions, Examples, LiteralUse, NoiseReport, Profiled,
+        report_positive, DefUse, Definitions, Examples, LiteralUse, NoiseReport, NoisyPositive,
+        Profiled,
     };
     use crate::bitflag::BitFlag;
     use crate::{
         learners::{
-            coverage::{
-                build_profiles,
-                fixture::{fixture_with_facts, Fixture},
-                within, HProfile,
+            sub_h_comb::{
+                coverage::{
+                    build_profiles,
+                    fixture::{fixture_with_facts, Fixture},
+                    within, HProfile,
+                },
+                noise::noisy_positives,
             },
-            noise::conflicts,
             utils::compile_examples,
         },
         ParallelConfig,
@@ -1271,7 +1274,10 @@ pub(super) mod toy_model {
         let pos_goals = compile_examples(&positives, &mut fixture.prog_heap);
 
         let ctx = fixture.ctx(ParallelConfig::default());
-        let (kept, rest) = within(build_profiles(&pos_goals, &fixture.neg_goals, ctx), 0);
+        let (kept, rest) = within(
+            build_profiles(&pos_goals, &fixture.neg_goals, ctx, "sub hypotheses"),
+            0,
+        );
         Model {
             fixture,
             pos_goals,
@@ -1296,8 +1302,8 @@ pub(super) mod toy_model {
         }
 
         /// The positives only entailed together with negatives.
-        fn noisy(&self) -> Vec<Conflict> {
-            conflicts(self.profiled()).0
+        fn noisy(&self) -> Vec<NoisyPositive> {
+            noisy_positives(self.profiled()).0
         }
 
         fn examples(&self, pos: usize) -> Examples {
@@ -1367,9 +1373,9 @@ pub(super) mod toy_model {
 
         assert_eq!(p3.covering, 2);
         assert_eq!(p3.shared, 0b001);
-        assert_eq!(p3.fewest(), 1);
+        assert_eq!(p3.fewest, 1);
         assert!(p3.shared_is_minimal());
-        assert_eq!(p3.sets[0].1, 1, "only `b`");
+        assert_eq!(p3.smallest[0].1, 1, "only `b`");
     }
 
     #[test]
@@ -1380,9 +1386,8 @@ pub(super) mod toy_model {
         assert_eq!(p4.covering, 3);
         assert_eq!(p4.shared, 0);
         assert!(!p4.shared_is_minimal());
-        assert_eq!(p4.fewest(), 1);
-        let smallest: Vec<(u128, usize)> = p4.smallest().collect();
-        assert_eq!(smallest, vec![(0b001, 1), (0b010, 1)]);
+        assert_eq!(p4.fewest, 1);
+        assert_eq!(p4.smallest, vec![(0b001, 1), (0b010, 1)]);
     }
 
     #[test]
@@ -1395,8 +1400,8 @@ pub(super) mod toy_model {
         assert_eq!(p4.pos, P4);
         assert_eq!(p4.shared, 0b001);
         assert!(!p4.shared_is_minimal());
-        assert_eq!(p4.fewest(), 2);
-        let smallest: Vec<u128> = p4.smallest().map(|(set, _)| set).collect();
+        assert_eq!(p4.fewest, 2);
+        let smallest: Vec<u128> = p4.smallest.iter().map(|(set, _)| *set).collect();
         assert_eq!(smallest, vec![0b011, 0b101]);
     }
 
@@ -1592,7 +1597,7 @@ pub(super) mod toy_model {
     fn the_greedy_cover_with_a_noisy_positive_adds_its_least_noisy_covers() {
         let model = model(&single(&BASE));
 
-        // Only `a` is within the threshold; `b` entails just the minimal
+        // Only `a` is within the bound; `b` entails just the minimal
         // negative of p3. p4 is in neither cover, being noisy itself.
         let greedy = model.examples(P3).greedy;
         assert_eq!(greedy.without, vec![0]);

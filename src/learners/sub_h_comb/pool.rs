@@ -18,12 +18,16 @@ use rayon::prelude::*;
 
 use super::{
     coverage::{build_profiles, HProfile},
-    predicate_unification::PredDefTable,
     search::Group,
-    utils::reduce,
-    utils::SearchCtx,
 };
-use crate::{bitflag::BitFlag, program::PackedMetaSubs};
+use crate::{
+    bitflag::BitFlag,
+    learners::{
+        predicate_unification::PredDefTable,
+        utils::{reduce, SearchCtx},
+    },
+    program::PackedMetaSubs,
+};
 
 /// The hypotheses chosen from a pool of groups.
 pub(super) struct Pool<B> {
@@ -75,7 +79,6 @@ pub(super) fn best_of_pool<B: BitFlag + Send + Sync>(
                     ctx.heap,
                     ctx.predicate_table,
                     ctx.config,
-                    false,
                 ),
                 false => hypothesis,
             };
@@ -107,7 +110,7 @@ pub(super) fn best_of_pool<B: BitFlag + Send + Sync>(
         ctx.config,
         ctx.parallel,
     );
-    let mut best: Vec<HProfile<B>> = build_profiles(pos_goals, neg_goals, finals);
+    let mut best: Vec<HProfile<B>> = build_profiles(pos_goals, neg_goals, finals, "hypotheses");
 
     best.retain(|profile| {
         profile.neg_coverage.count() <= ctx.parallel.neg_noise
@@ -136,7 +139,7 @@ mod tests {
     use crate::{
         bitflag::BitFlag,
         learners::{
-            coverage::{build_profiles, fixture::fixture, HProfile},
+            sub_h_comb::coverage::{build_profiles, fixture::fixture, HProfile},
             utils::compile_examples,
         },
         ParallelConfig,
@@ -161,7 +164,8 @@ mod tests {
         let positives: Vec<String> = positives.iter().map(|goal| goal.to_string()).collect();
         let pos_goals = compile_examples(&positives, &mut fixture.prog_heap);
         let ctx = fixture.ctx(parallel);
-        let profiles: Vec<HProfile<Set>> = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
+        let profiles: Vec<HProfile<Set>> =
+            build_profiles(&pos_goals, &fixture.neg_goals, ctx, "sub hypotheses");
 
         let Pool { hypotheses, best } = best_of_pool(
             groups,

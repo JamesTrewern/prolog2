@@ -19,7 +19,7 @@ use std::{
 
 use rayon::prelude::*;
 
-use super::utils::SearchCtx;
+use crate::learners::utils::SearchCtx;
 use crate::{
     bitflag::BitFlag, heap::QueryHeap, program::MetaSubTrait, resolution::Proof, ResolutionConfig,
 };
@@ -133,7 +133,7 @@ fn test_config(config: ResolutionConfig) -> ResolutionConfig {
 /// Which of `goals` the ground clauses `meta_subs` prove.
 ///
 /// `goals` are addresses of goals compiled onto the program heap by
-/// [`compile_examples`](super::utils::compile_examples).
+/// [`compile_examples`](crate::learners::utils::compile_examples).
 fn proved<B: BitFlag>(goals: &[usize], meta_subs: &[&[usize]], ctx: SearchCtx) -> B {
     let config = test_config(ctx.config);
     let mut coverage = B::empty();
@@ -158,7 +158,8 @@ fn proved<B: BitFlag>(goals: &[usize], meta_subs: &[&[usize]], ctx: SearchCtx) -
 /// hypotheses and definitions must be ground, their terms on the program
 /// heap, and their clause indices good for the predicate table.
 ///
-/// Profiles are returned in hypothesis order.
+/// Profiles are returned in hypothesis order. `what` names what is being
+/// profiled, for the progress line.
 ///
 /// # Panics
 ///
@@ -167,6 +168,7 @@ pub(super) fn build_profiles<B: BitFlag + Send>(
     pos_goals: &[usize],
     neg_goals: &[usize],
     ctx: SearchCtx,
+    what: &str,
 ) -> Vec<HProfile<B>> {
     let most = pos_goals.len().max(neg_goals.len());
     assert!(
@@ -186,7 +188,7 @@ pub(super) fn build_profiles<B: BitFlag + Send>(
             // the terminal than proving the examples.
             let done = profiled.fetch_add(1, Ordering::Relaxed) + 1;
             if done % 256 == 0 || done == total as usize {
-                eprint!("\rCoverage: {done}/{total} hypotheses profiled  ");
+                eprint!("\rCoverage: {done}/{total} {what} profiled  ");
                 let _ = io::stderr().flush();
             }
 
@@ -328,7 +330,10 @@ mod tests {
         let ctx = fixture.ctx(ParallelConfig::default());
 
         // Every one is profiled, then split by the negatives it proves.
-        let (kept, rest) = within(build_profiles(&pos_goals, &fixture.neg_goals, ctx), 0);
+        let (kept, rest) = within(
+            build_profiles(&pos_goals, &fixture.neg_goals, ctx, "sub hypotheses"),
+            0,
+        );
         let seen = |profiles: &[super::HProfile]| -> Vec<(u32, bool, bool, usize)> {
             profiles
                 .iter()
@@ -357,7 +362,8 @@ mod tests {
             let mut fixture = fixture(&CLAUSES, &["p(c)"]);
             let pos_goals = compile_examples(&["p(d)".to_string()], &mut fixture.prog_heap);
             let ctx = fixture.ctx(ParallelConfig::default());
-            let all: Vec<super::HProfile<B>> = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
+            let all: Vec<super::HProfile<B>> =
+                build_profiles(&pos_goals, &fixture.neg_goals, ctx, "sub hypotheses");
             let all: Vec<_> = all
                 .iter()
                 .map(|p| {
@@ -411,6 +417,7 @@ mod tests {
         let positives: Vec<String> = (0..9).map(|i| format!("p(d{i})")).collect();
         let pos_goals = compile_examples(&positives, &mut fixture.prog_heap);
         let ctx = fixture.ctx(ParallelConfig::default());
-        let _: Vec<super::HProfile<u8>> = build_profiles(&pos_goals, &fixture.neg_goals, ctx);
+        let _: Vec<super::HProfile<u8>> =
+            build_profiles(&pos_goals, &fixture.neg_goals, ctx, "sub hypotheses");
     }
 }

@@ -335,7 +335,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{undominated, Group, Search, BRANCHING_FACTOR, MAX_EFFORT};
-    use crate::{bitflag::BitFlag, learners::coverage::HProfile};
+    use crate::{bitflag::BitFlag, learners::sub_h_comb::coverage::HProfile};
 
     type Set = u8;
 

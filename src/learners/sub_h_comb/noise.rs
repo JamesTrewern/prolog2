@@ -6,10 +6,8 @@
 //! hypothesis within the bound. [`uncovered`] finds those positives, and
 //! [`uncovered_report`] is the report on them.
 //!
-//! Each such positive that the rest do entail is a [`Conflict`]: the
+//! Each such positive that the rest do entail is a [`NoisyPositive`]: the
 //! positive and the negatives it comes with.
-
-use std::collections::HashMap;
 
 use super::{
     coverage::{covered_by, Coverage, ExampleSet, Profiled},
@@ -17,20 +15,10 @@ use super::{
 };
 use crate::heap::{Heap, QueryHeap};
 
-/// Most alternative negative sets kept for one positive, smallest first.
-///
-/// Bounds the work of discarding sets that contain another. A positive with
-/// more sets than this loses the larger ones silently. That is rarely felt,
-/// a larger set never being the cheaper choice for its own positive, but a
-/// dropped set may be one shared with other positives. The removal found can
-/// then be dearer than the cheapest, set aside a positive that ignoring the
-/// chosen negatives would in fact entail, or not be found within the bounds.
-const MAX_SETS: usize = 64;
-
-/// A positive no clean sub hypothesis proves, though sub hypotheses
-/// entailing negatives do, and the negatives it is proved with.
+/// A positive no sub hypothesis within the bound proves, though others do,
+/// and the negatives it is proved with.
 #[derive(Debug)]
-pub(super) struct Conflict<B = Coverage> {
+pub(super) struct NoisyPositive<B = Coverage> {
     /// Index of the positive example.
     pub(super) pos: usize,
     /// How many sub hypotheses prove it.
@@ -38,32 +26,19 @@ pub(super) struct Conflict<B = Coverage> {
     /// The negatives every one of them proves. May be none, when they all
     /// prove some negative but not the same one.
     pub(super) shared: B,
-    /// The sets of negatives it can be proved with, each no bigger than it
-    /// need be and smallest first, with the number of sub hypotheses
-    /// proving it with exactly that set.
-    pub(super) sets: Vec<(B, usize)>,
+    /// The fewest negatives any of them proves.
+    pub(super) fewest: usize,
+    /// Each distinct set of that many negatives, in order, with the number
+    /// of sub hypotheses proving the positive with exactly that set.
+    pub(super) smallest: Vec<(B, usize)>,
 }
 
-impl<B: ExampleSet> Conflict<B> {
-    /// The fewest negatives any sub hypothesis proves alongside it.
-    pub(super) fn fewest(&self) -> usize {
-        self.sets[0].0.count()
-    }
-
-    /// The sets of that many negatives.
-    pub(super) fn smallest(&self) -> impl Iterator<Item = (B, usize)> + '_ {
-        let fewest = self.fewest();
-        self.sets
-            .iter()
-            .copied()
-            .take_while(move |(set, _)| set.count() == fewest)
-    }
-
+impl<B: ExampleSet> NoisyPositive<B> {
     /// Whether some sub hypothesis proves exactly the shared negatives and
     /// no others. When one does, that set is the least any can prove
     /// alongside this positive.
     pub(super) fn shared_is_minimal(&self) -> bool {
-        self.smallest().count() == 1 && self.sets[0].0 == self.shared
+        self.smallest.len() == 1 && self.smallest[0].0 == self.shared
     }
 }
 
@@ -72,63 +47,60 @@ pub(super) fn uncovered<B: ExampleSet>(profiled: Profiled<B>) -> B {
     B::full(profiled.pos_goals.len()).difference(&covered_by(profiled.kept))
 }
 
-/// The conflicts among the positives `kept` leaves uncovered, in example
-/// order, and the positives nothing in `rest` proves either, which no
-/// removal recovers.
-pub(super) fn conflicts<B: ExampleSet>(profiled: Profiled<B>) -> (Vec<Conflict<B>>, B) {
-    let Profiled { rest, .. } = profiled;
-    let (n_pos, n_neg) = (profiled.pos_goals.len(), profiled.neg_goals.len());
+/// The [`uncovered`] positives that something over the bound proves, in
+/// example order, and those that nothing proves at all.
+pub(super) fn noisy_positives<B: ExampleSet>(profiled: Profiled<B>) -> (Vec<NoisyPositive<B>>, B) {
+    let n_neg = profiled.neg_goals.len();
     let uncovered = uncovered(profiled);
+    let mut unprovable = B::empty();
 
-    // Per positive: how many prove it, the negatives they all prove, and
-    // how many prove it with each set of negatives.
-    let mut covering = vec![0; n_pos];
-    let mut shared = vec![B::full(n_neg); n_pos];
-    let mut sets: Vec<HashMap<B, usize>> = vec![HashMap::new(); n_pos];
-    for h_profile in rest {
-        let negatives = h_profile.neg_coverage;
-        for pos in h_profile.coverage.intersection(&uncovered).iter() {
-            covering[pos] += 1;
-            shared[pos].intersect_with(&negatives);
-            *sets[pos].entry(negatives).or_default() += 1;
-        }
-    }
-
-    let mut forced = B::empty();
-    let mut found = Vec::new();
+    let mut noisy = Vec::new();
     for pos in uncovered.iter() {
-        if covering[pos] == 0 {
-            forced.set(pos);
-            continue;
-        }
-        let mut all: Vec<(B, usize)> = sets[pos].drain().collect();
-        all.sort_unstable_by_key(|&(set, _)| (set.count(), set));
-        // A set with another inside it is never the cheaper choice.
-        let mut minimal: Vec<(B, usize)> = Vec::new();
-        for (set, hypotheses) in all {
-            if minimal.len() < MAX_SETS && !minimal.iter().any(|(inner, _)| inner.is_subset(&set)) {
-                minimal.push((set, hypotheses));
+        let mut positive = NoisyPositive {
+            pos,
+            covering: 0,
+            shared: B::full(n_neg),
+            fewest: usize::MAX,
+            smallest: Vec::new(),
+        };
+        for h_profile in profiled.rest.iter().filter(|p| p.coverage.get(pos)) {
+            let negatives = h_profile.neg_coverage;
+            positive.covering += 1;
+            positive.shared.intersect_with(&negatives);
+            if negatives.count() < positive.fewest {
+                positive.fewest = negatives.count();
+                positive.smallest.clear();
+            }
+            if negatives.count() == positive.fewest {
+                match positive
+                    .smallest
+                    .iter_mut()
+                    .find(|(set, _)| *set == negatives)
+                {
+                    Some((_, hypotheses)) => *hypotheses += 1,
+                    None => positive.smallest.push((negatives, 1)),
+                }
             }
         }
-        found.push(Conflict {
-            pos,
-            covering: covering[pos],
-            shared: shared[pos],
-            sets: minimal,
-        });
+        if positive.covering == 0 {
+            unprovable.set(pos);
+        } else {
+            positive.smallest.sort_unstable();
+            noisy.push(positive);
+        }
     }
-    (found, forced)
+    (noisy, unprovable)
 }
 
 /// The report on the positives no sub hypothesis within the bound proves:
 /// each that the others prove in full, and those nothing proves named.
 pub(super) fn uncovered_report<B: ExampleSet>(profiled: Profiled<B>) -> NoiseReport {
     let Profiled { pos_goals, ctx, .. } = profiled;
-    let (conflicts, unprovable) = conflicts(profiled);
+    let (noisy, unprovable) = noisy_positives(profiled);
 
     let mut report = NoiseReport::new(format!(
         "{} positive example(s) are entailed by no hypothesis {}",
-        conflicts.len() + unprovable.count(),
+        noisy.len() + unprovable.count(),
         within_bound(ctx.parallel.neg_noise)
     ));
     if !unprovable.is_empty() {
@@ -140,8 +112,8 @@ pub(super) fn uncovered_report<B: ExampleSet>(profiled: Profiled<B>) -> NoiseRep
                 .map(|pos| heap.term_string(pos_goals[pos])),
         );
     }
-    for conflict in &conflicts {
-        report_positive(&mut report, conflict, profiled);
+    for positive in &noisy {
+        report_positive(&mut report, positive, profiled);
     }
     report
 }
@@ -151,7 +123,7 @@ mod tests {
     use super::{uncovered, uncovered_report};
     use crate::{
         bitflag::BitFlag,
-        learners::{
+        learners::sub_h_comb::{
             coverage::{within, Profiled},
             noise_report::toy_model::{model, single, Model, BASE},
         },
@@ -216,7 +188,7 @@ mod tests {
     /// The report does not depend on how wide the profiles' sets are.
     #[test]
     fn the_report_is_the_same_at_every_width() {
-        use crate::learners::coverage::{ExampleSet, HProfile};
+        use crate::learners::sub_h_comb::coverage::{ExampleSet, HProfile};
 
         fn narrowed<B: ExampleSet>(profiles: &[HProfile]) -> Vec<HProfile<B>> {
             profiles
