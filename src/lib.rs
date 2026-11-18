@@ -192,6 +192,8 @@ pub type Bindings = smallvec::SmallVec<[usize; BINDINGS_DEFAULT_SIZE]>;
 
 /// Application builder and configuration types.
 pub mod app;
+/// Sets of small indices held as bits.
+mod bitflag;
 /// Heap memory management: cells, query heaps, and the symbol database.
 pub mod heap;
 /// Learning strategies built on top of prolog^2 engine.
