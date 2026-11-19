@@ -4,7 +4,10 @@ use std::collections::HashMap;
 
 use super::{
     build_tree::TreeClause,
-    term::{Str, Term},
+    term::{
+        Str::*,
+        Term::{self, *},
+    },
 };
 use crate::{
     heap::Heap,
@@ -74,15 +77,15 @@ fn malformed(detail: impl Into<String>) -> ParserError {
     }
 }
 
-/// Extract variable names from a Term::Set
+/// Extract variable names from a Set
 fn extract_var_names_from_set(term: Term) -> Result<Vec<String>, ParserError> {
-    let Term::Str(Str::Set, set_terms) = term else {
+    let Str(Set, set_terms) = term else {
         return Err(malformed("expected a set of meta variables, as in `{P,Q}`"));
     };
     set_terms
         .into_iter()
         .map(|term| match term {
-            Term::Variable(symbol) => Ok(symbol),
+            Variable(symbol) => Ok(symbol),
             other => Err(malformed(format!(
                 "a meta variable set may only contain variables, found `{other:?}`"
             ))),
@@ -90,14 +93,14 @@ fn extract_var_names_from_set(term: Term) -> Result<Vec<String>, ParserError> {
         .collect()
 }
 
-/// Extract variable names from a Term::List (must be a flat list with EmptyList tail)
+/// Extract variable names from a List (must be a flat list with EmptyList tail)
 fn extract_var_names_from_list(term: Term) -> Result<Vec<String>, ParserError> {
-    let Term::List(list_terms, tail) = term else {
+    let List(list_terms, tail) = term else {
         return Err(malformed(
             "expected a list of unconstrained meta variables, as in `[Q,R]`",
         ));
     };
-    if !matches!(*tail, Term::EmptyList) {
+    if !matches!(*tail, EmptyList) {
         return Err(malformed(
             "an unconstrained meta variable list may not have a tail",
         ));
@@ -105,7 +108,7 @@ fn extract_var_names_from_list(term: Term) -> Result<Vec<String>, ParserError> {
     list_terms
         .into_iter()
         .map(|term| match term {
-            Term::Variable(symbol) => Ok(symbol),
+            Variable(symbol) => Ok(symbol),
             other => Err(malformed(format!(
                 "an unconstrained meta variable list may only contain variables, \
                  found `{other:?}`"
@@ -128,15 +131,15 @@ fn extract_meta_rule_vars(
     };
     match last {
         // Case 1: last is {P,Q,R}
-        Term::Str(Str::Set, _) => {
+        Str(Set, _) => {
             let meta_vars = extract_var_names_from_set(last)?;
             Ok((meta_vars.clone(), meta_vars))
         }
         // Case 2 or 3: last is [Q1,Q2]
-        Term::List(_, _) => {
+        List(_, _) => {
             let unconstrained = extract_var_names_from_list(last)?;
             // Check if the new last element is a Set (Case 2: {P},[Q1,Q2])
-            let constrained = if matches!(terms.last(), Some(Term::Str(Str::Set, _))) {
+            let constrained = if matches!(terms.last(), Some(Str(Set, _))) {
                 let set = terms.pop().expect("just matched on the last element");
                 extract_var_names_from_set(set)?
             } else {
@@ -253,12 +256,15 @@ mod malformed_meta_rule_tests {
     use super::{extract_meta_rule_vars, extract_var_names_from_list, extract_var_names_from_set};
     use crate::{
         app::App,
-        parser::term::{Str, Term},
+        parser::term::{
+            Str::*,
+            Term::{self, *},
+        },
         Error, ParserError,
     };
 
     fn var(name: &str) -> Term {
-        Term::Variable(name.to_string())
+        Variable(name.to_string())
     }
 
     fn malformed_detail(error: &ParserError) -> &str {
@@ -310,7 +316,7 @@ mod malformed_meta_rule_tests {
     /// builds its own AST. They used to `panic!`.
     #[test]
     fn declaration_must_be_a_set_or_list() {
-        let mut terms = vec![var("P"), Term::Constant("foo".to_string())];
+        let mut terms = vec![var("P"), Constant("foo".to_string())];
         let error = extract_meta_rule_vars(&mut terms).expect_err("foo is not a declaration");
         assert!(malformed_detail(&error).contains("set or list"));
     }
@@ -323,14 +329,14 @@ mod malformed_meta_rule_tests {
 
     #[test]
     fn set_may_only_contain_variables() {
-        let set = Term::Str(Str::Set, vec![var("P"), Term::Constant("bar".to_string())]);
+        let set = Str(Set, vec![var("P"), Constant("bar".to_string())]);
         let error = extract_var_names_from_set(set).expect_err("bar is not a variable");
         assert!(malformed_detail(&error).contains("only contain variables"));
     }
 
     #[test]
     fn list_may_not_have_a_tail() {
-        let list = Term::List(vec![var("Q")], Box::new(var("R")));
+        let list = List(vec![var("Q")], Box::new(var("R")));
         let error = extract_var_names_from_list(list).expect_err("R is a tail");
         assert!(malformed_detail(&error).contains("may not have a tail"));
     }
