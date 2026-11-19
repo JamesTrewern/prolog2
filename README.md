@@ -28,7 +28,7 @@ P(X,Y):- Q(X,Z), R(Z,Y), {P,Q,R}. %Chain
 P(X,Y):- Q(X,Z), P(Z,Y), {P,Q}. %Tail Recursion
 ```
 
-By default Existentially quantified varibles inside the `{X,Y}` notation are contrained so they can't become the same value or unify.
+By default Existentially quantified variables inside the `{X,Y}` notation are constrained so they can't become the same value or unify.
 This is intended to prevent unwanted recursion in meta-rules. If you want to remove this constraint EQ variables can be placed in `[]`
 
 ```prolog
