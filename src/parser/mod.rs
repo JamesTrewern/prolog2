@@ -11,7 +11,7 @@ mod term;
 mod tokeniser;
 
 pub(crate) use build_tree::TokenStream;
-pub(crate) use execute_tree::{build_clause, execute_tree};
+pub(crate) use execute_tree::{build_clause, execute_tree, Namespaces};
 pub(crate) use tokeniser::tokenise;
 
 #[cfg(test)]

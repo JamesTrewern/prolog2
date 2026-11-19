@@ -56,6 +56,13 @@ P(X,Y):- X > Y, Q(Y), {P,Q}.
 P(X,Y):- Z is X + Y, Q(Z), {P,Q}.
 ```
 
+A predicate variable can be limited to a namespace, a named set of predicate symbols given in the config file, by writing `Q:name`.
+The meta-clause is then compiled once for each member of the namespace. As with any other EQ variables, two namespaced variables inside `{}` take different members, and inside `[]` they may take the same one.
+
+``` prolog
+P(X,Y,Z):- C(Z,A), Q(X,Y), {P,Q,C:comparator,A}.
+```
+
 # Running Prolog<sup>2</sup>
 
 ```bash
@@ -92,7 +99,9 @@ Configured in a JSON file (default: `config.json`):
 `protect_h_preds`: Optional, defaults to true. A hypothesis can contain clauses with a variable predicate in the head literal. If this option is on variable predicates in the head position are prevented from unifying with existing constants, but may still unify with variable predicates in body literals from the hypothesis.
 `debug`: Optional, defaults to false. With this option on each resolution step during the proof will print to console.
 
-`examples`, `auto`, `parallel`, and `approx_tolerance_pct` are all optional fields. Any other key is an error rather than being ignored, so a typo or a field name from an older version is reported instead of silently taking its default.
+`examples`, `auto`, `parallel`, `namespaces`, and `approx_tolerance_pct` are all optional fields. Any other key is an error rather than being ignored, so a typo or a field name from an older version is reported instead of silently taking its default.
+
+`namespaces` is optional and names the sets of predicate symbols used by namespaced variables in meta-clauses, for example `"namespaces" : {"comparator" : ["less_than","greater_than"]}`. A namespace must be defined here to be used in a loaded file.
 
 `approx_tolerance_pct` sets the tolerance for the `=~=` (approximately-equal) operator. The value is an integer percentage — `10` means the two sides may differ by up to 10 % relative to the larger magnitude. Defaults to `10` if omitted. Can also be set programmatically via `App::approx_tolerance(pct)`.
 

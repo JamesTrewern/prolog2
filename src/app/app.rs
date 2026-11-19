@@ -7,7 +7,7 @@ use super::config::{
 };
 use crate::{
     heap::{Heap, ProgramHeap},
-    parser::{execute_tree, tokenise, TokenStream},
+    parser::{execute_tree, tokenise, Namespaces, TokenStream},
     predicate_modules::{maths::set_approx_tolerance, PredicateModule, STANDARD_MODULES},
     program::PredicateTable,
     Error, Result,
@@ -51,6 +51,7 @@ pub struct App {
     pub(crate) auto: bool,
     pub(crate) examples: Option<Examples>,
     pub(crate) parallel: Option<ParallelConfig>,
+    pub(crate) namespaces: Namespaces,
     // log_file: Option<String>
 }
 
@@ -79,6 +80,7 @@ impl App {
             auto: false,
             examples: None,
             parallel: None,
+            namespaces: Namespaces::new(),
         }
     }
 
@@ -155,6 +157,37 @@ impl App {
         }
     }
 
+    /// Names a set of predicate symbols that a meta variable declared as
+    /// `P:name` may take. A meta rule using the namespace is compiled once
+    /// for each choice of member, so the namespace must exist before the
+    /// rule is loaded, and cannot be changed afterwards.
+    ///
+    /// ```
+    /// use prolog2::app::App;
+    ///
+    /// let app = App::default().namespace("comparator", ["less_than", "greater_than"])?;
+    /// # Ok::<(), prolog2::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NameSpace`] if the namespace already exists.
+    pub fn namespace(
+        mut self,
+        name: impl Into<String>,
+        members: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<Self> {
+        let name = name.into();
+        if self.namespaces.contains_key(&name) {
+            return Err(Error::NameSpace(format!(
+                "the namespace `{name}` already exists"
+            )));
+        }
+        self.namespaces
+            .insert(name, members.into_iter().map(Into::into).collect());
+        Ok(self)
+    }
+
     /// Sets the positive and negative training examples used by [`App::run`]
     /// when no interactive REPL is desired.
     ///
@@ -218,6 +251,7 @@ impl App {
             auto: config.auto,
             examples: config.examples,
             parallel: config.parallel,
+            namespaces: config.namespaces,
         };
 
         for predicate_module in STANDARD_MODULES {
@@ -245,6 +279,9 @@ impl App {
         set_approx_tolerance(config.approx_tolerance_pct);
 
         self.parallel = config.parallel;
+        for (name, members) in config.namespaces {
+            self = self.namespace(name, members)?;
+        }
         self.resolution = config.resolution;
         self.examples = config.examples;
         self.auto = config.auto;
@@ -255,10 +292,16 @@ impl App {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Parser`] if the source contains a syntax error.
+    /// Returns [`Error::Parser`] if the source contains a syntax error, or
+    /// [`Error::NameSpace`] if a meta rule uses a namespace that does not exist.
     pub fn load_code(mut self, code: impl AsRef<str>) -> Result<Self> {
         let syntax_tree = TokenStream::new(tokenise(code)?).parse_all()?;
-        execute_tree(syntax_tree, &mut self.prog_heap, &mut self.predicate_table)?;
+        execute_tree(
+            syntax_tree,
+            &mut self.prog_heap,
+            &mut self.predicate_table,
+            &self.namespaces,
+        )?;
         Ok(self)
     }
 

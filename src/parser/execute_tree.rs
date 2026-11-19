@@ -15,6 +15,7 @@ use crate::{
     program::{
         PredicateTable, {Clause, MAX_ARG},
     },
+    Error,
 };
 
 pub(crate) fn build_clause(
@@ -70,6 +71,9 @@ pub(crate) fn build_clause(
 
     Clause::new(literals, meta_vars, var_values.len()).with_pred_vars(heap)
 }
+
+/// Namespace name to the predicate symbols a meta variable in it may take.
+pub(crate) type Namespaces = HashMap<String, Vec<String>>;
 
 fn malformed(detail: impl Into<String>) -> ParserError {
     ParserError::MalformedMetaRule {
@@ -186,40 +190,207 @@ fn check_meta_rule_vars(literals: &[Term], meta_vars: &[String]) -> Result<(), P
     Ok(())
 }
 
+/// Replace each `P:namespace` in a meta variable set or list with `P`,
+/// returning the (variable, namespace) pairs removed.
+fn strip_namespaces(declaration: &mut Term) -> Vec<(String, String)> {
+    let (Str(Set, terms) | List(terms, _)) = declaration else {
+        return Vec::new();
+    };
+    let mut namespaced = Vec::new();
+    for term in terms {
+        let Str(Comp, parts) = term else { continue };
+        if let [Constant(op), Variable(var), Constant(namespace)] = &parts[..] {
+            if op == ":" {
+                namespaced.push((var.clone(), namespace.clone()));
+                *term = Variable(var.clone());
+            }
+        }
+    }
+    namespaced
+}
+
+/// True if `var` occurs anywhere but as the predicate symbol of a literal.
+fn outside_predicate_position(term: &Term, var: &str) -> bool {
+    match term {
+        Variable(symbol) => symbol == var,
+        Str(Comp, terms) => terms[1..]
+            .iter()
+            .any(|term| outside_predicate_position(term, var)),
+        Str(_, terms) => terms
+            .iter()
+            .any(|term| outside_predicate_position(term, var)),
+        List(head, tail) => {
+            head.iter()
+                .any(|term| outside_predicate_position(term, var))
+                || outside_predicate_position(tail, var)
+        }
+        _ => false,
+    }
+}
+
+fn substitute(term: &mut Term, var: &str, symbol: &str) {
+    match term {
+        Variable(name) if name == var => *term = Constant(symbol.to_string()),
+        Str(_, terms) => terms
+            .iter_mut()
+            .for_each(|term| substitute(term, var, symbol)),
+        List(head, tail) => {
+            head.iter_mut()
+                .for_each(|term| substitute(term, var, symbol));
+            substitute(tail, var, symbol);
+        }
+        _ => (),
+    }
+}
+
+type MetaVars = (Vec<String>, Vec<String>);
+
+/// Compile a meta rule with namespaced meta variables into one variant per
+/// assignment of namespace members to those variables.
+///
+/// Namespaced variables in the constrained set take pairwise different
+/// members, as constrained meta variables may not take the same value.
+fn expand_namespaces(
+    literals: Vec<Term>,
+    (meta_vars, constrained): MetaVars,
+    namespaced: Vec<(String, String)>,
+    namespaces: &Namespaces,
+) -> crate::Result<Vec<(Vec<Term>, Option<MetaVars>)>> {
+    if namespaced.is_empty() {
+        return Ok(vec![(literals, Some((meta_vars, constrained)))]);
+    }
+
+    let mut members = Vec::with_capacity(namespaced.len());
+    for (i, (var, namespace)) in namespaced.iter().enumerate() {
+        if namespaced[..i].iter().any(|(earlier, _)| earlier == var) {
+            return Err(malformed(format!(
+                "meta variable `{var}` is given more than one namespace"
+            ))
+            .into());
+        }
+        if literals
+            .iter()
+            .any(|literal| outside_predicate_position(literal, var))
+        {
+            return Err(malformed(format!(
+                "namespaced meta variable `{var}` may only be used as a predicate symbol"
+            ))
+            .into());
+        }
+        members.push(namespaces.get(namespace).ok_or_else(|| {
+            Error::NameSpace(format!(
+                "meta variable `{var}` uses the namespace `{namespace}`, which does not exist"
+            ))
+        })?);
+    }
+
+    let is_namespaced = |var: &String| namespaced.iter().any(|(name, _)| name == var);
+    let is_constrained: Vec<bool> = namespaced
+        .iter()
+        .map(|(var, _)| constrained.contains(var))
+        .collect();
+    let remaining: MetaVars = (
+        meta_vars
+            .iter()
+            .filter(|v| !is_namespaced(v))
+            .cloned()
+            .collect(),
+        constrained
+            .iter()
+            .filter(|v| !is_namespaced(v))
+            .cloned()
+            .collect(),
+    );
+    // With no meta variables left a variant is an ordinary clause.
+    let remaining = (!remaining.0.is_empty()).then_some(remaining);
+
+    let mut variants = Vec::new();
+    let mut choice = vec![0; namespaced.len()];
+    if members.iter().any(|members| members.is_empty()) {
+        return Ok(variants);
+    }
+    loop {
+        let repeated = (0..choice.len()).any(|i| {
+            is_constrained[i]
+                && (0..i)
+                    .any(|j| is_constrained[j] && members[i][choice[i]] == members[j][choice[j]])
+        });
+        if !repeated {
+            let mut variant = literals.clone();
+            for (i, (var, _)) in namespaced.iter().enumerate() {
+                for literal in &mut variant {
+                    substitute(literal, var, &members[i][choice[i]]);
+                }
+            }
+            variants.push((variant, remaining.clone()));
+        }
+        // Step to the next assignment, last variable fastest.
+        let mut i = choice.len();
+        loop {
+            if i == 0 {
+                return Ok(variants);
+            }
+            i -= 1;
+            choice[i] += 1;
+            if choice[i] < members[i].len() {
+                break;
+            }
+            choice[i] = 0;
+        }
+    }
+}
+
 /// Encode every parsed clause onto the heap and register it.
+///
+/// A meta rule with namespaced meta variables (`{P,Q:name}`) is compiled
+/// once for each assignment of the members of `namespaces[name]`.
 ///
 /// # Errors
 ///
 /// Returns [`ParserError::MalformedMetaRule`] if a meta rule's trailing meta
 /// variable declaration is missing, is not a set or list, contains anything
-/// other than variables, or names a variable the rule does not use.
+/// other than variables, names a variable the rule does not use, or puts a
+/// namespace on a variable that is not a predicate symbol.
+///
+/// Returns [`Error::NameSpace`] if a meta rule uses a namespace that does not
+/// exist.
 pub(crate) fn execute_tree(
     syntax_tree: Vec<TreeClause>,
     heap: &mut impl Heap,
     pred_table: &mut PredicateTable,
-) -> Result<(), ParserError> {
+    namespaces: &Namespaces,
+) -> crate::Result<()> {
     for clause in syntax_tree {
-        let (literals, meta_vars) = match clause {
-            TreeClause::Fact(term) => (vec![term], None),
-            TreeClause::Rule(terms) => (terms, None),
+        let variants = match clause {
+            TreeClause::Fact(term) => vec![(vec![term], None)],
+            TreeClause::Rule(terms) => vec![(terms, None)],
             TreeClause::MetaRule(mut terms) => {
+                let mut namespaced = Vec::new();
+                // The declaration is the last term, or the last two: `{P},[Q]`.
+                for declaration in terms.iter_mut().rev().take(2) {
+                    namespaced.append(&mut strip_namespaces(declaration));
+                }
                 let vars = extract_meta_rule_vars(&mut terms)?;
                 check_meta_rule_vars(&terms, &vars.0)?;
-                (terms, Some(vars))
+                expand_namespaces(terms, vars, namespaced, namespaces)?
             }
-            TreeClause::MetaFact(head, meta_data) => {
+            TreeClause::MetaFact(head, mut meta_data) => {
+                let namespaced = strip_namespaces(&mut meta_data);
                 let meta_vars = extract_var_names_from_set(meta_data)?;
                 let literals = vec![head];
                 check_meta_rule_vars(&literals, &meta_vars)?;
-                (literals, Some((meta_vars.clone(), meta_vars)))
+                let vars = (meta_vars.clone(), meta_vars);
+                expand_namespaces(literals, vars, namespaced, namespaces)?
             }
         };
 
-        let clause = build_clause(literals, meta_vars, heap, false);
-        let symbol_arity = heap.symbol_arity(clause[0]);
-        pred_table
-            .add_clause_to_predicate(clause, symbol_arity)
-            .expect("a parsed clause never targets a built-in predicate function");
+        for (literals, meta_vars) in variants {
+            let clause = build_clause(literals, meta_vars, heap, false);
+            let symbol_arity = heap.symbol_arity(clause[0]);
+            pred_table
+                .add_clause_to_predicate(clause, symbol_arity)
+                .expect("a parsed clause never targets a built-in predicate function");
+        }
     }
     Ok(())
 }
@@ -370,7 +541,7 @@ mod malformed_meta_rule_tests {
 mod tests {
     use crate::{
         heap::{Heap, ProgramHeap, Tag},
-        parser::execute_tree::execute_tree,
+        parser::execute_tree::{execute_tree, Namespaces},
         program::{PredicateRef, PredicateTable},
     };
 
@@ -386,7 +557,7 @@ mod tests {
 
         let [p, q, a, b, c] = ["p", "q", "a", "b", "c"].map(|s| heap.symbols().set_const(s));
 
-        execute_tree(facts, &mut heap, &mut pred_table).unwrap();
+        execute_tree(facts, &mut heap, &mut pred_table, &Namespaces::new()).unwrap();
 
         if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
             let fact = &clauses[0];
@@ -420,7 +591,7 @@ mod tests {
 
         let [p, q, r, a, b] = ["p", "q", "r", "a", "b"].map(|s| heap.symbols().set_const(s));
 
-        execute_tree(facts, &mut heap, &mut pred_table).unwrap();
+        execute_tree(facts, &mut heap, &mut pred_table, &Namespaces::new()).unwrap();
 
         if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
             let rule = &clauses[0];
@@ -472,7 +643,7 @@ mod tests {
         let clause = TokenStream::new(tokenise("P(X,Y):-Q(X),R(Y),{P,Q,R}.").unwrap())
             .parse_all()
             .unwrap();
-        execute_tree(clause, &mut heap, &mut pred_table).unwrap();
+        execute_tree(clause, &mut heap, &mut pred_table, &Namespaces::new()).unwrap();
 
         if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((0, 2)).unwrap() {
             let meta_rule = &clauses[0];
@@ -508,7 +679,7 @@ mod tests {
             .unwrap();
         let [p, _q, _r, a, b] = ["p", "q", "r", "a", "b"].map(|s| heap.symbols().set_const(s));
 
-        execute_tree(clause, &mut heap, &mut pred_table).unwrap();
+        execute_tree(clause, &mut heap, &mut pred_table, &Namespaces::new()).unwrap();
 
         if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((p, 2)).unwrap() {
             let meta_rule = &clauses[0];
@@ -552,7 +723,7 @@ mod tests {
         let edge = heap.symbols().set_const("edge");
         let _q = heap.symbols().set_const("q");
 
-        execute_tree(facts, &mut heap, &mut pred_table).unwrap();
+        execute_tree(facts, &mut heap, &mut pred_table, &Namespaces::new()).unwrap();
 
         if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((edge, 3)).unwrap() {
             let meta_rule = &clauses[0];
@@ -584,7 +755,7 @@ mod tests {
         let edge = heap.symbols().set_const("edge");
         let _q = heap.symbols().set_const("q");
 
-        execute_tree(facts, &mut heap, &mut pred_table).unwrap();
+        execute_tree(facts, &mut heap, &mut pred_table, &Namespaces::new()).unwrap();
 
         if let PredicateRef::Clauses(clauses) = pred_table.get_predicate((edge, 3)).unwrap() {
             let meta_rule = &clauses[0];
@@ -609,7 +780,7 @@ mod tests {
             .parse_all()
             .unwrap();
 
-        execute_tree(facts, &mut heap, &mut pred_table).unwrap();
+        execute_tree(facts, &mut heap, &mut pred_table, &Namespaces::new()).unwrap();
 
         // Map is a variable, so we need to check via arity 3
         // The predicate symbol will be Arg 0 (the Map variable)
@@ -626,5 +797,85 @@ mod tests {
         assert_eq!(heap[2].0, Tag::ELis); // Empty list
         assert_eq!(heap[3].0, Tag::ELis); // Empty list
         assert_eq!(heap[4], (Tag::Arg, 0)); // X variable
+    }
+}
+
+#[cfg(test)]
+mod namespace_tests {
+    use crate::{app::App, heap::Heap, Error, ParserError};
+
+    fn comparators() -> App {
+        App::default().namespace("cmp", ["lt", "gt", "le"]).unwrap()
+    }
+
+    /// The clauses of `p/1` as queries can see them: one per variant.
+    fn count(app: App, code: &str, symbol: &str, arity: usize) -> usize {
+        let app = app.load_code(code).unwrap();
+        let symbol = app.prog_heap.symbols().set_const(symbol);
+        app.predicate_table
+            .get_predicate_clauses((symbol, arity))
+            .map_or(0, |clauses| clauses.len())
+    }
+
+    #[test]
+    fn one_variant_per_member() {
+        assert_eq!(count(comparators(), "p(X):-Q(X,A),{Q:cmp,A}.", "p", 1), 3);
+    }
+
+    #[test]
+    fn constrained_variables_take_different_members() {
+        let code = "p(X):-Q(X,A),R(X,B),{Q:cmp,R:cmp,A,B}.";
+        assert_eq!(count(comparators(), code, "p", 1), 6);
+    }
+
+    #[test]
+    fn unconstrained_variables_may_take_the_same_member() {
+        let code = "p(X):-Q(X,A),R(X,B),{A,B},[Q:cmp,R:cmp].";
+        assert_eq!(count(comparators(), code, "p", 1), 9);
+    }
+
+    #[test]
+    fn a_variant_behaves_as_the_clause_written_out() {
+        let app = App::default()
+            .namespace("cmp", ["lt", "gt"])
+            .unwrap()
+            .load_code("lt(1,2). gt(2,1). p(X,Y):-Q(X,Y),{Q:cmp}.")
+            .unwrap();
+        for (query, expected) in [("p(1,2).", true), ("p(2,1).", true), ("p(1,1).", false)] {
+            let mut session = app.query_session(query).unwrap();
+            assert_eq!(session.next().is_some(), expected, "{query}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_namespace_is_an_error() {
+        let result = comparators().load_code("p(X):-Q(X),{Q:other}.");
+        assert!(matches!(result, Err(Error::NameSpace(_))));
+    }
+
+    #[test]
+    fn a_namespace_cannot_be_given_twice() {
+        let result = comparators().namespace("cmp", ["eq"]);
+        assert!(matches!(result, Err(Error::NameSpace(_))));
+    }
+
+    #[test]
+    fn misuse_is_an_error() {
+        for (code, fragment) in [
+            (
+                "p(X):-q(X,Q),Q(X),{Q:cmp}.",
+                "only be used as a predicate symbol",
+            ),
+            ("p(X):-Q(X),{Q:cmp,Q:cmp}.", "more than one namespace"),
+        ] {
+            let Err(Error::Parser(error)) = comparators().load_code(code) else {
+                panic!("`{code}` should not have loaded");
+            };
+            let error = match &error {
+                ParserError::AtLine { cause, .. } => &**cause,
+                other => other,
+            };
+            assert!(error.to_string().contains(fragment), "{code}: {error}");
+        }
     }
 }

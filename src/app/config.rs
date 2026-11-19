@@ -1,6 +1,6 @@
 //! The configuration structs and how they are read from a JSON config file.
 
-use std::fs;
+use std::{collections::HashMap, fs};
 
 use serde::{Deserialize, Serialize};
 
@@ -464,6 +464,10 @@ pub struct Config {
     pub resolution: ResolutionConfig,
     pub body_predicates: Vec<BodyPred>,
     pub files: Vec<String>,
+    /// Namespace name to the predicate symbols a meta variable declared as
+    /// `P:name` may take.
+    #[serde(default)]
+    pub namespaces: HashMap<String, Vec<String>>,
     pub examples: Option<Examples>,
     /// When true, the examples are run as a query without prompting.
     #[serde(default)]

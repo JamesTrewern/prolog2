@@ -124,6 +124,8 @@
 //! - [`Error::BodyPred`] — a body-predicate specification in the config is invalid.
 //! - [`Error::Module`] — a predicate module could not be loaded (e.g. duplicate predicate).
 //! - [`Error::Example`] — a training example is not a single literal.
+//! - [`Error::NameSpace`] — a meta rule uses a namespace that does not exist,
+//!   or an existing namespace was given again.
 
 // ── inline capacities ────────────────────────────────────────────────────
 //
@@ -231,6 +233,8 @@ pub enum Error {
     BodyPred(String),
     Module(String),
     Example(String),
+    /// An unknown namespace was used, or an existing one was given again.
+    NameSpace(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -245,6 +249,7 @@ impl fmt::Display for Error {
             Self::BodyPred(msg) => write!(f, "body predicate error: {msg}"),
             Self::Module(msg) => write!(f, "module error: {msg}"),
             Self::Example(msg) => write!(f, "example error: {msg}"),
+            Self::NameSpace(msg) => write!(f, "namespace error: {msg}"),
         }
     }
 }

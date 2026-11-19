@@ -9,6 +9,7 @@ use super::term::{
 use super::ParserError;
 
 const INFIX_ORDER: &[&[&str]] = &[
+    &[":"],
     &["**"],
     &["*", "/"],
     &["+", "-"],
@@ -73,6 +74,17 @@ impl TokenStream {
                 }
             }
         }
+    }
+}
+
+/// A meta variable declaration: `P`, or `P:namespace`.
+fn is_meta_var(term: &Term) -> bool {
+    match term {
+        Variable(_) => true,
+        Str(Comp, terms) => {
+            matches!(&terms[..], [Constant(op), Variable(_), Constant(_)] if op == ":")
+        }
+        _ => false,
     }
 }
 
@@ -279,23 +291,20 @@ impl TokenStream {
                         let meta_rule = match literals.last() {
                             // Case 1: ...{P,Q,R}. — all constrained
                             Some(Str(Set, eq_vars)) => {
-                                if eq_vars.iter().any(|eq_var| !matches!(eq_var, Variable(_))) {
+                                if eq_vars.iter().any(|eq_var| !is_meta_var(eq_var)) {
                                     return Err(ParserError::MalformedMetaRule { detail: format!("incorrectly formatted existentially quantified variables: {:?}", eq_vars) });
                                 }
                                 true
                             }
                             // Case 2 or 3: last is [Q1,Q2] — unconstrained vars list
                             Some(List(vars, tail)) if matches!(tail.as_ref(), EmptyList) => {
-                                if vars.iter().any(|v| !matches!(v, Variable(_))) {
+                                if vars.iter().any(|v| !is_meta_var(v)) {
                                     return Err(ParserError::MalformedMetaRule { detail: format!("unconstrained variable list should only contain variables, got {:?}", vars) });
                                 }
                                 // Case 2: ...{P},[Q1,Q2]. — check if second-to-last is a constrained set
                                 if len >= 2 {
                                     if let Str(Set, eq_vars) = &literals[len - 2] {
-                                        if eq_vars
-                                            .iter()
-                                            .any(|eq_var| !matches!(eq_var, Variable(_)))
-                                        {
+                                        if eq_vars.iter().any(|eq_var| !is_meta_var(eq_var)) {
                                             return Err(ParserError::MalformedMetaRule { detail: format!("incorrectly formatted existentially quantified variables: {:?}", eq_vars) });
                                         }
                                     }
@@ -315,7 +324,7 @@ impl TokenStream {
                         // Could be a MetaFact: Head, {EQVars}.
                         let meta_data = self.parse_expression()?;
                         if let Str(Set, eq_vars) = &meta_data {
-                            if eq_vars.iter().any(|eq_var| !matches!(eq_var, Variable(_))) {
+                            if eq_vars.iter().any(|eq_var| !is_meta_var(eq_var)) {
                                 return Err(ParserError::MalformedMetaRule { detail: format!("incorrectly formatted existentially quantified variables: {:?}", eq_vars) });
                             }
                             self.expect(".")?;
