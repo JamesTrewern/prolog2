@@ -7,6 +7,7 @@
 
 mod build_tree;
 mod execute_tree;
+mod symmetry;
 mod term;
 mod tokeniser;
 

@@ -127,7 +127,7 @@ fn extract_var_names_from_list(term: Term) -> Result<Vec<String>, ParserError> {
 /// - `...{P,Q,R}.` → meta_vars = {P,Q,R}, constrained_vars = None (defaults to all)
 /// - `...{P},[Q1,Q2].` → meta_vars = {P,Q1,Q2}, constrained_vars = Some({P})
 /// - `...[Q1,Q2].` → meta_vars = {Q1,Q2}, constrained_vars = Some({}) (empty)
-fn extract_meta_rule_vars(
+pub(super) fn extract_meta_rule_vars(
     terms: &mut Vec<Term>,
 ) -> Result<(Vec<String>, Vec<String>), ParserError> {
     let Some(last) = terms.pop() else {
@@ -192,7 +192,7 @@ fn check_meta_rule_vars(literals: &[Term], meta_vars: &[String]) -> Result<(), P
 
 /// Replace each `P:namespace` in a meta variable set or list with `P`,
 /// returning the (variable, namespace) pairs removed.
-fn strip_namespaces(declaration: &mut Term) -> Vec<(String, String)> {
+pub(super) fn strip_namespaces(declaration: &mut Term) -> Vec<(String, String)> {
     let (Str(Set, terms) | List(terms, _)) = declaration else {
         return Vec::new();
     };
