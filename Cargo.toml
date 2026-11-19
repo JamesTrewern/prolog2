@@ -34,6 +34,7 @@ multiversion = "0.8.0"
 num-traits = "0.2.19"
 hashbrown = "0.17.1"
 chrono = "0.4.45"
+thin-dst = "1.1"
 
 [profile.test]
 debug-assertions = true

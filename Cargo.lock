@@ -408,6 +408,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "thin-dst",
 ]
 
 [[package]]
@@ -573,6 +574,12 @@ name = "target-features"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1bbb9f3c5c463a01705937a24fdabc5047929ac764b2d5b9cf681c1f5041ed5"
+
+[[package]]
+name = "thin-dst"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db3c46be180f1af9673ebb27bc1235396f61ef6965b3fe0dbb2e624deb604f0e"
 
 [[package]]
 name = "unicode-ident"

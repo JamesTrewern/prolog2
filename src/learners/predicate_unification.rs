@@ -878,7 +878,7 @@ mod tests {
             // arena index.
             h.push_clause(
                 meta_rule,
-                meta_rule.meta_data.unwrap().id,
+                meta_rule.meta_data.as_ref().unwrap().id,
                 Constraints::default(),
                 &arg_regs,
             );

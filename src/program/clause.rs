@@ -9,6 +9,7 @@ use std::{
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicUsize, Ordering::Relaxed},
 };
+use thin_dst::ThinBox;
 
 pub(crate) const MAX_ARG: usize = 64;
 
@@ -58,13 +59,44 @@ pub struct MetaData {
     pub id: usize,
 }
 
+/// A meta clause's [`MetaData`] and its symmetries, in one allocation behind
+/// a one word pointer.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MetaBox(ThinBox<MetaData, u8>);
+
+impl MetaBox {
+    fn new(meta_data: MetaData, symmetries: Vec<u8>) -> Self {
+        MetaBox(ThinBox::new(meta_data, symmetries))
+    }
+
+    /// The symmetries end to end, each as long as the clause has meta
+    /// variables. See [`Clause::symmetries`].
+    fn symmetries(&self) -> &[u8] {
+        &self.0.slice
+    }
+}
+
+impl Deref for MetaBox {
+    type Target = MetaData;
+
+    fn deref(&self) -> &MetaData {
+        &self.0.head
+    }
+}
+
+impl DerefMut for MetaBox {
+    fn deref_mut(&mut self) -> &mut MetaData {
+        &mut self.0.head
+    }
+}
+
 /// A compiled clause: a list of literal heap addresses with metadata
 /// about which variables are second-order (meta) and which are constrained.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Clause {
     pub literals: SmallVec<[usize; LITERALS_DEFAULT_SIZE]>,
     pub max_arg_id: usize,
-    pub meta_data: Option<MetaData>,
+    pub meta_data: Option<MetaBox>,
 }
 
 impl Clause {
@@ -87,13 +119,14 @@ impl Clause {
                  can only stand in for the bit set while the compiler keeps packing \
                  non-meta variables into the lower ids.",
             );
-            MetaData {
+            let meta_data = MetaData {
                 meta_var_threshold,
                 constrained_vars: flags(cvs),
                 pred_vars: BitFlag64::default(),
                 head_pred: false,
                 id: META_CLAUSE_COUNT.fetch_add(1, Relaxed),
-            }
+            };
+            MetaBox::new(meta_data, Vec::new())
         });
 
         let literals: SmallVec<[usize; LITERALS_DEFAULT_SIZE]> = SmallVec::from_vec(literals);
@@ -102,6 +135,32 @@ impl Clause {
             max_arg_id,
             meta_data,
         }
+    }
+
+    /// Record the clause's symmetries: the reorderings of its body that give
+    /// the same clause, each a permutation of the meta variable slots. A
+    /// no-op for a clause that is not meta.
+    pub fn with_symmetries(mut self, symmetries: &[Vec<u8>]) -> Self {
+        if let Some(meta_data) = self.meta_data.take() {
+            let slots = self.max_arg_id - meta_data.meta_var_threshold;
+            debug_assert!(symmetries.iter().all(|symmetry| symmetry.len() == slots));
+            self.meta_data = Some(MetaBox::new(*meta_data, symmetries.concat()));
+        }
+        self
+    }
+
+    /// The reorderings of the body that give the same clause, the identity
+    /// left out. For a permutation `p`, a `MetaSub` with bindings `subs` and
+    /// one with `permuted[i] = subs[p[i]]` build the same clause.
+    pub fn symmetries(&self) -> impl Iterator<Item = &[u8]> {
+        let (symmetries, slots) = match &self.meta_data {
+            Some(meta_data) => (
+                meta_data.symmetries(),
+                self.max_arg_id - meta_data.meta_var_threshold,
+            ),
+            None => (&[][..], 0),
+        };
+        symmetries.chunks_exact(slots.max(1))
     }
 
     /// Record which meta variables are literal functors, read from the
@@ -172,22 +231,16 @@ impl Clause {
     }
 
     pub fn meta_var(&self, arg_id: usize) -> Result<bool, &'static str> {
-        if let Some(MetaData {
-            meta_var_threshold, ..
-        }) = self.meta_data
-        {
-            Ok(arg_id >= meta_var_threshold)
+        if let Some(meta_data) = &self.meta_data {
+            Ok(arg_id >= meta_data.meta_var_threshold)
         } else {
             return Err("Clause is not a meta clause");
         }
     }
 
     pub fn constrained_var(&self, arg_id: usize) -> bool {
-        if let Some(MetaData {
-            constrained_vars, ..
-        }) = self.meta_data
-        {
-            constrained_vars.get(arg_id)
+        if let Some(meta_data) = &self.meta_data {
+            meta_data.constrained_vars.get(arg_id)
         } else {
             false
         }

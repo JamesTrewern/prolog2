@@ -569,7 +569,7 @@ mod extraction_tests {
     fn prog_with_meta_rule() -> (ProgramHeap, PredicateTable, usize) {
         let mut prog = ProgramHeap::new();
         let meta = crate::parser::_build_clause(&mut prog, "P(X,Y):-Q(X,Y),{P,Q}.");
-        let id = meta.meta_data.unwrap().id;
+        let id = meta.meta_data.as_ref().unwrap().id;
         let mut table = PredicateTable::new();
         let symbol_arity = prog.symbol_arity(meta.head());
         table.add_clause_to_predicate(meta, symbol_arity).unwrap();

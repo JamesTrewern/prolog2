@@ -21,6 +21,8 @@ pub use predicate_table::PredicateTable;
 
 // Internal: the shape of a clause, and the pieces that build and compare one.
 pub(crate) use clause::{BitFlag64, Clause, MAX_ARG};
+#[cfg(test)]
+pub(crate) use clause::MetaBox;
 pub(crate) use hypothesis::Constraints;
 pub(crate) use meta_sub::{MetaSub, MetaSubGroup, MetaSubTrait, PackedMetaSubs};
 pub use predicate_table::PredicateRef;

@@ -352,7 +352,7 @@ mod template_tests {
             .add_clause_to_predicate(meta.clone(), (0, 2))
             .unwrap();
         let stored = predicate_table
-            .get_meta_clause(meta.meta_data.unwrap().id)
+            .get_meta_clause(meta.meta_data.as_ref().unwrap().id)
             .unwrap();
         let p = prog_heap.symbols().set_const("p");
         let p = prog_heap.heap_push((Con, p));
@@ -412,7 +412,7 @@ mod template_tests {
         let mut prog_heap = ProgramHeap::new();
         let first = _build_clause(&mut prog_heap, "P(X,Y):-Q(X),R(Y),{P,Q,R}.");
         let second = _build_clause(&mut prog_heap, "P(X,Y):-Q(X,Y),{P,Q}.");
-        let (first_id, second_id) = (first.meta_data.unwrap().id, second.meta_data.unwrap().id);
+        let (first_id, second_id) = (first.meta_data.as_ref().unwrap().id, second.meta_data.as_ref().unwrap().id);
 
         let mut predicate_table = PredicateTable::new();
         // Both are variable-headed, so both land under (0, 2), the second

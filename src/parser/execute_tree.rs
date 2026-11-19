@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use super::{
     build_tree::TreeClause,
+    symmetry::{symmetries, Rule},
     term::{
         Str::*,
         Term::{self, *},
@@ -39,6 +40,16 @@ pub(crate) fn build_clause(
         }
     }
 
+    // Found on the terms, before encoding consumes them.
+    let symmetry = meta_vars.as_ref().map(|(meta_vars, _)| {
+        let rule = Rule {
+            literals: &literals,
+            meta_vars,
+            namespaced: &[],
+        };
+        (rule.slots(), symmetries(&rule))
+    });
+
     let literals: Vec<usize> = literals
         .into_iter()
         .map(|term| term.encode(heap, &mut var_values, query))
@@ -69,7 +80,21 @@ pub(crate) fn build_clause(
         )
     });
 
-    Clause::new(literals, meta_vars, var_values.len()).with_pred_vars(heap)
+    let clause = Clause::new(literals, meta_vars, var_values.len()).with_pred_vars(heap);
+    let Some((slots, symmetries)) = symmetry else {
+        return clause;
+    };
+    // The symmetries index the meta variables by order of first appearance,
+    // which must be the order they were numbered in.
+    let threshold = clause.meta_threshold().expect("a meta clause");
+    assert!(
+        slots
+            .iter()
+            .enumerate()
+            .all(|(slot, var)| var_values[var] == threshold + slot),
+        "meta variables {slots:?} are not numbered in order of first appearance"
+    );
+    clause.with_symmetries(&symmetries)
 }
 
 /// Namespace name to the predicate symbols a meta variable in it may take.
@@ -877,5 +902,40 @@ mod namespace_tests {
             };
             assert!(error.to_string().contains(fragment), "{code}: {error}");
         }
+    }
+}
+
+#[cfg(test)]
+mod symmetry_tests {
+    use super::_build_clause;
+    use crate::{heap::ProgramHeap, program::MetaBox};
+
+    fn symmetries(code: &str) -> Vec<Vec<u8>> {
+        let clause = _build_clause(&mut ProgramHeap::new(), code);
+        clause.symmetries().map(<[u8]>::to_vec).collect()
+    }
+
+    #[test]
+    fn a_compiled_meta_clause_carries_its_symmetries() {
+        assert_eq!(symmetries("P(X):-Q(X),R(X),{P,Q,R}."), [[0, 2, 1]]);
+        assert_eq!(
+            symmetries("P(X,Y,Z):-C(Z,A),D(Z,B),Q(X,Y),{P,Q,C,D,A,B}."),
+            [[0, 3, 4, 1, 2, 5]]
+        );
+        assert_eq!(symmetries("P(X):-Q(X),R(X),S(X),{P,Q,R,S}.").len(), 5);
+    }
+
+    #[test]
+    fn other_clauses_have_none() {
+        assert!(symmetries("P(X,Y):-Q(X,Z),R(Z,Y),{P,Q,R}.").is_empty());
+        assert!(symmetries("p(X):-q(X),r(X).").is_empty());
+    }
+
+    /// The meta data and symmetries are one allocation behind one word, and
+    /// a clause without them pays nothing more.
+    #[test]
+    fn meta_data_is_one_word() {
+        let word = std::mem::size_of::<usize>();
+        assert_eq!(std::mem::size_of::<Option<MetaBox>>(), word);
     }
 }

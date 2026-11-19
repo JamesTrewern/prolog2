@@ -922,7 +922,7 @@ mod tests {
         let r = prog.symbols().set_const("r");
 
         let dummy_meta = Clause::new(vec![99], Some((vec![], vec![])), 0);
-        let meta_id = dummy_meta.meta_data.unwrap().id;
+        let meta_id = dummy_meta.meta_data.as_ref().unwrap().id;
 
         // Appending to an existing predicate keeps load order.
         pred_table
@@ -1175,7 +1175,7 @@ mod tests {
         // meta clause *ids* survive an arena shift, not about the vars.
         let first = Clause::new(vec![1], Some((vec![0], vec![0])), 1);
         let second = Clause::new(vec![2], Some((vec![0], vec![0])), 1);
-        let (id1, id2) = (first.meta_data.unwrap().id, second.meta_data.unwrap().id);
+        let (id1, id2) = (first.meta_data.as_ref().unwrap().id, second.meta_data.as_ref().unwrap().id);
 
         table.add_clause_to_predicate(first, (0, 2)).unwrap();
         table.add_clause_to_predicate(second, (0, 2)).unwrap();

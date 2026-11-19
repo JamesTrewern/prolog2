@@ -2,9 +2,6 @@
 //! literals that give the same clause. Works on the parsed terms, before
 //! anything is compiled.
 
-// Not used until `MetaData` stores the symmetries.
-#![allow(dead_code)]
-
 use super::term::Term::{self, *};
 
 /// A meta rule as parsed: head then body, with its declared meta variables.
@@ -31,7 +28,7 @@ impl Rule<'_> {
 
     /// The meta variables in slot order: the order `build_clause` numbers
     /// them in, which is the order of a `MetaSub`'s bindings.
-    fn slots(&self) -> Vec<String> {
+    pub(super) fn slots(&self) -> Vec<String> {
         let mut vars = Vec::new();
         for literal in self.literals {
             literal.extract_vars(&mut vars);
