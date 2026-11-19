@@ -33,7 +33,10 @@ use crate::{
 pub(super) struct Pool<B> {
     /// Every distinct hypothesis the pool gave, a group of clauses each.
     pub(super) hypotheses: PackedMetaSubs,
-    /// The profiles of the best of them, best first. [`HProfile::h`] is an
+    /// How many of them held up: proved every positive wanted and no more
+    /// negatives than the bound.
+    pub(super) held_up: usize,
+    /// The profiles of the best of those, best first. [`HProfile::h`] is an
     /// index in `hypotheses`.
     pub(super) best: Vec<HProfile<B>>,
 }
@@ -128,9 +131,14 @@ pub(super) fn best_of_pool<B: BitFlag + Send + Sync>(
             profile.h,
         )
     });
+    let held_up = best.len();
     best.truncate(ctx.parallel.final_h_count);
 
-    Pool { hypotheses, best }
+    Pool {
+        hypotheses,
+        held_up,
+        best,
+    }
 }
 
 #[cfg(test)]
@@ -167,7 +175,9 @@ mod tests {
         let profiles: Vec<HProfile<Set>> =
             build_profiles(&pos_goals, &fixture.neg_goals, ctx, "sub hypotheses");
 
-        let Pool { hypotheses, best } = best_of_pool(
+        let Pool {
+            hypotheses, best, ..
+        } = best_of_pool(
             groups,
             &profiles,
             &pos_goals,

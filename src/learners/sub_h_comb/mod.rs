@@ -150,9 +150,9 @@ fn combine_as<B: ExampleSet>(
     // The hypotheses those groups stand for, proved, and the best of them.
     let pool = best_of_pool(&groups, &candidates, pos_goals, neg_goals, dropped, ctx);
     eprintln!(
-        "{} of {} hypotheses hold up",
-        pool.best.len(),
-        pool.hypotheses.len()
+        "{} distinct hypotheses, {} hold up",
+        pool.hypotheses.len(),
+        pool.held_up
     );
     if pool.best.is_empty() {
         println!(

@@ -43,14 +43,20 @@ fn size<B>(profile: &HProfile<B>, by_literals: bool) -> (u8, u8) {
 }
 
 /// The sub hypotheses worth searching: `profiles` less every one that
-/// another is at least as good as, in their original order.
+/// another betters, in their original order.
 ///
-/// `b` is at least as good as `a` when it proves every positive `a` does,
-/// proves no negative `a` does not, and is no bigger. Of several that prove
-/// exactly the same examples, the smallest is kept, and the first of those.
+/// `b` betters `a` when it proves every positive `a` does and no negative
+/// `a` does not, and either the two do not prove exactly the same examples
+/// or `b` is the smaller. Size only decides between sub hypotheses proving
+/// exactly the same examples, and those of the same size as well all stay:
+/// they are alternatives, not one worse than another.
+///
+/// With no sub hypothesis proving a negative this is the rule that a sub
+/// hypothesis goes when another covers all it does and more, or the same
+/// with fewer clauses.
 ///
 /// The negatives are compared as sets, not counted. A sub hypothesis
-/// proving one negative is not dominated by one proving two others: in a
+/// proving one negative is not bettered by one proving two others: in a
 /// group that already proves those two, the second adds none and the first
 /// adds one.
 pub(super) fn undominated<B: BitFlag + Hash + Eq>(
@@ -59,44 +65,56 @@ pub(super) fn undominated<B: BitFlag + Hash + Eq>(
 ) -> Vec<HProfile<B>> {
     let size = |i: usize| size(&profiles[i], by_literals);
 
-    // The smallest of each set proving exactly the same examples.
+    // Those proving exactly the same examples, as the smallest among them:
+    // the first of that size stands for them all.
     let mut smallest: HashMap<(B, B), usize> = HashMap::new();
     for (i, profile) in profiles.iter().enumerate() {
-        let kept = smallest
+        let first = smallest
             .entry((profile.coverage, profile.neg_coverage))
             .or_insert(i);
-        if size(i) < size(*kept) {
-            *kept = i;
+        if size(i) < size(*first) {
+            *first = i;
         }
     }
 
-    // Most positives first: only those proving as many can dominate.
+    // Most positives first: only one proving as many can better another.
     let mut distinct: Vec<(usize, usize)> = smallest
-        .into_values()
-        .map(|i| (profiles[i].coverage.count(), i))
+        .values()
+        .map(|&i| (profiles[i].coverage.count(), i))
         .collect();
     distinct.sort_unstable_by_key(|&(positives, i)| (Reverse(positives), i));
 
-    let dominated = |&(positives, a): &(usize, usize)| {
-        let (a_profile, a_size) = (&profiles[a], size(a));
+    // Between two that differ in what they prove, size does not come into
+    // it.
+    let bettered = |positives: usize, a: usize| {
+        let a_profile = &profiles[a];
         distinct
             .iter()
             .take_while(|&&(others, _)| others >= positives)
             .any(|&(_, b)| {
                 let b_profile = &profiles[b];
                 b != a
-                    && size(b) <= a_size
                     && a_profile.coverage.is_subset(&b_profile.coverage)
                     && b_profile.neg_coverage.is_subset(&a_profile.neg_coverage)
             })
     };
-    let mut kept: Vec<usize> = distinct
+    for &(positives, i) in &distinct {
+        if bettered(positives, i) {
+            smallest.remove(&(profiles[i].coverage, profiles[i].neg_coverage));
+        }
+    }
+
+    // What is left of each: every one as small as its smallest.
+    profiles
         .iter()
-        .filter(|entry| !dominated(entry))
-        .map(|&(_, i)| i)
-        .collect();
-    kept.sort_unstable();
-    kept.into_iter().map(|i| profiles[i]).collect()
+        .enumerate()
+        .filter(|&(i, profile)| {
+            smallest
+                .get(&(profile.coverage, profile.neg_coverage))
+                .is_some_and(|&first| size(i) == size(first))
+        })
+        .map(|(_, profile)| *profile)
+        .collect()
 }
 
 /// One search for groups.
@@ -640,19 +658,36 @@ mod tests {
     }
 
     #[test]
-    fn of_the_same_examples_the_smallest_stays() {
+    fn of_the_same_examples_the_smallest_stay() {
         let profiles = [
             sized(0, &[0], &[], 2, 2),
             sized(1, &[0], &[], 1, 5),
             sized(2, &[0], &[], 1, 3),
         ];
-        assert_eq!(hs(&undominated(&profiles, false)), vec![1]);
+        // 1 and 2 are of a size, so both stay as alternatives.
+        assert_eq!(hs(&undominated(&profiles, false)), vec![1, 2]);
         assert_eq!(hs(&undominated(&profiles, true)), vec![2]);
     }
 
+    /// Size only decides between sub hypotheses proving the same examples.
     #[test]
-    fn a_bigger_sub_hypothesis_does_not_dominate() {
+    fn covering_more_betters_whatever_the_size() {
         let profiles = [sized(0, &[0, 1], &[], 3, 1), sized(1, &[0], &[], 1, 1)];
-        assert_eq!(hs(&undominated(&profiles, false)), vec![0, 1]);
+        assert_eq!(hs(&undominated(&profiles, false)), vec![0]);
+    }
+
+    /// With no negatives proved: the rule of the earlier filter.
+    #[test]
+    fn the_filter_matches_the_earlier_one_with_no_negatives() {
+        let profiles = [
+            sized(0, &[0, 1, 2], &[], 2, 1),
+            sized(1, &[0, 1, 2], &[], 2, 1),
+            sized(2, &[0, 1, 2], &[], 3, 1),
+            sized(3, &[0, 1], &[], 1, 1),
+            sized(4, &[3], &[], 4, 1),
+            sized(5, &[3], &[], 4, 1),
+        ];
+        // 2 is bigger than 0 and 1 for the same; 3 covers less than them.
+        assert_eq!(hs(&undominated(&profiles, false)), vec![0, 1, 4, 5]);
     }
 }
