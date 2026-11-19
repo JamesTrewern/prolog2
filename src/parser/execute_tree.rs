@@ -275,6 +275,8 @@ type MetaVars = (Vec<String>, Vec<String>);
 ///
 /// Namespaced variables in the constrained set take pairwise different
 /// members, as constrained meta variables may not take the same value.
+/// Assignments that give the same clause with its body literals in another
+/// order are compiled once.
 fn expand_namespaces(
     literals: Vec<Term>,
     (meta_vars, constrained): MetaVars,
@@ -329,6 +331,37 @@ fn expand_namespaces(
     // With no meta variables left a variant is an ordinary clause.
     let remaining = (!remaining.0.is_empty()).then_some(remaining);
 
+    // Each symmetry of the rule as the namespaced variable every namespaced
+    // variable becomes. An assignment and its image under one give the same
+    // clause with its body reordered. A symmetry that swaps a constrained
+    // variable with an unconstrained one is left out, as the two variants
+    // would then be constrained differently.
+    let rule = Rule {
+        literals: &literals,
+        meta_vars: &meta_vars,
+        namespaced: &namespaced,
+    };
+    let slots = rule.slots();
+    let position = |slot: &String| namespaced.iter().position(|(var, _)| var == slot);
+    let swaps: Vec<Vec<usize>> = symmetries(&rule)
+        .into_iter()
+        .filter(|symmetry| {
+            symmetry.iter().enumerate().all(|(from, &to)| {
+                constrained.contains(&slots[from]) == constrained.contains(&slots[to as usize])
+            })
+        })
+        .map(|symmetry| {
+            namespaced
+                .iter()
+                .map(|(var, _)| {
+                    let slot = slots.iter().position(|slot| slot == var).unwrap();
+                    position(&slots[symmetry[slot] as usize])
+                        .expect("a namespaced variable only becomes another")
+                })
+                .collect()
+        })
+        .collect();
+
     let mut variants = Vec::new();
     let mut choice = vec![0; namespaced.len()];
     if members.iter().any(|members| members.is_empty()) {
@@ -340,7 +373,12 @@ fn expand_namespaces(
                 && (0..i)
                     .any(|j| is_constrained[j] && members[i][choice[i]] == members[j][choice[j]])
         });
-        if !repeated {
+        // Of the assignments that give the same clause, keep the first.
+        let reordering = swaps.iter().any(|swap| {
+            let image = swap.iter().map(|&i| choice[i]);
+            image.lt(choice.iter().copied())
+        });
+        if !repeated && !reordering {
             let mut variant = literals.clone();
             for (i, (var, _)) in namespaced.iter().enumerate() {
                 for literal in &mut variant {
@@ -847,16 +885,114 @@ mod namespace_tests {
         assert_eq!(count(comparators(), "p(X):-Q(X,A),{Q:cmp,A}.", "p", 1), 3);
     }
 
+    /// Variables whose literals cannot be swapped: every assignment is a
+    /// different clause.
     #[test]
     fn constrained_variables_take_different_members() {
-        let code = "p(X):-Q(X,A),R(X,B),{Q:cmp,R:cmp,A,B}.";
-        assert_eq!(count(comparators(), code, "p", 1), 6);
+        let code = "p(X,Y):-Q(X,Z),R(Z,Y),{Q:cmp,R:cmp}.";
+        assert_eq!(count(comparators(), code, "p", 2), 6);
     }
 
     #[test]
     fn unconstrained_variables_may_take_the_same_member() {
+        let code = "p(X,Y):-Q(X,Z),R(Z,Y),[Q:cmp,R:cmp].";
+        assert_eq!(count(comparators(), code, "p", 2), 9);
+    }
+
+    /// The clauses of `symbol/arity`, each with its symmetries.
+    fn variants(code: &str, symbol: &str, arity: usize) -> Vec<Vec<Vec<u8>>> {
+        let app = comparators().load_code(code).unwrap();
+        let symbol = app.prog_heap.symbols().set_const(symbol);
+        app.predicate_table
+            .get_predicate_clauses((symbol, arity))
+            .unwrap_or_default()
+            .iter()
+            .map(|clause| clause.symmetries().map(<[u8]>::to_vec).collect())
+            .collect()
+    }
+
+    /// `Q` and `R` swap, taking `A` and `B` with them, so `lt,gt` and
+    /// `gt,lt` are one clause: 3 pairs rather than 6.
+    #[test]
+    fn a_reordered_assignment_is_compiled_once() {
+        let code = "p(X):-Q(X,A),R(X,B),{Q:cmp,R:cmp,A,B}.";
+        let variants = variants(code, "p", 1);
+        assert_eq!(variants.len(), 3);
+        // The members differ, so no variant has a symmetry left.
+        assert!(variants.iter().all(|symmetries| symmetries.is_empty()));
+    }
+
+    /// Unconstrained, the 3 pairs are joined by the 3 assignments of one
+    /// member to both. Those keep the symmetry between `A` and `B`.
+    #[test]
+    fn a_variant_with_a_member_twice_is_still_symmetric() {
         let code = "p(X):-Q(X,A),R(X,B),{A,B},[Q:cmp,R:cmp].";
-        assert_eq!(count(comparators(), code, "p", 1), 9);
+        let variants = variants(code, "p", 1);
+        assert_eq!(variants.len(), 6);
+        // Slots of a variant: A, B.
+        let symmetric = variants.iter().filter(|s| **s == [[1, 0]]).count();
+        assert_eq!(symmetric, 3);
+    }
+
+    #[test]
+    fn three_variables_alike_give_one_variant_per_set_of_members() {
+        let code = "p(X):-Q(X),R(X),S(X),{Q:cmp,R:cmp,S:cmp}.";
+        assert_eq!(variants(code, "p", 1).len(), 1);
+        let code = "p(X):-Q(X),R(X),S(X),[Q:cmp,R:cmp,S:cmp].";
+        // Multisets of 3 from 3 members.
+        assert_eq!(variants(code, "p", 1).len(), 10);
+    }
+
+    /// A namespaced variable never swaps with one outside the namespace, so
+    /// nothing is dropped. (`R` may still take a member of `cmp` during a
+    /// proof; that reordering is not caught here.)
+    #[test]
+    fn a_namespaced_and_a_free_variable_do_not_swap() {
+        let code = "p(X):-Q(X),R(X),{Q:cmp,R}.";
+        let variants = variants(code, "p", 1);
+        assert_eq!(variants.len(), 3);
+        assert!(variants.iter().all(|symmetries| symmetries.is_empty()));
+    }
+
+    /// The namespaced pair and the free pair swap separately. Expansion
+    /// uses the first, and each variant keeps the second.
+    #[test]
+    fn a_symmetry_between_free_variables_survives_expansion() {
+        let code = "p(X):-C(X),D(X),Q(X),R(X),{C:cmp,D:cmp,Q,R}.";
+        let variants = variants(code, "p", 1);
+        assert_eq!(variants.len(), 3);
+        // Slots of a variant: Q, R.
+        assert!(variants.iter().all(|symmetries| *symmetries == [[1, 0]]));
+    }
+
+    /// `C` and `D` swap only if the free `S` and `T` swap with them.
+    #[test]
+    fn a_swap_may_carry_free_variables_with_it() {
+        let code = "p(X):-C(X,A),D(X,B),S(A),T(B),{C:cmp,D:cmp,S,T}.";
+        assert_eq!(variants(code, "p", 1).len(), 3);
+        // With `t` a constant they cannot, so no assignment is dropped.
+        let code = "p(X):-C(X,A),D(X,B),S(A),t(B),{C:cmp,D:cmp,S}.";
+        assert_eq!(variants(code, "p", 1).len(), 6);
+    }
+
+    /// Swapping a constrained variable with an unconstrained one would give
+    /// variants constrained differently, so both orders are kept.
+    #[test]
+    fn a_swap_across_the_constrained_set_is_not_used() {
+        let code = "p(X):-Q(X),R(X),{Q:cmp},[R:cmp].";
+        assert_eq!(variants(code, "p", 1).len(), 9);
+    }
+
+    /// Two namespaces with the same members are still different kinds.
+    #[test]
+    fn variables_of_different_namespaces_do_not_swap() {
+        let app = comparators()
+            .namespace("other", ["lt", "gt", "le"])
+            .unwrap();
+        let app = app.load_code("p(X):-Q(X),R(X),{Q:cmp,R:other}.").unwrap();
+        let symbol = app.prog_heap.symbols().set_const("p");
+        let clauses = app.predicate_table.get_predicate_clauses((symbol, 1));
+        assert_eq!(clauses.unwrap().len(), 6);
     }
 
     #[test]
